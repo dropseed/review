@@ -6,6 +6,7 @@ import {
   type TerminalSocketHandlers,
 } from "./terminal-socket";
 import type { TerminalStatus } from "../types";
+import { terminalStatus } from "../test/fixtures";
 
 /**
  * Minimal WebSocket double. Records sent frames and exposes helpers to drive
@@ -82,17 +83,14 @@ class FakeWebSocket {
 const WebSocketImpl = FakeWebSocket as unknown as typeof WebSocket;
 
 function makeStatus(overrides: Partial<TerminalStatus> = {}): TerminalStatus {
-  return {
-    id: "t1",
-    phase: "working",
+  return terminalStatus("working", {
     runningCommand: "vim",
-    lastExitCode: null,
     cwd: "/repo",
     title: "vim",
     enteredStateAt: 123,
     shellIntegrationActive: true,
     ...overrides,
-  };
+  });
 }
 
 interface Captured {

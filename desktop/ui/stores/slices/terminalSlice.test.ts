@@ -43,23 +43,14 @@ import type {
   TerminalStatus,
   TerminalPhase,
 } from "../../types";
+import { terminalStatus } from "../../test/fixtures";
 
 function status(
   id: string,
   phase: TerminalPhase = "idle",
   overrides: Partial<TerminalStatus> = {},
 ): TerminalStatus {
-  return {
-    id,
-    phase,
-    runningCommand: null,
-    lastExitCode: null,
-    cwd: null,
-    title: null,
-    enteredStateAt: 0,
-    shellIntegrationActive: false,
-    ...overrides,
-  };
+  return terminalStatus(phase, { id, ...overrides });
 }
 
 function session(

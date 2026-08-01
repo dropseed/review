@@ -1,19 +1,16 @@
-import {
-  type DragEvent,
-  type ReactNode,
-  Fragment,
-  useRef,
-  useState,
-} from "react";
+import { type DragEvent, type ReactNode, Fragment, useRef } from "react";
 import { clsx } from "clsx";
 import { useReviewStore } from "../../stores";
 import type { PaneNode, SplitDirection, DropEdge } from "./pane-tree";
 import {
   TERMINAL_PANE_MIME,
+  clearPaneDropTarget,
   edgeForPoint,
   pointerLeft,
   setDraggedPane,
+  setPaneDropTarget,
   usePaneDragActive,
+  usePaneDropEdge,
 } from "./pane-drag";
 import { TerminalPane } from "./TerminalPane";
 import { SplitDivider } from "./SplitDivider";
@@ -34,8 +31,6 @@ interface PaneTreeProps {
   onFocus: (terminalId: string) => void;
   onSplit: (terminalId: string, direction: SplitDirection) => void;
   onClose: (terminalId: string) => void;
-  /** Drag-to-rearrange: place `sourceId` against `edge` of `targetId`. */
-  onMovePane: (sourceId: string, targetId: string, edge: DropEdge) => void;
 }
 
 /** The half of a pane a drop would fill, drawn where the pane will land. */
@@ -67,7 +62,6 @@ export function PaneTree({
   onFocus,
   onSplit,
   onClose,
-  onMovePane,
 }: PaneTreeProps): ReactNode {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const resizeSplit = useReviewStore((s) => s.resizeSplit);
@@ -84,7 +78,6 @@ export function PaneTree({
         onFocus={onFocus}
         onSplit={onSplit}
         onClose={onClose}
-        onMovePane={onMovePane}
       />
     );
   }
@@ -137,7 +130,6 @@ export function PaneTree({
               onFocus={onFocus}
               onSplit={onSplit}
               onClose={onClose}
-              onMovePane={onMovePane}
             />
           </div>
         </Fragment>
@@ -153,7 +145,6 @@ interface PaneLeafProps {
   onFocus: (terminalId: string) => void;
   onSplit: (terminalId: string, direction: SplitDirection) => void;
   onClose: (terminalId: string) => void;
-  onMovePane: (sourceId: string, targetId: string, edge: DropEdge) => void;
 }
 
 /**
@@ -168,9 +159,12 @@ function PaneLeaf({
   onFocus,
   onSplit,
   onClose,
-  onMovePane,
 }: PaneLeafProps): ReactNode {
-  const [dropEdge, setDropEdge] = useState<DropEdge | null>(null);
+  const dropPaneOn = useReviewStore((s) => s.dropPaneOn);
+  // Where a drop would land, whichever way the drag reached us: these handlers
+  // in web mode, the window-level events under Tauri (see useTerminalFileDrop).
+  // Both publish to pane-drag, so the highlight has one source either way.
+  const dropEdge = usePaneDropEdge(id);
   // Derived rather than tracked separately: the module value is what the tab
   // strip already reads, and a second copy of "this pane is in flight" is one
   // that can be left behind set when a drop unmounts this pane's grip.
@@ -187,7 +181,7 @@ function PaneLeaf({
   };
   const endHover = () => {
     rectRef.current = null;
-    setDropEdge(null);
+    clearPaneDropTarget(id);
   };
 
   return (
@@ -214,7 +208,7 @@ function PaneLeaf({
         e.preventDefault();
         e.stopPropagation();
         e.dataTransfer.dropEffect = "move";
-        setDropEdge(edgeAt(e));
+        setPaneDropTarget({ paneId: id, edge: edgeAt(e) });
       }}
       onDragLeave={(e) => {
         if (pointerLeft(e)) endHover();
@@ -223,15 +217,15 @@ function PaneLeaf({
         const source = e.dataTransfer.getData(TERMINAL_PANE_MIME);
         e.preventDefault();
         e.stopPropagation();
-        // Re-read the edge from the drop itself rather than trusting the hover
-        // state, which is a render behind a fast gesture.
+        // Re-read the edge from the drop itself rather than trusting the
+        // published one, which is a `dragover` behind a fast gesture.
         const edge = edgeAt(e);
         endHover();
         // The drop may unmount the grip that started the drag, and a `dragend`
         // is not guaranteed once that happens — so the drag is ended here
         // rather than left for the element that is about to disappear.
         setDraggedPane(null);
-        if (source) onMovePane(source, id, edge);
+        if (source) dropPaneOn(source, id, edge);
       }}
     >
       <div className="relative min-h-0 flex-1">

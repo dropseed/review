@@ -76,11 +76,59 @@ const listeners = new Set<() => void>();
 export function setDraggedPane(id: string | null): void {
   if (dragged === id) return;
   dragged = id;
-  for (const listener of listeners) listener();
+  // Nothing in flight, nowhere to land: a pane that kept its highlight after a
+  // cancelled drag would be lit with nothing being carried.
+  if (id === null) dropTarget = null;
+  notify();
 }
 
 export function draggedPane(): string | null {
   return dragged;
+}
+
+/**
+ * Where the pane in flight would land: the pane under the pointer and the half
+ * of it that would be filled.
+ *
+ * Published here rather than kept by whichever pane is being hovered, because
+ * the gesture arrives two ways: in web mode as `dragover` on the pane itself,
+ * and under Tauri on the window, since Tauri claims every drag over the webview
+ * and the hit test has to be done against those events instead (see
+ * `useTerminalFileDrop`). Both write here and the highlight reads only here, so
+ * the two paths cannot disagree about where a pane would land.
+ *
+ * It changes only when the pointer crosses into a different pane or a different
+ * half of one, so a subscriber re-renders about as often as it changes
+ * appearance.
+ */
+let dropTarget: { paneId: string; edge: DropEdge } | null = null;
+
+export function setPaneDropTarget(
+  target: { paneId: string; edge: DropEdge } | null,
+): void {
+  if (
+    dropTarget?.paneId === target?.paneId &&
+    dropTarget?.edge === target?.edge
+  ) {
+    return;
+  }
+  dropTarget = target;
+  notify();
+}
+
+/**
+ * Clear the drop target, but only if `paneId` is still the one holding it.
+ *
+ * A pointer crossing from one pane to the next fires `dragenter` on the pane it
+ * arrived at before `dragleave` on the pane it left, so a leave that cleared
+ * unconditionally would erase the highlight the new pane had just published.
+ */
+export function clearPaneDropTarget(paneId: string): void {
+  if (dropTarget?.paneId === paneId) setPaneDropTarget(null);
+}
+
+function notify(): void {
+  for (const listener of listeners) listener();
 }
 
 function subscribe(listener: () => void): () => void {
@@ -90,7 +138,23 @@ function subscribe(listener: () => void): () => void {
   };
 }
 
+/**
+ * Watch the drag state from outside React — for the window-level drop handler,
+ * which is a plain effect rather than a component. Fires for the drop target
+ * too, so a listener that only cares about pickup has to compare.
+ */
+export const subscribePaneDrag = subscribe;
+
 /** The pane being dragged right now, re-rendering the caller when it changes. */
 export function usePaneDragActive(): string | null {
   return useSyncExternalStore(subscribe, draggedPane, () => null);
+}
+
+/** The edge of `paneId` a drop would fill right now, if it is the target. */
+export function usePaneDropEdge(paneId: string): DropEdge | null {
+  return useSyncExternalStore(
+    subscribe,
+    () => (dropTarget?.paneId === paneId ? dropTarget.edge : null),
+    () => null,
+  );
 }

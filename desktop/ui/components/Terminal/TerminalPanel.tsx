@@ -15,7 +15,11 @@ import {
   DropdownMenuItem,
 } from "../ui/dropdown-menu";
 import { useTerminalFileDrop } from "../../hooks/useTerminalFileDrop";
-import { phaseDotClass, basename } from "../TabRail/terminal-status-format";
+import {
+  phaseDotClass,
+  basename,
+  attentionText,
+} from "../TabRail/terminal-status-format";
 import { collectLeafIds, type SplitDirection } from "./pane-tree";
 import {
   TERMINAL_PANE_MIME,
@@ -50,7 +54,6 @@ export function TerminalPanel(): ReactNode {
   const setFocusedTerminalPane = useReviewStore(
     (s) => s.setFocusedTerminalPane,
   );
-  const movePane = useReviewStore((s) => s.movePane);
   const movePaneToTab = useReviewStore((s) => s.movePaneToTab);
   const movePaneToNewTab = useReviewStore((s) => s.movePaneToNewTab);
   const terminalDockSide = useReviewStore((s) => s.terminalDockSide);
@@ -175,6 +178,10 @@ export function TerminalPanel(): ReactNode {
               basename(focusedSession?.cwd ?? "") ||
               "shell";
             const isActive = tab.id === activeTabId;
+            // The dot says a shell wants you; the escape that raised it said
+            // why. Only reachable on hover, but the title truncates and this
+            // is where you already point to read the rest of it.
+            const attention = allDead ? null : attentionText(leafStatuses);
             const isDropTarget =
               dragIndex !== null && dragIndex !== index && dropIndex === index;
             // A pane already in this tab has nothing to gain from being dropped
@@ -290,6 +297,7 @@ export function TerminalPanel(): ReactNode {
                 <button
                   type="button"
                   onClick={() => setActiveTab(reviewKey, tab.id)}
+                  title={attention ? `${title} — ${attention}` : title}
                   className="flex min-w-0 items-center gap-1.5"
                 >
                   <span
@@ -501,9 +509,6 @@ export function TerminalPanel(): ReactNode {
                   handleSplit(homeKey, tab.id, id, direction)
                 }
                 onClose={handleClosePane}
-                onMovePane={(sourceId, targetId, edge) =>
-                  movePane(tab.id, sourceId, targetId, edge)
-                }
               />
             </div>
           ))

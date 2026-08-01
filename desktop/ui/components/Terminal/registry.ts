@@ -123,6 +123,10 @@ export function acquireTerminal(
     linkHandler: { activate: (_event, uri) => openTerminalLink(uri) },
   });
   term.attachCustomKeyEventHandler((event) => handleCustomKey(term, id, event));
+  term.attachCustomWheelEventHandler((event) => normalizeWheel(term, event));
+  // The grid changing shape is the other half of "a row is this tall" — the
+  // pane was resized, or the font reflowed it.
+  term.onResize(() => forgetCellHeight(term));
   // Lets a program negotiate the kitty keyboard protocol, so chords like
   // Ctrl+Enter and Shift+Tab arrive distinguishable instead of collapsing onto
   // the same bytes as their unmodified forms.
@@ -337,7 +341,80 @@ function handleCustomKey(
   return true;
 }
 
+/** Wheel movement not yet worth a whole line, per terminal — see normalizeWheel. */
+const wheelCarry = new WeakMap<Terminal, number>();
+
+/** Measured cell height in CSS pixels, per terminal — see cellHeight. */
+const wheelCellHeight = new WeakMap<Terminal, number>();
+
+/**
+ * How tall one row is, in CSS pixels.
+ *
+ * Cached because the only way to ask is to measure the element, and a wheel
+ * arrives 60-120 times a second over a document a streaming terminal is
+ * dirtying continuously — so every read would flush layout. Nothing changes the
+ * answer except a resize or a font change, and both drop the entry.
+ */
+function cellHeight(term: Terminal): number {
+  const cached = wheelCellHeight.get(term);
+  if (cached !== undefined) return cached;
+  const measured = (term.element?.clientHeight ?? 0) / term.rows;
+  // A terminal that isn't rendered yet has nothing to measure; leave the cache
+  // empty so the next event tries again rather than latching zero.
+  if (measured) wheelCellHeight.set(term, measured);
+  return measured;
+}
+
+/** Drop the measurement, after anything that can change a row's height. */
+function forgetCellHeight(term: Terminal): void {
+  wheelCellHeight.delete(term);
+}
+
+/**
+ * Measure a wheel event in lines before xterm reads it.
+ *
+ * This handler is consulted only where the wheel is handed to the program —
+ * mouse tracking, and the arrow-key fallback a full-screen TUI gets — never by
+ * the scrollback viewport, which listens for itself. On those paths xterm
+ * divides the pixel delta by the cell height and then keeps 30% of anything
+ * under 50px, which leaves a mouse notch worth about a fifth of a line:
+ * scrolling inside Claude Code or `less` crawls, while the same gesture over
+ * scrollback moves several lines. (Those two constants are read out of
+ * @xterm/xterm 6.0.0 — if a bump changes the damping, this handler is where to
+ * look. `scrollSensitivity` is not the knob for it: it multiplies the delta
+ * going into that path rather than replacing the path.)
+ *
+ * Converting here instead — cells of movement, at the size the cells actually
+ * are — skips that damping, and the sub-line remainder is carried so a slow
+ * scroll still arrives a line at a time rather than being rounded away.
+ *
+ * Exported for tests; the terminal itself gets this via
+ * attachCustomWheelEventHandler.
+ */
+export function normalizeWheel(term: Terminal, event: WheelEvent): boolean {
+  if (event.deltaMode !== WheelEvent.DOM_DELTA_PIXEL) return true;
+  const rowHeight = cellHeight(term);
+  if (!rowHeight) return true;
+  const carried = (wheelCarry.get(term) ?? 0) + event.deltaY;
+  const lines = Math.trunc(carried / rowHeight);
+  wheelCarry.set(term, carried - lines * rowHeight);
+  // Nothing to report yet: the movement stays in the carry for the next event.
+  if (lines === 0) return false;
+  // deltaMode/deltaY are prototype accessors, so an own property shadows them
+  // for the read xterm is about to make. Handing over line mode rather than a
+  // scaled pixel delta is what takes it off the damped path.
+  Object.defineProperty(event, "deltaMode", {
+    value: WheelEvent.DOM_DELTA_LINE,
+    configurable: true,
+  });
+  Object.defineProperty(event, "deltaY", { value: lines, configurable: true });
+  return true;
+}
+
 function applyFontOptions(term: Terminal, opts: TerminalFontOptions): void {
+  // Size, weight and line height all move the row height the wheel is measured
+  // against, and none of them necessarily changes the row count.
+  forgetCellHeight(term);
   term.options.fontFamily = opts.fontFamily;
   term.options.fontSize = opts.fontSize;
   term.options.fontWeight = opts.fontWeight;
@@ -447,4 +524,20 @@ export function refreshAllTerminalOptions(opts: TerminalFontOptions): void {
 /** Whether an instance already exists (test/debug helper). */
 export function hasTerminal(id: string): boolean {
   return registry.has(id);
+}
+
+/**
+ * Move DOM focus into or out of a session's xterm. A session that has since
+ * been disposed is simply gone, which is the answer we want at a restore.
+ */
+export function setTerminalFocus(id: string, focused: boolean): boolean {
+  const entry = registry.get(id);
+  if (!entry) return false;
+  try {
+    if (focused) entry.term.focus();
+    else entry.term.blur();
+  } catch {
+    return false; // disposed mid-call
+  }
+  return true;
 }

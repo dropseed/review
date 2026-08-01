@@ -235,6 +235,12 @@ export function SettingsModal({
   const setSoundEffectsEnabled = useReviewStore(
     (s) => s.setSoundEffectsEnabled,
   );
+  const terminalNotificationsEnabled = useReviewStore(
+    (s) => s.terminalNotificationsEnabled,
+  );
+  const setTerminalNotificationsEnabled = useReviewStore(
+    (s) => s.setTerminalNotificationsEnabled,
+  );
   const lspDisabledLanguages = useReviewStore((s) => s.lspDisabledLanguages);
   const setLspDisabledLanguages = useReviewStore(
     (s) => s.setLspDisabledLanguages,
@@ -892,6 +898,18 @@ export function SettingsModal({
               />
               <p className="mt-1.5 text-xxs text-fg-faint leading-relaxed">
                 Play sounds when approving, rejecting, and completing reviews.
+              </p>
+            </div>
+
+            <div>
+              <ToggleRow
+                label="Terminal notifications"
+                checked={terminalNotificationsEnabled}
+                onCheckedChange={setTerminalNotificationsEnabled}
+              />
+              <p className="mt-1.5 text-xxs text-fg-faint leading-relaxed">
+                Send a system notification when a terminal needs your attention
+                and Review is in the background.
               </p>
             </div>
 

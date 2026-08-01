@@ -1,6 +1,7 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import type { GlobalReviewSummary, TerminalSessionInfo } from "../../types";
+import { terminalStatus } from "../../test/fixtures";
 
 // Hoisted: the store's module initializer calls getApiClient(), which runs
 // before a plain `const` mock would be initialized.
@@ -26,16 +27,13 @@ function session(id: string, cwd: string): TerminalSessionInfo {
     title: null,
     cols: 80,
     rows: 24,
-    status: {
+    status: terminalStatus("idle", {
       id,
-      phase: "idle",
-      runningCommand: null,
       lastExitCode: 0,
       cwd,
-      title: null,
       enteredStateAt: Date.now(),
       shellIntegrationActive: true,
-    },
+    }),
   };
 }
 

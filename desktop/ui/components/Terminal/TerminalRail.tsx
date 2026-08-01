@@ -14,7 +14,7 @@ import {
   RailRestoreIcon,
 } from "../ui/rail";
 import { PhaseDot } from "../TabRail/PhaseDot";
-import { phaseLabel, basename } from "../TabRail/terminal-status-format";
+import { basename, phaseSummary } from "../TabRail/terminal-status-format";
 import { collectLeafIds } from "./pane-tree";
 import type { TerminalStatus } from "../../types";
 
@@ -97,7 +97,7 @@ export function TerminalRail(): ReactNode {
           const phase = severity ?? "idle";
           const label = allDead
             ? `${title} — exited`
-            : `${title} — ${phaseLabel(phase)}`;
+            : `${title} — ${phaseSummary(phase, leafStatuses)}`;
 
           return (
             <RailTab

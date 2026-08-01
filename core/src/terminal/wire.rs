@@ -42,7 +42,8 @@ pub enum Phase {
     Working,
     /// The shell is at a prompt, waiting for the user to type.
     WaitingForInput,
-    /// Something rang the bell / needs the user's attention.
+    /// Something rang the bell or sent a desktop-notification escape and needs
+    /// the user's attention.
     NeedsAttention,
     /// No command running and nothing pending.
     Idle,
@@ -54,6 +55,9 @@ pub enum Phase {
 pub struct SessionStatus {
     pub id: TerminalId,
     pub phase: Phase,
+    /// Text of the notification (OSC 9 / OSC 777) that raised the
+    /// needs-attention overlay, if any. Cleared when the overlay clears.
+    pub attention_message: Option<String>,
     /// Command currently running, if known.
     pub running_command: Option<String>,
     /// Exit code of the last completed command (or the shell itself).

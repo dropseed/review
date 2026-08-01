@@ -845,6 +845,12 @@ export interface TerminalStatus {
   /** Epoch millis when the session entered its current phase. */
   enteredStateAt: number;
   shellIntegrationActive: boolean;
+  /**
+   * Text of the desktop-notification escape that raised the attention overlay
+   * (OSC 9 from Codex, OSC 777 from Claude Code). Null when the overlay is
+   * clear, or when a plain bell raised it and there was nothing to say.
+   */
+  attentionMessage: string | null;
 }
 
 /** Metadata describing a live terminal session (returned by start/list). */

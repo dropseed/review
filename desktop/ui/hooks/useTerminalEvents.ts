@@ -2,6 +2,8 @@ import { useEffect } from "react";
 import { getApiClient } from "../api";
 import { useReviewStore } from "../stores";
 import { makeReviewKey } from "../utils/review-key";
+import { notifyTerminalAttention } from "../utils/terminal-notifications";
+import { installTerminalWindowFocus } from "../components/Terminal/window-focus";
 
 /**
  * Mounted once in ReviewView. Probes terminal support, hydrates panel prefs,
@@ -12,6 +14,11 @@ export function useTerminalEvents(): void {
   const repoPath = useReviewStore((s) => s.repoPath);
   const reviewRef = useReviewStore((s) => s.reviewRef);
   const terminalsSupported = useReviewStore((s) => s.terminalsSupported);
+
+  // One window-level pair for every pane — the focused terminal is whichever
+  // one holds DOM focus, which the registry can answer without each pane
+  // subscribing for itself.
+  useEffect(() => installTerminalWindowFocus(), []);
 
   // Probe support + hydrate prefs once. Cheap and idempotent; runs on repo
   // changes so a backend that gains/loses support is re-detected.
@@ -39,7 +46,13 @@ export function useTerminalEvents(): void {
     const reviewKey = makeReviewKey(repoPath, reviewRef ?? "");
 
     const unsubStatusChanged = client.onTerminalStatusChanged((status) => {
-      useReviewStore.getState().applyTerminalStatus(status);
+      const store = useReviewStore.getState();
+      // Before the write, so the module can see the phase this is replacing.
+      // This is the only path a phase *change* arrives on — the hydrating
+      // paths write the store directly — which is what keeps a session that
+      // was already asking for you from announcing itself at startup.
+      notifyTerminalAttention(store.terminalStatuses[status.id], status);
+      store.applyTerminalStatus(status);
     });
 
     // No repo filter: sidebar rows for *every* repo show terminal badges, so

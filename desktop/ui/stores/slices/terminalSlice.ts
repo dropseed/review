@@ -167,12 +167,15 @@ export interface TerminalSlice {
     terminalId: string,
   ) => void;
   /**
-   * Drag-to-rearrange: move the pane `sourceTerminalId` against `edge` of
-   * `targetTerminalId` within `tabId`. Both panes are already in the tab — this
-   * only rearranges, it never starts or kills a session.
+   * Drag-to-rearrange: land the pane `sourceTerminalId` against `edge` of
+   * `targetTerminalId`. Both panes are already in the tab — this only
+   * rearranges, it never starts or kills a session.
+   *
+   * The tab is resolved from the target rather than passed in: one of the two
+   * gestures that ends here (the Tauri window drop) sees only a cursor position
+   * and a pane, and knows nothing of the tree it crossed.
    */
-  movePane: (
-    tabId: string,
+  dropPaneOn: (
     sourceTerminalId: string,
     targetTerminalId: string,
     edge: DropEdge,
@@ -1790,10 +1793,23 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
     setFocusedTerminalPane: (reviewKey, tabId, terminalId) =>
       set(setFocusedInTab(get(), reviewKey, tabId, terminalId)),
 
-    movePane: (tabId, sourceTerminalId, targetTerminalId, edge) =>
+    dropPaneOn: (sourceTerminalId, targetTerminalId, edge) => {
+      const g = get();
+      const found = findTabForTerminal(
+        g.terminalTabsByReviewKey,
+        targetTerminalId,
+      );
+      if (!found) return;
       set(
-        movePaneInTab(get(), tabId, sourceTerminalId, targetTerminalId, edge),
-      ),
+        movePaneInTab(
+          g,
+          found.tab.id,
+          sourceTerminalId,
+          targetTerminalId,
+          edge,
+        ),
+      );
+    },
 
     movePaneToTab: (sourceTerminalId, targetTabId) => {
       const g = get();

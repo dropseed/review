@@ -8,6 +8,7 @@ import { makeReviewKey } from "../../utils/review-key";
 import {
   phaseDotClass,
   phaseLabel,
+  phaseSummary,
   formatDuration,
   basename,
 } from "./terminal-status-format";
@@ -93,7 +94,7 @@ export function TerminalStatusBadge({
 
   const label = `${statuses.length} terminal${
     statuses.length === 1 ? "" : "s"
-  } — ${phaseLabel(worstPhase)}`;
+  } — ${phaseSummary(worstPhase, statuses)}`;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -136,6 +137,11 @@ export function TerminalStatusBadge({
                   {formatDuration(Math.max(0, now - s.enteredStateAt))}
                 </span>
               </div>
+              {s.phase === "needs_attention" && s.attentionMessage && (
+                <div className="text-xxs text-status-rejected">
+                  {s.attentionMessage}
+                </div>
+              )}
               {s.runningCommand && (
                 <div className="font-mono text-xxs text-fg-muted truncate">
                   {s.runningCommand}

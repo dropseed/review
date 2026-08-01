@@ -1,19 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { toBackgroundSessionRow } from "./background-sessions";
 import type { TerminalSessionInfo, TerminalStatus } from "../../types";
+import { terminalStatus } from "../../test/fixtures";
 
 function makeStatus(overrides: Partial<TerminalStatus> = {}): TerminalStatus {
-  return {
-    id: "t1",
-    phase: "idle",
-    runningCommand: null,
-    lastExitCode: null,
-    cwd: "/repo",
-    title: null,
-    enteredStateAt: 0,
-    shellIntegrationActive: false,
-    ...overrides,
-  };
+  return terminalStatus("idle", { cwd: "/repo", ...overrides });
 }
 
 function makeSession(

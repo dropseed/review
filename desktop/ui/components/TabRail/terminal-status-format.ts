@@ -1,4 +1,4 @@
-import type { TerminalPhase } from "../../types";
+import type { TerminalPhase, TerminalStatus } from "../../types";
 
 /**
  * Pure formatting helpers for TerminalStatusBadge, split out from the
@@ -32,6 +32,32 @@ export function phaseLabel(phase: TerminalPhase): string {
     case "idle":
       return "Idle";
   }
+}
+
+/**
+ * What a set of sessions is asking for, if any is asking in words. A dot only
+ * says "attention"; the escape that raised it usually said which one and why,
+ * and that is the part worth putting in the tooltip. First one wins — a rail
+ * tab stands for a whole tab, and one sentence is all it has room for.
+ */
+export function attentionText(statuses: TerminalStatus[]): string | null {
+  return (
+    statuses.find((s) => s.phase === "needs_attention" && s.attentionMessage)
+      ?.attentionMessage ?? null
+  );
+}
+
+/**
+ * A phase and what raised it, in one sentence — what every rail and badge puts
+ * after the title in its tooltip. Composed here rather than at each call site so
+ * the punctuation between the label and the message stays the same everywhere.
+ */
+export function phaseSummary(
+  phase: TerminalPhase,
+  statuses: TerminalStatus[],
+): string {
+  const attention = attentionText(statuses);
+  return `${phaseLabel(phase)}${attention ? `: ${attention}` : ""}`;
 }
 
 /** Format a duration in milliseconds as a compact string: 45s, 3m, 2h 5m. */

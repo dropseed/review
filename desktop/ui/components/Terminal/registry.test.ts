@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
+import type { Terminal } from "@xterm/xterm";
 import { buildXtermTheme } from "./xterm-theme";
 import type { TerminalFontOptions } from "./registry";
 
@@ -39,6 +40,7 @@ function emitOutput(id: string, text: string, seq: number): void {
 const {
   acquireTerminal,
   disposeTerminal,
+  normalizeWheel,
   refreshAllTerminalOptions,
   refreshAllTerminalThemes,
   attachRenderer,
@@ -210,6 +212,73 @@ describe("refreshAllTerminalOptions", () => {
       refreshAllTerminalOptions({ ...FONT_OPTS, fontSize: 14 }),
     ).not.toThrow();
     expect(term.options.fontSize).toBe(14);
+  });
+});
+
+/**
+ * A terminal as normalizeWheel sees it: a rendered element and a row count.
+ * `reads` counts the element measurements — the layout flush the cache exists
+ * to keep off a path that runs on every wheel event.
+ */
+function fakeTerm(pixelHeight: number, rows: number) {
+  let reads = 0;
+  const term = {
+    rows,
+    element: {
+      get clientHeight(): number {
+        reads += 1;
+        return pixelHeight;
+      },
+    },
+  };
+  return { term: term as unknown as Terminal, reads: () => reads };
+}
+
+/** One pixel notch: the lines it reported, or null if it was swallowed. */
+function notch(term: Terminal, deltaY: number): number | null {
+  const event = new WheelEvent("wheel", {
+    deltaY,
+    deltaMode: WheelEvent.DOM_DELTA_PIXEL,
+  });
+  if (!normalizeWheel(term, event)) return null;
+  expect(event.deltaMode).toBe(WheelEvent.DOM_DELTA_LINE);
+  return event.deltaY;
+}
+
+describe("normalizeWheel", () => {
+  it("reports a one-row notch as exactly one line", () => {
+    // 400px over 10 rows: a 40px notch is one row of movement.
+    const { term } = fakeTerm(400, 10);
+    expect(notch(term, 40)).toBe(1);
+    expect(notch(term, 40)).toBe(1);
+  });
+
+  it("carries sub-line movement until it adds up to whole lines", () => {
+    const { term } = fakeTerm(400, 10);
+    // Six 15px steps is 90px — two rows, with 10px left in the carry.
+    const reported = [15, 15, 15, 15, 15, 15]
+      .map((delta) => notch(term, delta))
+      .filter((lines): lines is number => lines !== null);
+    expect(reported).toEqual([1, 1]);
+    // The remainder is not lost: 30px more crosses the third row.
+    expect(notch(term, 30)).toBe(1);
+  });
+
+  it("measures the row height once, not once per event", () => {
+    const { term, reads } = fakeTerm(400, 10);
+    for (let i = 0; i < 20; i++) notch(term, 15);
+    expect(reads()).toBe(1);
+  });
+
+  it("leaves an event the browser already measured in lines alone", () => {
+    const { term, reads } = fakeTerm(400, 10);
+    const event = new WheelEvent("wheel", {
+      deltaY: 3,
+      deltaMode: WheelEvent.DOM_DELTA_LINE,
+    });
+    expect(normalizeWheel(term, event)).toBe(true);
+    expect(event.deltaY).toBe(3);
+    expect(reads()).toBe(0);
   });
 });
 

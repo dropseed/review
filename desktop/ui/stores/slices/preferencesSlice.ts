@@ -4,6 +4,7 @@ import type { SliceCreatorWithStorage } from "../types";
 import type { RecentRepo } from "../../utils/preferences";
 import { setSentryConsent } from "../../utils/sentry";
 import { setSoundEnabled } from "../../utils/sounds";
+import { setTerminalNotificationsEnabled as setTerminalNotifications } from "../../utils/terminal-notifications";
 import {
   refreshAllTerminalOptions,
   refreshAllTerminalThemes,
@@ -194,6 +195,7 @@ const defaults = {
   diffViewModeByExtension: {} as Record<string, DiffViewMode>,
   sentryEnabled: false,
   soundEffectsEnabled: true,
+  terminalNotificationsEnabled: true,
   tabRailCollapsed: false,
   filesPanelCollapsed: false,
   // No `reviewSortOrder`: the sort menu is gone, and a stored "size" would
@@ -272,6 +274,9 @@ export interface PreferencesSlice {
 
   // Sound effects
   soundEffectsEnabled: boolean;
+
+  // OS notifications when a background terminal needs attention
+  terminalNotificationsEnabled: boolean;
 
   // Tab rail
   tabRailCollapsed: boolean;
@@ -362,6 +367,9 @@ export interface PreferencesSlice {
 
   // Sound effects actions
   setSoundEffectsEnabled: (enabled: boolean) => void;
+
+  // Terminal notification actions
+  setTerminalNotificationsEnabled: (enabled: boolean) => void;
 
   // Tab rail actions
   setTabRailCollapsed: (collapsed: boolean) => void;
@@ -588,6 +596,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
 
       // Propagate sound setting
       setSoundEnabled(loaded.soundEffectsEnabled);
+      setTerminalNotifications(loaded.terminalNotificationsEnabled);
 
       applyFontSizeCssVariables(loaded.codeFontSize);
       applyFontFamilyCssVariables(loaded.codeFontFamily);
@@ -661,6 +670,12 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       set({ soundEffectsEnabled: enabled });
       storage.set("soundEffectsEnabled", enabled);
       setSoundEnabled(enabled);
+    },
+
+    setTerminalNotificationsEnabled: (enabled) => {
+      set({ terminalNotificationsEnabled: enabled });
+      storage.set("terminalNotificationsEnabled", enabled);
+      setTerminalNotifications(enabled);
     },
 
     setTabRailCollapsed: (collapsed) => {

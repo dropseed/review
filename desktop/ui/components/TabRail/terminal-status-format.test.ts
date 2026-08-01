@@ -4,8 +4,17 @@ import {
   phaseLabel,
   formatDuration,
   basename,
+  attentionText,
 } from "./terminal-status-format";
-import type { TerminalPhase } from "../../types";
+import type { TerminalPhase, TerminalStatus } from "../../types";
+import { terminalStatus } from "../../test/fixtures";
+
+function status(
+  phase: TerminalPhase,
+  attentionMessage: string | null = null,
+): TerminalStatus {
+  return terminalStatus(phase, { attentionMessage });
+}
 
 describe("phaseDotClass", () => {
   it("maps each phase to its status color", () => {
@@ -18,6 +27,26 @@ describe("phaseDotClass", () => {
     for (const [phase, expected] of cases) {
       expect(phaseDotClass(phase)).toBe(expected);
     }
+  });
+});
+
+describe("attentionText", () => {
+  it("returns the first attention message being raised", () => {
+    expect(
+      attentionText([
+        status("working", "stale"),
+        status("needs_attention", "Approve this edit?"),
+        status("needs_attention", "Second"),
+      ]),
+    ).toBe("Approve this edit?");
+  });
+
+  it("ignores a message left on a session past its attention spell", () => {
+    expect(attentionText([status("idle", "old news")])).toBeNull();
+  });
+
+  it("is null when attention was raised without words", () => {
+    expect(attentionText([status("needs_attention")])).toBeNull();
   });
 });
 

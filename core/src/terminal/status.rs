@@ -20,6 +20,12 @@
 //! prompt start (`A`), or command start (`C`) — not by the command-finished
 //! mark (`D`).
 //!
+//! Desktop-notification escapes raise the same overlay and additionally carry
+//! text, surfaced as `attention_message`: OSC 777 `notify` (Claude Code) and
+//! OSC 9 (Codex). The latest notification wins; a bare bell raises the overlay
+//! without disturbing the message, because Claude Code's `iterm2_with_bell`
+//! channel sends OSC 777 and then a BEL.
+//!
 //! Content peek is not part of status: it is pulled on demand through the
 //! session's VT thread (see [`super::Session::peek`]), never pushed into a
 //! status frame.
@@ -39,6 +45,8 @@ struct Sink {
     base_phase: Phase,
     /// Bell overlay: something rang the bell and wants the user's attention.
     needs_attention: bool,
+    /// Text of the notification that raised the overlay, if it carried any.
+    attention_message: Option<String>,
     running_command: Option<String>,
     last_exit_code: Option<i32>,
     cwd: Option<String>,
@@ -56,6 +64,7 @@ impl Sink {
             phase: Phase::Working,
             base_phase: Phase::Working,
             needs_attention: false,
+            attention_message: None,
             running_command: None,
             last_exit_code: None,
             cwd,
@@ -71,6 +80,7 @@ impl Sink {
         SessionStatus {
             id: self.id.clone(),
             phase: self.phase,
+            attention_message: self.attention_message.clone(),
             running_command: self.running_command.clone(),
             last_exit_code: self.last_exit_code,
             cwd: self.cwd.clone(),
@@ -106,16 +116,26 @@ impl Sink {
     }
 
     fn clear_attention(&mut self) {
-        if self.needs_attention {
+        if self.needs_attention || self.attention_message.is_some() {
             self.needs_attention = false;
+            self.attention_message = None;
             self.dirty = true;
         }
     }
 
-    fn raise_attention(&mut self) {
+    /// Raise the overlay, optionally with notification text. `None` (a bare
+    /// bell) keeps any message already there — Claude Code's `iterm2_with_bell`
+    /// channel emits OSC 777 and then a BEL, and the bell must not erase it.
+    fn raise_attention(&mut self, message: Option<String>) {
         if !self.needs_attention {
             self.needs_attention = true;
             self.dirty = true;
+        }
+        if let Some(text) = message {
+            if self.attention_message.as_deref() != Some(text.as_str()) {
+                self.attention_message = Some(text);
+                self.dirty = true;
+            }
         }
     }
 
@@ -175,6 +195,34 @@ impl Sink {
         }
     }
 
+    /// Apply an OSC 9 desktop notification (Codex): the whole remainder is the
+    /// message. ConEmu's progress report `OSC 9;4;<state>;<progress>` shares the
+    /// code and is not a notification.
+    fn osc_9(&mut self, params: &[&[u8]]) {
+        if params.len() >= 3 && matches!(params.get(1), Some(&b"4")) {
+            return;
+        }
+        self.raise_attention(non_empty(join_params(&params[1..])));
+    }
+
+    /// Apply an OSC 777 `notify;<title>;<body>` desktop notification (Claude
+    /// Code). Other 777 subcommands are not notifications.
+    fn osc_777(&mut self, params: &[&[u8]]) {
+        if !matches!(params.get(1), Some(&b"notify")) {
+            return;
+        }
+        let title = params
+            .get(2)
+            .map_or_else(String::new, |b| String::from_utf8_lossy(b).into_owned());
+        let body = join_params(params.get(3..).unwrap_or(&[]));
+        let message = [title, body]
+            .into_iter()
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join(": ");
+        self.raise_attention(non_empty(message));
+    }
+
     /// Fold in a poller observation: `running_command` always, and — only when
     /// shell integration is inactive — the phase derived from whether the shell
     /// itself is the foreground process group.
@@ -215,7 +263,7 @@ impl Perform for Sink {
         // A standalone BEL (0x07). OSC sequences terminated by BEL are consumed
         // by the parser as the terminator and never reach `execute`.
         if byte == 0x07 {
-            self.raise_attention();
+            self.raise_attention(None);
         }
     }
 
@@ -223,11 +271,28 @@ impl Perform for Sink {
         let Some(kind) = params.first() else { return };
         match *kind {
             b"133" => self.osc_133(params),
+            b"9" => self.osc_9(params),
+            b"777" => self.osc_777(params),
             b"0" | b"2" => self.set_title(params.get(1)),
             b"7" => self.set_cwd_osc7(params.get(1)),
             _ => {}
         }
     }
+}
+
+/// Rejoin OSC parameters with their `;` separators. `vte` splits on `;`, so a
+/// notification message that contained one arrives as several parameters.
+fn join_params(params: &[&[u8]]) -> String {
+    params
+        .iter()
+        .map(|p| String::from_utf8_lossy(p))
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// A notification with no text raises the overlay but carries no message.
+fn non_empty(text: String) -> Option<String> {
+    (!text.is_empty()).then_some(text)
 }
 
 /// Parse an OSC 7 `file://<host><path>` value into its (percent-decoded) path.
@@ -357,6 +422,89 @@ mod tests {
         let a = feed(&mut s, b"\x1b]133;A\x07").expect("A changed status");
         // A both clears the bell and moves to WaitingForInput.
         assert_eq!(a.phase, Phase::WaitingForInput);
+    }
+
+    #[test]
+    fn plain_bell_carries_no_message() {
+        let mut s = scanner();
+        let bell = feed(&mut s, b"\x07").expect("bell changed status");
+        assert_eq!(bell.phase, Phase::NeedsAttention);
+        assert_eq!(bell.attention_message, None);
+    }
+
+    #[test]
+    fn osc9_notification_sets_attention_message() {
+        let mut s = scanner();
+        let n = feed(&mut s, b"\x1b]9;Codex is waiting\x07").expect("OSC 9 changed status");
+        assert_eq!(n.phase, Phase::NeedsAttention);
+        assert_eq!(n.attention_message.as_deref(), Some("Codex is waiting"));
+    }
+
+    #[test]
+    fn osc9_message_keeps_its_semicolons() {
+        let mut s = scanner();
+        // vte splits parameters on ';'; the message must be rejoined.
+        let n = feed(&mut s, b"\x1b]9;done: a; b; c\x07").expect("OSC 9 changed status");
+        assert_eq!(n.attention_message.as_deref(), Some("done: a; b; c"));
+    }
+
+    #[test]
+    fn osc9_progress_report_is_not_a_notification() {
+        let mut s = scanner();
+        // ConEmu-style OSC 9;4;<state>;<progress> shares the code but is a
+        // progress bar update, not something the user must look at.
+        assert!(feed(&mut s, b"\x1b]9;4;1;50\x07").is_none());
+        assert_eq!(s.build_status().phase, Phase::Working);
+    }
+
+    #[test]
+    fn osc777_notify_composes_title_and_body() {
+        let mut s = scanner();
+        let n = feed(&mut s, b"\x1b]777;notify;Claude Code;Waiting for input\x07")
+            .expect("OSC 777 changed status");
+        assert_eq!(n.phase, Phase::NeedsAttention);
+        assert_eq!(
+            n.attention_message.as_deref(),
+            Some("Claude Code: Waiting for input")
+        );
+    }
+
+    #[test]
+    fn osc777_body_keeps_its_semicolons() {
+        let mut s = scanner();
+        let n =
+            feed(&mut s, b"\x1b]777;notify;Claude;ran: a; b\x07").expect("OSC 777 changed status");
+        assert_eq!(n.attention_message.as_deref(), Some("Claude: ran: a; b"));
+    }
+
+    #[test]
+    fn bell_after_notification_keeps_the_message() {
+        let mut s = scanner();
+        // Claude Code's "iterm2_with_bell" channel sends OSC 777 then a BEL.
+        feed(&mut s, b"\x1b]777;notify;Claude;Waiting\x07");
+        s.feed(b"\x07");
+        let after = s.build_status();
+        assert_eq!(after.phase, Phase::NeedsAttention);
+        assert_eq!(after.attention_message.as_deref(), Some("Claude: Waiting"));
+    }
+
+    #[test]
+    fn write_clears_the_message_with_the_overlay() {
+        let mut s = scanner();
+        feed(&mut s, b"\x1b]9;Waiting\x07");
+        assert!(s.on_write());
+        let cleared = s.build_status();
+        assert_ne!(cleared.phase, Phase::NeedsAttention);
+        assert_eq!(cleared.attention_message, None);
+    }
+
+    #[test]
+    fn prompt_start_clears_the_message() {
+        let mut s = scanner();
+        feed(&mut s, b"\x1b]9;Waiting\x07");
+        let a = feed(&mut s, b"\x1b]133;A\x07").expect("A changed status");
+        assert_eq!(a.phase, Phase::WaitingForInput);
+        assert_eq!(a.attention_message, None);
     }
 
     #[test]
