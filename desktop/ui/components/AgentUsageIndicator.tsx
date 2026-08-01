@@ -1,7 +1,9 @@
-import { type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import clsx from "clsx";
 import { useAgentUsage } from "../hooks/useAgentUsage";
 import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
+import { ProgressRing } from "./ui/progress-ring";
+import { RailSeparator, railTooltipSide, type RailEdge } from "./ui/rail";
 import { ClaudeIcon, CodexIcon, RefreshIcon, CheckIcon } from "./ui/icons";
 import { useReviewStore } from "../stores";
 import { formatSeconds } from "../utils/format-age";
@@ -47,15 +49,31 @@ function headlineWindow(
   return fullest(windows.filter((w) => w.headline)) ?? fullest(windows);
 }
 
+type UsageTone = "spent" | "warning" | "quiet";
+
 /**
  * Neutral until it's worth noticing. This lives in peripheral vision, so it
  * should stay quiet at the usage levels you spend most of your time at.
  */
-function barColor(percent: number): string {
-  if (percent >= 90) return "bg-status-rejected";
-  if (percent >= 70) return "bg-status-warning";
-  return "bg-fg/30";
+function usageTone(percent: number): UsageTone {
+  if (percent >= 90) return "spent";
+  if (percent >= 70) return "warning";
+  return "quiet";
 }
+
+const BAR_COLORS: Record<UsageTone, string> = {
+  spent: "bg-status-rejected",
+  warning: "bg-status-warning",
+  quiet: "bg-fg/30",
+};
+
+/** The ring's fill reads against a track rather than a panel, so its quiet
+ *  level carries more weight than the bar's. */
+const RING_COLORS: Record<UsageTone, string> = {
+  spent: "stroke-status-rejected",
+  warning: "stroke-status-warning",
+  quiet: "stroke-fg/45",
+};
 
 /**
  * True when every dated window has reset since the snapshot was taken — the
@@ -138,7 +156,7 @@ function UsageBar({
         <span
           className={clsx(
             "absolute inset-y-0 left-0 rounded-full transition-[width] duration-300",
-            barColor(width),
+            BAR_COLORS[usageTone(width)],
           )}
           style={{ width: `${width}%` }}
         />
@@ -182,6 +200,70 @@ export function AgentUsageIndicator(): ReactNode {
   );
 }
 
+interface AgentSnapshot {
+  /** The window plotted in the sidebar, or undefined when the agent reports
+   *  none — the caller has nothing to draw. */
+  headline: UsageWindow | undefined;
+  nowSeconds: number;
+  expired: boolean;
+  /** Expired or stale — either way, "don't read too much into this number". */
+  muted: boolean;
+  percent: number;
+  /** How much of the headline window to draw: the percentage, or nothing at
+   *  all once the window it described has reset. */
+  filled: number;
+  pace: number | null;
+  /** Which side of the pace mark usage sits on, in words. */
+  paceDelta: string | null;
+  pinnedLabel: string | undefined;
+}
+
+/**
+ * What every presentation of an agent's usage needs: which window it plots,
+ * how full it is, and how much of that number to believe. Recomputed per
+ * render because half of it is relative to now.
+ */
+function useAgentSnapshot(agent: AgentUsage): AgentSnapshot {
+  const usagePinnedWindows = useReviewStore((s) => s.usagePinnedWindows);
+  const pinnedLabel = usagePinnedWindows[agent.id];
+  const headline = headlineWindow(agent.windows, pinnedLabel);
+
+  const nowSeconds = Date.now() / 1000;
+  const expired = isExpired(agent, nowSeconds);
+  const stale =
+    agent.observedAtUnix !== null &&
+    nowSeconds - agent.observedAtUnix > STALE_AFTER_SECONDS;
+  const percent = headline
+    ? Math.min(100, Math.max(0, headline.usedPercent))
+    : 0;
+  const pace = headline && !expired ? pacePercent(headline, nowSeconds) : null;
+
+  return {
+    headline,
+    nowSeconds,
+    expired,
+    muted: expired || stale,
+    percent,
+    filled: expired ? 0 : percent,
+    pace,
+    paceDelta: pace === null ? null : formatPaceDelta(percent, pace),
+    pinnedLabel,
+  };
+}
+
+/** The trigger's spoken form, shared so the rail's rings say what the rows do. */
+function usageLabel(
+  agent: AgentUsage,
+  headline: UsageWindow,
+  percent: number,
+  paceDelta: string | null,
+): string {
+  return (
+    `${agent.name} usage: ${Math.round(percent)}% of ${headline.label}` +
+    (paceDelta ? `, ${paceDelta}` : "")
+  );
+}
+
 function AgentUsageRow({
   agent,
   onRefresh,
@@ -191,34 +273,20 @@ function AgentUsageRow({
   onRefresh: () => void;
   refreshing: boolean;
 }): ReactNode {
-  const usagePinnedWindows = useReviewStore((s) => s.usagePinnedWindows);
-  const setUsagePinnedWindow = useReviewStore((s) => s.setUsagePinnedWindow);
-  const pinnedLabel = usagePinnedWindows[agent.id];
-  const headline = headlineWindow(agent.windows, pinnedLabel);
+  const snapshot = useAgentSnapshot(agent);
+  const [open, setOpen] = useState(false);
+  const { headline, expired, muted, percent, filled, pace, paceDelta } =
+    snapshot;
   if (!headline) return null;
 
-  const nowSeconds = Date.now() / 1000;
-  const expired = isExpired(agent, nowSeconds);
-  const stale =
-    agent.observedAtUnix !== null &&
-    nowSeconds - agent.observedAtUnix > STALE_AFTER_SECONDS;
-  /** Both states mean "don't read too much into this number". */
-  const muted = expired || stale;
-  const percent = Math.min(100, Math.max(0, headline.usedPercent));
-  const pace = expired ? null : pacePercent(headline, nowSeconds);
-  const paceDelta = pace === null ? null : formatPaceDelta(percent, pace);
-
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
           className="flex w-full items-center gap-2 rounded px-1 py-0.5
                      hover:bg-fg/[0.06] transition-colors duration-100"
-          aria-label={
-            `${agent.name} usage: ${Math.round(percent)}% of ${headline.label}` +
-            (paceDelta ? `, ${paceDelta}` : "")
-          }
+          aria-label={usageLabel(agent, headline, percent, paceDelta)}
         >
           {/* The mark carries the identity here; the name is a click away in
               the popover, and the width it frees goes to the bar. */}
@@ -229,11 +297,7 @@ function AgentUsageRow({
               muted ? "text-fg-faint/60" : "text-fg-faint",
             )}
           />
-          <UsageBar
-            percent={expired ? 0 : percent}
-            pace={pace}
-            dimmed={muted}
-          />
+          <UsageBar percent={filled} pace={pace} dimmed={muted} />
           <span
             className={clsx(
               "w-7 shrink-0 text-right text-xxs tabular-nums",
@@ -245,135 +309,272 @@ function AgentUsageRow({
         </button>
       </PopoverTrigger>
 
-      <PopoverContent side="top" align="start" className="w-64 p-0">
-        <div className="flex items-center gap-2 border-b border-edge/40 px-3 py-2">
-          <AgentIcon agent={agent} className="h-3.5 w-3.5 text-fg-muted" />
-          <span className="min-w-0 flex-1 truncate text-xs font-medium text-fg-secondary">
-            {agent.name}
-          </span>
-          {agent.plan && (
-            <span className="shrink-0 text-xxs text-fg-faint">
-              {agent.plan}
-            </span>
-          )}
-          {/* One read covers every agent, so this is deliberately not labelled
-              per-agent even though it sits in one agent's popover. */}
-          <button
-            type="button"
-            onClick={onRefresh}
-            disabled={refreshing}
-            aria-label="Refresh usage"
-            title="Refresh usage"
-            className="shrink-0 rounded p-0.5 text-fg-faint transition-colors
-                       hover:bg-fg/[0.06] hover:text-fg-secondary disabled:pointer-events-none"
-          >
-            <RefreshIcon
-              className={clsx("h-3 w-3", refreshing && "animate-spin")}
-            />
-          </button>
-        </div>
+      {/* Only while it's open: the body is a per-window pass over dates and
+          pace, and this sits in a sidebar that re-renders on unrelated
+          traffic. */}
+      {open && (
+        <UsageDetails
+          agent={agent}
+          snapshot={snapshot}
+          side="top"
+          align="start"
+          onRefresh={onRefresh}
+          refreshing={refreshing}
+        />
+      )}
+    </Popover>
+  );
+}
 
-        {/* Each window is a choice of what the sidebar bar plots. The default
+/**
+ * The window picker behind a usage trigger: every window the agent reports,
+ * what each one costs so far, and a way to choose which the sidebar plots.
+ *
+ * Shared by the rows and the collapsed rail's rings — both are the same
+ * measurement at different sizes, so both open the same detail.
+ */
+function UsageDetails({
+  agent,
+  snapshot,
+  side,
+  align,
+  onRefresh,
+  refreshing,
+}: {
+  agent: AgentUsage;
+  /** The trigger's own reading, handed down rather than recomputed — one
+   *  store subscription and one pass over the windows per agent. */
+  snapshot: AgentSnapshot;
+  side: "top" | "left" | "right";
+  align: "start" | "end";
+  onRefresh: () => void;
+  refreshing: boolean;
+}): ReactNode {
+  const setUsagePinnedWindow = useReviewStore((s) => s.setUsagePinnedWindow);
+  const { headline, nowSeconds, expired, muted, pinnedLabel } = snapshot;
+  if (!headline) return null;
+
+  return (
+    <PopoverContent side={side} align={align} className="w-64 p-0">
+      <div className="flex items-center gap-2 border-b border-edge/40 px-3 py-2">
+        <AgentIcon agent={agent} className="h-3.5 w-3.5 text-fg-muted" />
+        <span className="min-w-0 flex-1 truncate text-xs font-medium text-fg-secondary">
+          {agent.name}
+        </span>
+        {agent.plan && (
+          <span className="shrink-0 text-xxs text-fg-faint">{agent.plan}</span>
+        )}
+        {/* One read covers every agent, so this is deliberately not labelled
+              per-agent even though it sits in one agent's popover. */}
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={refreshing}
+          aria-label="Refresh usage"
+          title="Refresh usage"
+          className="shrink-0 rounded p-0.5 text-fg-faint transition-colors
+                       hover:bg-fg/[0.06] hover:text-fg-secondary disabled:pointer-events-none"
+        >
+          <RefreshIcon
+            className={clsx("h-3 w-3", refreshing && "animate-spin")}
+          />
+        </button>
+      </div>
+
+      {/* Each window is a choice of what the sidebar bar plots. The default
             is the agent's long-horizon cap, but the session is the number that
             matters when you're deciding whether to start something now. */}
-        <div className="py-1">
-          {agent.windows.map((window) => {
-            const resetsAt = formatResetAt(window);
-            const resetsIn = expired
+      <div className="py-1">
+        {agent.windows.map((window) => {
+          const resetsAt = formatResetAt(window);
+          const resetsIn = expired ? null : formatResetsIn(window, nowSeconds);
+          const windowPace = expired ? null : pacePercent(window, nowSeconds);
+          const delta =
+            windowPace === null
               ? null
-              : formatResetsIn(window, nowSeconds);
-            const windowPace = expired ? null : pacePercent(window, nowSeconds);
-            const delta =
-              windowPace === null
-                ? null
-                : formatPaceDelta(window.usedPercent, windowPace);
-            const summary = sentence([
-              windowPace === null ? null : (delta ?? "on pace"),
-              resetsIn
-                ? `resets in ${resetsIn}`
-                : resetsAt
-                  ? `resets ${resetsAt}`
-                  : null,
-            ]);
-            const isShown = window.label === headline.label;
-            return (
-              <button
-                key={window.label}
-                type="button"
-                onClick={() =>
-                  // Clicking the one already shown reverts to the default,
-                  // so there's a way back without knowing which that was.
-                  setUsagePinnedWindow(
-                    agent.id,
-                    pinnedLabel === window.label ? null : window.label,
-                  )
-                }
-                aria-pressed={isShown}
-                // Without this the name is the whole block of numbers below.
-                aria-label={
-                  isShown
-                    ? `${window.label}, shown in the sidebar`
-                    : `Show ${window.label} in the sidebar`
-                }
-                title={
-                  isShown
-                    ? "Shown in the sidebar"
-                    : `Show ${window.label} in the sidebar`
-                }
-                className={clsx(
-                  "block w-full px-3 py-1.5 text-left transition-colors",
-                  isShown ? "bg-fg/[0.04]" : "hover:bg-fg/[0.06]",
-                )}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span
-                    className={clsx(
-                      "truncate text-xs",
-                      isShown ? "text-fg" : "text-fg-secondary",
-                    )}
-                  >
-                    {window.label}
-                  </span>
-                  {isShown && (
-                    <CheckIcon className="h-2.5 w-2.5 shrink-0 text-fg-faint" />
+              : formatPaceDelta(window.usedPercent, windowPace);
+          const summary = sentence([
+            windowPace === null ? null : (delta ?? "on pace"),
+            resetsIn
+              ? `resets in ${resetsIn}`
+              : resetsAt
+                ? `resets ${resetsAt}`
+                : null,
+          ]);
+          const isShown = window.label === headline.label;
+          return (
+            <button
+              key={window.label}
+              type="button"
+              onClick={() =>
+                // Clicking the one already shown reverts to the default,
+                // so there's a way back without knowing which that was.
+                setUsagePinnedWindow(
+                  agent.id,
+                  pinnedLabel === window.label ? null : window.label,
+                )
+              }
+              aria-pressed={isShown}
+              // Without this the name is the whole block of numbers below.
+              aria-label={
+                isShown
+                  ? `${window.label}, shown in the sidebar`
+                  : `Show ${window.label} in the sidebar`
+              }
+              title={
+                isShown
+                  ? "Shown in the sidebar"
+                  : `Show ${window.label} in the sidebar`
+              }
+              className={clsx(
+                "block w-full px-3 py-1.5 text-left transition-colors",
+                isShown ? "bg-fg/[0.04]" : "hover:bg-fg/[0.06]",
+              )}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span
+                  className={clsx(
+                    "truncate text-xs",
+                    isShown ? "text-fg" : "text-fg-secondary",
                   )}
-                  <span className="ml-auto shrink-0 text-xs tabular-nums text-fg-muted">
-                    {Math.round(window.usedPercent)}%
-                  </span>
-                </div>
-                <div className="mt-1 flex">
-                  <UsageBar
-                    percent={expired ? 0 : window.usedPercent}
-                    pace={windowPace}
-                    dimmed={muted}
-                  />
-                </div>
-                {/* One line for the two things the bar can't say: which side
+                >
+                  {window.label}
+                </span>
+                {isShown && (
+                  <CheckIcon className="h-2.5 w-2.5 shrink-0 text-fg-faint" />
+                )}
+                <span className="ml-auto shrink-0 text-xs tabular-nums text-fg-muted">
+                  {Math.round(window.usedPercent)}%
+                </span>
+              </div>
+              <div className="mt-1 flex">
+                <UsageBar
+                  percent={expired ? 0 : window.usedPercent}
+                  pace={windowPace}
+                  dimmed={muted}
+                />
+              </div>
+              {/* One line for the two things the bar can't say: which side
                     of the tick we're on, and when the window ends. How far
                     into it we are is the tick itself, so it goes unsaid.
                     A duration is what you want at a glance; the wall-clock
                     time stays one hover away for deciding when to come back. */}
-                {summary && (
-                  <div
-                    className="mt-1 text-xxs text-fg-faint"
-                    title={resetsAt ?? undefined}
-                  >
-                    {summary}
-                  </div>
-                )}
-              </button>
-            );
-          })}
-        </div>
+              {summary && (
+                <div
+                  className="mt-1 text-xxs text-fg-faint"
+                  title={resetsAt ?? undefined}
+                >
+                  {summary}
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
 
-        {agent.observedAtUnix !== null && (
-          <div className="border-t border-edge/40 px-3 py-2 text-xxs text-fg-faint">
-            {expired
-              ? `These windows have reset since the snapshot. Run ${agent.name} to refresh.`
-              : `Snapshot from ${formatSeconds(nowSeconds - agent.observedAtUnix)} ago — ${agent.name} reports usage only while it runs.`}
-          </div>
-        )}
-      </PopoverContent>
+      {agent.observedAtUnix !== null && (
+        <div className="border-t border-edge/40 px-3 py-2 text-xxs text-fg-faint">
+          {expired
+            ? `These windows have reset since the snapshot. Run ${agent.name} to refresh.`
+            : `Snapshot from ${formatSeconds(nowSeconds - agent.observedAtUnix)} ago — ${agent.name} reports usage only while it runs.`}
+        </div>
+      )}
+    </PopoverContent>
+  );
+}
+
+/**
+ * One agent's headline window as a ring around its mark, for the collapsed
+ * rail — 36px of width has no room for a bar and a number, but a circle round
+ * an icon that has to be there anyway costs nothing extra.
+ *
+ * The pace tick the bar carries is dropped: at this diameter it would read as
+ * a nick in the ring rather than a mark against it. It's still one click away
+ * in the popover, which is the same one the expanded rows open.
+ */
+function AgentUsageDial({
+  agent,
+  onRefresh,
+  refreshing,
+  edge,
+}: {
+  agent: AgentUsage;
+  onRefresh: () => void;
+  refreshing: boolean;
+  edge: RailEdge;
+}): ReactNode {
+  const snapshot = useAgentSnapshot(agent);
+  const [open, setOpen] = useState(false);
+  const { headline, muted, percent, filled, paceDelta } = snapshot;
+  if (!headline) return null;
+
+  const label = usageLabel(agent, headline, percent, paceDelta);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={label}
+          title={label}
+          className="relative flex h-6 w-6 shrink-0 items-center justify-center
+                     rounded-full hover:bg-fg/[0.08]"
+        >
+          <ProgressRing
+            percent={filled}
+            size={24}
+            strokeWidth={1.5}
+            className={clsx("absolute inset-0 h-6 w-6", muted && "opacity-50")}
+            arcClassName={RING_COLORS[usageTone(filled)]}
+          />
+          <AgentIcon
+            agent={agent}
+            className={clsx(
+              "h-3 w-3 shrink-0",
+              muted ? "text-fg-faint/60" : "text-fg-faint",
+            )}
+          />
+        </button>
+      </PopoverTrigger>
+
+      {open && (
+        <UsageDetails
+          agent={agent}
+          snapshot={snapshot}
+          side={railTooltipSide(edge)}
+          align="end"
+          onRefresh={onRefresh}
+          refreshing={refreshing}
+        />
+      )}
     </Popover>
+  );
+}
+
+/**
+ * The usage indicator's collapsed form: a ring per agent, at the foot of the
+ * rail where the rows sit when the sidebar is open.
+ *
+ * Same empty case as the rows — an agent with nothing to report gets no ring,
+ * and a machine with no agents gets no separator either.
+ */
+export function AgentUsageRail({ edge }: { edge: RailEdge }): ReactNode {
+  const { agents, refresh, refreshing } = useAgentUsage();
+
+  if (agents.length === 0) return null;
+
+  return (
+    <>
+      <RailSeparator />
+      {agents.map((agent) => (
+        <AgentUsageDial
+          key={agent.id}
+          agent={agent}
+          onRefresh={refresh}
+          refreshing={refreshing}
+          edge={edge}
+        />
+      ))}
+    </>
   );
 }

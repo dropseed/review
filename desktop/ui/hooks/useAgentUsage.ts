@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import { getApiClient } from "../api";
 import { useAsyncAction } from "./useAsyncAction";
 import type { AgentUsage } from "../types";
@@ -26,6 +26,74 @@ export interface AgentUsageState {
 }
 
 /**
+ * One poll for the whole app.
+ *
+ * The sidebar shows usage in two places — rows when it's open, rings on the
+ * rail when it's collapsed — and a read costs a CLI subprocess, so the timer
+ * belongs to the module rather than to whichever components happen to be
+ * mounted. Sharing the last snapshot also means a component that mounts later
+ * has something to draw immediately instead of a blank until the next poll.
+ */
+let snapshot: AgentUsage[] = [];
+const listeners = new Set<() => void>();
+let intervalId: ReturnType<typeof setInterval> | null = null;
+let initialId: ReturnType<typeof setTimeout> | null = null;
+
+function publish(agents: AgentUsage[]): void {
+  snapshot = agents;
+  for (const listener of listeners) listener();
+}
+
+async function poll(): Promise<void> {
+  try {
+    publish(await getApiClient().getAgentUsage(false));
+  } catch (err) {
+    // Usage is ambient chrome. A failed read leaves the last known values
+    // in place rather than surfacing an error the user can't act on.
+    console.debug("[usage] failed to read agent usage:", err);
+  }
+}
+
+function startPolling(): void {
+  if (intervalId === null) {
+    intervalId = setInterval(() => void poll(), POLL_INTERVAL_MS);
+  }
+}
+
+function stopPolling(): void {
+  if (intervalId !== null) {
+    clearInterval(intervalId);
+    intervalId = null;
+  }
+}
+
+function handleVisibility(): void {
+  if (document.visibilityState === "visible") {
+    void poll();
+    startPolling();
+  } else {
+    stopPolling();
+  }
+}
+
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  if (listeners.size === 1) {
+    initialId = setTimeout(handleVisibility, INITIAL_DELAY_MS);
+    document.addEventListener("visibilitychange", handleVisibility);
+  }
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) {
+      if (initialId !== null) clearTimeout(initialId);
+      initialId = null;
+      document.removeEventListener("visibilitychange", handleVisibility);
+      stopPolling();
+    }
+  };
+}
+
+/**
  * Rate-limit usage for the coding agents on this machine, refreshed on a timer
  * while the window is visible, and on demand.
  *
@@ -35,63 +103,14 @@ export interface AgentUsageState {
  * escape hatch.
  */
 export function useAgentUsage(): AgentUsageState {
-  const [agents, setAgents] = useState<AgentUsage[]>([]);
+  const agents = useSyncExternalStore(subscribe, () => snapshot);
 
-  useEffect(() => {
-    let cancelled = false;
-    let intervalId: ReturnType<typeof setInterval> | null = null;
-
-    async function poll(): Promise<void> {
-      try {
-        const next = await getApiClient().getAgentUsage();
-        if (!cancelled) setAgents(next);
-      } catch (err) {
-        // Usage is ambient chrome. A failed read leaves the last known values
-        // in place rather than surfacing an error the user can't act on.
-        console.debug("[usage] failed to read agent usage:", err);
-      }
-    }
-
-    const start = () => {
-      if (intervalId === null) {
-        intervalId = setInterval(() => void poll(), POLL_INTERVAL_MS);
-      }
-    };
-    const stop = () => {
-      if (intervalId !== null) {
-        clearInterval(intervalId);
-        intervalId = null;
-      }
-    };
-
-    const handleVisibility = () => {
-      if (document.visibilityState === "visible") {
-        void poll();
-        start();
-      } else {
-        stop();
-      }
-    };
-
-    const initialId = setTimeout(() => {
-      if (document.visibilityState !== "visible") return;
-      void poll();
-      start();
-    }, INITIAL_DELAY_MS);
-
-    document.addEventListener("visibilitychange", handleVisibility);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(initialId);
-      document.removeEventListener("visibilitychange", handleVisibility);
-      stop();
-    };
-  }, []);
-
+  // Not routed through `poll`, which swallows failures to keep the ambient
+  // timer quiet: a refresh is something the user asked for, so its error has
+  // to reach useAsyncAction.
   const [runRefresh, refreshing] = useAsyncAction(
     useCallback(async () => {
-      setAgents(await getApiClient().getAgentUsage(true));
+      publish(await getApiClient().getAgentUsage(true));
     }, []),
     "refresh agent usage",
   );

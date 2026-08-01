@@ -54,13 +54,16 @@ export function RowStatus({
 }: RowStatusProps): ReactNode {
   return (
     <>
+      {/* Leads the cluster: it's the only marker that changes while you're
+          looking elsewhere, so it keeps a fixed spot rather than shifting as
+          the badges beside it come and go. */}
+      <TerminalStatusBadge repoPath={repoPath} reviewRef={reviewRef} />
       <TierDot tier={tier} />
       {showWorktreeIcon && checkoutPath && (
         <span className="text-fg-faint" title="worktree">
           <GitTreeIcon className="h-3.5 w-3.5" />
         </span>
       )}
-      <TerminalStatusBadge repoPath={repoPath} reviewRef={reviewRef} />
     </>
   );
 }

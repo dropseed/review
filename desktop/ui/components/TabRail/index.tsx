@@ -554,9 +554,6 @@ function RepoNodeView({
             actions appear just left of it (see row-chrome), so the row's right
             edge holds still without the label paying for their width at rest. */}
         <span className={ROW_STATUS}>
-          {headBranch?.hasWorkingTreeChanges && (
-            <span className={ROW_MODIFIED_BADGE}>M</span>
-          )}
           {head && (
             <RowStatus
               repoPath={node.repoPath}
@@ -564,6 +561,9 @@ function RepoNodeView({
               checkoutPath={head.checkoutPath}
               tier={head.checkoutPath ? "materialized" : "fetched"}
             />
+          )}
+          {headBranch?.hasWorkingTreeChanges && (
+            <span className={ROW_MODIFIED_BADGE}>M</span>
           )}
           <span
             className={`${ROW_ACTIONS} ${

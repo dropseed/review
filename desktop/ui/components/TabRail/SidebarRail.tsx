@@ -7,8 +7,9 @@ import { makeReviewKey } from "../../utils/review-key";
 import type { SidebarRow } from "../../utils/sidebar-tree";
 import { Rail, RailButton, RailSeparator, RailTab } from "../ui/rail";
 import { SidebarPanelIcon } from "../ui/icons";
+import { AgentUsageRail } from "../AgentUsageIndicator";
 import { PhaseDot } from "./PhaseDot";
-import { basename, phaseLabel } from "./terminal-status-format";
+import { basename, phaseSummary } from "./terminal-status-format";
 import type { GlobalReviewSummary, TerminalStatus } from "../../types";
 
 interface SidebarRailProps {
@@ -94,7 +95,7 @@ export function SidebarRail({
     const label = phase
       ? `${basename(row.repoPath)} — ${row.ref} · ${ids.length} terminal${
           ids.length === 1 ? "" : "s"
-        }, ${phaseLabel(phase)}`
+        }, ${phaseSummary(phase, statuses)}`
       : `${basename(row.repoPath)} — ${row.ref}`;
 
     return (
@@ -127,6 +128,11 @@ export function SidebarRail({
         )}
         {busyRows.map(renderRow)}
       </div>
+
+      {/* Where the usage rows sit when the sidebar is open — kept at the foot
+          rather than dropped, since how much of the week is left is exactly
+          the kind of thing you want without expanding anything. */}
+      <AgentUsageRail edge="left" />
     </Rail>
   );
 }
