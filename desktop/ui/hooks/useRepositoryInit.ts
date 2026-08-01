@@ -1,7 +1,9 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import type { GitHubPrRef, ResolvedReview, ReviewTarget } from "../types";
 import type { GlobalReviewSummary } from "../types";
+import { getErrorMessage } from "../utils/errors";
 import { clearLog } from "../utils/logger";
 import { resolveRepoIdentity, reviewUrl } from "../utils/repo-identity";
 import { getApiClient } from "../api";
@@ -766,7 +768,12 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         // Navigate using repo name from local activity
         const { routePrefix } = await resolveRepoIdentity(repoPath);
         nav(reviewUrl(routePrefix, branch));
-      })();
+      })().catch((err) => {
+        // Nothing above this point has navigated, so a failure here leaves the
+        // click looking like a no-op unless it's said out loud.
+        console.error("Failed to open branch:", err);
+        toast.error(`Couldn't open ${branch}: ${getErrorMessage(err)}`);
+      });
     },
     [setActiveReviewKey, switchReview, setComparison],
   );

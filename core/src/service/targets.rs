@@ -99,7 +99,9 @@ pub fn set_base_override(
 ///    time by [`LocalGitSource::diff_base_ref`], so rebases re-baseline for free.
 /// 3. any other resolvable rev (SHA, tag, `stash@{n}`, detached HEAD) → reviewed
 ///    as a single commit: `{ref}^..{ref}`.
-/// 4. otherwise → error.
+/// 4. `ref` is the unborn current branch (no commits yet) → same as the trunk
+///    arm, which the diff layer reads against the empty tree.
+/// 5. otherwise → error.
 ///
 /// `github_pr` is a parameter rather than a wrapper function so there is no
 /// signature a caller can reach that silently forgets PR substitution.
@@ -137,10 +139,7 @@ pub fn resolve_review(
             // decide what you review — pushing would silently empty the review
             // and committing would silently grow it. "vs origin" is still one
             // base override away; it just isn't the default.
-            return Ok((
-                Comparison::new(ref_name, ref_name),
-                BaseReason::TrunkWorkingTree,
-            ));
+            return Ok(working_tree_of(ref_name));
         }
         return Ok((
             Comparison::new(default_branch, ref_name),
@@ -154,8 +153,27 @@ pub fn resolve_review(
         return Ok((Comparison::new(base, ref_name), BaseReason::SingleCommit));
     }
 
-    // 4. Nothing resolved.
+    // 4. The unborn current branch. Before the first commit there is no ref for
+    // `is_branch` to find, but the branch is real and its working tree is the
+    // whole review. That's what the trunk arm already expresses — `ref..ref`,
+    // which the diff layer resolves against the working tree, and (with no HEAD
+    // to resolve) against the empty tree, so every file reads as added. Checked
+    // last because anything that resolved above self-evidently has a commit.
+    if source.unborn_branch().as_deref() == Some(ref_name) {
+        return Ok(working_tree_of(ref_name));
+    }
+
+    // 5. Nothing resolved.
     anyhow::bail!("Could not resolve review ref '{ref_name}'")
+}
+
+/// Review a branch's uncommitted work: `ref..ref`, which the diff layer resolves
+/// against the working tree of whichever tree has `ref` checked out.
+fn working_tree_of(ref_name: &str) -> (Comparison, BaseReason) {
+    (
+        Comparison::new(ref_name, ref_name),
+        BaseReason::TrunkWorkingTree,
+    )
 }
 
 #[cfg(test)]
@@ -227,6 +245,46 @@ mod tests {
         let (_dir, source) = repo();
         let (_c, reason) = resolve_review(&source, "feature", Some("main"), None).unwrap();
         assert_eq!(reason, BaseReason::Override);
+    }
+
+    /// A repo whose first commit hasn't landed yet: no ref names its branch, so
+    /// the ladder has to recognise it as the trunk rather than failing to
+    /// resolve — otherwise opening a freshly-`git init`ed repo errors.
+    #[test]
+    fn unborn_branch_resolves_to_its_working_tree() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path();
+        git(path, &["init", "-b", "trunk"]);
+        std::fs::write(path.join("a.txt"), "hello\n").unwrap();
+        git(path, &["add", "a.txt"]);
+        std::fs::write(path.join("b.txt"), "untracked\n").unwrap();
+
+        let source = LocalGitSource::new(path.to_path_buf()).unwrap();
+        assert_eq!(source.unborn_branch().as_deref(), Some("trunk"));
+        // `git init -b trunk` names the default branch, commits or not.
+        assert_eq!(source.get_default_branch().unwrap(), "trunk");
+
+        let (comparison, reason) = resolve_review(&source, "trunk", None, None).unwrap();
+        assert_eq!(reason, BaseReason::TrunkWorkingTree);
+        assert_eq!(comparison.base, "trunk");
+        assert_eq!(comparison.head, "trunk");
+
+        // Every file in the repo is new, staged or not.
+        let files = crate::sources::traits::DiffSource::list_files(&source, &comparison).unwrap();
+        let names: Vec<String> = files.iter().map(|f| f.path.clone()).collect();
+        assert!(
+            names.iter().any(|p| p == "a.txt"),
+            "staged file missing: {names:?}"
+        );
+        assert!(
+            names.iter().any(|p| p == "b.txt"),
+            "untracked file missing: {names:?}"
+        );
+
+        // …and the staged one has a diff to review, against the empty tree.
+        let diff =
+            crate::sources::traits::DiffSource::get_diff(&source, &comparison, None).unwrap();
+        assert!(diff.contains("a.txt") && diff.contains("+hello"), "{diff}");
     }
 
     #[test]

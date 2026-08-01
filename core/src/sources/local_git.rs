@@ -252,6 +252,31 @@ impl LocalGitSource {
         Ok(output.trim().to_owned())
     }
 
+    /// The branch HEAD points at before its first commit — a fresh `git init`
+    /// or `git checkout --orphan`, where no ref under `refs/heads/` exists yet
+    /// to name it. Returns `None` once that branch has a commit.
+    ///
+    /// Callers that enumerate branches or resolve refs need this because git's
+    /// own ref machinery can't see an unborn branch: `for-each-ref` skips it and
+    /// `rev-parse` fails on it, so it would otherwise be invisible.
+    pub fn unborn_branch(&self) -> Option<String> {
+        // Deliberately not `resolve_ref("HEAD")` — that falls back to
+        // `origin/HEAD`, which would call a genuinely unborn HEAD born.
+        if self.run_git(&["rev-parse", "--verify", "HEAD"]).is_ok() {
+            return None;
+        }
+        self.get_current_branch().ok().filter(|s| !s.is_empty())
+    }
+
+    /// The unborn branch when `listed` — the local branches some caller just
+    /// enumerated — came back empty. `for-each-ref` can't see an unborn branch,
+    /// so every branch listing has to add it back; a repo that listed even one
+    /// branch can't have an unborn HEAD, which is what spares essentially every
+    /// repo the `git rev-parse` probe in [`Self::unborn_branch`].
+    fn unborn_branch_missing_from<T>(&self, listed: &[T]) -> Option<String> {
+        listed.is_empty().then(|| self.unborn_branch()).flatten()
+    }
+
     /// Get the configured git user's display name (`git config user.name`).
     /// Returns `None` when unset or blank — the UI falls back to leaving the
     /// author empty rather than fabricating an identity.
@@ -534,13 +559,10 @@ impl LocalGitSource {
         if self.ref_exists("master") {
             return "master".to_owned();
         }
-        // Empty repo: no refs exist yet, check what HEAD points to
-        if let Ok(output) = self.run_git(&["symbolic-ref", "HEAD"]) {
-            if let Some(branch) = output.trim().strip_prefix("refs/heads/") {
-                if branch == "main" || branch == "master" {
-                    return branch.to_owned();
-                }
-            }
+        // Empty repo: with no commit anywhere, the branch HEAD points at *is*
+        // the default branch — whatever `git init -b` named it.
+        if let Some(branch) = self.unborn_branch() {
+            return branch;
         }
         // Last resort: use HEAD
         "HEAD".to_owned()
@@ -640,6 +662,12 @@ impl LocalGitSource {
                 }
                 remote.push(branch.to_owned());
             }
+        }
+
+        // Before its first commit the current branch has no ref to enumerate,
+        // so the comparison picker would offer nothing to review.
+        if let Some(name) = self.unborn_branch_missing_from(&local) {
+            local.push(name);
         }
 
         // Get stashes
@@ -759,9 +787,11 @@ impl LocalGitSource {
 
         // Compute working tree stats and last modified time for the current branch
         let (wt_stats, wt_last_modified) = if has_wt_changes {
-            // Diff stats: working tree vs HEAD
+            // Diff stats: working tree vs HEAD — or, before the first commit,
+            // vs the empty tree, since `HEAD` names nothing to diff against.
+            let against = self.resolve_head_in(&self.repo_path);
             let stats = self
-                .run_git(&["diff", "--shortstat", "HEAD"])
+                .run_git(&["diff", "--shortstat", &against])
                 .map(|output| parse_shortstat(&output))
                 .map(|(files, adds, dels)| {
                     // Also count untracked files
@@ -836,6 +866,24 @@ impl LocalGitSource {
                 )?
             }
         };
+
+        // An unborn branch has no ref for `for-each-ref` to find, so the repo
+        // would list zero branches and the sidebar would have nothing to open.
+        // Surface it: its working tree is precisely what there is to review.
+        if let Some(name) = self.unborn_branch_missing_from(&branches) {
+            branches.push(self.build_branch_info(
+                name,
+                true,
+                0,
+                String::new(),
+                String::new(),
+                "",
+                has_wt_changes,
+                &wt_stats,
+                &wt_last_modified,
+                &worktree_map,
+            ));
+        }
 
         // Current branch with working tree changes first, then by recency
         branches.sort_by(|a, b| {
@@ -3549,5 +3597,38 @@ mod tests {
             shas.contains(&expected_sha.as_str()),
             "expected middle-line commit to be attributed despite the uncommitted line shift: {shas:?}"
         );
+    }
+
+    /// A repo before its first commit has no `refs/heads/` entry to enumerate,
+    /// so `for-each-ref` reports nothing. The branch still has to reach the
+    /// sidebar — otherwise the repo lists zero branches and its row does nothing.
+    #[test]
+    fn unborn_branch_is_listed_with_its_working_tree_stats() {
+        use crate::review::central::tests::ENV_LOCK;
+
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _review_home, repo_dir) = setup_test();
+        let repo_path = repo_dir.path();
+        run_git_cmd(repo_path, &["init", "-b", "trunk"]).unwrap();
+        std::fs::write(repo_path.join("a.txt"), "hello\n").unwrap();
+        run_git_cmd(repo_path, &["add", "a.txt"]).unwrap();
+        std::fs::write(repo_path.join("b.txt"), "untracked\n").unwrap();
+
+        let source = LocalGitSource::new(repo_path.to_path_buf()).unwrap();
+        let branches = source.list_branches_ahead("trunk").unwrap();
+
+        assert_eq!(branches.len(), 1, "{branches:?}");
+        let branch = &branches[0];
+        assert_eq!(branch.name, "trunk");
+        assert!(branch.is_current);
+        assert!(branch.has_working_tree_changes);
+        // Stats come from a diff against the empty tree here, so the staged
+        // file counts as an addition instead of the whole stat going missing.
+        let stats = branch
+            .working_tree_stats
+            .as_ref()
+            .expect("unborn branch should still have working tree stats");
+        assert_eq!(stats.file_count, 2, "staged + untracked: {stats:?}");
+        assert_eq!(stats.additions, 1);
     }
 }
