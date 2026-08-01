@@ -302,10 +302,17 @@ pub fn get_file_symbols(
 
     let content = if let Some(r) = git_ref {
         let source = LocalGitSource::new(repo_path.to_path_buf()).context("Failed to open repo")?;
-        source
-            .get_file_bytes(file_path, r)
-            .ok()
-            .and_then(|bytes| String::from_utf8(bytes).ok())
+        // Resolve the ref the way `get_file_content` resolves a comparison's
+        // head: while that ref is checked out somewhere its content is the
+        // working tree's, not the committed blob's. Symbols that describe a
+        // different revision than the text on screen fold the wrong lines.
+        match source.working_tree_dir(&Comparison::new(r, r)) {
+            Some(dir) => std::fs::read_to_string(dir.join(file_path)).ok(),
+            None => source
+                .get_file_bytes(file_path, r)
+                .ok()
+                .and_then(|bytes| String::from_utf8(bytes).ok()),
+        }
     } else {
         let full_path = repo_path.join(file_path);
         std::fs::read_to_string(&full_path).ok()

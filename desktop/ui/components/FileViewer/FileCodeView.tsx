@@ -1,6 +1,7 @@
 import {
   type ReactNode,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
@@ -41,6 +42,25 @@ import {
   type TokenHoverHandler,
   type TokenClickHandler,
 } from "./diff-model";
+import { ShapeGutter } from "./ShapeGutter";
+import type { ShapeRow } from "./shape-model";
+
+/**
+ * Shape ("outline") reading posture for a plain file: the content handed in is
+ * a synthesized document with folded bodies elided, and `rows` says what each
+ * of its lines really is. See `shape-model.ts` for why the document is
+ * synthesized rather than hidden with CSS.
+ */
+export interface ShapeViewState {
+  rows: ShapeRow[];
+  onToggleFold: (foldId: string) => void;
+  /**
+   * Identifies the synthesized document (file content + which folds are open),
+   * so pierre's cache key doesn't have to re-hash the whole document on every
+   * fold toggle. Supplied by the shape-mode hook that builds `rows`.
+   */
+  cacheKey: string;
+}
 
 export interface FileCodeViewHandle {
   /** Scroll a line into view — CodeView computes the exact offset, no polling. */
@@ -83,6 +103,12 @@ interface FileCodeViewProps {
   containerRef?: (node: HTMLDivElement | null) => void;
   /** Imperative scroll API */
   handleRef?: React.Ref<FileCodeViewHandle>;
+  /**
+   * Present only for a plain file being read in shape mode. Turns the surface
+   * read-only (no comment gutter, no token hover/click) and swaps pierre's
+   * line numbers for the real ones.
+   */
+  shape?: ShapeViewState;
 }
 
 /**
@@ -105,10 +131,13 @@ export function FileCodeView({
   onTokenClick,
   containerRef,
   handleRef,
+  shape,
 }: FileCodeViewProps): ReactNode {
   const diffOverflow = useReviewStore((s) => s.diffOverflow);
 
   const isDiff = content.kind === "diff";
+  // Only ever set for a plain file — a diff has its own notion of elision.
+  const shapeMode = shape !== undefined;
   const hunks = isDiff ? content.hunks : EMPTY_HUNKS;
   const itemId = isDiff ? `diff:${filePath}` : `file:${filePath}`;
 
@@ -163,6 +192,13 @@ export function FileCodeView({
   }, [isDiff, filePath, oldContentHash, newContentHash, diffPatch, language]);
 
   const plainContent = !isDiff ? content.content : "";
+  // In shape mode the document is re-synthesized on every fold toggle, and its
+  // cacheKey already identifies (file content × open folds) — so take that
+  // instead of re-hashing the whole synthesized text per toggle.
+  const plainCacheKey = useMemo(
+    () => shape?.cacheKey ?? stringHash(plainContent),
+    [shape, plainContent],
+  );
   const plainFile = useMemo(
     () =>
       isDiff
@@ -171,17 +207,22 @@ export function FileCodeView({
             name: filePath,
             contents: plainContent,
             lang: language,
-            cacheKey: `file:${filePath}:${stringHash(plainContent)}`,
+            cacheKey: `file:${filePath}:${plainCacheKey}`,
           },
-    [isDiff, filePath, plainContent, language],
+    [isDiff, filePath, plainContent, language, plainCacheKey],
   );
 
   // Controlled items: CodeView only re-reads an item (and re-invokes its
   // annotation renderers) when its version changes, so bump it whenever the
   // payload, the annotations, or any state the renderers read changes.
-  const annotations = isDiff
-    ? diffModel.lineAnnotations
-    : plainModel.lineAnnotations;
+  // Shape mode is a reading posture, not an editing surface: comments and
+  // their editors stay out of the synthesized document, whose line numbers
+  // wouldn't line up with the real file anyway.
+  const annotations = shapeMode
+    ? EMPTY_ANNOTATIONS
+    : isDiff
+      ? diffModel.lineAnnotations
+      : plainModel.lineAnnotations;
   const renderRevision = isDiff
     ? diffModel.renderRevision
     : plainModel.renderRevision;
@@ -253,6 +294,18 @@ export function FileCodeView({
     newContent,
   );
 
+  // --- Shape mode: clicking an elision marker expands that body ---
+  // pierre reports the line number of the *synthesized* document, which is
+  // exactly the index into `shape.rows`.
+  const shapeRef = useRef<ShapeViewState | undefined>(undefined);
+  shapeRef.current = shape;
+  const handleShapeLineClick = useCallback((props: { lineNumber: number }) => {
+    const state = shapeRef.current;
+    if (!state) return;
+    const row = state.rows[props.lineNumber - 1];
+    if (row?.kind === "marker") state.onToggleFold(row.foldId);
+  }, []);
+
   const extraCSS = isDiff
     ? diffModel.annotationHighlightCSS
     : (content.extraCSS ?? "");
@@ -267,13 +320,18 @@ export function FileCodeView({
       // FileViewerToolbar already shows the filename and review actions —
       // suppress pierre's default per-file header to avoid duplication.
       disableFileHeader: true,
-      enableGutterUtility: true,
+      // Shape mode reads a synthesized document: pierre's 1..N numbering would
+      // be wrong, so it is switched off and ShapeGutter draws the real numbers.
+      disableLineNumbers: shapeMode,
+      enableGutterUtility: !shapeMode,
       enableLineSelection: isDiff,
       onGutterUtilityClick: handleGutterUtilityClick,
       onLineSelectionEnd: diffModel.handleLineSelectionEnd,
-      onTokenEnter,
-      onTokenLeave,
-      onTokenClick,
+      onLineClick: shapeMode ? handleShapeLineClick : undefined,
+      lineHoverHighlight: shapeMode ? "line" : undefined,
+      onTokenEnter: shapeMode ? undefined : onTokenEnter,
+      onTokenLeave: shapeMode ? undefined : onTokenLeave,
+      onTokenClick: shapeMode ? undefined : onTokenClick,
       unsafeCSS: fontCSS + extraCSS,
       expandUnchanged: isDiff ? content.expandUnchanged : true,
       expansionLineCount: 20,
@@ -294,6 +352,7 @@ export function FileCodeView({
       isDiff,
       isDiff ? content.viewMode : null,
       isDiff ? content.expandUnchanged : null,
+      shapeMode,
       theme,
       fontCSS,
       extraCSS,
@@ -301,6 +360,7 @@ export function FileCodeView({
       diffOverflow,
       lineHeight,
       handleGutterUtilityClick,
+      handleShapeLineClick,
       diffModel.handleLineSelectionEnd,
       onTokenEnter,
       onTokenLeave,
@@ -310,7 +370,9 @@ export function FileCodeView({
 
   const selectedLines = useMemo<CodeViewLineSelection | null>(
     () =>
-      highlightLine
+      // Line selection is off in shape mode, and `highlightLine` is a real
+      // line number that the synthesized document does not share.
+      highlightLine && !shapeMode
         ? {
             id: itemId,
             range: {
@@ -320,7 +382,7 @@ export function FileCodeView({
             },
           }
         : null,
-    [highlightLine, itemId],
+    [highlightLine, itemId, shapeMode],
   );
 
   // --- Imperative scroll API ---
@@ -349,20 +411,42 @@ export function FileCodeView({
     : (plainFile?.cacheKey ?? filePath);
   const highlightReady = useSyntaxHighlightReady(shimmerRef, contentKey);
 
+  // ShapeGutter has to follow pierre's scroll offset, so the container is kept
+  // as state (not just a ref) for the one render that hands it over. Only shape
+  // mode needs it, so every other file view is spared that extra render.
+  // pierre's own container ref is identity-stable and fires only when the node
+  // mounts, so switching into shape mode later publishes the captured node.
+  const scrollNodeRef = useRef<HTMLDivElement | null>(null);
+  const [scrollNode, setScrollNode] = useState<HTMLDivElement | null>(null);
+
   const setContainerNode = useCallback(
     (node: HTMLDivElement | null) => {
       shimmerRef.current = node;
+      scrollNodeRef.current = node;
+      setScrollNode(shapeRef.current ? node : null);
       containerRef?.(node);
     },
     [containerRef],
   );
 
+  useEffect(() => {
+    setScrollNode(shapeMode ? scrollNodeRef.current : null);
+  }, [shapeMode]);
+
   return (
-    <div className="relative min-w-0 flex-1 h-full diff-container">
+    <div className="relative flex min-w-0 flex-1 h-full diff-container">
       {!highlightReady && (
         <div className="absolute top-0 left-0 right-0 z-10 h-0.5 overflow-hidden">
           <div className="h-full w-1/3 animate-[shimmer_1s_ease-in-out_infinite] bg-status-renamed/50 rounded-full" />
         </div>
+      )}
+      {shape && (
+        <ShapeGutter
+          rows={shape.rows}
+          lineHeight={lineHeight}
+          scrollNode={scrollNode}
+          onToggleFold={shape.onToggleFold}
+        />
       )}
       {/* Keyed per file only (parity with the old key={fileName}) — content
           changes flow through the versioned item so CodeView updates in
@@ -385,7 +469,7 @@ export function FileCodeView({
           selectedLines={selectedLines}
           renderAnnotation={renderAnnotation}
           containerRef={setContainerNode}
-          className={`h-full w-full bg-surface-panel ${
+          className={`h-full min-w-0 flex-1 bg-surface-panel ${
             isDiff ? "scrollbar-none" : "scrollbar-thin"
           }`}
           style={CODE_VIEW_STYLE}
@@ -397,6 +481,7 @@ export function FileCodeView({
 
 const CODE_VIEW_STYLE = { overflow: "auto" } as const;
 const EMPTY_HUNKS: DiffHunk[] = [];
+const EMPTY_ANNOTATIONS: PierreLineAnnotation<AnnotationMeta>[] = [];
 
 type PlainAnnotationLine = { lineNumber: number; endLineNumber?: number };
 

@@ -6,12 +6,20 @@ import { HighlightedText } from "../../lib/fuzzy";
 import { scoreSymbol } from "../symbols/score";
 import { buildDiffLookup, nestMarkdownHeadings } from "../symbols/utils";
 import { isMarkdownFile } from "./languageMap";
+import { rowToRealLine, type ShapeRow } from "./shape-model";
 import { useCodeFont } from "../../hooks";
 
 interface SymbolOutlinePanelProps {
   filePath: string;
   scrollNode: HTMLDivElement | null;
   symbols: FileSymbol[];
+  /**
+   * Set in shape mode, where the view is a synthesized document: scroll
+   * position then counts its lines, not the file's, so tracking which symbol
+   * is on screen has to translate. Jumps need no such care — the FileViewer
+   * translates every line target on its way to the scroller.
+   */
+  shapeRows?: readonly ShapeRow[];
 }
 
 /** FileSymbol augmented with optional diff change type. */
@@ -50,6 +58,7 @@ export const SymbolOutlinePanel = memo(function SymbolOutlinePanel({
   filePath,
   scrollNode,
   symbols: allSymbols,
+  shapeRows,
 }: SymbolOutlinePanelProps) {
   const symbolDiffs = useReviewStore((s) => s.symbolDiffs);
   const toggleOutline = useReviewStore((s) => s.toggleOutline);
@@ -125,8 +134,12 @@ export const SymbolOutlinePanel = memo(function SymbolOutlinePanel({
     const handleScroll = () => {
       cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
-        const approxLine = Math.floor(scrollNode.scrollTop / lineHeight) + 1;
-        const found = findSymbolStartLineAt(symbolsRef.current, approxLine);
+        const row = Math.floor(scrollNode.scrollTop / lineHeight) + 1;
+        const approxLine = shapeRows ? rowToRealLine(shapeRows, row) : row;
+        const found =
+          approxLine === null
+            ? null
+            : findSymbolStartLineAt(symbolsRef.current, approxLine);
         setActiveStartLine((prev) => (prev === found ? prev : found));
       });
     };
@@ -137,7 +150,7 @@ export const SymbolOutlinePanel = memo(function SymbolOutlinePanel({
       scrollNode.removeEventListener("scroll", handleScroll);
       cancelAnimationFrame(rafId);
     };
-  }, [scrollNode, lineHeight]);
+  }, [scrollNode, lineHeight, shapeRows]);
 
   // Auto-scroll outline list to keep active item visible
   useEffect(() => {

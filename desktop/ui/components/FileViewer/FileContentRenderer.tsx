@@ -9,6 +9,7 @@ import {
   FileCodeView,
   type FileCodeViewHandle,
   type FileCodeViewContent,
+  type ShapeViewState,
 } from "./FileCodeView";
 import type { TokenHoverHandler, TokenClickHandler } from "./diff-model";
 import type { ContentMode } from "./content-mode";
@@ -50,6 +51,12 @@ interface FileContentRendererProps {
   containerRef?: (node: HTMLDivElement | null) => void;
   /** Imperative scroll API of the rendered CodeView */
   handleRef?: React.Ref<FileCodeViewHandle>;
+  /**
+   * Shape ("outline") reading mode for the whole-file view. Supplies the
+   * synthesized, body-folded document that replaces `fileContent.content`.
+   * Only ever set for `contentMode.type === "plain"`.
+   */
+  shape?: ShapeViewState & { content: string };
 }
 
 export const FileContentRenderer = memo(function FileContentRenderer({
@@ -69,6 +76,7 @@ export const FileContentRenderer = memo(function FileContentRenderer({
   onTokenClick,
   containerRef,
   handleRef,
+  shape,
 }: FileContentRendererProps) {
   // Tracked by path rather than as a boolean so switching files drops back to
   // the automatic decision without an effect.
@@ -94,10 +102,14 @@ export const FileContentRenderer = memo(function FileContentRenderer({
     );
   }
 
-  const renderCodeView = (content: FileCodeViewContent) => (
+  const renderCodeView = (
+    content: FileCodeViewContent,
+    shapeState?: ShapeViewState,
+  ) => (
     <FileCodeView
       filePath={filePath}
       content={content}
+      shape={shapeState}
       theme={codeTheme}
       fontCSS={fontCSS}
       language={effectiveLanguage}
@@ -204,7 +216,12 @@ export const FileContentRenderer = memo(function FileContentRenderer({
 
     case "svg":
     case "plain":
-      // Plain code view (file view mode, or files without changes)
+      // Plain code view (file view mode, or files without changes). In shape
+      // mode pierre is handed the synthesized, body-folded document instead of
+      // the literal file — see shape-model.ts.
+      if (shape) {
+        return renderCodeView({ kind: "plain", content: shape.content }, shape);
+      }
       return renderCodeView({ kind: "plain", content: fileContent.content });
   }
 });

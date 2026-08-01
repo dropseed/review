@@ -47,6 +47,8 @@ import { SymbolOutlinePanel } from "./SymbolOutlinePanel";
 import { useFileSymbols } from "./useFileSymbols";
 import type { ContentMode } from "./content-mode";
 import { useDiffViewMode } from "./hooks/useDiffViewMode";
+import { useShapeMode } from "./hooks/useShapeMode";
+import { realLineToRow } from "./shape-model";
 
 const PLAIN_MODE: ContentMode = { type: "plain" };
 const IMAGE_MODE: ContentMode = { type: "image" };
@@ -99,11 +101,10 @@ export function FileViewer({
 
   const isWorkingTreeMode = workingTreeDiffFile === filePath;
   const workingTreeDiffMode = useReviewStore((s) => s.workingTreeDiffMode);
+  const isStandaloneFile = useReviewStore((s) => s.isStandaloneFile);
   const isSplitActive = useReviewStore((s) => s.secondaryFile) !== null;
   const splitOrientation = useReviewStore((s) => s.splitOrientation);
   const showOutline = useReviewStore((s) => s.showOutline);
-  const fileSymbols = useFileSymbols(filePath);
-  const hasSymbols = fileSymbols !== null && fileSymbols.length > 0;
 
   const [viewMode, setViewMode] = useDiffViewMode(filePath, isSplitActive);
 
@@ -285,6 +286,8 @@ export function FileViewer({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!fileContentRef.current) return;
+      // Both bars address real file lines — suppressed in shape mode.
+      if (shapeModeRef.current) return;
       if (!(e.metaKey || e.ctrlKey) || e.shiftKey) return;
       if (e.key === "f") {
         e.preventDefault();
@@ -349,8 +352,6 @@ export function FileViewer({
   const prevFilePathRef = useRef(filePath);
   const fileContentRef = useRef(fileContent);
   fileContentRef.current = fileContent;
-
-  const isStandaloneFile = useReviewStore((s) => s.isStandaloneFile);
 
   useEffect(() => {
     if (!repoPath) return;
@@ -455,6 +456,21 @@ export function FileViewer({
     isExternalFile,
     externalFilePath,
   ]);
+
+  // Symbols must describe the revision the content above was fetched from:
+  // shape mode elides by line number, so symbols read from a different one
+  // fold the wrong lines. Undefined asks for the file on disk, which is what
+  // the external, standalone and working-tree branches render.
+  const symbolsRef =
+    isExternalFile || isStandaloneFile || isWorkingTreeMode
+      ? undefined
+      : (comparison?.head ?? "HEAD");
+  const fileSymbols = useFileSymbols(
+    filePath,
+    symbolsRef,
+    fileContent?.content,
+  );
+  const hasSymbols = fileSymbols !== null && fileSymbols.length > 0;
 
   const newLineCount = useMemo(
     () => countLines(fileContent?.content),
@@ -580,14 +596,6 @@ export function FileViewer({
     enabled: contentReady,
   });
 
-  // Scroll to the highlighted line (in-file search, go-to-line, symbol jump).
-  useLineHighlightScroll(
-    codeViewHandleRef,
-    highlightLine,
-    contentReady,
-    scrollNode,
-  );
-
   // Check if file is gitignored (from the file tree's allFiles)
   const isGitignored = useReviewStore((s) =>
     hasFileStatus(s.allFiles, filePath, "gitignored"),
@@ -612,6 +620,68 @@ export function FileViewer({
     if (hasChanges) return { type: "diff", viewMode } as const;
     return PLAIN_MODE;
   }, [fileContent, isGitignored, svgViewMode, viewMode]);
+
+  // --- Shape mode ---------------------------------------------------------
+  const {
+    shapeAvailable,
+    shapeMode,
+    shape,
+    allExpanded: shapeAllExpanded,
+    toggleShapeMode,
+    expandFold,
+    expandAllFolds,
+    collapseAllFolds,
+  } = useShapeMode({
+    filePath,
+    content: fileContent?.content,
+    symbols: fileSymbols,
+    isPlainView: contentMode.type === "plain",
+  });
+
+  // Shape mode swaps in a second line-coordinate space, so entering or leaving
+  // it drops anything addressed in the other one.
+  const handleToggleShapeMode = useCallback(() => {
+    toggleShapeMode();
+    setHighlightLine(null);
+    setOpenBar(null);
+  }, [toggleShapeMode]);
+
+  // Read by the ⌘F / ⌘L handler, which is registered once for the viewer's
+  // lifetime and so can't close over the current value.
+  const shapeModeRef = useRef(shapeMode);
+  shapeModeRef.current = shapeMode;
+
+  // Every jump — search, go-to-line, the outline, LSP go-to-definition, the
+  // palette — names a real file line, but shape mode renders a shorter,
+  // synthesized document. Translating once here, where the scroll is actually
+  // issued, is what keeps those callers from each needing to know.
+  const shapeTarget =
+    shape && highlightLine !== null
+      ? realLineToRow(shape.rows, highlightLine)
+      : null;
+
+  // A line hidden inside a collapsed body: open it rather than land on the
+  // marker. The reopened document re-runs the translation with the line
+  // visible, and the scroll below follows on that pass.
+  const hiddenByFold = shapeTarget?.hiddenBy;
+  useEffect(() => {
+    if (hiddenByFold) expandFold(hiddenByFold);
+  }, [hiddenByFold, expandFold]);
+
+  // Nothing to scroll on the pass that opens a fold — the next one has a row.
+  const scrollLine = !shapeMode
+    ? highlightLine
+    : hiddenByFold
+      ? null
+      : (shapeTarget?.row ?? null);
+
+  // Scroll to the highlighted line (in-file search, go-to-line, symbol jump).
+  useLineHighlightScroll(
+    codeViewHandleRef,
+    scrollLine,
+    contentReady,
+    scrollNode,
+  );
 
   if (loading || fileContentPath !== filePath) {
     return (
@@ -689,6 +759,12 @@ export function FileViewer({
           isWorkingTreeMode ? handleExitWorkingTreeMode : undefined
         }
         hasSymbols={hasSymbols}
+        shapeAvailable={shapeAvailable}
+        shapeMode={shapeMode}
+        shapeAllExpanded={shapeAllExpanded}
+        onToggleShapeMode={handleToggleShapeMode}
+        onExpandAllFolds={expandAllFolds}
+        onCollapseAllFolds={collapseAllFolds}
         isExternalFile={isExternalFile}
         onCloseExternalFile={
           isExternalFile
@@ -742,7 +818,12 @@ export function FileViewer({
       )}
 
       <div className="relative flex flex-1 overflow-hidden">
-        {openBar === "search" && fileContent && (
+        {/* Jumps into a folded file work (the scroll above translates them),
+            but these two bars stay shut while shape mode is on: they are for
+            reading a file line by line, which is the posture shape mode exists
+            to step out of. Same call as pierre's comment gutter and token
+            hover, both also off in shape mode. */}
+        {openBar === "search" && !shapeMode && fileContent && (
           <div className="absolute top-0 right-0 z-20 p-2">
             <InFileSearchBar
               content={fileContent.content}
@@ -751,7 +832,7 @@ export function FileViewer({
             />
           </div>
         )}
-        {openBar === "goToLine" && fileContent && (
+        {openBar === "goToLine" && !shapeMode && fileContent && (
           <div className="absolute top-0 right-0 z-20 p-2">
             <GoToLineBar
               maxLine={totalLineCount}
@@ -765,6 +846,7 @@ export function FileViewer({
             filePath={filePath}
             scrollNode={scrollNode}
             symbols={fileSymbols}
+            shapeRows={shape?.rows}
           />
         )}
         <FileContentRenderer
@@ -784,6 +866,7 @@ export function FileViewer({
           onTokenClick={onTokenClick}
           containerRef={setScrollNode}
           handleRef={codeViewHandleRef}
+          shape={shape}
         />
         {contentMode.type === "diff" && (
           <DiffMinimap

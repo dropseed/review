@@ -631,6 +631,13 @@ export interface FileSymbol {
   endLine: number;
   children: FileSymbol[];
   depth?: number;
+  /**
+   * 1-based line where the symbol's *body* starts — the first line a fold may
+   * hide, so the signature (however many lines it spans, including its
+   * trailing `{`) stays visible. Optional: extractors that don't report one
+   * simply produce a symbol that shape mode won't fold.
+   */
+  bodyStartLine?: number;
 }
 
 export interface RepoFileSymbols {
