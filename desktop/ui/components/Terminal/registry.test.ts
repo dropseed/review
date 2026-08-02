@@ -40,6 +40,7 @@ function emitOutput(id: string, text: string, seq: number): void {
 const {
   acquireTerminal,
   disposeTerminal,
+  forgetCellHeight,
   normalizeWheel,
   refreshAllTerminalOptions,
   refreshAllTerminalThemes,
@@ -220,18 +221,30 @@ describe("refreshAllTerminalOptions", () => {
  * `reads` counts the element measurements — the layout flush the cache exists
  * to keep off a path that runs on every wheel event.
  */
-function fakeTerm(pixelHeight: number, rows: number) {
+function fakeTerm(
+  pixelHeight: number,
+  rows: number,
+  screen: "normal" | "alternate" = "alternate",
+) {
   let reads = 0;
+  let height = pixelHeight;
   const term = {
     rows,
+    buffer: { active: { type: screen } },
     element: {
       get clientHeight(): number {
         reads += 1;
-        return pixelHeight;
+        return height;
       },
     },
   };
-  return { term: term as unknown as Terminal, reads: () => reads };
+  return {
+    term: term as unknown as Terminal,
+    reads: () => reads,
+    setPixelHeight: (value: number) => {
+      height = value;
+    },
+  };
 }
 
 /** One pixel notch: the lines it reported, or null if it was swallowed. */
@@ -268,6 +281,43 @@ describe("normalizeWheel", () => {
     const { term, reads } = fakeTerm(400, 10);
     for (let i = 0; i < 20; i++) notch(term, 15);
     expect(reads()).toBe(1);
+  });
+
+  it("drops the carry when the gesture reverses direction", () => {
+    const { term } = fakeTerm(400, 10);
+    // 30px of downward residue must not eat the first upward notch.
+    expect(notch(term, 30)).toBeNull();
+    expect(notch(term, -40)).toBe(-1);
+  });
+
+  it("drops the carry with the row height it was measured under", () => {
+    const { term, setPixelHeight } = fakeTerm(400, 10);
+    // 35px accumulated under 40px rows...
+    expect(notch(term, 35)).toBeNull();
+    // ...then the font shrinks the rows to 10px. Without the reset those
+    // 35 old-height pixels would burst out as several new-height lines.
+    setPixelHeight(100);
+    forgetCellHeight(term);
+    expect(notch(term, 5)).toBeNull();
+    expect(notch(term, 5)).toBe(1);
+  });
+
+  it("cancels swallowed sub-row events on the alternate screen only", () => {
+    const swallowed = (screen: "normal" | "alternate") => {
+      const { term } = fakeTerm(400, 10, screen);
+      const event = new WheelEvent("wheel", {
+        deltaY: 15,
+        deltaMode: WheelEvent.DOM_DELTA_PIXEL,
+        cancelable: true,
+      });
+      expect(normalizeWheel(term, event)).toBe(false);
+      return event.defaultPrevented;
+    };
+    // A full-screen app's residue must not leak scrolling to the layout —
+    // xterm would have cancelled here, and declining skipped that.
+    expect(swallowed("alternate")).toBe(true);
+    // The normal buffer scrolls natively; cancelling would freeze it.
+    expect(swallowed("normal")).toBe(false);
   });
 
   it("leaves an event the browser already measured in lines alone", () => {

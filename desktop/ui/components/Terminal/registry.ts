@@ -365,9 +365,15 @@ function cellHeight(term: Terminal): number {
   return measured;
 }
 
-/** Drop the measurement, after anything that can change a row's height. */
-function forgetCellHeight(term: Terminal): void {
+/**
+ * Drop the measurement, after anything that can change a row's height.
+ * Exported for tests; production calls come from resize and font changes.
+ */
+export function forgetCellHeight(term: Terminal): void {
   wheelCellHeight.delete(term);
+  // The carry is pixels measured against that row height; without the height
+  // it was accumulated under, it would be divided by whatever comes next.
+  wheelCarry.delete(term);
 }
 
 /**
@@ -395,11 +401,30 @@ export function normalizeWheel(term: Terminal, event: WheelEvent): boolean {
   if (event.deltaMode !== WheelEvent.DOM_DELTA_PIXEL) return true;
   const rowHeight = cellHeight(term);
   if (!rowHeight) return true;
-  const carried = (wheelCarry.get(term) ?? 0) + event.deltaY;
+  // A leftover carry only stays meaningful while the gesture keeps its
+  // direction: added to a reversal it would eat the first notch of the new
+  // direction instead of contributing to it.
+  const prior = wheelCarry.get(term) ?? 0;
+  const carried =
+    prior === 0 || Math.sign(prior) === Math.sign(event.deltaY)
+      ? prior + event.deltaY
+      : event.deltaY;
   const lines = Math.trunc(carried / rowHeight);
   wheelCarry.set(term, carried - lines * rowHeight);
-  // Nothing to report yet: the movement stays in the carry for the next event.
-  if (lines === 0) return false;
+  // Nothing to report yet: the movement stays in the carry for the next
+  // event. Declining skips xterm's whole wheel path — including the cancel it
+  // applies on the no-scrollback (alternate screen) branch — so that cancel
+  // is reproduced here, or every gesture's sub-row residue would leak its
+  // default action to the surrounding layout. The normal buffer is the
+  // opposite case: xterm leaves its events uncancelled so the viewport can
+  // scroll natively, and so must this.
+  if (lines === 0) {
+    if (term.buffer.active.type === "alternate") {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    return false;
+  }
   // deltaMode/deltaY are prototype accessors, so an own property shadows them
   // for the read xterm is about to make. Handing over line mode rather than a
   // scaled pixel delta is what takes it off the damped path.
