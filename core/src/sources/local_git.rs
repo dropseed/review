@@ -268,15 +268,6 @@ impl LocalGitSource {
         self.get_current_branch().ok().filter(|s| !s.is_empty())
     }
 
-    /// The unborn branch when `listed` — the local branches some caller just
-    /// enumerated — came back empty. `for-each-ref` can't see an unborn branch,
-    /// so every branch listing has to add it back; a repo that listed even one
-    /// branch can't have an unborn HEAD, which is what spares essentially every
-    /// repo the `git rev-parse` probe in [`Self::unborn_branch`].
-    fn unborn_branch_missing_from<T>(&self, listed: &[T]) -> Option<String> {
-        listed.is_empty().then(|| self.unborn_branch()).flatten()
-    }
-
     /// Get the configured git user's display name (`git config user.name`).
     /// Returns `None` when unset or blank — the UI falls back to leaving the
     /// author empty rather than fabricating an identity.
@@ -665,8 +656,10 @@ impl LocalGitSource {
         }
 
         // Before its first commit the current branch has no ref to enumerate,
-        // so the comparison picker would offer nothing to review.
-        if let Some(name) = self.unborn_branch_missing_from(&local) {
+        // so the comparison picker would offer nothing to review. Probed
+        // unconditionally: `git checkout --orphan` makes HEAD unborn while
+        // other branches still list, so a non-empty listing proves nothing.
+        if let Some(name) = self.unborn_branch() {
             local.push(name);
         }
 
@@ -867,10 +860,12 @@ impl LocalGitSource {
             }
         };
 
-        // An unborn branch has no ref for `for-each-ref` to find, so the repo
-        // would list zero branches and the sidebar would have nothing to open.
-        // Surface it: its working tree is precisely what there is to review.
-        if let Some(name) = self.unborn_branch_missing_from(&branches) {
+        // An unborn branch has no ref for `for-each-ref` to find, so the
+        // sidebar would have nothing to open for it. Surface it: its working
+        // tree is precisely what there is to review. Probed unconditionally —
+        // `git checkout --orphan` makes HEAD unborn in a repo that still lists
+        // its other branches, so this is not just the fresh-`git init` case.
+        if let Some(name) = self.unborn_branch() {
             branches.push(self.build_branch_info(
                 name,
                 true,
