@@ -102,6 +102,28 @@ function resetKittyState(id: string): void {
   states.set(id, { normal: [0], alternate: [0], screen: "normal" });
 }
 
+/**
+ * Zero both stacks without touching which screen is active — the screen keeps
+ * tracking xterm's buffer, only the flags are declared dead.
+ *
+ * Called at a shell prompt (OSC 133;A). An interactive prompt means the shell
+ * owns the terminal: no full-screen program is alive, so flags still set on
+ * *either* screen were leaked by a program that died without popping. The
+ * per-screen stacks stop such a leak reaching the shell, but the alternate
+ * screen's copy would otherwise wait there for the next vim/less, which
+ * inherits the dead program's mode as keys it cannot parse. Kitty's own shell
+ * integration performs the same reset at each prompt.
+ *
+ * The accepted cost, same as kitty's: a TUI suspended with Ctrl+Z loses its
+ * pushed mode when the prompt redraws, and `fg` resumes it un-enhanced until
+ * it renegotiates.
+ */
+function clearLeakedFlags(id: string): void {
+  const state = stateFor(id);
+  state.normal = [0];
+  state.alternate = [0];
+}
+
 function push(id: string, flags: number): void {
   const stack = stackFor(id);
   stack.push(flags);
@@ -159,6 +181,10 @@ export function registerKittyHandlers(
         id: { final: string },
         cb: () => boolean,
       ) => { dispose: () => void };
+      registerOscHandler: (
+        ident: number,
+        cb: (data: string) => boolean,
+      ) => { dispose: () => void };
     };
     buffer: {
       active: { type: ScreenBuffer };
@@ -209,6 +235,13 @@ export function registerKittyHandlers(
     term.parser.registerEscHandler({ final: "c" }, () => {
       resetKittyState(id);
       // Not handled: xterm still needs to do the actual reset.
+      return false;
+    }),
+    // OSC 133;A — the shell integration marking a prompt. The automatic
+    // version of the `reset` above: see clearLeakedFlags.
+    term.parser.registerOscHandler(133, (data) => {
+      if (data === "A" || data.startsWith("A;")) clearLeakedFlags(id);
+      // Not ours exclusively — the mark stays visible to any other consumer.
       return false;
     }),
   ];

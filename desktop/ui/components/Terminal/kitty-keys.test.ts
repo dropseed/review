@@ -23,6 +23,7 @@ function fakeTerm() {
     (params: (number | number[])[]) => boolean
   >();
   const escHandlers = new Map<string, () => boolean>();
+  const oscHandlers = new Map<number, (data: string) => boolean>();
   const bufferListeners: (() => void)[] = [];
   const buffer = {
     active: { type: "normal" as "normal" | "alternate" },
@@ -34,6 +35,7 @@ function fakeTerm() {
   return {
     handlers,
     escHandlers,
+    oscHandlers,
     buffer,
     /** What xterm does on `CSI ?1049h` / `l`: switch, then announce. */
     switchScreen(type: "normal" | "alternate") {
@@ -58,6 +60,14 @@ function fakeTerm() {
         return {
           dispose: () => {
             escHandlers.delete(id.final);
+          },
+        };
+      },
+      registerOscHandler(ident: number, cb: (data: string) => boolean) {
+        oscHandlers.set(ident, cb);
+        return {
+          dispose: () => {
+            oscHandlers.delete(ident);
           },
         };
       },
@@ -212,6 +222,41 @@ describe("screen buffers", () => {
     term.switchScreen("alternate");
     expect(kittyFlags("t")).toBe(0);
   });
+
+  /**
+   * A TUI that dies without popping leaks its mode onto the alternate screen,
+   * where the next full-screen program would inherit it as keys it cannot
+   * parse. The shell integration's prompt mark is the "no program is running"
+   * signal that clears the leak — from both screens.
+   */
+  it("clears leaked flags on both screens at a shell prompt", () => {
+    const term = fakeTerm();
+    registerKittyHandlers(term, "t", () => {});
+    term.switchScreen("alternate");
+    term.handlers.get(">u")!([25]);
+    term.switchScreen("normal"); // the TUI is killed; nothing popped
+
+    term.oscHandlers.get(133)!("A");
+
+    term.switchScreen("alternate"); // vim starts
+    expect(kittyFlags("t")).toBe(0);
+  });
+
+  it("only the prompt-start mark clears; command marks do not", () => {
+    const term = fakeTerm();
+    registerKittyHandlers(term, "t", () => {});
+    term.handlers.get(">u")!([DISAMBIGUATE]);
+
+    // The command-start and command-end marks arrive *around* a running
+    // program — clearing on those would strip the mode out from under it.
+    term.oscHandlers.get(133)!("C");
+    term.oscHandlers.get(133)!("D;0");
+    expect(kittyFlags("t")).toBe(1);
+
+    // Prompt marks can carry parameters (`A;k=s`); still a prompt.
+    term.oscHandlers.get(133)!("A;k=s");
+    expect(kittyFlags("t")).toBe(0);
+  });
 });
 
 /**
@@ -245,6 +290,38 @@ describe("against a real xterm", () => {
     await write(term, "\x1b[?1049l");
     expect(term.buffer.active.type).toBe("normal");
     expect(kittyFlags("real")).toBe(0);
+
+    forgetKittyState("real");
+    term.dispose();
+  });
+
+  /**
+   * The full shape of the bug this guards against: a kitty TUI is killed on
+   * the alternate screen, the shell prompts, and then vim — which never asks
+   * for the protocol — starts on that same alternate screen. Without the
+   * prompt-mark reset it inherits the dead program's flags and every
+   * keystroke reaches it as `CSI …u` sequences it silently drops.
+   */
+  it("hands vim a clean keyboard after a kitty TUI died on the alt screen", async () => {
+    const term = new Terminal({ allowProposedApi: true });
+    registerKittyHandlers(term, "real", () => {});
+
+    // TUI up, mode pushed, then killed: 1049l from its atexit teardown but no
+    // kitty pop — the leak.
+    await write(term, "\x1b[?1049h\x1b[>25u\x1b[?1049l");
+
+    // The shell integration prompts.
+    await write(term, "\x1b]133;A\x07");
+
+    // vim's actual startup negotiation (captured from vim 9.1 under
+    // TERM=xterm-256color): alt screen, modifyOtherKeys, DECCKM — no kitty.
+    await write(term, "\x1b[?1049h\x1b[>4;2m\x1b[?1h\x1b=\x1b[?2004h");
+
+    expect(kittyFlags("real")).toBe(0);
+    // null = xterm's stock key encoding, which is what vim expects.
+    expect(
+      encodeKittyKey(key({ key: "Escape" }), kittyFlags("real")),
+    ).toBeNull();
 
     forgetKittyState("real");
     term.dispose();
