@@ -196,10 +196,12 @@ impl Sink {
     }
 
     /// Apply an OSC 9 desktop notification (Codex): the whole remainder is the
-    /// message. ConEmu's progress report `OSC 9;4;<state>;<progress>` shares the
-    /// code and is not a notification.
+    /// message. ConEmu overloads the same code for machine chatter that is not
+    /// a notification: `9;4;<state>;<progress>` progress reports (including
+    /// the bare `9;4` reset) and `9;9;<cwd>` working-directory reports, which
+    /// oh-my-posh emits on every prompt redraw.
     fn osc_9(&mut self, params: &[&[u8]]) {
-        if params.len() >= 3 && matches!(params.get(1), Some(&b"4")) {
+        if matches!(params.get(1), Some(&b"4") | Some(&b"9")) {
             return;
         }
         self.raise_attention(non_empty(join_params(&params[1..])));
@@ -452,8 +454,20 @@ mod tests {
     fn osc9_progress_report_is_not_a_notification() {
         let mut s = scanner();
         // ConEmu-style OSC 9;4;<state>;<progress> shares the code but is a
-        // progress bar update, not something the user must look at.
+        // progress bar update, not something the user must look at — and the
+        // bare `9;4` reset form must not slip through as a notification
+        // bodied "4".
         assert!(feed(&mut s, b"\x1b]9;4;1;50\x07").is_none());
+        assert!(feed(&mut s, b"\x1b]9;4\x07").is_none());
+        assert_eq!(s.build_status().phase, Phase::Working);
+    }
+
+    #[test]
+    fn osc9_cwd_report_is_not_a_notification() {
+        let mut s = scanner();
+        // ConEmu-style OSC 9;9;<cwd> — oh-my-posh emits this on every prompt
+        // redraw, so treating it as attention would badge every prompt.
+        assert!(feed(&mut s, b"\x1b]9;9;/Users/dave/repo\x07").is_none());
         assert_eq!(s.build_status().phase, Phase::Working);
     }
 

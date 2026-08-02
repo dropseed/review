@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import { getApiClient } from "../api";
 import { useReviewStore } from "../stores";
 import { makeReviewKey } from "../utils/review-key";
-import { notifyTerminalAttention } from "../utils/terminal-notifications";
 import { installTerminalWindowFocus } from "../components/Terminal/window-focus";
 
 /**
@@ -45,14 +44,13 @@ export function useTerminalEvents(): void {
 
     const reviewKey = makeReviewKey(repoPath, reviewRef ?? "");
 
+    // Attention notifications are NOT decided here: per-session subscriptions
+    // receive the same status first and write the store through
+    // applyTerminalStatus, so by the time this roll-up handler ran, the phase
+    // being replaced was already gone. The edge test lives inside
+    // applyTerminalStatus, where every write passes and prev is still prev.
     const unsubStatusChanged = client.onTerminalStatusChanged((status) => {
-      const store = useReviewStore.getState();
-      // Before the write, so the module can see the phase this is replacing.
-      // This is the only path a phase *change* arrives on — the hydrating
-      // paths write the store directly — which is what keeps a session that
-      // was already asking for you from announcing itself at startup.
-      notifyTerminalAttention(store.terminalStatuses[status.id], status);
-      store.applyTerminalStatus(status);
+      useReviewStore.getState().applyTerminalStatus(status);
     });
 
     // No repo filter: sidebar rows for *every* repo show terminal badges, so

@@ -8,6 +8,7 @@ import type {
   TerminalExit,
 } from "../../types";
 import { makeReviewKey } from "../../utils/review-key";
+import { notifyTerminalAttention } from "../../utils/terminal-notifications";
 import type { SliceCreatorWithClientAndStorage } from "../types";
 import {
   type TerminalTab,
@@ -1893,7 +1894,15 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
 
     ensureTerminalSubscription: (id) => subscribeSession(id),
 
-    applyTerminalStatus: (status) => set(applyTerminalStatus(get(), status)),
+    applyTerminalStatus: (status) => {
+      // Edge detection lives at the write, not on any one event channel: the
+      // per-session and global status streams both land here, in transport
+      // order, and only the first to arrive still sees the phase being
+      // replaced. A second delivery of the same status finds prev === next
+      // and stays quiet.
+      notifyTerminalAttention(get().terminalStatuses[status.id], status);
+      set(applyTerminalStatus(get(), status));
+    },
     applyTerminalExit: (exit) => set(applyTerminalExit(get(), exit)),
     mergeTerminalSessions: (sessions) => {
       if (sessions.length === 0) return;

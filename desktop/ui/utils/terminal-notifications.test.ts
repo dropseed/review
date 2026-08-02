@@ -66,6 +66,36 @@ describe("notifyTerminalAttention", () => {
     expect(show).not.toHaveBeenCalled();
   });
 
+  it("notifies again when the attention message changes mid-spell", async () => {
+    notifyTerminalAttention(
+      status("working"),
+      status("needs_attention", {
+        title: "claude",
+        attentionMessage: "Approve this edit?",
+      }),
+    );
+    // Same spell, new question — a second interruption, not a republish.
+    notifyTerminalAttention(
+      status("needs_attention", { attentionMessage: "Approve this edit?" }),
+      status("needs_attention", {
+        title: "claude",
+        attentionMessage: "Task finished",
+      }),
+    );
+    // ...but a cwd/command republish carrying the same message stays quiet.
+    notifyTerminalAttention(
+      status("needs_attention", { attentionMessage: "Task finished" }),
+      status("needs_attention", {
+        title: "claude",
+        attentionMessage: "Task finished",
+        runningCommand: "claude",
+      }),
+    );
+    await flush();
+    expect(show).toHaveBeenCalledTimes(2);
+    expect(show).toHaveBeenLastCalledWith("claude", "Task finished");
+  });
+
   it("stays quiet for a session that arrives already needing attention", async () => {
     notifyTerminalAttention(undefined, status("needs_attention"));
     await flush();

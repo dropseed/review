@@ -38,7 +38,9 @@ const CLAIM_LIMIT = 64;
  * alternative is a lock, for a banner.
  */
 function claimSpell(status: TerminalStatus): boolean {
-  const spell = `${status.id}:${status.enteredStateAt}`;
+  // The message is part of the spell: a session that asks a *different*
+  // question mid-spell is a second interruption, not a republish of the first.
+  const spell = `${status.id}:${status.enteredStateAt}:${status.attentionMessage ?? ""}`;
   try {
     const raw = localStorage.getItem(CLAIM_KEY);
     const claimed = raw ? (JSON.parse(raw) as string[]) : [];
@@ -60,9 +62,11 @@ function claimSpell(status: TerminalStatus): boolean {
  * `prev` is the status the store held before this one. Its absence means the
  * session arrived already needing attention -- a hydration snapshot rather than
  * something that happened while you were away -- and is deliberately silent.
- * Testing the edge rather than the state is also the whole dedupe: a session
+ * Testing the edge rather than the state is also the dedupe: a session
  * sitting in needs_attention re-publishes its status as its command and cwd
- * change, and none of those are a second thing to interrupt you for.
+ * change, and none of those are a second thing to interrupt you for. The one
+ * mid-spell republish that IS a second thing is a changed attention message
+ * -- "task finished" arriving after "approve this edit?" -- so that passes.
  */
 export function notifyTerminalAttention(
   prev: TerminalStatus | undefined,
@@ -70,7 +74,13 @@ export function notifyTerminalAttention(
 ): void {
   if (!enabled) return;
   if (next.phase !== "needs_attention") return;
-  if (!prev || prev.phase === "needs_attention") return;
+  if (!prev) return;
+  const crossed = prev.phase !== "needs_attention";
+  const messageChanged =
+    !crossed &&
+    next.attentionMessage != null &&
+    prev.attentionMessage !== next.attentionMessage;
+  if (!crossed && !messageChanged) return;
   if (document.hasFocus()) return;
   if (!claimSpell(next)) return;
 
