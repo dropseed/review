@@ -6,8 +6,7 @@ import { cn } from "../../lib/utils";
  * o'clock.
  *
  * Decorative by contract — the svg is `aria-hidden`, so the caller owes a
- * label on whatever control the ring sits inside. `CircleProgress` is the
- * other half of that split: a standalone `progressbar` that names itself.
+ * label on whatever control the ring sits inside.
  *
  * `size` is the viewBox extent and the geometry it implies; the rendered size
  * comes from `className`, in rem, so the ring tracks the UI scale the way the
