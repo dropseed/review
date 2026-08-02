@@ -122,10 +122,15 @@ export const SymbolOutlinePanel = memo(function SymbolOutlinePanel({
     return filterTree(outlineSymbols);
   }, [outlineSymbols, filter]);
 
-  // Scroll tracking: use a ref for the latest symbols so the scroll handler
-  // doesn't need to re-attach when the tree changes.
+  // Scroll tracking: the handler reads everything that changes more often
+  // than the scroll node itself — the symbol tree, the row↔line mapping, the
+  // line height — through refs, so the listener attaches once per node
+  // instead of re-attaching on every fold toggle.
   const symbolsRef = useRef(outlineSymbols);
   symbolsRef.current = outlineSymbols;
+  const geometryRef = useRef({ lineHeight, shapeRows });
+  geometryRef.current = { lineHeight, shapeRows };
+  const recomputeRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (!scrollNode) return;
@@ -134,6 +139,7 @@ export const SymbolOutlinePanel = memo(function SymbolOutlinePanel({
     const handleScroll = () => {
       cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
+        const { lineHeight, shapeRows } = geometryRef.current;
         const row = Math.floor(scrollNode.scrollTop / lineHeight) + 1;
         const approxLine = shapeRows ? rowToRealLine(shapeRows, row) : row;
         const found =
@@ -143,14 +149,23 @@ export const SymbolOutlinePanel = memo(function SymbolOutlinePanel({
         setActiveStartLine((prev) => (prev === found ? prev : found));
       });
     };
+    recomputeRef.current = handleScroll;
 
     scrollNode.addEventListener("scroll", handleScroll, { passive: true });
     handleScroll(); // initial
     return () => {
+      recomputeRef.current = null;
       scrollNode.removeEventListener("scroll", handleScroll);
       cancelAnimationFrame(rafId);
     };
-  }, [scrollNode, lineHeight, shapeRows]);
+  }, [scrollNode]);
+
+  // A fold toggle (or zoom) rewrites the geometry under a scroll position
+  // that hasn't moved, and no scroll event will fire to notice — recompute
+  // the active symbol against the new mapping.
+  useEffect(() => {
+    recomputeRef.current?.();
+  }, [lineHeight, shapeRows]);
 
   // Auto-scroll outline list to keep active item visible
   useEffect(() => {

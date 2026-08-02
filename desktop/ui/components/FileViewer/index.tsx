@@ -658,11 +658,16 @@ export function FileViewer({
   // Every jump — search, go-to-line, the outline, LSP go-to-definition, the
   // palette — names a real file line, but shape mode renders a shorter,
   // synthesized document. Translating once here, where the scroll is actually
-  // issued, is what keeps those callers from each needing to know.
-  const shapeTarget =
-    shape && highlightLine !== null
-      ? realLineToRow(shape.rows, highlightLine)
-      : null;
+  // issued, is what keeps those callers from each needing to know. Memoized:
+  // the translation walks the shape rows, and this component re-renders far
+  // more often than either input changes.
+  const shapeTarget = useMemo(
+    () =>
+      shape && highlightLine !== null
+        ? realLineToRow(shape.rows, highlightLine)
+        : null,
+    [shape, highlightLine],
+  );
 
   // A line hidden inside a collapsed body: open it rather than land on the
   // marker. The reopened document re-runs the translation with the line

@@ -75,14 +75,13 @@ export function useShapeMode({
   // notion of what is elided.
   const foldable = isPlainView && symbols !== null && content !== undefined;
 
-  // Split (and hash) once per file content, not once per fold toggle: only
-  // `expandedFolds` changes as the user folds and unfolds.
+  // Split once per file content, not once per fold toggle: only
+  // `expandedFolds` changes as the user folds and unfolds. Eager on purpose —
+  // the lines feed `collectFolds`, and `shapeAvailable` (whether to offer the
+  // toggle at all) is defined by whether real folds exist, so this work can't
+  // wait for the toggle to be switched on.
   const lines = useMemo(
     () => (foldable ? (content ?? "").split("\n") : NO_LINES),
-    [foldable, content],
-  );
-  const contentHash = useMemo(
-    () => (foldable ? stringHash(content ?? "") : 0),
     [foldable, content],
   );
 
@@ -112,6 +111,13 @@ export function useShapeMode({
 
   const shapeAvailable = foldable && folds.length > 0;
   const active = enabled && shapeAvailable;
+
+  // Unlike the split above, the hash serves only the active view's cache key,
+  // so files merely *offering* the toggle never pay for it.
+  const contentHash = useMemo(
+    () => (active ? stringHash(content ?? "") : 0),
+    [active, content],
+  );
 
   const shapeDocument = useMemo(
     () => (active ? buildShapeDocument(lines, folds, expandedFolds) : null),
