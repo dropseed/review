@@ -129,18 +129,26 @@ pub fn resolve_review_arg(repo: &Path, spec: Option<&str>) -> Result<ResolvedRev
     targets::resolve(repo, &ref_name, base_override.as_deref()).map_err(|e| e.to_string())
 }
 
+/// Trim `s` and return it as an owned string, unless it's blank.
+fn non_blank(s: &str) -> Option<String> {
+    let s = s.trim();
+    (!s.is_empty()).then(|| s.to_owned())
+}
+
 /// The spec a command should use before falling back to auto-detection:
 /// the explicit `--spec` flag, else `$REVIEW_SPEC`, else the repo's stored
-/// `review use` default. `None` means "auto-detect".
+/// `review use` default. `None` means "auto-detect". A blank/whitespace-only
+/// value at any precedence level falls through to the next one, rather than
+/// being taken literally.
 pub fn effective_spec(repo: &Path, spec: Option<&str>) -> Option<String> {
-    if let Some(spec) = spec {
-        return Some(spec.to_owned());
+    if let Some(spec) = spec.and_then(non_blank) {
+        return Some(spec);
     }
-    if let Ok(env) = std::env::var("REVIEW_SPEC") {
-        let env = env.trim();
-        if !env.is_empty() {
-            return Some(env.to_owned());
-        }
+    if let Some(env) = std::env::var("REVIEW_SPEC")
+        .ok()
+        .and_then(|env| non_blank(&env))
+    {
+        return Some(env);
     }
     storage::read_default_spec(repo)
 }
@@ -416,5 +424,38 @@ mod tests {
             HunkTarget::File { path } => assert_eq!(path, "a:bcd"),
             HunkTarget::Hunk { .. } => panic!("expected a file target"),
         }
+    }
+
+    #[test]
+    fn effective_spec_falls_through_blank_levels() {
+        let _lock = crate::review::central::tests::ENV_LOCK.lock().unwrap();
+        let (_guard, _review_home, repo) = crate::review::central::tests::setup_test();
+        std::env::remove_var("REVIEW_SPEC");
+
+        // Nothing set at any level: auto-detect.
+        assert_eq!(effective_spec(repo.path(), None), None);
+
+        // A blank explicit flag falls through to $REVIEW_SPEC, not taken literally.
+        std::env::set_var("REVIEW_SPEC", "from-env");
+        assert_eq!(
+            effective_spec(repo.path(), Some("  ")),
+            Some("from-env".to_owned())
+        );
+
+        // A non-blank explicit flag still wins over $REVIEW_SPEC.
+        assert_eq!(
+            effective_spec(repo.path(), Some("from-flag")),
+            Some("from-flag".to_owned())
+        );
+
+        // Blank at both the flag and the env var falls through to the stored default.
+        std::env::set_var("REVIEW_SPEC", "  ");
+        storage::write_default_spec(repo.path(), "from-default").unwrap();
+        assert_eq!(
+            effective_spec(repo.path(), Some("")),
+            Some("from-default".to_owned())
+        );
+
+        std::env::remove_var("REVIEW_SPEC");
     }
 }
