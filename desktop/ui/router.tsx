@@ -61,6 +61,11 @@ function AppShell() {
   // Backstop poll for working-tree edits in non-active repos — their
   // lightweight watchers only see git metadata. Paused while hidden since
   // snapshotting every registered repo isn't free.
+  //
+  // This only works because the backend ages cache entries out
+  // (`activity_cache::MAX_CACHE_AGE`, 60s). A fingerprint match alone can't
+  // see an unstaged edit, so without that the poll would return the same
+  // cached answer forever. Keep this interval above MAX_CACHE_AGE.
   useEffect(() => {
     let intervalId: ReturnType<typeof setInterval> | null = null;
 

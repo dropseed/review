@@ -100,6 +100,49 @@ pub struct LocalBranchInfo {
     pub working_tree_stats: Option<DiffShortStat>,
 }
 
+/// Uncommitted state of a single checkout, gathered in one pass so the main
+/// worktree and any linked worktree report the same three facts. The default
+/// is the clean state.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct WorkingTreeState {
+    dirty: bool,
+    stats: Option<DiffShortStat>,
+    last_modified_at: Option<u64>,
+}
+
+/// Most recent modification time (Unix millis) among the files named in
+/// `status_output`, resolved against `root` — the checkout the status came
+/// from, which is not always the main repo.
+fn newest_changed_file_mtime(root: &std::path::Path, status_output: &str) -> Option<u64> {
+    let mut latest: Option<std::time::SystemTime> = None;
+
+    for line in status_output.lines() {
+        if line.len() < 3 {
+            continue;
+        }
+        let path = &line[3..];
+        // Handle renames: "R  old -> new"
+        let actual_path = if path.contains(" -> ") {
+            path.split(" -> ").last().unwrap_or(path)
+        } else {
+            path
+        };
+        if let Ok(metadata) = std::fs::metadata(root.join(actual_path)) {
+            if let Ok(modified) = metadata.modified() {
+                if latest.is_none() || modified > latest.unwrap() {
+                    latest = Some(modified);
+                }
+            }
+        }
+    }
+
+    latest.map(|t| {
+        t.duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64
+    })
+}
+
 /// A remote-tracking branch surfaced as "recently active" in the sidebar.
 /// Discovered without requiring a local checkout — e.g., agent-pushed branches.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -751,37 +794,8 @@ impl LocalGitSource {
     ) -> Result<Vec<LocalBranchInfo>, LocalGitError> {
         let current_branch = self.get_current_branch().unwrap_or_default();
 
-        // Check if current branch has working tree changes (staged, unstaged, or untracked)
-        let wt_status = self
-            .run_git(&["status", "--porcelain=v1"])
-            .unwrap_or_default();
-        let has_wt_changes = !wt_status.trim().is_empty();
-
-        // Compute working tree stats and last modified time for the current branch
-        let (wt_stats, wt_last_modified) = if has_wt_changes {
-            // Diff stats: working tree vs HEAD
-            let stats = self
-                .run_git(&["diff", "--shortstat", "HEAD"])
-                .map(|output| parse_shortstat(&output))
-                .map(|(files, adds, dels)| {
-                    // Also count untracked files
-                    let untracked =
-                        wt_status.lines().filter(|l| l.starts_with("??")).count() as u32;
-                    DiffShortStat {
-                        file_count: files + untracked,
-                        additions: adds,
-                        deletions: dels,
-                    }
-                })
-                .ok();
-
-            // Last modified: most recent mtime of changed files
-            let last_mod = self.get_working_tree_last_modified(&wt_status);
-
-            (stats, last_mod)
-        } else {
-            (None, None)
-        };
+        // Working tree state for the main checkout, i.e. the current branch.
+        let main_worktree = self.working_tree_state(&self.repo_path);
 
         // Build branch→worktree_path map from two sources:
         // 1. Git worktrees (non-detached, have a branch name)
@@ -819,9 +833,7 @@ impl LocalGitSource {
                 &output,
                 default_branch,
                 &current_branch,
-                has_wt_changes,
-                &wt_stats,
-                &wt_last_modified,
+                &main_worktree,
                 &worktree_map,
             ),
             Err(_) => {
@@ -829,9 +841,7 @@ impl LocalGitSource {
                 self.list_branches_ahead_fallback(
                     default_branch,
                     &current_branch,
-                    has_wt_changes,
-                    &wt_stats,
-                    &wt_last_modified,
+                    &main_worktree,
                     &worktree_map,
                 )?
             }
@@ -854,9 +864,7 @@ impl LocalGitSource {
         output: &str,
         _default_branch: &str,
         current_branch: &str,
-        has_wt_changes: bool,
-        wt_stats: &Option<DiffShortStat>,
-        wt_last_modified: &Option<u64>,
+        main_worktree: &WorkingTreeState,
         worktree_map: &HashMap<String, String>,
     ) -> Vec<LocalBranchInfo> {
         let mut branches = Vec::new();
@@ -901,9 +909,7 @@ impl LocalGitSource {
                 last_commit_date,
                 last_commit_message,
                 committer_email,
-                has_wt_changes,
-                wt_stats,
-                wt_last_modified,
+                main_worktree,
                 worktree_map,
             ));
         }
@@ -920,32 +926,31 @@ impl LocalGitSource {
         last_commit_date: String,
         last_commit_message: String,
         committer_email: &str,
-        has_wt_changes: bool,
-        wt_stats: &Option<DiffShortStat>,
-        wt_last_modified: &Option<u64>,
+        main_worktree: &WorkingTreeState,
         worktree_map: &HashMap<String, String>,
     ) -> LocalBranchInfo {
         let wt_path = worktree_map.get(&name);
-        let (has_changes, last_mod, stats) = if is_current {
-            (has_wt_changes, *wt_last_modified, wt_stats.clone())
+        let state = if is_current {
+            main_worktree.clone()
         } else if let Some(path) = wt_path {
-            let changed = self.has_worktree_changes(path).unwrap_or(false);
-            (changed, None, None)
+            self.working_tree_state(std::path::Path::new(path))
         } else {
-            (false, None, None)
+            // Not checked out anywhere, so there is no working tree to be
+            // dirty. Reported clean, and that is the truth.
+            WorkingTreeState::default()
         };
 
         LocalBranchInfo {
             is_current,
-            has_working_tree_changes: has_changes,
+            has_working_tree_changes: state.dirty,
             worktree_path: wt_path.cloned(),
             name,
             commits_ahead,
             last_commit_date,
             last_commit_message,
             last_commit_by_user: self.commit_is_by_user(committer_email),
-            last_modified_at: last_mod,
-            working_tree_stats: stats,
+            last_modified_at: state.last_modified_at,
+            working_tree_stats: state.stats,
         }
     }
 
@@ -955,9 +960,7 @@ impl LocalGitSource {
         &self,
         default_branch: &str,
         current_branch: &str,
-        has_wt_changes: bool,
-        wt_stats: &Option<DiffShortStat>,
-        wt_last_modified: &Option<u64>,
+        main_worktree: &WorkingTreeState,
         worktree_map: &HashMap<String, String>,
     ) -> Result<Vec<LocalBranchInfo>, LocalGitError> {
         let output = self.run_git(&[
@@ -1000,63 +1003,58 @@ impl LocalGitSource {
                 continue;
             }
 
-            let wt_path = worktree_map.get(&name);
-            let (has_changes, last_mod, stats) = if is_current {
-                (has_wt_changes, *wt_last_modified, wt_stats.clone())
-            } else if let Some(path) = wt_path {
-                let changed = self.has_worktree_changes(path).unwrap_or(false);
-                (changed, None, None)
-            } else {
-                (false, None, None)
-            };
-
-            branches.push(LocalBranchInfo {
-                is_current,
-                has_working_tree_changes: has_changes,
-                worktree_path: wt_path.cloned(),
+            branches.push(self.build_branch_info(
                 name,
+                is_current,
                 commits_ahead,
                 last_commit_date,
                 last_commit_message,
-                last_commit_by_user: self.commit_is_by_user(committer_email),
-                last_modified_at: last_mod,
-                working_tree_stats: stats,
-            });
+                committer_email,
+                main_worktree,
+                worktree_map,
+            ));
         }
 
         Ok(branches)
     }
 
-    /// Get the most recent modification time (Unix millis) among changed files in the working tree.
-    fn get_working_tree_last_modified(&self, status_output: &str) -> Option<u64> {
-        let mut latest: Option<std::time::SystemTime> = None;
-
-        for line in status_output.lines() {
-            if line.len() < 3 {
-                continue;
-            }
-            let path = &line[3..];
-            // Handle renames: "R  old -> new"
-            let actual_path = if path.contains(" -> ") {
-                path.split(" -> ").last().unwrap_or(path)
-            } else {
-                path
-            };
-            let full_path = self.repo_path.join(actual_path);
-            if let Ok(metadata) = std::fs::metadata(&full_path) {
-                if let Ok(modified) = metadata.modified() {
-                    if latest.is_none() || modified > latest.unwrap() {
-                        latest = Some(modified);
-                    }
-                }
-            }
+    /// Uncommitted state of one checkout — dirty flag, diff stats, and the
+    /// newest mtime among the changed files.
+    ///
+    /// Runs every git call *in `dir`*, so it is equally correct for the main
+    /// checkout and for a linked worktree, whoever created it. The previous
+    /// worktree path went through `has_worktree_changes`, which rejects any
+    /// path outside `~/.review/worktrees/`; a worktree the user (or an agent)
+    /// made with `git worktree add` therefore errored into "clean" and its
+    /// branch always rendered undirtied.
+    fn working_tree_state(&self, dir: &std::path::Path) -> WorkingTreeState {
+        let status = self
+            .run_git_in(dir, &["status", "--porcelain=v1"])
+            .unwrap_or_default();
+        if status.trim().is_empty() {
+            return WorkingTreeState::default();
         }
 
-        latest.map(|t| {
-            t.duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64
-        })
+        // Diff stats: working tree vs HEAD. `--shortstat` ignores untracked
+        // files, so those are counted from the status output instead.
+        let stats = self
+            .run_git_in(dir, &["diff", "--shortstat", "HEAD"])
+            .map(|output| parse_shortstat(&output))
+            .map(|(files, adds, dels)| {
+                let untracked = status.lines().filter(|l| l.starts_with("??")).count() as u32;
+                DiffShortStat {
+                    file_count: files + untracked,
+                    additions: adds,
+                    deletions: dels,
+                }
+            })
+            .ok();
+
+        WorkingTreeState {
+            dirty: true,
+            last_modified_at: newest_changed_file_mtime(dir, &status),
+            stats,
+        }
     }
 
     /// List all worktrees for this repository.
@@ -3062,6 +3060,72 @@ mod tests {
         let source = LocalGitSource::new(repo_path.to_path_buf()).unwrap();
         let head_sha = source.resolve_ref_or_empty_tree("HEAD");
         (env, review_home, repo_dir, source, head_sha)
+    }
+
+    /// A worktree made with plain `git worktree add` lives outside
+    /// `~/.review/worktrees/`, so the old dirtiness probe
+    /// (`has_worktree_changes`, which validates that prefix) errored on it and
+    /// `unwrap_or(false)` turned the error into "clean". Its branch therefore
+    /// rendered undirtied in the sidebar no matter how much work was sitting in
+    /// it — exactly the case the sidebar exists to surface.
+    #[test]
+    fn a_worktree_the_user_made_still_reports_its_uncommitted_changes() {
+        use crate::review::central::tests::ENV_LOCK;
+
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _review_home, repo_dir, source, _head_sha) = setup_worktree_test();
+        let repo_path = repo_dir.path();
+
+        let wt_parent = tempfile::TempDir::new().unwrap();
+        let wt_path = wt_parent.path().join("feature-wt");
+        run_git_cmd(
+            repo_path,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "feature",
+                wt_path.to_str().unwrap(),
+            ],
+        )
+        .unwrap();
+
+        // Review-managed worktrees are the ones under REVIEW_HOME; this is not
+        // one, which is the whole point of the test.
+        assert!(
+            source
+                .has_worktree_changes(wt_path.to_str().unwrap())
+                .is_err(),
+            "the validated probe should still refuse a non-review-managed path"
+        );
+
+        std::fs::write(wt_path.join("scratch.txt"), "work in progress\n").unwrap();
+
+        let default_branch = source.get_default_branch().unwrap();
+        let branches = source.list_branches_ahead(&default_branch).unwrap();
+        let feature = branches
+            .iter()
+            .find(|b| b.name == "feature")
+            .expect("a branch checked out in a worktree belongs in the sidebar");
+
+        assert!(
+            feature.has_working_tree_changes,
+            "a dirty worktree must report dirty, whoever created it"
+        );
+        assert_eq!(
+            feature
+                .working_tree_stats
+                .as_ref()
+                .map(|s| s.file_count)
+                .unwrap_or(0),
+            1,
+            "the untracked file should be counted in the worktree's stats"
+        );
+        assert!(
+            feature.last_modified_at.is_some(),
+            "age is what turns a dirty worktree into an abandoned one, so the \
+             mtime has to resolve against the worktree, not the main repo"
+        );
     }
 
     /// Fetched PR heads live under `refs/review/`, never `refs/heads/`, so a PR
