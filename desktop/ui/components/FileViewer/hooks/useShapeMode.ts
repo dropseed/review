@@ -97,14 +97,18 @@ export function useShapeMode({
   // Fold ids are line ranges, so a file that changes under the same path can
   // leave ids behind that no longer name anything. Dropping them here keeps
   // both the set and `allExpanded` describing the folds that actually exist.
+  // Only against a real fold list, though: while symbols are away (a refetch
+  // after the text changed) `folds` is NO_FOLDS — "don't know yet", not "none
+  // exist" — and pruning against it would erase every fold the user opened.
   useEffect(() => {
+    if (!foldable) return;
     setExpandedFolds((prev) => {
       if (prev.size === 0) return prev;
       const live = new Set(folds.map((f) => f.id));
       const next = new Set([...prev].filter((id) => live.has(id)));
       return next.size === prev.size ? prev : next;
     });
-  }, [folds]);
+  }, [foldable, folds]);
 
   const shapeAvailable = foldable && folds.length > 0;
   const active = enabled && shapeAvailable;

@@ -465,7 +465,11 @@ export function FileViewer({
     isExternalFile || isStandaloneFile || isWorkingTreeMode
       ? undefined
       : (comparison?.head ?? "HEAD");
+  // workingTreePath, not repoPath: the no-ref branch reads the file off disk,
+  // and for a materialized review the disk copy being rendered lives in the
+  // worktree. The ref branch resolves identically from either root.
   const fileSymbols = useFileSymbols(
+    workingTreePath,
     filePath,
     symbolsRef,
     fileContent?.content,
@@ -662,11 +666,20 @@ export function FileViewer({
 
   // A line hidden inside a collapsed body: open it rather than land on the
   // marker. The reopened document re-runs the translation with the line
-  // visible, and the scroll below follows on that pass.
+  // visible, and the scroll below follows on that pass. Once per fold per
+  // jump: `hiddenByFold` is recomputed every render, so without the ref a
+  // manual re-collapse while the highlight is still live would flip it back
+  // and be silently undone here. (Per fold, not per jump outright — a target
+  // nested in collapsed bodies needs each enclosing fold opened in turn.)
   const hiddenByFold = shapeTarget?.hiddenBy;
+  const autoExpandedFold = useRef<string | null>(null);
   useEffect(() => {
-    if (hiddenByFold) expandFold(hiddenByFold);
-  }, [hiddenByFold, expandFold]);
+    if (!hiddenByFold) return;
+    const jump = `${hiddenByFold}:${highlightLine}`;
+    if (autoExpandedFold.current === jump) return;
+    autoExpandedFold.current = jump;
+    expandFold(hiddenByFold);
+  }, [hiddenByFold, highlightLine, expandFold]);
 
   // Nothing to scroll on the pass that opens a fold — the next one has a row.
   const scrollLine = !shapeMode
