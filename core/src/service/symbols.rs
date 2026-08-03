@@ -27,9 +27,9 @@ pub fn get_file_symbol_diffs(
         file_paths.len()
     );
 
-    for file_path in file_paths {
-        reject_path_traversal(file_path)?;
-    }
+    file_paths
+        .iter()
+        .try_for_each(|p| reject_path_traversal(p))?;
 
     let source = LocalGitSource::new(repo_path.to_path_buf()).context("Failed to open repo")?;
 
