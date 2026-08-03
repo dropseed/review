@@ -156,6 +156,16 @@ pub fn strip_jsonc_comments(input: &str) -> String {
     result
 }
 
+/// Reject a logical repo-relative file path that could escape the repository
+/// (e.g. `../../etc/passwd` or an absolute path) once it's joined onto a
+/// repo root.
+pub fn reject_path_traversal(file_path: &str) -> anyhow::Result<()> {
+    if file_path.contains("..") || file_path.starts_with('/') || file_path.starts_with('\\') {
+        bail!("Path traversal detected: file path escapes repository");
+    }
+    Ok(())
+}
+
 /// Validate that a path is within .git/review/ or ~/.review/ for security.
 pub fn validate_review_path(path: &str) -> anyhow::Result<PathBuf> {
     let path_buf = PathBuf::from(path);
@@ -234,6 +244,20 @@ pub fn codex_home() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reject_path_traversal_allows_ordinary_relative_paths() {
+        assert!(reject_path_traversal("src/main.rs").is_ok());
+        assert!(reject_path_traversal("file.txt").is_ok());
+    }
+
+    #[test]
+    fn reject_path_traversal_rejects_escaping_paths() {
+        assert!(reject_path_traversal("../etc/passwd").is_err());
+        assert!(reject_path_traversal("src/../../etc/passwd").is_err());
+        assert!(reject_path_traversal("/etc/passwd").is_err());
+        assert!(reject_path_traversal("\\etc\\passwd").is_err());
+    }
 
     #[test]
     fn resolve_open_target_finds_repo_root_and_relative_file() {
