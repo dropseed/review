@@ -1,6 +1,8 @@
 import { registerContextKey } from "../../commands/contextKeys";
 import type { Command, CommandContext } from "../../commands";
 import { focusedTerminalId, focusedTerminalTab } from "./close";
+import { focusNextNeedsYou } from "./jump";
+import { hasNeedsYou } from "./glance";
 
 /**
  * The terminal answers "is a terminal focused?" for the command context.
@@ -77,6 +79,34 @@ export const TERMINAL_COMMANDS: readonly Command[] = [
     isVisible: supported,
     isEnabled: hasRepo,
     run: ({ store }) => store.toggleTerminalPanelMaximized(),
+  },
+  {
+    id: "view.terminalOverview",
+    title: "Terminal Overview",
+    category: "View",
+    keywords: ["mission control", "all terminals", "agents", "sessions"],
+    // The panel's own chord, shifted: ⌘` shows the terminal, ⇧⌘` shows all of
+    // them.
+    shortcut: { code: "Backquote", mod: true, shift: true },
+    allowInTerminal: true,
+    allowInInput: true,
+    isVisible: supported,
+    isEnabled: hasRepo,
+    run: ({ store }) => store.toggleTerminalOverview(),
+  },
+  {
+    id: "go.terminalNeedsYou",
+    title: "Next Terminal Needing You",
+    category: "Go",
+    keywords: ["attention", "waiting", "agent", "claude", "shell", "prompt"],
+    // One modifier off ⌘` again: ⌥⌘` walks the queue of shells that want a
+    // human — attention first, then prompts — cycling from the focused one.
+    shortcut: { code: "Backquote", mod: true, alt: true },
+    allowInTerminal: true,
+    allowInInput: true,
+    isVisible: supported,
+    isEnabled: (ctx) => hasRepo(ctx) && hasNeedsYou(ctx.store),
+    run: () => focusNextNeedsYou(),
   },
   {
     id: "view.splitSideBySide",

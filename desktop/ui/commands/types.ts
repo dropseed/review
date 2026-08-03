@@ -31,6 +31,12 @@ export interface ProvidedCommandUi {
   newTab(): void;
   newWindow(): void;
   refresh(): void;
+  /**
+   * Switch the app to the review row identified by repo + ref, the same way
+   * clicking its sidebar row would. What terminal jumps use to land on a shell
+   * that lives under a row other than the one being viewed.
+   */
+  activateReviewKey(repoPath: string, ref: string): void;
 }
 
 /**

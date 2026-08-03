@@ -13,6 +13,9 @@ import { ReviewView } from "./components/ReviewView";
 import { NewReviewView } from "./components/NewReviewView";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { useReviewStore } from "./stores";
+import { getSidebarTree } from "./stores/selectors/sidebar";
+import { activateSidebarRow, allSidebarRows } from "./utils/sidebar-tree";
+import { makeReviewKey } from "./utils/review-key";
 import type { ReviewTarget } from "./types";
 import {
   useRepositoryInit,
@@ -101,9 +104,13 @@ function AppShell() {
     handleStartReview,
   } = useRepositoryInit();
 
-  // Stable ref so the effect doesn't re-register on every render
+  // Stable refs so the effect doesn't re-register on every render
   const handleOpenRepoRef = useRef(handleOpenRepo);
   handleOpenRepoRef.current = handleOpenRepo;
+  const activateReviewRef = useRef(handleActivateReview);
+  activateReviewRef.current = handleActivateReview;
+  const activateLocalBranchRef = useRef(handleActivateLocalBranch);
+  activateLocalBranchRef.current = handleActivateLocalBranch;
 
   // The app's commands, and the shell-level actions they need. Shortcuts are
   // dispatched here rather than by the native menu, so they work identically
@@ -116,6 +123,27 @@ function AppShell() {
         openRepo: () => handleOpenRepoRef.current(),
         newWindow: () => handleNewWindow(),
         navigate: (to: string) => navigate(to),
+        // Activate by key the way the sidebar would: find the row and use its
+        // own kind's handler, so a review row resolves its stored base and a
+        // bare branch goes through read-only-preview detection. A key with no
+        // row (rare — e.g. the sidebar hasn't loaded that repo yet) still
+        // opens as a local branch rather than doing nothing.
+        activateReviewKey: (repoPath: string, ref: string) => {
+          const state = useReviewStore.getState();
+          const key = makeReviewKey(repoPath, ref);
+          const tree = getSidebarTree(state, Date.now(), state.repoPath);
+          const row = allSidebarRows(tree).find((r) => r.reviewKey === key);
+          if (row) {
+            activateSidebarRow(row, {
+              onActivateReview: (review) =>
+                void activateReviewRef.current(review),
+              onActivateLocalBranch: (...args) =>
+                activateLocalBranchRef.current(...args),
+            });
+            return;
+          }
+          activateLocalBranchRef.current(repoPath, ref, "");
+        },
       }),
       [handleNewWindow, navigate],
     ),

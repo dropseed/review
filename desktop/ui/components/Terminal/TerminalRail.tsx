@@ -3,7 +3,6 @@ import { useReviewStore } from "../../stores";
 import {
   mergeVisibleTabs,
   panelReviewKey,
-  terminalSeverity,
   type TerminalTab,
 } from "../../stores/slices/terminalSlice";
 import {
@@ -14,16 +13,17 @@ import {
   RailRestoreIcon,
 } from "../ui/rail";
 import { PhaseDot } from "../TabRail/PhaseDot";
-import { basename, phaseSummary } from "../TabRail/terminal-status-format";
-import { collectLeafIds } from "./pane-tree";
-import type { TerminalStatus } from "../../types";
+import { phaseSummary } from "../TabRail/terminal-status-format";
+import { tabGlance } from "./glance";
+import { TerminalGlanceCard } from "./TerminalGlanceCard";
 
 /**
  * The terminal panel's closed state. Hiding the panel used to leave nothing
  * behind — the only way back was ⌘`, which you had to already know. This keeps
  * a sliver of the panel on its dock edge instead: a restore control, and every
  * tab turned on its side, so a shell that needs you is still nameable while the
- * diff has the full width.
+ * diff has the full width. Hovering a tab peeks at its screen — the panel being
+ * collapsed doesn't mean flying blind.
  */
 export function TerminalRail(): ReactNode {
   const repoPath = useReviewStore((s) => s.repoPath);
@@ -81,23 +81,16 @@ export function TerminalRail(): ReactNode {
           its width. Picking one restores the panel with that tab active. */}
       <div className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto">
         {tabs.map((tab) => {
-          const leafIds = collectLeafIds(tab.root);
-          const leafStatuses = leafIds
-            .map((id) => terminalStatuses[id])
-            .filter((s): s is TerminalStatus => s != null);
-          const severity = terminalSeverity(leafStatuses);
-          const allDead = leafIds.every((id) => id in terminalExited);
-          const focusedSession = terminalSessions[tab.focused];
-          const focusedStatus = terminalStatuses[tab.focused];
-          const title =
-            focusedStatus?.title ||
-            focusedSession?.title ||
-            basename(focusedSession?.cwd ?? "") ||
-            "shell";
+          const { statuses, severity, allDead, title, primaryId } = tabGlance(
+            tab,
+            terminalSessions,
+            terminalStatuses,
+            terminalExited,
+          );
           const phase = severity ?? "idle";
           const label = allDead
             ? `${title} — exited`
-            : `${title} — ${phaseSummary(phase, leafStatuses)}`;
+            : `${title} — ${phaseSummary(phase, statuses)}`;
 
           return (
             <RailTab
@@ -108,6 +101,11 @@ export function TerminalRail(): ReactNode {
               active={tab.id === activeTabId}
               onClick={() => showTab(tab)}
               marker={<PhaseDot phase={phase} dead={allDead} />}
+              rich={
+                allDead ? undefined : (
+                  <TerminalGlanceCard sessionId={primaryId} />
+                )
+              }
             />
           );
         })}

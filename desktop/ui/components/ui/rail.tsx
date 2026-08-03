@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
-import { SimpleTooltip } from "./tooltip";
+import { RICH_TOOLTIP_CLASS, SimpleTooltip } from "./tooltip";
 
 /** Which window edge a rail hugs. Drives glyph direction and tooltip side. */
 export type RailEdge = "left" | "right";
@@ -88,6 +88,12 @@ interface RailTabProps {
   onClick: () => void;
   /** Status marker shown at the tab's head, above the label. */
   marker?: ReactNode;
+  /**
+   * Rich tooltip content shown instead of `label` (which stays the accessible
+   * name). A rail entry is all a hidden pane leaves behind, so its tooltip is
+   * allowed to say more than a sentence — a live terminal peek, say.
+   */
+  rich?: ReactNode;
 }
 
 /**
@@ -106,9 +112,14 @@ export function RailTab({
   active = false,
   onClick,
   marker,
+  rich,
 }: RailTabProps): ReactNode {
   return (
-    <SimpleTooltip content={label} side={railTooltipSide(edge)}>
+    <SimpleTooltip
+      content={rich ?? label}
+      side={railTooltipSide(edge)}
+      contentClassName={rich ? RICH_TOOLTIP_CLASS : undefined}
+    >
       <button
         type="button"
         onClick={onClick}

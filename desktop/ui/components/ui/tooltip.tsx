@@ -32,17 +32,33 @@ function TooltipContent({
   );
 }
 
+/**
+ * Bubble geometry for a tooltip whose content is a panel rather than a
+ * sentence — wide enough to read, and unpadded so the content owns its edges.
+ * Named so the several surfaces that show one agree on the size.
+ */
+export const RICH_TOOLTIP_CLASS = "w-80 p-0";
+
 interface SimpleTooltipProps {
   children: React.ReactElement;
   content: React.ReactNode;
   side?: "top" | "right" | "bottom" | "left";
+  /** Extra classes for the content bubble — rich content wants its own padding. */
+  contentClassName?: string;
 }
 
-function SimpleTooltip({ children, content, side }: SimpleTooltipProps) {
+function SimpleTooltip({
+  children,
+  content,
+  side,
+  contentClassName,
+}: SimpleTooltipProps) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent side={side}>{content}</TooltipContent>
+      <TooltipContent side={side} className={contentClassName}>
+        {content}
+      </TooltipContent>
     </Tooltip>
   );
 }

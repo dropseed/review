@@ -8,3 +8,13 @@
 export function makeReviewKey(repoPath: string, ref: string): string {
   return `${repoPath}:${ref}`;
 }
+
+/**
+ * The ref back out of a key, or null when the key isn't that repo's. Needs the
+ * repo path to split on: a path may itself contain `:`, so the separator can
+ * only be found from the end that is already known.
+ */
+export function refFromReviewKey(key: string, repoPath: string): string | null {
+  const prefix = `${repoPath}:`;
+  return key.startsWith(prefix) ? key.slice(prefix.length) : null;
+}

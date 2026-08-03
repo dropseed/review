@@ -4,12 +4,18 @@ import { useLiveSessionsByReviewKey } from "../../stores/selectors/terminals";
 import { useSidebarTree } from "../../hooks/useSidebarTree";
 import { terminalSeverity } from "../../stores/slices/terminalSlice";
 import { makeReviewKey } from "../../utils/review-key";
-import type { SidebarRow } from "../../utils/sidebar-tree";
+import {
+  activateSidebarRow,
+  allSidebarRows,
+  type SidebarRow,
+} from "../../utils/sidebar-tree";
 import { Rail, RailButton, RailSeparator, RailTab } from "../ui/rail";
 import { SidebarPanelIcon } from "../ui/icons";
 import { AgentUsageRail } from "../AgentUsageIndicator";
 import { PhaseDot } from "./PhaseDot";
 import { basename, phaseSummary } from "./terminal-status-format";
+import { primaryStatus } from "../Terminal/glance";
+import { TerminalGlanceCard } from "../Terminal/TerminalGlanceCard";
 import type { GlobalReviewSummary, TerminalStatus } from "../../types";
 
 interface SidebarRailProps {
@@ -44,11 +50,7 @@ export function SidebarRail({
   const activeReviewKey = useReviewStore((s) => s.activeReviewKey);
   const liveSessions = useLiveSessionsByReviewKey();
 
-  const rows = tree.flatMap((node) =>
-    [node.head, ...node.live, ...node.rest].filter(
-      (row): row is SidebarRow => row != null,
-    ),
-  );
+  const rows = allSidebarRows(tree);
   const byKey = new Map(rows.map((row) => [row.reviewKey, row]));
 
   // Pin order is the user's own ordering, so it isn't re-sorted here.
@@ -67,24 +69,8 @@ export function SidebarRail({
     ? makeReviewKey(activeReviewKey.repoPath, activeReviewKey.ref)
     : null;
 
-  const activate = (row: SidebarRow): void => {
-    const { entry } = row;
-    if (entry.kind === "review") {
-      onActivateReview(entry.review);
-    } else if (entry.kind === "remote-recent") {
-      onActivateLocalBranch(
-        entry.repoPath,
-        entry.branchName,
-        entry.defaultBranch,
-      );
-    } else {
-      onActivateLocalBranch(
-        row.repoPath,
-        entry.branch.name,
-        entry.repo.defaultBranch,
-      );
-    }
-  };
+  const activate = (row: SidebarRow): void =>
+    activateSidebarRow(row, { onActivateReview, onActivateLocalBranch });
 
   const renderRow = (row: SidebarRow): ReactNode => {
     const ids = liveSessions[row.reviewKey] ?? [];
@@ -97,6 +83,9 @@ export function SidebarRail({
           ids.length === 1 ? "" : "s"
         }, ${phaseSummary(phase, statuses)}`
       : `${basename(row.repoPath)} — ${row.ref}`;
+    // The row's loudest shell, peeked on hover — the collapsed sidebar's way
+    // of answering "what is that dot about" without expanding anything.
+    const primary = primaryStatus(statuses);
 
     return (
       <RailTab
@@ -107,6 +96,9 @@ export function SidebarRail({
         active={row.reviewKey === activeKey}
         onClick={() => activate(row)}
         marker={phase ? <PhaseDot phase={phase} /> : undefined}
+        rich={
+          primary ? <TerminalGlanceCard sessionId={primary.id} /> : undefined
+        }
       />
     );
   };

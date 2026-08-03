@@ -471,6 +471,54 @@ export function isRepoExpanded(
   return override === undefined ? node.isActive : !override;
 }
 
+/**
+ * Every row the tree holds, whatever is collapsed. `flattenSidebarTree` is the
+ * *visible* walk; lookups by key need the rows a collapsed repo is hiding too,
+ * or jumping to a terminal under one would find nothing.
+ */
+export function allSidebarRows(nodes: RepoNode[]): SidebarRow[] {
+  const out: SidebarRow[] = [];
+  for (const node of nodes) {
+    if (node.head) out.push(node.head);
+    out.push(...node.live, ...node.rest);
+  }
+  return out;
+}
+
+/**
+ * Open a row, dispatching on its kind: a review resolves its stored base, a
+ * branch goes through read-only-preview detection. Lives beside `SidebarEntry`
+ * so adding a kind is one edit rather than one per activation site.
+ */
+export function activateSidebarRow(
+  row: SidebarRow,
+  handlers: {
+    onActivateReview: (review: GlobalReviewSummary) => void;
+    onActivateLocalBranch: (
+      repoPath: string,
+      branch: string,
+      defaultBranch: string,
+    ) => void;
+  },
+): void {
+  const { entry } = row;
+  if (entry.kind === "review") {
+    handlers.onActivateReview(entry.review);
+  } else if (entry.kind === "remote-recent") {
+    handlers.onActivateLocalBranch(
+      entry.repoPath,
+      entry.branchName,
+      entry.defaultBranch,
+    );
+  } else {
+    handlers.onActivateLocalBranch(
+      row.repoPath,
+      entry.branch.name,
+      entry.repo.defaultBranch,
+    );
+  }
+}
+
 /** The rows keyboard navigation walks, in render order. */
 export function flattenSidebarTree(
   nodes: RepoNode[],

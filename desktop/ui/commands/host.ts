@@ -66,6 +66,7 @@ export function getCommandUi(): CommandUi {
     },
     openRepo: resolve("openRepo") ?? noop,
     navigate: resolve("navigate") ?? noop,
+    activateReviewKey: resolve("activateReviewKey") ?? noop,
     closeTab: resolve("closeTab") ?? noop,
     newTab: resolve("newTab") ?? noop,
     newWindow: resolve("newWindow") ?? noop,

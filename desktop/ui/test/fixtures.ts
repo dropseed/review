@@ -7,7 +7,11 @@
  * suite states only the part it is actually about.
  */
 
-import type { TerminalPhase, TerminalStatus } from "../types";
+import type {
+  TerminalPhase,
+  TerminalSessionInfo,
+  TerminalStatus,
+} from "../types";
 
 /** A terminal status in `phase`, with everything else quiet unless overridden. */
 export function terminalStatus(
@@ -24,6 +28,23 @@ export function terminalStatus(
     enteredStateAt: 0,
     shellIntegrationActive: false,
     attentionMessage: null,
+    ...overrides,
+  };
+}
+
+/** A terminal session record, quiet unless overridden. */
+export function terminalSession(
+  id = "t1",
+  overrides: Partial<TerminalSessionInfo> = {},
+): TerminalSessionInfo {
+  return {
+    id,
+    repoPath: "/repo",
+    cwd: "/repo",
+    title: null,
+    cols: 80,
+    rows: 24,
+    status: terminalStatus("idle", { id }),
     ...overrides,
   };
 }

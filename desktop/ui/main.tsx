@@ -27,6 +27,7 @@ import "@fontsource-variable/jetbrains-mono/wght-italic.css";
 import "./index.css";
 import { initSentry } from "./utils/sentry";
 import { initializeLogger, initLogPath } from "./utils/logger";
+import { installDevtools } from "./utils/devtools";
 import { useReviewStore } from "./stores";
 
 import { resolveLanguages } from "@pierre/diffs";
@@ -92,6 +93,9 @@ initLogPath();
 
 // Initialize React Scan perf log (writes to ~/.review/react-scan.jsonl)
 initReactScanLog({ clear: true });
+
+// Expose the store on window in dev builds only.
+installDevtools();
 
 // Pre-resolve common languages in background to warm the cache.
 // WorkerPoolContextProvider calls resolveLanguages() itself during init,

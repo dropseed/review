@@ -1,11 +1,10 @@
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactElement, type ReactNode, useMemo, useState } from "react";
 import { clsx } from "clsx";
 import { useReviewStore } from "../../stores";
 import {
   isOrphanedSession,
   mergeVisibleTabs,
   panelReviewKey,
-  terminalSeverity,
   type TerminalTab,
 } from "../../stores/slices/terminalSlice";
 import {
@@ -15,11 +14,12 @@ import {
   DropdownMenuItem,
 } from "../ui/dropdown-menu";
 import { useTerminalFileDrop } from "../../hooks/useTerminalFileDrop";
-import {
-  phaseDotClass,
-  basename,
-  attentionText,
-} from "../TabRail/terminal-status-format";
+import { basename } from "../TabRail/terminal-status-format";
+import { PhaseDot } from "../TabRail/PhaseDot";
+import { RICH_TOOLTIP_CLASS, SimpleTooltip } from "../ui/tooltip";
+import { tabGlance } from "./glance";
+import { TerminalGlanceCard } from "./TerminalGlanceCard";
+import { TerminalOverview } from "./TerminalOverview";
 import { collectLeafIds, type SplitDirection } from "./pane-tree";
 import {
   TERMINAL_PANE_MIME,
@@ -31,7 +31,6 @@ import { openTerminalTab } from "./newTab";
 import { PaneTree, PaneButton } from "./PaneTree";
 import { PinIcon, WarningIcon } from "../ui/icons";
 import { DROP_RING, TERMINAL_TAB_MIME } from "../TabRail/useTerminalTabDrop";
-import type { TerminalStatus } from "../../types";
 
 export function TerminalPanel(): ReactNode {
   const repoPath = useReviewStore((s) => s.repoPath);
@@ -65,6 +64,13 @@ export function TerminalPanel(): ReactNode {
     (s) => s.toggleTerminalPanelMaximized,
   );
   const toggleTerminalPanel = useReviewStore((s) => s.toggleTerminalPanel);
+  const overviewOpen = useReviewStore((s) => s.terminalOverviewOpen);
+  const toggleTerminalOverview = useReviewStore(
+    (s) => s.toggleTerminalOverview,
+  );
+  const setTerminalOverviewOpen = useReviewStore(
+    (s) => s.setTerminalOverviewOpen,
+  );
 
   useTerminalFileDrop();
 
@@ -164,24 +170,14 @@ export function TerminalPanel(): ReactNode {
                      overflow-y-auto scrollbar-thin"
         >
           {visibleTabs.map(({ tab }, index) => {
-            const leafIds = collectLeafIds(tab.root);
-            const leafStatuses = leafIds
-              .map((id) => terminalStatuses[id])
-              .filter((s): s is TerminalStatus => s != null);
-            const severity = terminalSeverity(leafStatuses);
-            const allDead = leafIds.every((id) => id in terminalExited);
+            const { leafIds, severity, allDead, title, primaryId } = tabGlance(
+              tab,
+              terminalSessions,
+              terminalStatuses,
+              terminalExited,
+            );
             const focusedSession = terminalSessions[tab.focused];
-            const focusedStatus = terminalStatuses[tab.focused];
-            const title =
-              focusedStatus?.title ||
-              focusedSession?.title ||
-              basename(focusedSession?.cwd ?? "") ||
-              "shell";
             const isActive = tab.id === activeTabId;
-            // The dot says a shell wants you; the escape that raised it said
-            // why. Only reachable on hover, but the title truncates and this
-            // is where you already point to read the rest of it.
-            const attention = allDead ? null : attentionText(leafStatuses);
             const isDropTarget =
               dragIndex !== null && dragIndex !== index && dropIndex === index;
             // A pane already in this tab has nothing to gain from being dropped
@@ -294,38 +290,38 @@ export function TerminalPanel(): ReactNode {
                     <PinIcon className="h-2.5 w-2.5" filled />
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => setActiveTab(reviewKey, tab.id)}
-                  title={attention ? `${title} — ${attention}` : title}
-                  className="flex min-w-0 items-center gap-1.5"
-                >
-                  <span
-                    className={clsx(
-                      "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
-                      allDead
-                        ? "bg-fg-faint"
-                        : phaseDotClass(severity ?? "idle"),
+                <TabHoverPeek sessionId={allDead ? null : primaryId}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab(reviewKey, tab.id);
+                      // Picking a tab is leaving the overview — otherwise the
+                      // click looks eaten, since the grid stays on top.
+                      if (overviewOpen) setTerminalOverviewOpen(false);
+                    }}
+                    title={allDead ? title : undefined}
+                    className="flex min-w-0 items-center gap-1.5"
+                  >
+                    <PhaseDot phase={severity ?? "idle"} dead={allDead} />
+                    <span className="max-w-[12rem] truncate">{title}</span>
+                    {orphaned && (
+                      <span
+                        title={`${basename(
+                          focusedSession?.cwd ?? "",
+                        )} no longer exists — this shell is still running in a deleted directory`}
+                        aria-label="Directory no longer exists"
+                        className="shrink-0 text-status-rejected"
+                      >
+                        <WarningIcon className="h-3 w-3" />
+                      </span>
                     )}
-                  />
-                  <span className="max-w-[12rem] truncate">{title}</span>
-                  {orphaned && (
-                    <span
-                      title={`${basename(
-                        focusedSession?.cwd ?? "",
-                      )} no longer exists — this shell is still running in a deleted directory`}
-                      aria-label="Directory no longer exists"
-                      className="shrink-0 text-status-rejected"
-                    >
-                      <WarningIcon className="h-3 w-3" />
-                    </span>
-                  )}
-                  {leafIds.length > 1 && (
-                    <span className="text-xxs text-fg-faint tabular-nums">
-                      {leafIds.length}
-                    </span>
-                  )}
-                </button>
+                    {leafIds.length > 1 && (
+                      <span className="text-xxs text-fg-faint tabular-nums">
+                        {leafIds.length}
+                      </span>
+                    )}
+                  </button>
+                </TabHoverPeek>
                 {/* Out of flow, so a tab is no wider for having controls and
                     doesn't jump when they appear. They fade in over the
                     trailing edge, carrying the tab's own background as a
@@ -454,8 +450,16 @@ export function TerminalPanel(): ReactNode {
           </DropdownMenu>
         </div>
 
-        {/* Panel controls: dock side / maximize / minimize */}
+        {/* Panel controls: overview / dock side / maximize / minimize */}
         <div className="ml-2 flex shrink-0 items-center gap-0.5">
+          <PaneButton
+            label="All terminals (⇧⌘`)"
+            onClick={toggleTerminalOverview}
+            pressed={overviewOpen}
+          >
+            <OverviewIcon />
+          </PaneButton>
+
           <PaneButton
             label={`Move terminal to ${
               terminalDockSide === "left" ? "right" : "left"
@@ -513,8 +517,54 @@ export function TerminalPanel(): ReactNode {
             </div>
           ))
         )}
+        {/* Overlaid rather than swapped in, so every xterm stays mounted and
+            streaming underneath — leaving the overview costs nothing. */}
+        {overviewOpen && <TerminalOverview />}
       </div>
     </div>
+  );
+}
+
+/**
+ * The live peek a tab shows on hover — what the shell's screen says right now,
+ * without clicking over to it. No card for a dead tab (`sessionId: null`);
+ * its title attribute answers instead.
+ */
+function TabHoverPeek({
+  sessionId,
+  children,
+}: {
+  sessionId: string | null;
+  children: ReactElement;
+}): ReactNode {
+  if (!sessionId) return children;
+  return (
+    <SimpleTooltip
+      side="bottom"
+      contentClassName={RICH_TOOLTIP_CLASS}
+      content={<TerminalGlanceCard sessionId={sessionId} />}
+    >
+      {children}
+    </SimpleTooltip>
+  );
+}
+
+/** Overview glyph: a grid of terminal cards. */
+function OverviewIcon(): ReactNode {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className="h-3.5 w-3.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      aria-hidden="true"
+    >
+      <rect x="2" y="2.5" width="5.25" height="4.75" rx="1" />
+      <rect x="8.75" y="2.5" width="5.25" height="4.75" rx="1" />
+      <rect x="2" y="8.75" width="5.25" height="4.75" rx="1" />
+      <rect x="8.75" y="8.75" width="5.25" height="4.75" rx="1" />
+    </svg>
   );
 }
 

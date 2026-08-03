@@ -1,12 +1,15 @@
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useMemo } from "react";
 import { useReviewStore } from "../../stores";
-import { getApiClient } from "../../api";
 import { Popover, PopoverTrigger, PopoverContent } from "../ui/popover";
 import { terminalSeverity } from "../../stores/slices/terminalSlice";
 import { useSessionsByHomeKey } from "../../stores/selectors/terminals";
+import { useHoverOpen } from "../../hooks/useHoverOpen";
 import { makeReviewKey } from "../../utils/review-key";
+import { primaryStatus, tailLines } from "../Terminal/glance";
+import { jumpToTerminal } from "../Terminal/jump";
+import { useNow, useTerminalPeek } from "../Terminal/useTerminalPeek";
+import { PhaseDot } from "./PhaseDot";
 import {
-  phaseDotClass,
   phaseLabel,
   phaseSummary,
   formatDuration,
@@ -23,6 +26,8 @@ interface TerminalStatusBadgeProps {
 /**
  * Colored status dot + popover for a TabRail row, summarizing the terminal
  * sessions running in that row's checkout. Renders nothing when there are none.
+ * Opens on hover as well as click — the badge exists to be glanced at — and
+ * each session listed is a jump target.
  */
 const NO_SESSIONS: string[] = [];
 
@@ -32,9 +37,8 @@ export function TerminalStatusBadge({
 }: TerminalStatusBadgeProps): ReactNode {
   const terminalStatuses = useReviewStore((s) => s.terminalStatuses);
   const sessionsByHomeKey = useSessionsByHomeKey();
-  const [open, setOpen] = useState(false);
-  const [now, setNow] = useState(() => Date.now());
-  const [freshPeek, setFreshPeek] = useState<string | null>(null);
+  const { open, setOpen, hoverProps } = useHoverOpen();
+  const now = useNow(open);
 
   const ids =
     sessionsByHomeKey[makeReviewKey(repoPath, reviewRef)] ?? NO_SESSIONS;
@@ -48,49 +52,11 @@ export function TerminalStatusBadge({
   );
 
   const worstPhase = terminalSeverity(statuses);
-  const primary = worstPhase
-    ? (statuses.find((s) => s.phase === worstPhase) ?? null)
-    : null;
+  const primary = primaryStatus(statuses);
 
-  // Tick time-in-state only while the popover is open.
-  useEffect(() => {
-    if (!open) return;
-    setNow(Date.now());
-    const interval = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(interval);
-  }, [open]);
-
-  // Refresh the content peek for the highest-severity session on open.
-  useEffect(() => {
-    if (!open || !primary) {
-      setFreshPeek(null);
-      return;
-    }
-    let cancelled = false;
-    getApiClient()
-      .terminalPeek(primary.id)
-      .then((peek) => {
-        if (!cancelled) setFreshPeek(peek);
-      })
-      .catch(() => {
-        // Peek can legitimately fail (e.g. session just exited) — leave the
-        // popover in its empty state rather than surfacing an error.
-        if (!cancelled) setFreshPeek("");
-      });
-    return () => {
-      cancelled = true;
-    };
-    // `primary` is recomputed every render; key off its id (a stable
-    // primitive) so this only refires when the popover opens or the
-    // highest-severity session actually changes.
-  }, [open, primary?.id]);
+  const peekText = useTerminalPeek(open && primary ? primary.id : null);
 
   if (statuses.length === 0 || worstPhase === null) return null;
-
-  // Pulled on open via terminalPeek; null until it resolves. Kept in a stable
-  // box (rendered whenever there's a primary session) so the popover doesn't
-  // jump between the loading and loaded states.
-  const peekText = freshPeek;
 
   const label = `${statuses.length} terminal${
     statuses.length === 1 ? "" : "s"
@@ -102,6 +68,7 @@ export function TerminalStatusBadge({
         <button
           type="button"
           onClick={(e) => e.stopPropagation()}
+          {...hoverProps}
           className="flex shrink-0 items-center gap-1 rounded-full bg-fg/[0.06] px-1.5 py-px
                      text-fg-muted hover:bg-fg/[0.12] transition-colors duration-100"
           aria-label={label}
@@ -109,15 +76,16 @@ export function TerminalStatusBadge({
         >
           {/* Always shown, even for a single idle session: the point of the
               badge is "this branch has terminals", not just "one needs you". */}
-          <span
-            className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${phaseDotClass(
-              worstPhase,
-            )} ${worstPhase === "working" || worstPhase === "needs_attention" ? "animate-pulse" : ""}`}
-          />
+          <PhaseDot phase={worstPhase} />
           <span className="text-xxs tabular-nums">{statuses.length}</span>
         </button>
       </PopoverTrigger>
-      <PopoverContent side="right" align="start" className="w-72 p-0">
+      <PopoverContent
+        side="right"
+        align="start"
+        className="w-72 p-0"
+        {...hoverProps}
+      >
         <div className="px-3 py-2 border-b border-edge/40">
           <span className="text-xs font-medium text-fg-secondary">
             Terminals
@@ -125,12 +93,18 @@ export function TerminalStatusBadge({
         </div>
         <div className="py-1 divide-y divide-edge/30">
           {statuses.map((s) => (
-            <div key={s.id} className="px-3 py-2 space-y-1">
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                jumpToTerminal(s.id);
+              }}
+              className="block w-full px-3 py-2 space-y-1 text-left hover:bg-fg/[0.04]"
+            >
               <div className="flex items-center justify-between gap-2">
                 <span className="flex items-center gap-1.5 text-xs text-fg-secondary">
-                  <span
-                    className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${phaseDotClass(s.phase)}`}
-                  />
+                  <PhaseDot phase={s.phase} />
                   {phaseLabel(s.phase)}
                 </span>
                 <span className="text-xxs text-fg-faint shrink-0">
@@ -161,7 +135,7 @@ export function TerminalStatusBadge({
                 )}
                 {s.cwd && <span className="truncate">{basename(s.cwd)}</span>}
               </div>
-            </div>
+            </button>
           ))}
         </div>
         {primary && (
@@ -171,7 +145,7 @@ export function TerminalStatusBadge({
                          rounded border border-edge/40 bg-surface-inset p-2 text-fg-muted"
             >
               {peekText ? (
-                peekText
+                tailLines(peekText, 40)
               ) : (
                 <span className="text-fg-faint italic">
                   {peekText === null ? "Loading…" : "No output"}

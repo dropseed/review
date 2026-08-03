@@ -92,6 +92,12 @@ export interface TerminalSlice {
   terminalPanelWidth: number;
   /** Which side of the content region the panel docks on (persisted). */
   terminalDockSide: TerminalDockSide;
+  /**
+   * Whether the panel is showing the all-terminals overview instead of the
+   * active tab's panes. Window-local, not persisted — the overview is a place
+   * you glance at, not a place you live.
+   */
+  terminalOverviewOpen: boolean;
   /** Whether the current backend can host terminals (probed on mount). */
   terminalsSupported: boolean;
 
@@ -201,6 +207,10 @@ export interface TerminalSlice {
   ) => void;
   /** Show/hide the panel. Hiding also drops a maximized layout. */
   toggleTerminalPanel: () => void;
+  /** Show/hide the all-terminals overview inside the panel. */
+  setTerminalOverviewOpen: (open: boolean) => void;
+  /** Toggle the overview, opening the panel first if it's closed. */
+  toggleTerminalOverview: () => void;
   /** Collapse/restore the diff beside the panel; opens the panel if closed. */
   toggleTerminalPanelMaximized: () => void;
   setTerminalPanelWidth: (width: number) => void;
@@ -484,7 +494,7 @@ export function isOrphanedSession(
 }
 
 /** Severity ordering for aggregating session phases into one signal. */
-const PHASE_SEVERITY: Record<TerminalPhase, number> = {
+export const PHASE_SEVERITY: Record<TerminalPhase, number> = {
   needs_attention: 3,
   waiting_for_input: 2,
   working: 1,
@@ -1574,6 +1584,7 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
     terminalPanelMode: "closed",
     terminalPanelWidth: TERMINAL_PANEL_WIDTH_DEFAULT,
     terminalDockSide: TERMINAL_DOCK_SIDE_DEFAULT,
+    terminalOverviewOpen: false,
     terminalsSupported: false,
 
     hydrateTerminalPrefs: async () => {
@@ -1856,6 +1867,17 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
       // Hiding a maximized panel returns to "split" on the next open, so the
       // diff can't stay hidden behind a panel that isn't showing.
       setPanelMode(get().terminalPanelMode === "closed" ? "split" : "closed");
+    },
+
+    setTerminalOverviewOpen: (open) => set({ terminalOverviewOpen: open }),
+
+    toggleTerminalOverview: () => {
+      const g = get();
+      const open = !g.terminalOverviewOpen;
+      set({ terminalOverviewOpen: open });
+      // "Show me all my terminals" from a closed panel means open it too —
+      // an overview toggled on inside a hidden panel would read as a no-op.
+      if (open && g.terminalPanelMode === "closed") setPanelMode("split");
     },
 
     toggleTerminalPanelMaximized: () => {
