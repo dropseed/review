@@ -19,6 +19,7 @@ use crate::sources::traits::{Comparison, DiffSource, FileEntry, FileStatus};
 
 use super::util::{
     bytes_to_data_url, bytes_to_file_content, get_content_type, get_image_mime_type,
+    reject_path_traversal,
 };
 use super::ExpandedContextResult;
 use super::FileContent;
@@ -108,9 +109,7 @@ pub fn get_file_content(
     );
 
     // Validate the logical path doesn't escape the repo.
-    if file_path.contains("..") || file_path.starts_with('/') || file_path.starts_with('\\') {
-        bail!("Path traversal detected: file path escapes repository");
-    }
+    reject_path_traversal(file_path)?;
 
     let source = LocalGitSource::new(repo_path.to_path_buf()).context("Failed to open repo")?;
 

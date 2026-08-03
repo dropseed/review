@@ -11,6 +11,7 @@ use crate::sources::local_git::LocalGitSource;
 use crate::sources::traits::{Comparison, DiffSource};
 use crate::symbols::{self, FileSymbolDiff, Symbol, SymbolDefinition};
 
+use super::util::reject_path_traversal;
 use super::RepoFileSymbols;
 
 /// Compute symbol-level diffs for files.
@@ -25,6 +26,10 @@ pub fn get_file_symbol_diffs(
         repo_path.display(),
         file_paths.len()
     );
+
+    file_paths
+        .iter()
+        .try_for_each(|p| reject_path_traversal(p))?;
 
     let source = LocalGitSource::new(repo_path.to_path_buf()).context("Failed to open repo")?;
 
@@ -299,6 +304,8 @@ pub fn get_file_symbols(
         "[get_file_symbols] repo_path={}, file_path={file_path}, ref={git_ref:?}",
         repo_path.display()
     );
+
+    reject_path_traversal(file_path)?;
 
     let content = if let Some(r) = git_ref {
         let source = LocalGitSource::new(repo_path.to_path_buf()).context("Failed to open repo")?;
