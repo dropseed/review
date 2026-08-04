@@ -520,6 +520,8 @@ pub fn get_working_tree_file_content(
     file_path: &str,
     cached: bool,
 ) -> anyhow::Result<FileContent> {
+    reject_path_traversal(file_path)?;
+
     let source = LocalGitSource::new(repo_path.to_path_buf()).context("Failed to open repo")?;
     let raw_diff = source
         .get_raw_file_diff(file_path, cached)
