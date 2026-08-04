@@ -1,5 +1,6 @@
 import {
   type ReactNode,
+  Fragment,
   memo,
   useCallback,
   useEffect,
@@ -104,6 +105,7 @@ import {
   ROW_STATUS,
 } from "./row-chrome";
 import { useTerminalTabDrop } from "./useTerminalTabDrop";
+import { TerminalRowList } from "./TerminalRowList";
 
 interface SidebarListProps {
   onActivateReview: (review: GlobalReviewSummary) => void;
@@ -174,15 +176,8 @@ function SidebarList({
 
   function renderRow(row: SidebarRow): ReactNode {
     const { entry } = row;
-    if (entry.kind === "review") {
-      return (
-        <TabRailItem
-          key={row.reviewKey}
-          {...reviewItemPropsFor(entry.review)}
-        />
-      );
-    }
 
+    // A remote-only row has no checkout, so nothing can be homed to it.
     if (entry.kind === "remote-recent") {
       return (
         <RemoteBranchItem
@@ -198,15 +193,21 @@ function SidebarList({
     }
 
     return (
-      <LocalBranchItem
-        key={row.reviewKey}
-        branch={entry.branch}
-        repoPath={row.repoPath}
-        defaultBranch={entry.repo.defaultBranch}
-        itemKind={entry.kind}
-        checkoutPath={row.checkoutPath}
-        onActivate={onActivateLocalBranch}
-      />
+      <Fragment key={row.reviewKey}>
+        {entry.kind === "review" ? (
+          <TabRailItem {...reviewItemPropsFor(entry.review)} />
+        ) : (
+          <LocalBranchItem
+            branch={entry.branch}
+            repoPath={row.repoPath}
+            defaultBranch={entry.repo.defaultBranch}
+            itemKind={entry.kind}
+            checkoutPath={row.checkoutPath}
+            onActivate={onActivateLocalBranch}
+          />
+        )}
+        <TerminalRowList reviewKey={row.reviewKey} />
+      </Fragment>
     );
   }
 
@@ -606,6 +607,10 @@ function RepoNodeView({
           </span>
         </span>
       </div>
+      {/* The repo row *is* the head row, so head's terminals hang off it here
+          rather than off any of the rows below — and stay visible when the repo
+          is collapsed, since the row they belong to still is. */}
+      {head && <TerminalRowList reviewKey={head.reviewKey} />}
       {expanded && (node.live.length > 0 || node.rest.length > 0) && (
         // Indented to sit under the repo row's avatar, so a child row's label
         // starts where its parent's identity does rather than left of it.
