@@ -4,13 +4,18 @@ import { getPlatformServices } from "../platform";
 import { toast } from "sonner";
 import {
   draggedPane,
+  draggedTabSource,
   edgeForPoint,
   setDraggedPane,
+  setDraggedTab,
   setPaneDropTarget,
+  setTabDropTarget,
   subscribePaneDrag,
+  type TabDragSource,
 } from "../components/Terminal/pane-drag";
 import type { DropEdge } from "../components/Terminal/pane-tree";
 import { useReviewStore } from "../stores";
+import { panelReviewKey } from "../stores/slices/terminalSlice";
 
 /**
  * Convert a drag-drop position to CSS pixels within the webview.
@@ -55,13 +60,13 @@ interface PaneHit {
  * (`data-terminal-id`) to decide which PTY receives them. In web mode the
  * browser refuses to expose filesystem paths at all, so this is Tauri-only.
  *
- * A pane dragged by its grip is swallowed the same way — it arrives here with
- * no paths rather than as the `drop` its own handler in PaneTree is waiting for
- * — so pane-onto-pane rearranging is routed through this channel as well, and a
- * drag with neither paths nor a pane behind it is the one that has nothing to
- * give a terminal. The app's other pane drags (onto the tab strip, or a tab onto
- * a sidebar row) are still HTML5-only and therefore web-mode-only; nothing here
- * covers them yet.
+ * The app's own drags are swallowed the same way — a pane dragged by its grip
+ * or a tab dragged off the strip arrives here with no paths rather than as the
+ * `drop` its HTML5 handlers are waiting for. So every in-app drop target is
+ * hit-tested from this channel too: pane-onto-pane rearranging, a pane onto a
+ * strip tab or the extract-to-new-tab slot, and a tab onto another strip
+ * position (reorder) or a sidebar row (re-home). A drag with neither paths nor
+ * a pane/tab behind it is the one that has nothing to give a terminal.
  */
 export function useTerminalFileDrop(): void {
   useEffect(() => {
@@ -79,6 +84,26 @@ export function useTerminalFileDrop(): void {
      * panel closed, and it would re-scan the document on every pointer move.
      */
     let measured = false;
+
+    /**
+     * The strip-and-sidebar drop targets, measured separately from the panes:
+     * picking a pane up is what makes the extract slot appear (and can rewrap
+     * the strip), so these rects are only trustworthy after React has
+     * committed that render — i.e. on the first event *after* the pickup, not
+     * at the pickup itself.
+     */
+    let stripTabs: {
+      rect: DOMRect;
+      tabId: string;
+      index: number;
+      leaves: string[];
+    }[] = [];
+    let newTabSlot: DOMRect | null = null;
+    let homeRows: { rect: DOMRect; reviewKey: string; rowId: string }[] = [];
+    let stripMeasured = false;
+
+    const inRect = (rect: DOMRect, x: number, y: number): boolean =>
+      x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
 
     // The highlight is toggled imperatively rather than through the store:
     // `over` fires on every pointer move during a drag, and re-rendering the
@@ -102,14 +127,48 @@ export function useTerminalFileDrop(): void {
       measured = false;
     };
 
-    // A drag that begins inside the webview — a pane picked up by its grip — is
-    // already over a pane and never announces itself with an `enter`, so its
-    // rects are taken when the grip is picked up. The subscription also fires
-    // for the drop target, which moves constantly; only the pickup measures.
+    const measureStrip = () => {
+      stripTabs = [
+        ...document.querySelectorAll<HTMLElement>("[data-strip-tab]"),
+      ].map((el) => ({
+        rect: el.getBoundingClientRect(),
+        tabId: el.dataset.stripTab ?? "",
+        index: Number(el.dataset.stripIndex),
+        leaves: (el.dataset.stripLeaves ?? "").split(" ").filter(Boolean),
+      }));
+      newTabSlot =
+        document
+          .querySelector<HTMLElement>("[data-strip-new-tab]")
+          ?.getBoundingClientRect() ?? null;
+      homeRows = [
+        ...document.querySelectorAll<HTMLElement>("[data-tab-home-key]"),
+      ].map((el) => ({
+        rect: el.getBoundingClientRect(),
+        reviewKey: el.dataset.tabHomeKey ?? "",
+        rowId: el.dataset.tabHomeRow ?? "",
+      }));
+      stripMeasured = true;
+    };
+
+    const forgetStrip = () => {
+      stripTabs = [];
+      newTabSlot = null;
+      homeRows = [];
+      stripMeasured = false;
+    };
+
+    // A drag that begins inside the webview — a pane picked up by its grip, or
+    // a tab off the strip — is already over the page and never announces
+    // itself with an `enter`, so its pane rects are taken when it is picked
+    // up. The subscription also fires for the drop target, which moves
+    // constantly; only the pickup measures.
     let carriedByGrip: string | null = null;
     const unsubDrag = subscribePaneDrag(() => {
-      const dragging = draggedPane();
-      if (dragging && !carriedByGrip) measurePanes();
+      const dragging = draggedPane() ?? draggedTabSource()?.tabId ?? null;
+      if (dragging && !carriedByGrip) {
+        measurePanes();
+        forgetStrip();
+      }
       carriedByGrip = dragging;
     });
 
@@ -124,15 +183,8 @@ export function useTerminalFileDrop(): void {
      * continuously while it streams. Panes can't move mid-drag, so one
      * measurement per drag is enough.
      */
-    const paneAt = (position: { x: number; y: number }): PaneHit | null => {
-      const { x, y } = toCssPixels(position, scaled);
-      const hit = panes.find(
-        ({ rect }) =>
-          x >= rect.left &&
-          x <= rect.right &&
-          y >= rect.top &&
-          y <= rect.bottom,
-      );
+    const paneAt = ({ x, y }: { x: number; y: number }): PaneHit | null => {
+      const hit = panes.find(({ rect }) => inRect(rect, x, y));
       return hit ? { ...hit, x, y } : null;
     };
 
@@ -149,12 +201,13 @@ export function useTerminalFileDrop(): void {
     };
 
     /**
-     * The pane being carried, latched from the drag events rather than read at
-     * the drop: the page's own `dragend` fires as soon as the pointer is
-     * released and clears it, and this event still has a trip through Tauri's
-     * IPC ahead of it.
+     * The pane / tab being carried, latched from the drag events rather than
+     * read at the drop: the page's own `dragend` fires as soon as the pointer
+     * is released and clears the module state, and this event still has a trip
+     * through Tauri's IPC ahead of it.
      */
     let carried: string | null = null;
+    let carriedTab: TabDragSource | null = null;
 
     void import("@tauri-apps/api/webview").then(({ getCurrentWebview }) => {
       if (disposed) return;
@@ -163,46 +216,135 @@ export function useTerminalFileDrop(): void {
           if (payload.type === "leave") {
             setHovered(null);
             setPaneDropTarget(null);
+            setTabDropTarget(null);
             carried = null;
+            carriedTab = null;
             forgetPanes();
+            forgetStrip();
             return;
           }
           if (payload.type === "enter") {
             carried = null;
+            carriedTab = null;
             // Panes can't move mid-drag, but they can have moved since the last
             // one — a new drag measures again.
             forgetPanes();
+            forgetStrip();
           }
           if (payload.type === "enter" || payload.type === "over") {
             if (!measured) measurePanes();
-            const hit = paneAt(payload.position);
             carried ??= draggedPane();
-            if (carried) {
-              // A pane in flight shows the half it would fill, not the
-              // whole-pane outline a file drop gets.
-              setPaneDropTarget(dropTargetAt(hit, carried));
+            carriedTab ??= draggedTabSource();
+            if ((carried || carriedTab) && !stripMeasured) measureStrip();
+            const pt = toCssPixels(payload.position, scaled);
+            if (carriedTab) {
+              // A tab in flight: a sidebar row would re-home it, another strip
+              // position would reorder it.
+              const row = homeRows.find((r) => inRect(r.rect, pt.x, pt.y));
+              if (row) {
+                setTabDropTarget({
+                  kind: "tab-home",
+                  reviewKey: row.reviewKey,
+                  rowId: row.rowId,
+                });
+                return;
+              }
+              const tabHit = stripTabs.find((t) => inRect(t.rect, pt.x, pt.y));
+              if (tabHit && tabHit.index !== carriedTab.index) {
+                setTabDropTarget({ kind: "tab-reorder", index: tabHit.index });
+                return;
+              }
+              setTabDropTarget(null);
               return;
             }
-            setHovered(hit?.el ?? null);
+            if (carried) {
+              // A pane in flight: the strip's targets don't overlap the panes,
+              // so the order here is just cheap-lists-first.
+              const tabHit = stripTabs.find((t) => inRect(t.rect, pt.x, pt.y));
+              if (tabHit && !tabHit.leaves.includes(carried)) {
+                setPaneDropTarget(null);
+                setTabDropTarget({
+                  kind: "pane-into-tab",
+                  tabId: tabHit.tabId,
+                });
+                return;
+              }
+              if (newTabSlot && inRect(newTabSlot, pt.x, pt.y)) {
+                setPaneDropTarget(null);
+                setTabDropTarget({ kind: "new-tab" });
+                return;
+              }
+              setTabDropTarget(null);
+              // A pane over another pane shows the half it would fill, not the
+              // whole-pane outline a file drop gets.
+              setPaneDropTarget(dropTargetAt(paneAt(pt), carried));
+              return;
+            }
+            setHovered(paneAt(pt)?.el ?? null);
             return;
           }
           // drop
-          const hit = paneAt(payload.position);
+          if (!measured) measurePanes();
+          if ((carried || carriedTab) && !stripMeasured) measureStrip();
+          const pt = toCssPixels(payload.position, scaled);
+          const hit = paneAt(pt);
           setHovered(null);
           setPaneDropTarget(null);
+          setTabDropTarget(null);
           forgetPanes();
-          if (carried) {
-            const target = dropTargetAt(hit, carried);
-            const source = carried;
-            carried = null;
-            setDraggedPane(null);
-            if (target) {
-              useReviewStore
-                .getState()
-                .dropPaneOn(source, target.paneId, target.edge);
+          if (carriedTab) {
+            const source = carriedTab;
+            carriedTab = null;
+            setDraggedTab(null);
+            const row = homeRows.find((r) => inRect(r.rect, pt.x, pt.y));
+            const tabHit = row
+              ? null
+              : (stripTabs.find((t) => inRect(t.rect, pt.x, pt.y)) ?? null);
+            forgetStrip();
+            const state = useReviewStore.getState();
+            if (row) {
+              state.setTabHome(source.tabId, row.reviewKey);
+            } else if (tabHit && tabHit.index !== source.index) {
+              // Strip positions, not stored ones — the store maps them back
+              // and declines a drag the strip's own sort would swallow.
+              state.moveTab(source.reviewKey, source.index, tabHit.index);
             }
             return;
           }
+          if (carried) {
+            const source = carried;
+            carried = null;
+            setDraggedPane(null);
+            const tabHit = stripTabs.find((t) => inRect(t.rect, pt.x, pt.y));
+            const ontoNewTab =
+              newTabSlot !== null && inRect(newTabSlot, pt.x, pt.y);
+            forgetStrip();
+            const state = useReviewStore.getState();
+            // The tab a pane lands in is the one to be looking at, and the
+            // strip may be showing it as a pinned visitor — so activation is
+            // said for the key being viewed, not the key that owns the tab.
+            const viewedKey = panelReviewKey(
+              state.terminalCheckouts,
+              state.repoPath ?? "",
+              state.reviewRef,
+            );
+            if (tabHit && !tabHit.leaves.includes(source)) {
+              state.movePaneToTab(source, tabHit.tabId);
+              state.setActiveTab(viewedKey, tabHit.tabId);
+              return;
+            }
+            if (ontoNewTab) {
+              const newTabId = state.movePaneToNewTab(source);
+              if (newTabId) state.setActiveTab(viewedKey, newTabId);
+              return;
+            }
+            const target = dropTargetAt(hit, source);
+            if (target) {
+              state.dropPaneOn(source, target.paneId, target.edge);
+            }
+            return;
+          }
+          forgetStrip();
           const terminalId = hit?.el.dataset.terminalId;
           if (!terminalId) return;
           if (payload.paths.length === 0) {

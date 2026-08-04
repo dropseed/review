@@ -1,7 +1,7 @@
 /**
- * Dragging a pane to rearrange a tab's splits, the way Ghostty does it: pick a
- * pane up by its grip, hover another pane, and the half you're pointing at
- * lights up as the side it will land on.
+ * Shared state for the terminal's drags: a pane picked up by its grip to
+ * rearrange a tab's splits (the way Ghostty does it), and a tab picked up off
+ * the strip to reorder it or re-home it onto a sidebar row.
  *
  * The geometry is here, pure, so the edge a pointer resolves to can be tested
  * without a DOM; the tree move it feeds is `movePane` in pane-tree.
@@ -125,6 +125,108 @@ export function setPaneDropTarget(
  */
 export function clearPaneDropTarget(paneId: string): void {
   if (dropTarget?.paneId === paneId) setPaneDropTarget(null);
+}
+
+/**
+ * The tab currently being dragged off the strip, if any.
+ *
+ * Latched at dragstart for the same reason as the dragged pane: under Tauri the
+ * drop arrives on the window, after the page's own `dragend` has fired, and
+ * `dataTransfer` is never readable there at all. `index` and `reviewKey` are
+ * the coordinate space of a reorder — the strip position the tab was picked up
+ * from, in the strip the viewer was looking at.
+ */
+export interface TabDragSource {
+  tabId: string;
+  /** Position in the strip as rendered (`mergeVisibleTabs` order). */
+  index: number;
+  /** The review key whose strip was showing — what `moveTab` reorders. */
+  reviewKey: string;
+}
+
+let draggedTab: TabDragSource | null = null;
+
+export function setDraggedTab(source: TabDragSource | null): void {
+  if (draggedTab === source) return;
+  draggedTab = source;
+  // Same rule as a pane: nothing in flight means nowhere to land.
+  if (source === null && tabDropTarget !== null) tabDropTarget = null;
+  notify();
+}
+
+export function draggedTabSource(): TabDragSource | null {
+  return draggedTab;
+}
+
+/**
+ * Where the thing in flight would land, among the targets that take a whole
+ * pane or tab: an existing strip tab, the extract-to-new-tab slot, a reorder
+ * position in the strip, or a sidebar row to re-home a tab onto.
+ *
+ * One value rather than per-component state for the same reason as the pane
+ * drop target above: the gesture arrives as HTML5 events in web mode and as
+ * window-level Tauri events in the desktop app, and both paths write here so
+ * the highlights cannot disagree about where a drop would go.
+ */
+export type TabDropTarget =
+  | { kind: "pane-into-tab"; tabId: string }
+  | { kind: "new-tab" }
+  | { kind: "tab-reorder"; index: number }
+  /** `rowId` distinguishes sidebar rows that share a review key (a repo row is
+   *  its head branch's row), so hovering one doesn't light the other. */
+  | { kind: "tab-home"; reviewKey: string; rowId: string };
+
+function sameTabDropTarget(
+  a: TabDropTarget | null,
+  b: TabDropTarget | null,
+): boolean {
+  if (a === null || b === null) return a === b;
+  if (a.kind !== b.kind) return false;
+  switch (a.kind) {
+    case "pane-into-tab":
+      return a.tabId === (b as typeof a).tabId;
+    case "new-tab":
+      return true;
+    case "tab-reorder":
+      return a.index === (b as typeof a).index;
+    case "tab-home":
+      return a.rowId === (b as typeof a).rowId;
+  }
+}
+
+let tabDropTarget: TabDropTarget | null = null;
+
+export function setTabDropTarget(target: TabDropTarget | null): void {
+  if (sameTabDropTarget(tabDropTarget, target)) return;
+  tabDropTarget = target;
+  notify();
+}
+
+/**
+ * Clear the tab-level drop target, but only if `target` is still the one
+ * holding it — the same enter-before-leave ordering hazard as
+ * `clearPaneDropTarget`.
+ */
+export function clearTabDropTarget(target: TabDropTarget): void {
+  if (sameTabDropTarget(tabDropTarget, target)) setTabDropTarget(null);
+}
+
+/** The tab-level drop target, re-rendering the caller when it changes. */
+export function useTabDropTarget(): TabDropTarget | null {
+  return useSyncExternalStore(
+    subscribe,
+    () => tabDropTarget,
+    () => null,
+  );
+}
+
+/** The tab being dragged right now, re-rendering the caller when it changes. */
+export function useTabDragSource(): TabDragSource | null {
+  return useSyncExternalStore(
+    subscribe,
+    () => draggedTab,
+    () => null,
+  );
 }
 
 function notify(): void {

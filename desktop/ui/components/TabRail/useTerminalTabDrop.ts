@@ -1,6 +1,11 @@
-import { useState, type DragEvent } from "react";
+import { useId, type DragEvent } from "react";
 import { useReviewStore } from "../../stores";
-import { pointerLeft } from "../Terminal/pane-drag";
+import {
+  clearTabDropTarget,
+  pointerLeft,
+  setTabDropTarget,
+  useTabDropTarget,
+} from "../Terminal/pane-drag";
 import { makeReviewKey } from "../../utils/review-key";
 
 /**
@@ -20,6 +25,10 @@ interface TerminalTabDrop {
   dropClass: string;
   /** Spread onto the row element. */
   dropProps: {
+    /** Hit-tested by useTerminalFileDrop under Tauri, where the HTML5
+     *  handlers below never fire. Absent when the row declines drops. */
+    "data-tab-home-key"?: string;
+    "data-tab-home-row"?: string;
     onDragOver: (e: DragEvent) => void;
     onDragLeave: (e: DragEvent) => void;
     onDrop: (e: DragEvent) => void;
@@ -40,18 +49,31 @@ interface TerminalTabDrop {
  * nothing checked out, whose key would be the `repoPath:""` placeholder — a
  * bucket no view reads, so a tab homed there would persist a home that renders
  * nowhere.
+ *
+ * The hover highlight lives in the pane-drag module rather than row state,
+ * because the gesture arrives two ways — HTML5 dragover here in web mode,
+ * window-level Tauri events in the desktop app — and both write there. The row
+ * is identified by `rowId` rather than its review key, since two rows can share
+ * a key (a repo row is its head branch's row) and only the hovered one should
+ * light up.
  */
 export function useTerminalTabDrop(
   repoPath: string,
   reviewRef: string,
 ): TerminalTabDrop {
   const setTabHome = useReviewStore((s) => s.setTabHome);
-  const [isOver, setIsOver] = useState(false);
+  const rowId = useId();
+  const target = useTabDropTarget();
   const droppable = reviewRef !== "";
+  const key = makeReviewKey(repoPath, reviewRef);
+  const isOver = target?.kind === "tab-home" && target.rowId === rowId;
 
   return {
     dropClass: isOver ? DROP_RING : "",
     dropProps: {
+      ...(droppable
+        ? { "data-tab-home-key": key, "data-tab-home-row": rowId }
+        : {}),
       onDragOver: (e) => {
         if (!droppable) return;
         if (!e.dataTransfer.types.includes(TERMINAL_TAB_MIME)) return;
@@ -60,19 +82,21 @@ export function useTerminalTabDrop(
         e.preventDefault();
         e.stopPropagation();
         e.dataTransfer.dropEffect = "move";
-        setIsOver(true);
+        setTabDropTarget({ kind: "tab-home", reviewKey: key, rowId });
       },
       onDragLeave: (e) => {
-        if (pointerLeft(e)) setIsOver(false);
+        if (pointerLeft(e)) {
+          clearTabDropTarget({ kind: "tab-home", reviewKey: key, rowId });
+        }
       },
       onDrop: (e) => {
-        setIsOver(false);
+        clearTabDropTarget({ kind: "tab-home", reviewKey: key, rowId });
         if (!droppable) return;
         const tabId = e.dataTransfer.getData(TERMINAL_TAB_MIME);
         if (!tabId) return;
         e.preventDefault();
         e.stopPropagation();
-        setTabHome(tabId, makeReviewKey(repoPath, reviewRef));
+        setTabHome(tabId, key);
       },
     },
   };

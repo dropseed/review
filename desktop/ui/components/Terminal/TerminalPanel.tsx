@@ -1,4 +1,4 @@
-import { type ReactElement, type ReactNode, useMemo, useState } from "react";
+import { type ReactElement, type ReactNode, useMemo } from "react";
 import { clsx } from "clsx";
 import { useReviewStore } from "../../stores";
 import {
@@ -23,8 +23,14 @@ import { TerminalOverview } from "./TerminalOverview";
 import { collectLeafIds, type SplitDirection } from "./pane-tree";
 import {
   TERMINAL_PANE_MIME,
+  clearTabDropTarget,
+  draggedTabSource,
   pointerLeft,
+  setDraggedTab,
+  setTabDropTarget,
   usePaneDragActive,
+  useTabDragSource,
+  useTabDropTarget,
 } from "./pane-drag";
 import { closeTerminalPane, closeTerminalTab } from "./close";
 import { openTerminalTab } from "./newTab";
@@ -74,12 +80,12 @@ export function TerminalPanel(): ReactNode {
 
   useTerminalFileDrop();
 
-  // Tab drag-to-reorder. Both indices are local to this drag — `dragIndex`
-  // doubles as "this is our own tab drag", so a file dragged in from the OS
-  // (handled by useTerminalFileDrop, a separate channel) is never treated as a
-  // reorder.
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
-  const [dropIndex, setDropIndex] = useState<number | null>(null);
+  // Tab drag-to-reorder. The in-flight tab lives in the pane-drag module
+  // rather than component state, because under Tauri the drop lands on the
+  // window (useTerminalFileDrop), not on these elements — the module is what
+  // both paths share. Its presence also marks "this is our own tab drag", so a
+  // file dragged in from the OS is never treated as a reorder.
+  const draggedTab = useTabDragSource();
 
   // A pane dragged by its grip can also be dropped up here: onto a tab, to move
   // it into that tab, or onto the slot that appears at the end of the strip, to
@@ -87,8 +93,9 @@ export function TerminalPanel(): ReactNode {
   // to — the strip has to grow that slot while the drag is in flight, not once
   // something is hovered.
   const draggedPaneId = usePaneDragActive();
-  const [paneDropTabId, setPaneDropTabId] = useState<string | null>(null);
-  const [overNewTabSlot, setOverNewTabSlot] = useState(false);
+  // Where the pane or tab in flight would land, published by whichever channel
+  // saw the pointer last (HTML5 here, window-level events under Tauri).
+  const tabDropTarget = useTabDropTarget();
 
   const reviewKey = repoPath
     ? panelReviewKey(terminalCheckouts, repoPath, reviewRef)
@@ -179,7 +186,10 @@ export function TerminalPanel(): ReactNode {
             const focusedSession = terminalSessions[tab.focused];
             const isActive = tab.id === activeTabId;
             const isDropTarget =
-              dragIndex !== null && dragIndex !== index && dropIndex === index;
+              draggedTab !== null &&
+              draggedTab.index !== index &&
+              tabDropTarget?.kind === "tab-reorder" &&
+              tabDropTarget.index === index;
             // A pane already in this tab has nothing to gain from being dropped
             // on it — declining the dragover is also what stops the browser
             // from firing a drop we'd have to ignore.
@@ -198,8 +208,17 @@ export function TerminalPanel(): ReactNode {
               <div
                 key={tab.id}
                 draggable
+                // Hit-tested by useTerminalFileDrop under Tauri, where the
+                // dragover/drop below never fire: which tab this is, where it
+                // sits in the strip, and which panes it already holds.
+                data-strip-tab={tab.id}
+                data-strip-index={index}
+                data-strip-leaves={leafIds.join(" ")}
                 onDragStart={(e) => {
-                  setDragIndex(index);
+                  // Latched in the module rather than component state: under
+                  // Tauri the drop arrives on the window after our own dragend,
+                  // and dataTransfer is unreadable there.
+                  setDraggedTab({ tabId: tab.id, index, reviewKey });
                   e.dataTransfer.effectAllowed = "move";
                   // A payload is required for the drag to start at all.
                   e.dataTransfer.setData("text/plain", tab.id);
@@ -214,28 +233,26 @@ export function TerminalPanel(): ReactNode {
                     e.preventDefault();
                     e.stopPropagation();
                     e.dataTransfer.dropEffect = "move";
-                    setPaneDropTabId(tab.id);
+                    setTabDropTarget({ kind: "pane-into-tab", tabId: tab.id });
                     return;
                   }
                   // Only claim the drop for our own tab drags; anything else
                   // (a file from Finder) falls through to its own handler.
-                  if (dragIndex === null) return;
+                  if (draggedTabSource() === null) return;
                   e.preventDefault();
                   e.dataTransfer.dropEffect = "move";
-                  setDropIndex(index);
+                  setTabDropTarget({ kind: "tab-reorder", index });
                 }}
                 onDragLeave={(e) => {
                   if (!pointerLeft(e)) return;
-                  setPaneDropTabId((current) =>
-                    current === tab.id ? null : current,
-                  );
+                  clearTabDropTarget({ kind: "pane-into-tab", tabId: tab.id });
                 }}
                 onDrop={(e) => {
                   const pane = e.dataTransfer.getData(TERMINAL_PANE_MIME);
                   if (pane) {
                     e.preventDefault();
                     e.stopPropagation();
-                    setPaneDropTabId(null);
+                    setTabDropTarget(null);
                     movePaneToTab(pane, tab.id);
                     // The tab it landed in is the one to be looking at, and the
                     // strip may be showing it as a pinned visitor — so this is
@@ -243,17 +260,17 @@ export function TerminalPanel(): ReactNode {
                     setActiveTab(reviewKey, tab.id);
                     return;
                   }
-                  if (dragIndex === null) return;
+                  const source = draggedTabSource();
+                  if (source === null) return;
                   e.preventDefault();
                   // Strip positions, not stored ones — the store maps them back
                   // and declines a drag the strip's own sort would swallow.
-                  moveTab(reviewKey, dragIndex, index);
-                  setDragIndex(null);
-                  setDropIndex(null);
+                  moveTab(source.reviewKey, source.index, index);
+                  setDraggedTab(null);
                 }}
                 onDragEnd={() => {
-                  setDragIndex(null);
-                  setDropIndex(null);
+                  setDraggedTab(null);
+                  setTabDropTarget(null);
                 }}
                 className={clsx(
                   "group relative flex max-w-full shrink-0 items-center rounded-md px-2 py-1 text-xs",
@@ -262,8 +279,11 @@ export function TerminalPanel(): ReactNode {
                   isActive
                     ? "bg-surface-raised text-fg-secondary"
                     : "text-fg-muted hover:bg-fg/[0.06]",
-                  dragIndex === index && "opacity-50",
-                  takesPane && paneDropTabId === tab.id && DROP_RING,
+                  draggedTab?.index === index && "opacity-50",
+                  takesPane &&
+                    tabDropTarget?.kind === "pane-into-tab" &&
+                    tabDropTarget.tabId === tab.id &&
+                    DROP_RING,
                 )}
               >
                 {isDropTarget && (
@@ -271,7 +291,9 @@ export function TerminalPanel(): ReactNode {
                     className={clsx(
                       "pointer-events-none absolute inset-y-0.5 w-0.5 rounded-full bg-focus-ring",
                       // Mark the edge the tab would land against.
-                      dragIndex < index ? "right-0" : "left-0",
+                      draggedTab !== null && draggedTab.index < index
+                        ? "right-0"
+                        : "left-0",
                     )}
                   />
                 )}
@@ -372,6 +394,8 @@ export function TerminalPanel(): ReactNode {
               already wraps. */}
           {canExtractDraggedPane && (
             <div
+              // Hit-tested by useTerminalFileDrop under Tauri.
+              data-strip-new-tab=""
               onDragOver={(e) => {
                 // Claimed by MIME like every other target here, rather than by
                 // trusting that the slot only exists during a pane drag — that
@@ -382,13 +406,13 @@ export function TerminalPanel(): ReactNode {
                 e.preventDefault();
                 e.stopPropagation();
                 e.dataTransfer.dropEffect = "move";
-                setOverNewTabSlot(true);
+                setTabDropTarget({ kind: "new-tab" });
               }}
               onDragLeave={(e) => {
-                if (pointerLeft(e)) setOverNewTabSlot(false);
+                if (pointerLeft(e)) clearTabDropTarget({ kind: "new-tab" });
               }}
               onDrop={(e) => {
-                setOverNewTabSlot(false);
+                setTabDropTarget(null);
                 const pane = e.dataTransfer.getData(TERMINAL_PANE_MIME);
                 if (!pane) return;
                 e.preventDefault();
@@ -398,7 +422,7 @@ export function TerminalPanel(): ReactNode {
               }}
               className={clsx(
                 "flex shrink-0 items-center gap-1 rounded-md border border-dashed px-2 py-1 text-xs",
-                overNewTabSlot
+                tabDropTarget?.kind === "new-tab"
                   ? "border-focus-ring bg-fg/[0.06] text-fg-secondary"
                   : "border-edge text-fg-faint",
               )}
