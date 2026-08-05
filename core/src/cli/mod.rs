@@ -5,7 +5,7 @@ use crate::sources::local_git::LocalGitSource;
 use crate::sources::traits::Comparison;
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 mod comments;
 mod common;
@@ -584,6 +584,8 @@ fn open_app(
 
     #[cfg(target_os = "macos")]
     {
+        use std::process::Stdio;
+
         // Try to launch the app at the given path via `open -a`.
         // --args works for fresh launches; the signal file handles the rest.
         let try_open = |app_path: &Path| -> Option<()> {
