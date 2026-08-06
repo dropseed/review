@@ -12,9 +12,11 @@
 //! from when the manager ran in-process — the frontend cannot tell the
 //! difference.
 
-use std::collections::HashSet;
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 use std::future::Future;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -49,7 +51,12 @@ pub struct TerminalState {
     socket: PathBuf,
     /// Sessions with a live drain task, so a re-mount or a repeated
     /// `terminal_replay` cannot start a second stream for the same session.
-    drains: Arc<Mutex<HashSet<String>>>,
+    ///
+    /// The flag is whether the drain forwards raw output. `terminal_list`
+    /// opens status-only drains (`false`) so sidebar dots and titles stay live
+    /// for sessions whose pane was never mounted; opening a pane upgrades the
+    /// drain in place (`terminal_start`/`terminal_replay` pass `true`).
+    drains: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
 }
 
 impl TerminalState {
@@ -58,7 +65,7 @@ impl TerminalState {
         Self {
             client: tokio::sync::Mutex::new(None),
             socket,
-            drains: Arc::new(Mutex::new(HashSet::new())),
+            drains: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -136,13 +143,18 @@ async fn request<T: serde::de::DeserializeOwned>(
     serde_json::from_value(value).map_err(|e| format!("unexpected daemon response: {e}"))
 }
 
+/// The per-session drain registry: session id → "forward raw output" flag.
+type Drains = Mutex<HashMap<String, Arc<AtomicBool>>>;
+
 /// Ensure exactly one task is pumping this session's daemon stream into Tauri
 /// events.
 ///
-/// Idempotent: a second call for a session that is already being drained is a
-/// no-op, so a hot re-mount or a repeated `terminal_replay` cannot double-emit.
-/// The slot is released when the stream ends, which lets a later
-/// `terminal_replay` re-establish the pump if the connection dropped.
+/// Idempotent: a second call for a session that is already being drained
+/// starts no second stream, so a hot re-mount or a repeated `terminal_replay`
+/// cannot double-emit — but if it asks for output on a status-only drain, the
+/// existing drain is upgraded in place. The slot is released when the stream
+/// ends, which lets a later call re-establish the pump if the connection
+/// dropped.
 ///
 /// The subscription is established *before* the calling command returns. The
 /// daemon discards a fresh subscription's scrollback (clients are expected to
@@ -151,8 +163,8 @@ async fn request<T: serde::de::DeserializeOwned>(
 /// and returning would simply be lost. Connecting first also makes this
 /// cancellation-safe: the slot is claimed only once there is a stream to hand
 /// to the task that will release it.
-async fn ensure_drain(app: AppHandle, state: &TerminalState, terminal_id: String) {
-    if is_draining(&state.drains, &terminal_id) {
+async fn ensure_drain(app: AppHandle, state: &TerminalState, terminal_id: String, output: bool) {
+    if upgrade_drain(&state.drains, &terminal_id, output) {
         return;
     }
 
@@ -163,37 +175,54 @@ async fn ensure_drain(app: AppHandle, state: &TerminalState, terminal_id: String
             return;
         }
     };
-    if !claim_drain(&state.drains, &terminal_id) {
-        // Another call won the race while we were connecting; drop this
-        // connection, which drops its daemon-side subscription.
+    let Some(emit_output) = claim_drain(&state.drains, &terminal_id, output) else {
+        // Another call won the race while we were connecting (claim_drain
+        // already applied any upgrade to the winner); drop this connection,
+        // which drops its daemon-side subscription.
         return;
-    }
+    };
 
     let drains = Arc::clone(&state.drains);
     tokio::spawn(async move {
-        drain_stream(app, stream, &terminal_id).await;
+        drain_stream(app, stream, &terminal_id, &emit_output).await;
         release_drain(&drains, &terminal_id);
     });
 }
 
-/// Whether a task already holds this session's drain slot.
-fn is_draining(drains: &Mutex<HashSet<String>>, id: &str) -> bool {
-    drains
-        .lock()
-        .expect("terminal drains poisoned")
-        .contains(id)
+/// If a task already holds this session's drain slot, note it — upgrading the
+/// drain to forward output when asked to — and return `true`.
+fn upgrade_drain(drains: &Drains, id: &str, output: bool) -> bool {
+    match drains.lock().expect("terminal drains poisoned").get(id) {
+        Some(emit_output) => {
+            if output {
+                emit_output.store(true, Ordering::Relaxed);
+            }
+            true
+        }
+        None => false,
+    }
 }
 
-/// Take the drain slot for a session; `false` if a task already holds it.
-fn claim_drain(drains: &Mutex<HashSet<String>>, id: &str) -> bool {
-    drains
+/// Take the drain slot for a session, returning its output flag; `None` if a
+/// task already holds it (upgraded, as in [`upgrade_drain`]).
+fn claim_drain(drains: &Drains, id: &str, output: bool) -> Option<Arc<AtomicBool>> {
+    match drains
         .lock()
         .expect("terminal drains poisoned")
-        .insert(id.to_owned())
+        .entry(id.to_owned())
+    {
+        Entry::Occupied(existing) => {
+            if output {
+                existing.get().store(true, Ordering::Relaxed);
+            }
+            None
+        }
+        Entry::Vacant(slot) => Some(Arc::clone(slot.insert(Arc::new(AtomicBool::new(output))))),
+    }
 }
 
 /// Give the drain slot back once the stream has ended.
-fn release_drain(drains: &Mutex<HashSet<String>>, id: &str) {
+fn release_drain(drains: &Drains, id: &str) {
     drains.lock().expect("terminal drains poisoned").remove(id);
 }
 
@@ -201,7 +230,15 @@ fn release_drain(drains: &Mutex<HashSet<String>>, id: &str) {
 ///
 /// A dumb pump by design: the slow-consumer re-subscribe that used to live here
 /// is now the daemon's job, so this task only translates frames to events.
-async fn drain_stream(app: AppHandle, mut stream: StreamHandle, id: &str) {
+/// Output frames are dropped while `emit_output` is false (a status-only drain
+/// for a session no pane has attached to) — the pane that eventually attaches
+/// replays scrollback and dedups by `seq`, so nothing is lost by skipping.
+async fn drain_stream(
+    app: AppHandle,
+    mut stream: StreamHandle,
+    id: &str,
+    emit_output: &AtomicBool,
+) {
     let output_evt = format!("terminal:output:{id}");
     let status_evt = format!("terminal:status:{id}");
     let exit_evt = format!("terminal:exit:{id}");
@@ -209,6 +246,9 @@ async fn drain_stream(app: AppHandle, mut stream: StreamHandle, id: &str) {
     while let Some(frame) = stream.recv().await {
         match frame {
             StreamFrame::Output { seq, data } => {
+                if !emit_output.load(Ordering::Relaxed) {
+                    continue;
+                }
                 // The wire keeps output raw for speed; the Tauri event stays
                 // base64 so the frontend contract is untouched.
                 let payload = TerminalOutputPayload {
@@ -283,7 +323,7 @@ pub async fn terminal_start(
 
     // Subscribe after start (the session now exists); the fresh session's replay
     // is empty, so the drain just carries live output.
-    ensure_drain(app, &state, terminal_id.clone()).await;
+    ensure_drain(app, &state, terminal_id.clone(), true).await;
 
     info!("[terminal_start] {terminal_id} in {:?}", t0.elapsed());
     Ok(summary)
@@ -356,6 +396,10 @@ pub async fn terminal_kill(
     request(&client, Op::Kill { terminal_id }).await
 }
 
+/// List sessions — and make sure each one has at least a status-only drain, so
+/// sidebar phase dots and titles keep updating for sessions whose pane was
+/// never opened in this app run. Restored sessions otherwise only ever show
+/// the snapshot taken here.
 #[tauri::command]
 pub async fn terminal_list(
     app: AppHandle,
@@ -363,7 +407,11 @@ pub async fn terminal_list(
     repo_path: Option<String>,
 ) -> Result<Vec<TerminalSummary>, String> {
     let client = state.client(&app).await?;
-    request(&client, Op::List { repo_path }).await
+    let summaries: Vec<TerminalSummary> = request(&client, Op::List { repo_path }).await?;
+    for summary in &summaries {
+        ensure_drain(app.clone(), &state, summary.id.to_string(), false).await;
+    }
+    Ok(summaries)
 }
 
 #[tauri::command]
@@ -384,9 +432,9 @@ pub async fn terminal_replay(
         .map_err(|e| format!("unexpected daemon response: {e}"))?;
 
     // A replay is a cold reattach (new window, or the app reopened onto a daemon
-    // that kept running) — the only other moment a session needs its stream
-    // (re)established.
-    ensure_drain(app, &state, terminal_id).await;
+    // that kept running). If `terminal_list` already opened a status-only drain
+    // for this session, this upgrades it to carry output.
+    ensure_drain(app, &state, terminal_id, true).await;
 
     Ok(TerminalReplay {
         data_b64: payload.data_b64,
@@ -509,13 +557,16 @@ mod tests {
     fn a_session_can_only_be_claimed_once_at_a_time() {
         let state = detached_state();
 
-        assert!(claim_drain(&state.drains, "t1"), "first claim wins");
         assert!(
-            !claim_drain(&state.drains, "t1"),
+            claim_drain(&state.drains, "t1", true).is_some(),
+            "first claim wins"
+        );
+        assert!(
+            claim_drain(&state.drains, "t1", true).is_none(),
             "a second claim for the same session is refused"
         );
         assert!(
-            claim_drain(&state.drains, "t2"),
+            claim_drain(&state.drains, "t2", true).is_some(),
             "a different session claims independently"
         );
     }
@@ -526,10 +577,16 @@ mod tests {
     fn a_released_session_can_be_claimed_again() {
         let state = detached_state();
 
-        assert!(claim_drain(&state.drains, "t1"));
+        assert!(claim_drain(&state.drains, "t1", true).is_some());
         release_drain(&state.drains, "t1");
-        assert!(!is_draining(&state.drains, "t1"), "no longer draining");
-        assert!(claim_drain(&state.drains, "t1"), "released, so claimable");
+        assert!(
+            !upgrade_drain(&state.drains, "t1", false),
+            "no longer draining"
+        );
+        assert!(
+            claim_drain(&state.drains, "t1", true).is_some(),
+            "released, so claimable"
+        );
     }
 
     /// `ensure_drain`'s fast path: a session already being pumped is recognized
@@ -538,9 +595,52 @@ mod tests {
     fn a_claimed_session_reports_as_draining() {
         let state = detached_state();
 
-        assert!(!is_draining(&state.drains, "t1"));
-        assert!(claim_drain(&state.drains, "t1"));
-        assert!(is_draining(&state.drains, "t1"));
-        assert!(!is_draining(&state.drains, "t2"), "only the claimed one");
+        assert!(!upgrade_drain(&state.drains, "t1", false));
+        assert!(claim_drain(&state.drains, "t1", true).is_some());
+        assert!(upgrade_drain(&state.drains, "t1", false));
+        assert!(
+            !upgrade_drain(&state.drains, "t2", false),
+            "only the claimed one"
+        );
+    }
+
+    /// A status-only drain (opened by `terminal_list`) starts with output off,
+    /// and a later output claim for the same session — a pane attaching —
+    /// flips the *existing* drain's flag rather than starting a second stream.
+    #[test]
+    fn an_output_claim_upgrades_a_status_only_drain() {
+        let state = detached_state();
+
+        let flag = claim_drain(&state.drains, "t1", false).expect("first claim wins");
+        assert!(
+            !flag.load(Ordering::Relaxed),
+            "status-only until a pane attaches"
+        );
+
+        assert!(claim_drain(&state.drains, "t1", true).is_none());
+        assert!(
+            flag.load(Ordering::Relaxed),
+            "racing claim upgraded the holder"
+        );
+    }
+
+    /// The fast path applies the same upgrade: asking for output on an existing
+    /// status-only drain flips it, while a status-only ask leaves it alone.
+    #[test]
+    fn the_fast_path_upgrades_but_never_downgrades() {
+        let state = detached_state();
+
+        let flag = claim_drain(&state.drains, "t1", false).unwrap();
+        assert!(upgrade_drain(&state.drains, "t1", false));
+        assert!(
+            !flag.load(Ordering::Relaxed),
+            "status-only ask changes nothing"
+        );
+
+        assert!(upgrade_drain(&state.drains, "t1", true));
+        assert!(flag.load(Ordering::Relaxed), "output ask upgrades");
+
+        assert!(upgrade_drain(&state.drains, "t1", false));
+        assert!(flag.load(Ordering::Relaxed), "and never downgrades");
     }
 }

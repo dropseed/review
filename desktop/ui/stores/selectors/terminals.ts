@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import { useReviewStore } from "../index";
 import {
+  mergeVisibleTabs,
+  panelReviewKey,
   selectLiveSessionsByReviewKey,
   selectSessionsByHomeKey,
 } from "../slices/terminalSlice";
@@ -51,4 +53,27 @@ export function useSessionsByHomeKey(): Record<string, string[]> {
       }),
     [terminalSessions, terminalCheckouts, terminalHomes],
   );
+}
+
+/**
+ * The terminal the user is in right now: the focused leaf of the active tab
+ * the open panel is showing. Mirrors TerminalPanel's own resolution (viewed
+ * review key → visible tabs → active tab) so the sidebar highlight can never
+ * point at a different pane than the panel does. Null while the panel is
+ * closed — there is no "terminal you're in" without one on screen.
+ */
+export function useCurrentTerminalId(): string | null {
+  return useReviewStore((s) => {
+    if (s.terminalPanelMode === "closed" || !s.repoPath) return null;
+    const reviewKey = panelReviewKey(
+      s.terminalCheckouts,
+      s.repoPath,
+      s.reviewRef,
+    );
+    const visible = mergeVisibleTabs(s.terminalTabsByReviewKey, reviewKey);
+    const activeTabId =
+      s.activeTabIdByReviewKey[reviewKey] ?? visible[0]?.tab.id ?? null;
+    const tab = visible.find((v) => v.tab.id === activeTabId)?.tab;
+    return tab?.focused ?? null;
+  });
 }

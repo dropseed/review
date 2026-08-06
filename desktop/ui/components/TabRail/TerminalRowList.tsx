@@ -1,7 +1,10 @@
 import { type ReactNode } from "react";
 import { clsx } from "clsx";
 import { useReviewStore } from "../../stores";
-import { useSessionsByHomeKey } from "../../stores/selectors/terminals";
+import {
+  useCurrentTerminalId,
+  useSessionsByHomeKey,
+} from "../../stores/selectors/terminals";
 import { useHoverOpen } from "../../hooks/useHoverOpen";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { sessionTitle } from "../Terminal/glance";
@@ -29,6 +32,7 @@ export function TerminalRowList({
   reviewKey: string;
 }): ReactNode {
   const sessionsByHomeKey = useSessionsByHomeKey();
+  const currentTerminalId = useCurrentTerminalId();
   const ids = sessionsByHomeKey[reviewKey] ?? NO_SESSIONS;
 
   if (ids.length === 0) return null;
@@ -36,13 +40,23 @@ export function TerminalRowList({
   return (
     <div className="ml-[18px] border-l border-l-fg/[0.06]">
       {ids.map((id) => (
-        <TerminalRow key={id} sessionId={id} />
+        <TerminalRow
+          key={id}
+          sessionId={id}
+          isActive={id === currentTerminalId}
+        />
       ))}
     </div>
   );
 }
 
-function TerminalRow({ sessionId }: { sessionId: string }): ReactNode {
+function TerminalRow({
+  sessionId,
+  isActive,
+}: {
+  sessionId: string;
+  isActive: boolean;
+}): ReactNode {
   const status = useReviewStore((s) => s.terminalStatuses[sessionId]);
   const session = useReviewStore((s) => s.terminalSessions[sessionId]);
   const dead = useReviewStore((s) => sessionId in s.terminalExited);
@@ -68,8 +82,12 @@ function TerminalRow({ sessionId }: { sessionId: string }): ReactNode {
             jumpToTerminal(sessionId);
           }}
           {...hoverProps}
-          className="group flex w-full items-center gap-1.5 rounded px-2.5 py-0.5
-                     text-left transition-colors duration-100 hover:bg-fg/[0.03]"
+          className={clsx(
+            `group flex w-full items-center gap-1.5 rounded px-2.5 py-0.5
+             text-left transition-colors duration-100`,
+            isActive ? "bg-fg/[0.05]" : "hover:bg-fg/[0.03]",
+          )}
+          aria-current={isActive ? "true" : undefined}
           title={label}
         >
           <PhaseDot phase={status.phase} dead={dead} />
@@ -78,7 +96,9 @@ function TerminalRow({ sessionId }: { sessionId: string }): ReactNode {
               "min-w-0 flex-1 truncate text-[11px]",
               dead
                 ? "text-fg-faint/50"
-                : "text-fg-faint group-hover:text-fg-muted",
+                : isActive
+                  ? "text-fg-secondary"
+                  : "text-fg-faint group-hover:text-fg-muted",
             )}
           >
             {title}
