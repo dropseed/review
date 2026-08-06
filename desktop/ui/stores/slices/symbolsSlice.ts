@@ -78,11 +78,9 @@ export const createSymbolsSlice: SliceCreatorWithClient<SymbolsSlice> =
           comparison,
         );
 
-        // Don't update state if comparison changed while awaiting
-        if (isStale()) {
-          set({ symbolsLoading: false });
-          return;
-        }
+        // Don't update state if comparison changed while awaiting: the new
+        // comparison's own load owns symbolsLoading now.
+        if (isStale()) return;
 
         set({
           symbolDiffs: results,
@@ -92,11 +90,9 @@ export const createSymbolsSlice: SliceCreatorWithClient<SymbolsSlice> =
       } catch (err) {
         console.error("Failed to load symbols:", err);
 
-        // Don't update state if comparison changed while awaiting
-        if (isStale()) {
-          set({ symbolsLoading: false });
-          return;
-        }
+        // Don't update state if comparison changed while awaiting: the new
+        // comparison's own load owns symbolsLoading now.
+        if (isStale()) return;
 
         set({
           symbolDiffs: [],
