@@ -25,7 +25,11 @@ import type { DiffViewMode } from "../../stores/slices/preferencesSlice";
 import { DiffView, DiffErrorBoundary } from "../FileViewer/DiffView";
 import { ImageViewer } from "../FileViewer/ImageViewer";
 import { FileDiffStackItem } from "../ui/file-diff-stack-item";
-import { useHunkBlockScrollTarget, useCodeFont } from "../../hooks";
+import {
+  useHunkBlockScrollTarget,
+  useCodeFont,
+  useResponsiveDiffViewMode,
+} from "../../hooks";
 
 function CheckIcon(): ReactNode {
   return (
@@ -463,6 +467,8 @@ export function GroupDiffViewer({
   const [expandingHunks, setExpandingHunks] = useState<Set<string>>(new Set());
   const lineCacheRef = useRef<LineCache>(new Map());
   const [rootNode, setRootNode] = useState<HTMLDivElement | null>(null);
+  // Too narrow for two columns → render unified regardless of preference.
+  const responsiveViewMode = useResponsiveDiffViewMode(diffViewMode, rootNode);
 
   const hunkById = useHunkById();
 
@@ -823,7 +829,7 @@ export function GroupDiffViewer({
                 <DiffView
                   key={`${hunk.id}:${hunk.oldStart}:${hunk.oldCount}:${hunk.newStart}:${hunk.newCount}`}
                   diffPatch={buildFilteredPatch(fc.diffPatch, [hunk], filePath)}
-                  viewMode={effectiveViewMode(diffViewMode)}
+                  viewMode={effectiveViewMode(responsiveViewMode)}
                   hunks={[hunk]}
                   theme={codeTheme}
                   fontCSS={fontCSS}
@@ -891,7 +897,7 @@ export function GroupDiffViewer({
                 Done
               </span>
               <ViewModeToggle
-                diffViewMode={diffViewMode}
+                diffViewMode={responsiveViewMode}
                 onChangeMode={setDiffViewMode}
               />
               <button
@@ -910,7 +916,7 @@ export function GroupDiffViewer({
                 {filePaths.length === 1 ? "file" : "files"}
               </span>
               <ViewModeToggle
-                diffViewMode={diffViewMode}
+                diffViewMode={responsiveViewMode}
                 onChangeMode={setDiffViewMode}
               />
               <button

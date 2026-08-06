@@ -26,6 +26,7 @@ import {
   useSymbolNavigation,
   useWordHighlight,
   useHoverInfo,
+  useResponsiveDiffViewMode,
 } from "../../hooks";
 import type { FileCodeViewHandle } from "./FileCodeView";
 import { countLines } from "../../utils/count-lines";
@@ -106,7 +107,15 @@ export function FileViewer({
   const splitOrientation = useReviewStore((s) => s.splitOrientation);
   const showOutline = useReviewStore((s) => s.showOutline);
 
-  const [viewMode, setViewMode] = useDiffViewMode(filePath, isSplitActive);
+  const [preferredViewMode, setViewMode] = useDiffViewMode(
+    filePath,
+    isSplitActive,
+  );
+  // A pane too narrow for two columns renders unified regardless of the
+  // preference — measured on this viewer's own root, so a pane split or a
+  // docked terminal panel counts, not just the window.
+  const [paneNode, setPaneNode] = useState<HTMLDivElement | null>(null);
+  const viewMode = useResponsiveDiffViewMode(preferredViewMode, paneNode);
 
   // The CodeView's scroll container (null while a non-code mode is shown) —
   // consumed by scroll tracking, the minimap, and shadow-DOM token hooks.
@@ -748,7 +757,10 @@ export function FileViewer({
   const effectiveLanguage = languageOverride ?? detectedLanguage;
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden animate-fade-in">
+    <div
+      ref={setPaneNode}
+      className="flex flex-1 flex-col overflow-hidden animate-fade-in"
+    >
       <FileViewerToolbar
         filePath={filePath}
         contentMode={contentMode}

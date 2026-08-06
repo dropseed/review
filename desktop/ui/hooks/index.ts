@@ -26,6 +26,7 @@ export {
   useHunkBlockScrollTarget,
 } from "./useScrollTargets";
 export { useCodeFont, useVirtualFileMetrics } from "./useCodeFont";
+export { useResponsiveDiffViewMode } from "./useResponsiveDiffViewMode";
 export { useFileRouteSync } from "./useFileRouteSync";
 export { useAutoUpdater } from "./useAutoUpdater";
 export { useFeedbackPanel } from "./useFeedbackPanel";

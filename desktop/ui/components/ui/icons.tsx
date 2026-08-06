@@ -97,6 +97,25 @@ export function WarningIcon({ className = "w-4 h-4" }: IconProps) {
 }
 
 /** Git branch icon (Octicons). */
+/** Unified-diff +/- marks. */
+export function DiffIcon({ className = "w-4 h-4" }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M9 7h6M12 4v6" />
+      <path d="M9 17h6" />
+    </svg>
+  );
+}
+
 export function BranchIcon({ className = "w-4 h-4" }: IconProps) {
   return (
     <svg

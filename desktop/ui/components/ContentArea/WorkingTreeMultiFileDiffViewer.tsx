@@ -8,7 +8,7 @@ import {
 } from "react";
 import { Virtualizer } from "@pierre/diffs/react";
 import { useReviewStore } from "../../stores";
-import { useCodeFont } from "../../hooks";
+import { useCodeFont, useResponsiveDiffViewMode } from "../../hooks";
 import { getApiClient } from "../../api";
 import type { FileContent } from "../../types";
 import { DiffView, DiffErrorBoundary } from "../FileViewer/DiffView";
@@ -30,6 +30,10 @@ export function WorkingTreeMultiFileDiffViewer(): ReactNode {
   const diffViewMode = useReviewStore((s) => s.diffViewMode);
   const gitStatus = useReviewStore((s) => s.gitStatus);
   const fileVersions = useReviewStore((s) => s.fileVersions);
+
+  // Too narrow for two columns → render unified regardless of preference.
+  const [rootNode, setRootNode] = useState<HTMLDivElement | null>(null);
+  const responsiveViewMode = useResponsiveDiffViewMode(diffViewMode, rootNode);
 
   // Live file list derived from gitStatus — stays in sync when the user
   // stages/unstages files elsewhere while the rolling diff is open.
@@ -152,7 +156,8 @@ export function WorkingTreeMultiFileDiffViewer(): ReactNode {
     );
   }
 
-  const effectiveViewMode = diffViewMode === "split" ? "split" : "unified";
+  const effectiveViewMode =
+    responsiveViewMode === "split" ? "split" : "unified";
 
   function renderFileContent(fc: FileContent, filePath: string): ReactNode {
     if (
@@ -208,7 +213,7 @@ export function WorkingTreeMultiFileDiffViewer(): ReactNode {
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div ref={setRootNode} className="flex-1 flex flex-col overflow-hidden">
       <Virtualizer className="flex-1 scrollbar-thin" style={VIRTUALIZER_STYLE}>
         <div>
           {/* Header */}

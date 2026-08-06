@@ -1,3 +1,5 @@
+import type { ComponentType } from "react";
+import { BranchIcon, DiffIcon, FileIcon, type IconProps } from "../ui/icons";
 import type { FilesPanelTab } from "./types";
 
 /**
@@ -14,6 +16,8 @@ export interface FilesPanelTabSpec {
   id: FilesPanelTab;
   /** The tab strip's label, and the rail's rotated one. */
   label: string;
+  /** Icon-only form the strip falls back to when the words won't fit. */
+  icon: ComponentType<IconProps>;
   /** What the rail says about it in full, where a rotated word isn't enough. */
   description: string;
 }
@@ -22,16 +26,19 @@ export const FILES_PANEL_TABS: readonly FilesPanelTabSpec[] = [
   {
     id: "git",
     label: "Git",
+    icon: BranchIcon,
     description: "Git — the working tree",
   },
   {
     id: "changes",
     label: "Review",
+    icon: DiffIcon,
     description: "Review — files in this comparison",
   },
   {
     id: "browse",
     label: "Browse",
+    icon: FileIcon,
     description: "Browse — every file in the repo",
   },
 ];

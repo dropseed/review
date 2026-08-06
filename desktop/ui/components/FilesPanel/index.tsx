@@ -42,9 +42,17 @@ import { visibleFilesPanelTabs } from "./tabs";
 function TabCount({ value }: { value: number }) {
   if (value <= 0) return null;
   return (
-    <span className="shrink-0 rounded-full bg-fg/10 px-1 font-medium tabular-nums">
-      {value}
-    </span>
+    <>
+      <span className="hidden shrink-0 rounded-full bg-fg/10 px-1 font-medium tabular-nums @min-[21rem]:inline">
+        {value}
+      </span>
+      {/* Narrow panel: the number won't fit, but "something's waiting"
+          still should — a dot carries that bit. */}
+      <span
+        aria-hidden="true"
+        className="size-1 shrink-0 rounded-full bg-current opacity-60 @min-[21rem]:hidden"
+      />
+    </>
   );
 }
 
@@ -238,8 +246,9 @@ export function FilesPanel() {
     <ReviewDataProvider value={reviewDataContextValue}>
       <FilesPanelProvider value={filesPanelContextValue}>
         <div className="flex h-full flex-col">
-          {/* View mode toggle */}
-          <div className="flex items-center gap-1.5 px-3 py-2">
+          {/* View mode toggle. A container so the strip can trade its words
+              for icons when the panel is dragged too narrow for them. */}
+          <div className="@container flex items-center gap-1.5 px-3 py-2">
             {/* Collapsing lives on the panel's own header, the way the
                 sidebar's does — the rail it leaves behind is the way back. It
                 sits on the inner edge, against the content it makes room for,
@@ -263,23 +272,33 @@ export function FilesPanel() {
               className="flex-1 min-w-0"
             >
               <TabsList aria-label="File view mode">
-                {visibleTabs.map((tab) => (
-                  <TabsTrigger key={tab.id} value={tab.id}>
-                    {tab.label}
-                    {tab.id === "git" && <TabCount value={gitChangeCount} />}
-                    {/* Unresolved, not total: the count is there to answer
-                        "is anything waiting", and a check answers it better
-                        than a zero once the answer is no. */}
-                    {tab.id === "changes" &&
-                      (unresolved > 0 ? (
-                        <TabCount value={unresolved} />
-                      ) : (
-                        complete && (
-                          <CheckIcon className="size-2.5 shrink-0 text-status-approved" />
-                        )
-                      ))}
-                  </TabsTrigger>
-                ))}
+                {visibleTabs.map((tab) => {
+                  const Icon = tab.icon;
+                  return (
+                    <TabsTrigger
+                      key={tab.id}
+                      value={tab.id}
+                      aria-label={tab.label}
+                    >
+                      <Icon className="size-3 shrink-0 @min-[16rem]:hidden" />
+                      <span className="hidden truncate @min-[16rem]:inline">
+                        {tab.label}
+                      </span>
+                      {tab.id === "git" && <TabCount value={gitChangeCount} />}
+                      {/* Unresolved, not total: the count is there to answer
+                          "is anything waiting", and a check answers it better
+                          than a zero once the answer is no. */}
+                      {tab.id === "changes" &&
+                        (unresolved > 0 ? (
+                          <TabCount value={unresolved} />
+                        ) : (
+                          complete && (
+                            <CheckIcon className="size-2.5 shrink-0 text-status-approved" />
+                          )
+                        ))}
+                    </TabsTrigger>
+                  );
+                })}
               </TabsList>
             </Tabs>
           </div>
