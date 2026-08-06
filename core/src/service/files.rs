@@ -429,6 +429,10 @@ pub fn get_all_hunks(
         file_paths.len()
     );
 
+    file_paths
+        .iter()
+        .try_for_each(|fp| reject_path_traversal(fp))?;
+
     let source = LocalGitSource::new(repo_path.to_path_buf()).context("Failed to open repo")?;
 
     // Untracked files live in the linked worktree when the head branch is checked out there.
@@ -590,6 +594,8 @@ pub fn get_expanded_context(
     debug!(
         "[get_expanded_context] file={file_path}, lines {start_line}-{end_line}, comparison={comparison:?}"
     );
+
+    reject_path_traversal(file_path)?;
 
     let source = LocalGitSource::new(repo_path.to_path_buf()).context("Failed to open repo")?;
 
