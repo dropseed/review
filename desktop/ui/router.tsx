@@ -8,6 +8,7 @@ import {
   useNavigate,
   useOutletContext,
 } from "react-router-dom";
+import { toast } from "sonner";
 import { TabRail } from "./components/TabRail";
 import { ReviewView } from "./components/ReviewView";
 import { NewReviewView } from "./components/NewReviewView";
@@ -16,6 +17,7 @@ import { useReviewStore } from "./stores";
 import { getSidebarTree } from "./stores/selectors/sidebar";
 import { activateSidebarRow, allSidebarRows } from "./utils/sidebar-tree";
 import { makeReviewKey } from "./utils/review-key";
+import { getErrorMessage } from "./utils/errors";
 import type { ReviewTarget } from "./types";
 import {
   useRepositoryInit,
@@ -136,7 +138,15 @@ function AppShell() {
           if (row) {
             activateSidebarRow(row, {
               onActivateReview: (review) =>
-                void activateReviewRef.current(review),
+                void activateReviewRef.current(review).catch((err) => {
+                  // Resolving the review can fail — its ref or worktree may be
+                  // gone — and nothing has navigated yet, so an unhandled
+                  // rejection leaves the click looking like a no-op.
+                  console.error("Failed to open review:", err);
+                  toast.error(
+                    `Couldn't open ${review.ref}: ${getErrorMessage(err)}`,
+                  );
+                }),
               onActivateLocalBranch: (...args) =>
                 activateLocalBranchRef.current(...args),
             });

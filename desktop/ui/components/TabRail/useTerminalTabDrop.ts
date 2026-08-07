@@ -5,6 +5,7 @@ import {
   pointerLeft,
   setTabDropTarget,
   useTabDropTarget,
+  TERMINAL_SESSION_MIME,
 } from "../Terminal/pane-drag";
 import { makeReviewKey } from "../../utils/review-key";
 
@@ -36,8 +37,9 @@ interface TerminalTabDrop {
 }
 
 /**
- * Make a sidebar row a drop target for terminal tabs — the gesture for "this
- * shell belongs to that branch".
+ * Make a sidebar row a drop target for terminals — a tab dragged off the strip
+ * or a terminal row dragged from the sidebar, both the gesture for "this shell
+ * belongs to that branch".
  *
  * The shell is not moved: it keeps running in the directory it started in, and
  * the row it now answers to is a stored fact about it. That is the honest
@@ -62,6 +64,7 @@ export function useTerminalTabDrop(
   reviewRef: string,
 ): TerminalTabDrop {
   const setTabHome = useReviewStore((s) => s.setTabHome);
+  const setTerminalHome = useReviewStore((s) => s.setTerminalHome);
   const rowId = useId();
   const target = useTabDropTarget();
   const droppable = reviewRef !== "";
@@ -76,9 +79,14 @@ export function useTerminalTabDrop(
         : {}),
       onDragOver: (e) => {
         if (!droppable) return;
-        if (!e.dataTransfer.types.includes(TERMINAL_TAB_MIME)) return;
-        // Claimed only for terminal tabs; a file drag falls through to whatever
-        // else on the page wants it.
+        if (
+          !e.dataTransfer.types.includes(TERMINAL_TAB_MIME) &&
+          !e.dataTransfer.types.includes(TERMINAL_SESSION_MIME)
+        ) {
+          return;
+        }
+        // Claimed only for terminal tabs and rows; a file drag falls through to
+        // whatever else on the page wants it.
         e.preventDefault();
         e.stopPropagation();
         e.dataTransfer.dropEffect = "move";
@@ -92,6 +100,15 @@ export function useTerminalTabDrop(
       onDrop: (e) => {
         clearTabDropTarget({ kind: "tab-home", reviewKey: key, rowId });
         if (!droppable) return;
+        // A row dragged from the sidebar names a session; a tab off the strip
+        // names a tab. Both mean "this belongs to that branch now".
+        const terminalId = e.dataTransfer.getData(TERMINAL_SESSION_MIME);
+        if (terminalId) {
+          e.preventDefault();
+          e.stopPropagation();
+          setTerminalHome(terminalId, key);
+          return;
+        }
         const tabId = e.dataTransfer.getData(TERMINAL_TAB_MIME);
         if (!tabId) return;
         e.preventDefault();

@@ -34,7 +34,12 @@ import {
   moveTabToKey,
   moveTerminalsToKey,
 } from "./terminalSlice";
-import { collectLeafIds, makeTab } from "../../components/Terminal/pane-tree";
+import {
+  collectLeafIds,
+  leaf,
+  makeTab,
+  splitLeaf,
+} from "../../components/Terminal/pane-tree";
 import type { TerminalTab } from "../../components/Terminal/pane-tree";
 import type {
   LocalBranchInfo,
@@ -1048,6 +1053,115 @@ describe("panel preferences (dock side + width persistence)", () => {
     expect(get().terminalIdsByReviewKey["/r:main"]).toEqual([]);
     // The row you dropped it on shows it when you get there.
     expect(get().activeTabIdByReviewKey["/r:feature"]).toBe("tabA");
+  });
+
+  it("setTerminalHome takes the dragged row's whole tab with it", () => {
+    const { get, set, writes } = makeSlice();
+    set({
+      terminalSessions: {
+        a: session("a", "/r", { cwd: "/r" }),
+        b: session("b", "/r", { cwd: "/r" }),
+      },
+      terminalTabsByReviewKey: {
+        "/r:main": [
+          {
+            ...makeTab("tabA", "a"),
+            root: splitLeaf(leaf("a"), "a", "b", "row"),
+          },
+        ],
+      },
+      terminalIdsByReviewKey: { "/r:main": ["a", "b"] },
+      terminalHomes: { a: "/r:main", b: "/r:main" },
+    });
+
+    get().setTerminalHome("a", "/r:feature");
+
+    // Panes in a tab can't live in different buckets, so dragging one row moves
+    // the tab — the same move dragging the tab itself would make.
+    expect(
+      get().terminalTabsByReviewKey["/r:feature"].map((t: TerminalTab) => t.id),
+    ).toEqual(["tabA"]);
+    expect(get().terminalHomes).toEqual({ a: "/r:feature", b: "/r:feature" });
+    expect(writes.terminalHomes).toEqual({ a: "/r:feature", b: "/r:feature" });
+  });
+
+  it("setTerminalHome re-homes a session this window has no tab for", () => {
+    const { get, set, writes } = makeSlice();
+    // Another repo's session, merged in so its sidebar row can be drawn.
+    set({
+      terminalSessions: { a: session("a", "/other", { cwd: "/other" }) },
+      terminalIdsByReviewKey: {},
+      terminalTabsByReviewKey: {},
+    });
+
+    get().setTerminalHome("a", "/r:feature");
+
+    expect(get().terminalHomes.a).toBe("/r:feature");
+    expect(writes.terminalHomes).toEqual({ a: "/r:feature" });
+    expect(get().terminalIdsByReviewKey["/r:feature"]).toEqual(["a"]);
+  });
+
+  it("adoptTerminalTab moves a stranded tab onto the row that was clicked", () => {
+    const { get, set, writes } = makeSlice();
+    set({
+      terminalSessions: { a: session("a", "/r", { cwd: "/wt/feature" }) },
+      terminalTabsByReviewKey: { "/r:feature": [makeTab("tabA", "a")] },
+      terminalIdsByReviewKey: { "/r:feature": ["a"] },
+      terminalHomes: { a: "/r:feature" },
+    });
+
+    // The feature row is gone, so the sidebar draws this under the repo root.
+    get().adoptTerminalTab("a", "/r:main");
+
+    expect(
+      get().terminalTabsByReviewKey["/r:main"].map((t: TerminalTab) => t.id),
+    ).toEqual(["tabA"]);
+    expect(get().activeTabIdByReviewKey["/r:main"]).toBe("tabA");
+    expect(get().terminalIdsByReviewKey["/r:main"]).toEqual(["a"]);
+    // A rescue, not the user saying where it belongs — so it still goes home
+    // if the row comes back.
+    expect(get().terminalHomes.a).toBe("/r:feature");
+    expect(writes.terminalHomes).toBeUndefined();
+  });
+
+  it("adoptTerminalTab gives a session with no tab here one to be shown in", () => {
+    const { get, set } = makeSlice();
+    set({
+      terminalSessions: { a: session("a", "/r", { cwd: "/r" }) },
+      terminalTabsByReviewKey: {},
+      terminalIdsByReviewKey: {},
+      freshTerminalIds: [],
+    });
+
+    get().adoptTerminalTab("a", "/r:main");
+
+    // Tab id = session id, the same one a reattach derives, so the next ingest
+    // keeps this tab rather than adding a second one for the same shell.
+    expect(
+      get().terminalTabsByReviewKey["/r:main"].map((t: TerminalTab) => t.id),
+    ).toEqual(["a"]);
+    expect(get().activeTabIdByReviewKey["/r:main"]).toBe("a");
+    // Not a new session: it has scrollback worth replaying when its pane mounts.
+    expect(get().freshTerminalIds).toEqual([]);
+  });
+
+  it("adoptTerminalTab leaves a pinned tab in its own bucket", () => {
+    const { get, set } = makeSlice();
+    set({
+      terminalSessions: { a: session("a", "/r", { cwd: "/r" }) },
+      terminalTabsByReviewKey: {
+        "/r:feature": [{ ...makeTab("tabA", "a"), pinned: true }],
+      },
+    });
+
+    get().adoptTerminalTab("a", "/r:main");
+
+    // A pinned tab is in every strip already; moving it would relocate a tab
+    // the user can see either way.
+    expect(
+      get().terminalTabsByReviewKey["/r:feature"].map((t: TerminalTab) => t.id),
+    ).toEqual(["tabA"]);
+    expect(get().terminalTabsByReviewKey["/r:main"]).toBeUndefined();
   });
 
   it("a re-homed tab survives the next checkout listing", () => {

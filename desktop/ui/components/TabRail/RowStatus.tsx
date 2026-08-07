@@ -1,7 +1,6 @@
 import { type ReactNode } from "react";
 import type { ReviewTier } from "../../types";
 import { GitTreeIcon } from "../ui/icons";
-import { TerminalStatusBadge } from "./TerminalStatusBadge";
 
 /**
  * Tier marker for a sidebar row.
@@ -25,9 +24,6 @@ function TierDot({ tier }: { tier: ReviewTier }): ReactNode {
 }
 
 interface RowStatusProps {
-  repoPath: string;
-  /** The row's ref — its identity, and what a re-homed terminal names. */
-  reviewRef: string;
   /** The row's own checkout: a linked worktree, the repo root for the main
    *  working-tree row, or null when the row has no checkout at all. */
   checkoutPath?: string | null;
@@ -41,23 +37,20 @@ interface RowStatusProps {
  * The status cluster shared by every sidebar row.
  *
  * This lives in one place because a row's status doesn't depend on where the
- * row came from. Previously the terminal badge was rendered only by the
- * review-row component, so a branch row — including the repo's own
- * working-tree row — could never show one even while hosting terminals.
+ * row came from — a review row and a plain branch row say the same things
+ * about themselves.
+ *
+ * Terminals are not among them: they hang under the row as child rows of their
+ * own now, which says both which ones and what they're doing — more than a
+ * count in a dot ever did, and without a second place to disagree with.
  */
 export function RowStatus({
-  repoPath,
-  reviewRef,
   checkoutPath,
   tier,
   showWorktreeIcon = false,
 }: RowStatusProps): ReactNode {
   return (
     <>
-      {/* Leads the cluster: it's the only marker that changes while you're
-          looking elsewhere, so it keeps a fixed spot rather than shifting as
-          the badges beside it come and go. */}
-      <TerminalStatusBadge repoPath={repoPath} reviewRef={reviewRef} />
       <TierDot tier={tier} />
       {showWorktreeIcon && checkoutPath && (
         <span className="text-fg-faint" title="worktree">

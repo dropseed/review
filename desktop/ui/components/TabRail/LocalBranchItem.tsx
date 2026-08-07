@@ -200,8 +200,6 @@ export const LocalBranchItem = memo(function LocalBranchItem({
               instead of reserving width or landing on top of it. */}
           <span className={ROW_STATUS}>
             <RowStatus
-              repoPath={repoPath}
-              reviewRef={reviewRef}
               checkoutPath={checkoutPath}
               tier={checkoutPath ? "materialized" : "fetched"}
               showWorktreeIcon={itemKind === "worktree"}

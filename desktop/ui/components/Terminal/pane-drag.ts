@@ -159,6 +159,32 @@ export function draggedTabSource(): TabDragSource | null {
 }
 
 /**
+ * The drag payload for a terminal picked up by its own sidebar row. Distinct
+ * from a tab drag because a row stands for one session, which may have no tab
+ * in this window at all — the drop re-homes the session rather than a tab.
+ */
+export const TERMINAL_SESSION_MIME = "application/x-review-terminal-session";
+
+/**
+ * The session whose sidebar row is being dragged, if any. Latched for the same
+ * reason a tab is: under Tauri the drop arrives on the window, after our own
+ * `dragend`, with no readable `dataTransfer`.
+ */
+let draggedTerminalId: string | null = null;
+
+export function setDraggedTerminal(id: string | null): void {
+  if (draggedTerminalId === id) return;
+  draggedTerminalId = id;
+  // Same rule as a pane or a tab: nothing in flight means nowhere to land.
+  if (id === null && tabDropTarget !== null) tabDropTarget = null;
+  notify();
+}
+
+export function draggedTerminal(): string | null {
+  return draggedTerminalId;
+}
+
+/**
  * Where the thing in flight would land, among the targets that take a whole
  * pane or tab: an existing strip tab, the extract-to-new-tab slot, a reorder
  * position in the strip, or a sidebar row to re-home a tab onto.

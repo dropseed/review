@@ -557,8 +557,6 @@ function RepoNodeView({
         <span className={ROW_STATUS}>
           {head && (
             <RowStatus
-              repoPath={node.repoPath}
-              reviewRef={head.ref}
               checkoutPath={head.checkoutPath}
               tier={head.checkoutPath ? "materialized" : "fetched"}
             />
@@ -757,8 +755,11 @@ export const TabRail = memo(function TabRail({
         />
       )}
 
+      {/* select-none for the whole sidebar: rows are things you click and drag,
+          not text you select — a double-click while triaging shouldn't leave a
+          branch name highlighted. */}
       <nav
-        className={`tab-rail flex h-full shrink-0 flex-col
+        className={`tab-rail flex h-full shrink-0 select-none flex-col
                    bg-surface border-r border-edge overflow-hidden
                    ${isResizing ? "" : "transition-[width,opacity] duration-200 ease-out"}`}
         style={{

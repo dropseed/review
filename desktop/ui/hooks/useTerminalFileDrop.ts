@@ -5,9 +5,11 @@ import { toast } from "sonner";
 import {
   draggedPane,
   draggedTabSource,
+  draggedTerminal,
   edgeForPoint,
   setDraggedPane,
   setDraggedTab,
+  setDraggedTerminal,
   setPaneDropTarget,
   setTabDropTarget,
   subscribePaneDrag,
@@ -64,9 +66,10 @@ interface PaneHit {
  * or a tab dragged off the strip arrives here with no paths rather than as the
  * `drop` its HTML5 handlers are waiting for. So every in-app drop target is
  * hit-tested from this channel too: pane-onto-pane rearranging, a pane onto a
- * strip tab or the extract-to-new-tab slot, and a tab onto another strip
- * position (reorder) or a sidebar row (re-home). A drag with neither paths nor
- * a pane/tab behind it is the one that has nothing to give a terminal.
+ * strip tab or the extract-to-new-tab slot, a tab onto another strip position
+ * (reorder) or a sidebar row (re-home), and a sidebar terminal row onto another
+ * row (re-home). A drag with neither paths nor a pane/tab/row behind it is the
+ * one that has nothing to give a terminal.
  */
 export function useTerminalFileDrop(): void {
   useEffect(() => {
@@ -164,7 +167,8 @@ export function useTerminalFileDrop(): void {
     // constantly; only the pickup measures.
     let carriedByGrip: string | null = null;
     const unsubDrag = subscribePaneDrag(() => {
-      const dragging = draggedPane() ?? draggedTabSource()?.tabId ?? null;
+      const dragging =
+        draggedPane() ?? draggedTabSource()?.tabId ?? draggedTerminal();
       if (dragging && !carriedByGrip) {
         measurePanes();
         forgetStrip();
@@ -208,6 +212,7 @@ export function useTerminalFileDrop(): void {
      */
     let carried: string | null = null;
     let carriedTab: TabDragSource | null = null;
+    let carriedTerminal: string | null = null;
 
     void import("@tauri-apps/api/webview").then(({ getCurrentWebview }) => {
       if (disposed) return;
@@ -219,6 +224,7 @@ export function useTerminalFileDrop(): void {
             setTabDropTarget(null);
             carried = null;
             carriedTab = null;
+            carriedTerminal = null;
             forgetPanes();
             forgetStrip();
             return;
@@ -226,6 +232,7 @@ export function useTerminalFileDrop(): void {
           if (payload.type === "enter") {
             carried = null;
             carriedTab = null;
+            carriedTerminal = null;
             // Panes can't move mid-drag, but they can have moved since the last
             // one — a new drag measures again.
             forgetPanes();
@@ -235,8 +242,26 @@ export function useTerminalFileDrop(): void {
             if (!measured) measurePanes();
             carried ??= draggedPane();
             carriedTab ??= draggedTabSource();
-            if ((carried || carriedTab) && !stripMeasured) measureStrip();
+            carriedTerminal ??= draggedTerminal();
+            if ((carried || carriedTab || carriedTerminal) && !stripMeasured) {
+              measureStrip();
+            }
             const pt = toCssPixels(payload.position, scaled);
+            if (carriedTerminal) {
+              // A sidebar terminal row in flight: only a row can take it, and
+              // it has no position in the strip to be reordered into.
+              const row = homeRows.find((r) => inRect(r.rect, pt.x, pt.y));
+              setTabDropTarget(
+                row
+                  ? {
+                      kind: "tab-home",
+                      reviewKey: row.reviewKey,
+                      rowId: row.rowId,
+                    }
+                  : null,
+              );
+              return;
+            }
             if (carriedTab) {
               // A tab in flight: a sidebar row would re-home it, another strip
               // position would reorder it.
@@ -285,13 +310,28 @@ export function useTerminalFileDrop(): void {
           }
           // drop
           if (!measured) measurePanes();
-          if ((carried || carriedTab) && !stripMeasured) measureStrip();
+          if ((carried || carriedTab || carriedTerminal) && !stripMeasured) {
+            measureStrip();
+          }
           const pt = toCssPixels(payload.position, scaled);
           const hit = paneAt(pt);
           setHovered(null);
           setPaneDropTarget(null);
           setTabDropTarget(null);
           forgetPanes();
+          if (carriedTerminal) {
+            const terminalId = carriedTerminal;
+            carriedTerminal = null;
+            setDraggedTerminal(null);
+            const row = homeRows.find((r) => inRect(r.rect, pt.x, pt.y));
+            forgetStrip();
+            if (row) {
+              useReviewStore
+                .getState()
+                .setTerminalHome(terminalId, row.reviewKey);
+            }
+            return;
+          }
           if (carriedTab) {
             const source = carriedTab;
             carriedTab = null;

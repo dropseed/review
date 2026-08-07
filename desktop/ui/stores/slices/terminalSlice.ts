@@ -153,6 +153,20 @@ export interface TerminalSlice {
    */
   setTabHome: (tabId: string, reviewKey: string) => void;
   /**
+   * Re-home one session onto `reviewKey` — the drag from its sidebar row onto
+   * another row. The tab-level counterpart is `setTabHome`; this exists because
+   * a row can be dragged for a session that has no tab in this window at all
+   * (another repo's, merged in so its row can be drawn).
+   */
+  setTerminalHome: (terminalId: string, reviewKey: string) => void;
+  /**
+   * Guarantee that `terminalId` has a tab the strip for `reviewKey` will show:
+   * move the tab holding it into that bucket, or make one if this window has
+   * none. What clicking a sidebar terminal row goes through, so the click can't
+   * end pointed at a tab no view renders.
+   */
+  adoptTerminalTab: (terminalId: string, reviewKey: string) => void;
+  /**
    * Publish the current checkout layout. Re-homes every tab against it, which
    * is how a terminal whose worktree was removed gets adopted by its repo's
    * root bucket instead of dropping out of the UI.
@@ -1785,6 +1799,55 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
         terminalHomes,
         ...moveTabToKey(g, tabId, reviewKey),
         ...moveTerminalsToKey(g, leafIds, reviewKey),
+      });
+    },
+
+    setTerminalHome: (terminalId, reviewKey) => {
+      const g = get();
+      // Panes in a tab travel together, so a row dragged onto another row takes
+      // the whole tab with it — the same move dragging that tab would make.
+      const found = findTabForTerminal(g.terminalTabsByReviewKey, terminalId);
+      if (found) {
+        get().setTabHome(found.tab.id, reviewKey);
+        return;
+      }
+      // No tab here to move: the session belongs to a repo this window hasn't
+      // opened, so the stored home (which its own window reads) is the move.
+      set({
+        terminalHomes: rememberHome([terminalId], reviewKey),
+        ...moveTerminalsToKey(g, [terminalId], reviewKey),
+      });
+    },
+
+    adoptTerminalTab: (terminalId, reviewKey) => {
+      const g = get();
+      const found = findTabForTerminal(g.terminalTabsByReviewKey, terminalId);
+      // A pinned tab is already in every strip; moving it would relocate a tab
+      // the user can see either way.
+      if (found?.tab.pinned) return;
+      if (found) {
+        if (found.reviewKey === reviewKey) return;
+        set({
+          ...moveTabToKey(g, found.tab.id, reviewKey),
+          ...moveTerminalsToKey(g, collectLeafIds(found.tab.root), reviewKey),
+        });
+        return;
+      }
+      const session = g.terminalSessions[terminalId];
+      if (!session) return;
+      // Nothing has placed this session in this window — same tab id a reattach
+      // would give it, so the tab made here is the tab the next ingest keeps.
+      // Deliberately no `rememberHome`: this is a rendering rescue, not the
+      // user saying where the terminal belongs.
+      set({
+        ...addTabForTerminal(
+          g,
+          terminalId,
+          reviewKey,
+          terminalId,
+          g.terminalPinnedIds.includes(terminalId),
+        ),
+        ...moveTerminalsToKey(g, [terminalId], reviewKey),
       });
     },
 

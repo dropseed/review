@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 import { getCommandUi } from "../../commands/host";
 import { useReviewStore } from "../../stores";
 import {
@@ -24,42 +25,57 @@ import { setTerminalFocus } from "./registry";
 export function jumpToTerminal(id: string): void {
   const store = useReviewStore.getState();
   const session = store.terminalSessions[id];
-  const found = findTabForTerminal(store.terminalTabsByReviewKey, id);
 
   if (store.terminalPanelMode === "closed") store.toggleTerminalPanel();
   if (store.terminalOverviewOpen) store.setTerminalOverviewOpen(false);
-
-  if (found) {
-    store.setActiveTab(found.reviewKey, found.tab.id);
-    store.setFocusedTerminalPane(found.reviewKey, found.tab.id, id);
-  }
 
   const currentKey = store.repoPath
     ? panelReviewKey(store.terminalCheckouts, store.repoPath, store.reviewRef)
     : null;
 
-  // Where the session lives. A session in a repo this window hasn't opened has
-  // no tab here at all (it's merged in for badges only), so its home is
-  // derived the same way its sidebar row derives it.
-  const homeKey = found
-    ? found.reviewKey
-    : session
-      ? sessionHomeKey(
-          store.terminalCheckouts,
-          store.terminalHomes,
-          session,
-          makeReviewKey(session.repoPath, ""),
-        )
-      : null;
+  // The row this was clicked under, derived the way the sidebar derives it
+  // rather than read off whichever bucket the tab happens to sit in: a session
+  // whose own row is gone is drawn under its repo's root row, and its tab may
+  // be stranded in a bucket no view reads.
+  const homeKey = session
+    ? sessionHomeKey(
+        store.terminalCheckouts,
+        store.terminalHomes,
+        session,
+        makeReviewKey(session.repoPath, ""),
+      )
+    : null;
 
-  if (currentKey && homeKey) {
+  // For this window's own repo the strip is ours to fix, so the tab is put
+  // where the row that was clicked will show it before anything is activated.
+  if (session && homeKey && session.repoPath === store.repoPath) {
+    store.adoptTerminalTab(id, homeKey);
+  }
+
+  const found = findTabForTerminal(
+    useReviewStore.getState().terminalTabsByReviewKey,
+    id,
+  );
+  if (found) {
+    store.setActiveTab(found.reviewKey, found.tab.id);
+    store.setFocusedTerminalPane(found.reviewKey, found.tab.id, id);
+  }
+
+  if (currentKey && homeKey && session) {
     if (found && (found.tab.pinned || homeKey === currentKey)) {
       // Visible in the strip being viewed — a pinned visitor still needs the
       // *viewed* key pointed at it, since that's the key the panel reads.
       store.setActiveTab(currentKey, found.tab.id);
-    } else if (homeKey !== currentKey && session) {
+    } else if (homeKey !== currentKey) {
       const ref = refFromReviewKey(homeKey, session.repoPath);
-      if (ref) getCommandUi().activateReviewKey(session.repoPath, ref);
+      if (ref) {
+        getCommandUi().activateReviewKey(session.repoPath, ref);
+      } else {
+        // The placeholder `repoPath:""` key — the repo's checkouts aren't
+        // known, so there is no row to switch to and nothing more this can do.
+        // Saying so beats a click that looks like it did nothing.
+        toast.error("Couldn't find the row that terminal lives on");
+      }
     }
   }
 

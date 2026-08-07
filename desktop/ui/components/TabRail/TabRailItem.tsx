@@ -187,12 +187,7 @@ export const TabRailItem = memo(function TabRailItem({
             appears just left of it, over the label's fading tail (see
             row-chrome), rather than reserving width the label needs. */}
         <span className={ROW_STATUS}>
-          <RowStatus
-            repoPath={review.repoPath}
-            reviewRef={review.ref}
-            checkoutPath={review.worktreePath}
-            tier={review.tier}
-          />
+          <RowStatus checkoutPath={review.worktreePath} tier={review.tier} />
           {hasMissingRefs && (
             <WarningIcon className="h-3 w-3 shrink-0 text-status-rejected" />
           )}
