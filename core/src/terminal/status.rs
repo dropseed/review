@@ -29,9 +29,18 @@
 //! Content peek is not part of status: it is pulled on demand through the
 //! session's VT thread (see [`super::Session::peek`]), never pushed into a
 //! status frame.
+//!
+//! ## Kitty keyboard negotiation
+//!
+//! The same scanner reads the kitty keyboard protocol's push/pop/set/query
+//! sequences into a [`KittyKeyboard`] stack (see [`super::kitty`]) and surfaces
+//! the flags in force as `kitty_flags`. A mode query (`CSI ? u`) is answered
+//! from here: [`StatusScanner::take_reply`] hands the bytes back to the session,
+//! which writes them to the PTY on the reader thread.
 
-use vte::{Parser, Perform};
+use vte::{Params, Parser, Perform};
 
+use super::kitty::{KittyKeyboard, Screen, FLAGS_MAX};
 use super::{now_millis, Phase, SessionStatus, TerminalId};
 
 /// The mutable status state plus the `vte::Perform` sink. The [`Perform`] impl
@@ -53,6 +62,10 @@ struct Sink {
     title: Option<String>,
     entered_state_at: u64,
     shell_integration_active: bool,
+    /// The kitty keyboard mode stacks the running program negotiated.
+    kitty: KittyKeyboard,
+    /// Bytes owed back to the program (so far only the kitty mode report).
+    reply: Vec<u8>,
     /// Raised whenever a surfaced field changed since the last emit.
     dirty: bool,
 }
@@ -71,6 +84,8 @@ impl Sink {
             title: None,
             entered_state_at: now_millis(),
             shell_integration_active: false,
+            kitty: KittyKeyboard::default(),
+            reply: Vec::new(),
             dirty: false,
         }
     }
@@ -87,6 +102,7 @@ impl Sink {
             title: self.title.clone(),
             entered_state_at: self.entered_state_at,
             shell_integration_active: self.shell_integration_active,
+            kitty_flags: self.kitty.flags(),
         }
     }
 
@@ -165,9 +181,11 @@ impl Sink {
         self.activate_integration();
         let Some(sub) = params.get(1) else { return };
         match sub.first() {
-            // Prompt start: at a prompt, waiting for input; clear the bell.
+            // Prompt start: at a prompt, waiting for input; clear the bell, and
+            // any keyboard mode a program leaked by dying without popping.
             Some(&b'A') => {
                 self.clear_attention();
+                self.with_kitty(KittyKeyboard::clear_leaked);
                 self.set_base_phase(Phase::WaitingForInput);
             }
             // Prompt end: still waiting for input.
@@ -192,6 +210,76 @@ impl Sink {
                 self.set_base_phase(Phase::Idle);
             }
             _ => {}
+        }
+    }
+
+    /// Mutate the kitty keyboard stacks, raising `dirty` only when the flags
+    /// actually in force changed — a push onto the screen the program is not
+    /// drawing on is not something the frontend has to hear about.
+    fn with_kitty(&mut self, apply: impl FnOnce(&mut KittyKeyboard)) {
+        let before = self.kitty.flags();
+        apply(&mut self.kitty);
+        if self.kitty.flags() != before {
+            self.dirty = true;
+        }
+    }
+
+    /// Apply a kitty keyboard negotiation sequence, identified by its private
+    /// prefix. The final byte is `u` for all four.
+    fn kitty_csi(&mut self, prefix: u8, params: &Params) {
+        match prefix {
+            // CSI > flags u — push. No parameter means "push 0", i.e. disable;
+            // so does a multi-parameter form, which the protocol does not have.
+            b'>' => {
+                let flags = if params.iter().count() == 1 {
+                    param_at(params, 0).unwrap_or(0)
+                } else {
+                    0
+                };
+                self.with_kitty(|kitty| kitty.push(flags));
+            }
+            // CSI < n u — pop n levels, defaulting to one.
+            b'<' => {
+                let count = if params.iter().count() == 1 {
+                    param_at(params, 0).unwrap_or(1)
+                } else {
+                    1
+                };
+                self.with_kitty(|kitty| kitty.pop(count));
+            }
+            // CSI = flags ; mode u — set/or/clear in place.
+            b'=' => {
+                let flags = param_at(params, 0).unwrap_or(0);
+                let mode = param_at(params, 1).unwrap_or(1);
+                if flags <= FLAGS_MAX {
+                    self.with_kitty(|kitty| kitty.set(flags, mode));
+                }
+            }
+            // CSI ? u — what mode are we in? Answered from the session's own
+            // stack, so a program gets its answer whether or not a window is
+            // attached to draw the terminal.
+            b'?' => {
+                let flags = self.kitty.flags();
+                self.reply
+                    .extend_from_slice(format!("\x1b[?{flags}u").as_bytes());
+            }
+            _ => {}
+        }
+    }
+
+    /// Apply a DECSET/DECRST (`CSI ? n h` / `l`). Only the alternate-screen
+    /// switches matter here: which kitty stack is live follows the buffer the
+    /// program is drawing on, and 47, 1047 and 1049 are the three ways in.
+    fn private_mode(&mut self, params: &Params, set: bool) {
+        let screen = if set {
+            Screen::Alternate
+        } else {
+            Screen::Normal
+        };
+        for sub in params.iter() {
+            if matches!(sub.first(), Some(&(47 | 1047 | 1049))) {
+                self.with_kitty(|kitty| kitty.set_screen(screen));
+            }
         }
     }
 
@@ -280,6 +368,45 @@ impl Perform for Sink {
             _ => {}
         }
     }
+
+    fn csi_dispatch(&mut self, params: &Params, intermediates: &[u8], ignore: bool, action: char) {
+        if ignore {
+            return;
+        }
+        match (action, intermediates) {
+            // The kitty keyboard protocol's four negotiation sequences, told
+            // apart by their private prefix.
+            ('u', [prefix]) if matches!(*prefix, b'>' | b'<' | b'=' | b'?') => {
+                self.kitty_csi(*prefix, params);
+            }
+            // DECSET / DECRST — the alternate-screen switch the kitty stacks
+            // are scoped to.
+            ('h', [b'?']) => self.private_mode(params, true),
+            ('l', [b'?']) => self.private_mode(params, false),
+            // DECSTR, a soft reset. Like RIS below, it puts the keyboard back
+            // the way a program that died mid-negotiation could not.
+            ('p', [b'!']) => self.with_kitty(KittyKeyboard::reset),
+            _ => {}
+        }
+    }
+
+    fn esc_dispatch(&mut self, intermediates: &[u8], ignore: bool, byte: u8) {
+        // ESC c — RIS, a full terminal reset. A program that enabled the kitty
+        // protocol and then died without popping would otherwise leave every
+        // later keystroke encoded for a reader that is gone; `reset` is how a
+        // user fixes that by hand. (`ESC ( c` and friends carry intermediates
+        // and are charset designators, not a reset.)
+        if !ignore && byte == b'c' && intermediates.is_empty() {
+            self.with_kitty(KittyKeyboard::reset);
+        }
+    }
+}
+
+/// The `index`th CSI parameter as a plain number, ignoring any subparameters
+/// (`1:2`); `None` when the sequence did not carry one.
+fn param_at(params: &Params, index: usize) -> Option<u16> {
+    let sub = params.iter().nth(index)?;
+    sub.first().copied()
 }
 
 /// Rejoin OSC parameters with their `;` separators. `vte` splits on `;`, so a
@@ -335,6 +462,13 @@ impl StatusScanner {
             self.parser.advance(&mut self.sink, byte);
         }
         self.sink.take_dirty()
+    }
+
+    /// Take the bytes the program is owed in answer to a device report it sent
+    /// (today: the kitty keyboard mode query). The caller writes them to the
+    /// PTY; `None` when nothing asked.
+    pub fn take_reply(&mut self) -> Option<Vec<u8>> {
+        (!self.sink.reply.is_empty()).then(|| std::mem::take(&mut self.sink.reply))
     }
 
     /// Note a user write to the terminal: clears the bell overlay. Returns
@@ -572,6 +706,90 @@ mod tests {
             c.entered_state_at > t_waiting,
             "phase change must advance the stamp"
         );
+    }
+
+    #[test]
+    fn kitty_push_and_pop_surface_on_the_status() {
+        let mut s = scanner();
+
+        let pushed = feed(&mut s, b"\x1b[>1u").expect("a push changed status");
+        assert_eq!(pushed.kitty_flags, 1);
+
+        // A nested program's richer mode, and back again.
+        assert_eq!(feed(&mut s, b"\x1b[>9u").expect("push").kitty_flags, 9);
+        assert_eq!(feed(&mut s, b"\x1b[<u").expect("pop").kitty_flags, 1);
+        assert_eq!(feed(&mut s, b"\x1b[<u").expect("pop").kitty_flags, 0);
+    }
+
+    #[test]
+    fn kitty_set_form_edits_the_top_of_the_stack() {
+        let mut s = scanner();
+        assert_eq!(feed(&mut s, b"\x1b[=1;1u").expect("set").kitty_flags, 1);
+        assert_eq!(feed(&mut s, b"\x1b[=8;2u").expect("or").kitty_flags, 9);
+        assert_eq!(feed(&mut s, b"\x1b[=1;3u").expect("not").kitty_flags, 8);
+        // A mode outside 1..3 is malformed: leave the encoding alone.
+        assert!(feed(&mut s, b"\x1b[=2;99u").is_none());
+        assert_eq!(s.build_status().kitty_flags, 8);
+    }
+
+    #[test]
+    fn kitty_query_is_answered_from_the_sessions_own_stack() {
+        let mut s = scanner();
+        s.feed(b"\x1b[>9u");
+        assert!(s.take_reply().is_none(), "a push asks for no answer");
+
+        s.feed(b"\x1b[?u");
+        assert_eq!(s.take_reply().as_deref(), Some(b"\x1b[?9u".as_slice()));
+        // Taken once: the caller has written it.
+        assert!(s.take_reply().is_none());
+    }
+
+    #[test]
+    fn kitty_mode_is_scoped_to_the_screen_it_was_pushed_on() {
+        let mut s = scanner();
+        // A TUI takes the alternate screen and enables the protocol...
+        s.feed(b"\x1b[?1049h\x1b[>1u");
+        assert_eq!(s.build_status().kitty_flags, 1);
+
+        // ...then is killed. Nothing pops; the shell just gets its screen back,
+        // and must not inherit a keyboard encoded for the dead program.
+        let home = feed(&mut s, b"\x1b[?1049l").expect("leaving alt changed status");
+        assert_eq!(home.kitty_flags, 0);
+    }
+
+    #[test]
+    fn prompt_mark_clears_a_mode_leaked_onto_the_alternate_screen() {
+        let mut s = scanner();
+        // TUI up, mode pushed, then killed: `1049l` from its teardown but no
+        // kitty pop — the leak the next full-screen program would inherit.
+        s.feed(b"\x1b[?1049h\x1b[>25u\x1b[?1049l");
+        s.feed(b"\x1b]133;A\x07");
+
+        // vim starts on that same alternate screen and never asks for kitty.
+        s.feed(b"\x1b[?1049h");
+        assert_eq!(s.build_status().kitty_flags, 0);
+    }
+
+    #[test]
+    fn command_marks_do_not_strip_a_running_programs_mode() {
+        let mut s = scanner();
+        s.feed(b"\x1b[>1u");
+        // These arrive *around* a running program; clearing on them would take
+        // the mode out from under it.
+        s.feed(b"\x1b]133;C\x07");
+        s.feed(b"\x1b]133;D;0\x07");
+        assert_eq!(s.build_status().kitty_flags, 1);
+    }
+
+    #[test]
+    fn a_terminal_reset_clears_the_keyboard_mode() {
+        // RIS (`reset`) and DECSTR both put a stuck keyboard back.
+        for reset in [b"\x1bc".as_slice(), b"\x1b[!p".as_slice()] {
+            let mut s = scanner();
+            s.feed(b"\x1b[>1u");
+            let cleared = feed(&mut s, reset).expect("a reset changed status");
+            assert_eq!(cleared.kitty_flags, 0);
+        }
     }
 
     #[test]

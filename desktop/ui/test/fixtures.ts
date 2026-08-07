@@ -1,7 +1,7 @@
 /**
  * Fixture builders shared across tests.
  *
- * A `TerminalStatus` has nine fields and most tests care about one of them, so
+ * A `TerminalStatus` has ten fields and most tests care about one of them, so
  * every suite that touched one had grown its own copy of the same literal. One
  * builder here means a field added to the type is fixed in one place, and each
  * suite states only the part it is actually about.
@@ -27,6 +27,7 @@ export function terminalStatus(
     title: null,
     enteredStateAt: 0,
     shellIntegrationActive: false,
+    kittyFlags: 0,
     attentionMessage: null,
     ...overrides,
   };

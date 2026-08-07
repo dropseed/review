@@ -12,16 +12,21 @@
  * stack-based, so a TUI can enable it, a child process can push its own
  * setting, and popping restores whatever the parent had.
  *
- * The stack is per screen buffer, which is the protocol's safety net rather
- * than a detail: a full-screen program does its work on the alternate screen,
- * so whatever it pushes there — and forgets to pop, or never gets the chance to
- * pop because it was killed — cannot follow the shell back to the main screen.
+ * **Only the encoder lives here.** The stack a program pushes and pops is
+ * negotiated in the daemon (`core/src/terminal/kitty.rs`), which reads every
+ * PTY byte for the session's whole life, and the flags in force ride along on
+ * each session status as `kittyFlags` — which is what `setKittyFlags` records
+ * below. That is the only place the answer can be right: a window that
+ * re-derived the stack from replayed scrollback would miss a push that had
+ * scrolled out of the ring, and two windows on one terminal would each hold
+ * their own answer. The encoder stays here because it needs a DOM
+ * `KeyboardEvent`.
  *
- * Scope: negotiation is complete. Encoding implements `disambiguate` (1),
- * `report_events` (2), `report_all` (8) and `report_associated` (16). For
- * `report_alternates` (4) the shifted key is reported but the base-layout key
- * is not — deriving it needs `navigator.keyboard.getLayoutMap()`, which macOS
- * WKWebView does not implement, and a wrong base key is worse than none.
+ * Scope: encoding implements `disambiguate` (1), `report_events` (2),
+ * `report_all` (8) and `report_associated` (16). For `report_alternates` (4)
+ * the shifted key is reported but the base-layout key is not — deriving it
+ * needs `navigator.keyboard.getLayoutMap()`, which macOS WKWebView does not
+ * implement, and a wrong base key is worse than none.
  *
  * Reference: the protocol as implemented by Ghostty (`src/input/key_encode.zig`,
  * `src/terminal/kitty/key.zig`). Independently written from that behaviour.
@@ -35,217 +40,34 @@ const FLAG_REPORT_ALTERNATES = 4;
 const FLAG_REPORT_ALL = 8;
 const FLAG_REPORT_ASSOCIATED = 16;
 
-/** Flags are five bits; anything wider is a malformed request. */
-const FLAGS_MAX = 31;
+/**
+ * The mode the daemon last reported for each terminal, keyed the same way as
+ * the terminal registry. Absent means the protocol is off, which is also what a
+ * terminal this window has heard nothing about yet has to be treated as.
+ */
+const flagsById = new Map<string, number>();
 
 /**
- * How deep the mode stack goes before the oldest entry is dropped. Programs
- * push on entry and pop on exit; a leaked push must not be able to grow this
- * without bound, so it wraps rather than allocating.
+ * Record the mode carried on a session status (`TerminalStatus.kittyFlags`).
+ *
+ * Called for every status the store applies — the live stream and the one that
+ * comes back with a cold reattach's replay — so a window that has just opened
+ * on a long-running program encodes for the mode that program negotiated
+ * however long ago.
  */
-const STACK_DEPTH = 8;
-
-/** Which buffer a terminal is showing. Each keeps its own mode stack. */
-type ScreenBuffer = "normal" | "alternate";
-
-interface KittyState {
-  normal: number[];
-  alternate: number[];
-  screen: ScreenBuffer;
-}
-
-/** Per-terminal mode state, keyed the same way as the terminal registry. */
-const states = new Map<string, KittyState>();
-
-function stateFor(id: string): KittyState {
-  let state = states.get(id);
-  if (!state) {
-    state = { normal: [0], alternate: [0], screen: "normal" };
-    states.set(id, state);
-  }
-  return state;
-}
-
-function stackFor(id: string): number[] {
-  const state = stateFor(id);
-  return state[state.screen];
+export function setKittyFlags(id: string, flags: number): void {
+  if (flags > 0) flagsById.set(id, flags);
+  else flagsById.delete(id);
 }
 
 /** The flags currently in force, 0 when the protocol is off. */
 export function kittyFlags(id: string): number {
-  const stack = stackFor(id);
-  return stack[stack.length - 1] ?? 0;
+  return flagsById.get(id) ?? 0;
 }
 
-/** Drop a terminal's state (tab closed, session killed). */
+/** Drop a terminal's mode (tab closed, session killed). */
 export function forgetKittyState(id: string): void {
-  states.delete(id);
-}
-
-/**
- * Follow the terminal onto the other screen buffer.
- *
- * The stacks do not merge and the one being left is not cleared: a program that
- * drops to the main screen to run a child and comes back expects to find its
- * own mode still in force. What it cannot do is impose that mode on the shell.
- */
-function setScreen(id: string, screen: ScreenBuffer): void {
-  stateFor(id).screen = screen;
-}
-
-/**
- * Reset to "off" on both screens. A full terminal reset (RIS) clears the mode,
- * otherwise a program that crashes mid-session leaves every later keystroke
- * encoded for a protocol nothing is reading.
- */
-function resetKittyState(id: string): void {
-  states.set(id, { normal: [0], alternate: [0], screen: "normal" });
-}
-
-/**
- * Zero both stacks without touching which screen is active — the screen keeps
- * tracking xterm's buffer, only the flags are declared dead.
- *
- * Called at a shell prompt (OSC 133;A). An interactive prompt means the shell
- * owns the terminal: no full-screen program is alive, so flags still set on
- * *either* screen were leaked by a program that died without popping. The
- * per-screen stacks stop such a leak reaching the shell, but the alternate
- * screen's copy would otherwise wait there for the next vim/less, which
- * inherits the dead program's mode as keys it cannot parse. Kitty's own shell
- * integration performs the same reset at each prompt.
- *
- * The accepted cost, same as kitty's: a TUI suspended with Ctrl+Z loses its
- * pushed mode when the prompt redraws, and `fg` resumes it un-enhanced until
- * it renegotiates.
- */
-function clearLeakedFlags(id: string): void {
-  const state = stateFor(id);
-  state.normal = [0];
-  state.alternate = [0];
-}
-
-function push(id: string, flags: number): void {
-  const stack = stackFor(id);
-  stack.push(flags);
-  // Wrap rather than grow: drop the oldest entry once we exceed the depth.
-  if (stack.length > STACK_DEPTH) stack.shift();
-}
-
-function pop(id: string, count: number): void {
-  const state = stateFor(id);
-  // A pop deeper than the stack is a program losing track of its own state;
-  // treat it as "put everything back" rather than half-unwinding.
-  if (count >= STACK_DEPTH) {
-    state[state.screen] = [0];
-    return;
-  }
-  const stack = state[state.screen];
-  for (let i = 0; i < count; i++) {
-    if (stack.length > 1) stack.pop();
-    else stack[0] = 0;
-  }
-}
-
-function set(id: string, flags: number, mode: number): void {
-  const stack = stackFor(id);
-  const top = stack.length - 1;
-  const current = stack[top] ?? 0;
-  // Modes outside 1..3 are malformed; leaving the state alone beats guessing,
-  // since a garbled sequence would otherwise silently change key encoding.
-  if (mode === 1) stack[top] = flags;
-  else if (mode === 2) stack[top] = current | flags;
-  else if (mode === 3) stack[top] = current & ~flags;
-}
-
-/** First param as a plain number, ignoring any subparameters. */
-function param(params: (number | number[])[], index: number): number | null {
-  const value = params[index];
-  if (typeof value === "number") return value;
-  if (Array.isArray(value) && typeof value[0] === "number") return value[0];
-  return null;
-}
-
-/**
- * Wire up the four negotiation sequences on a terminal.
- *
- * `reply` sends the response to a query back to the PTY. Returns a disposer.
- */
-export function registerKittyHandlers(
-  term: {
-    parser: {
-      registerCsiHandler: (
-        id: { prefix?: string; final: string },
-        cb: (params: (number | number[])[]) => boolean,
-      ) => { dispose: () => void };
-      registerEscHandler: (
-        id: { final: string },
-        cb: () => boolean,
-      ) => { dispose: () => void };
-      registerOscHandler: (
-        ident: number,
-        cb: (data: string) => boolean,
-      ) => { dispose: () => void };
-    };
-    buffer: {
-      active: { type: ScreenBuffer };
-      onBufferChange: (cb: () => void) => { dispose: () => void };
-    };
-  },
-  id: string,
-  reply: (data: string) => void,
-): () => void {
-  const handlers = [
-    // Which stack is live follows the screen buffer. Watching xterm's own event
-    // rather than parsing `CSI ?1049h` covers every way in — 47, 1047, 1049 and
-    // a reset all arrive here as one signal.
-    term.buffer.onBufferChange(() => {
-      setScreen(id, term.buffer.active.type);
-    }),
-    // CSI ? u — what mode are we in?
-    term.parser.registerCsiHandler({ prefix: "?", final: "u" }, () => {
-      reply(`\x1b[?${kittyFlags(id)}u`);
-      return true;
-    }),
-    // CSI > flags u — push. No parameter means "push 0", i.e. disable.
-    term.parser.registerCsiHandler({ prefix: ">", final: "u" }, (params) => {
-      const flags = params.length === 1 ? (param(params, 0) ?? 0) : 0;
-      // Mask unknown bits rather than refusing the push. The protocol reserves
-      // room above the five bits we implement, and dropping the push while
-      // still honouring the program's later pop unwinds a level it never
-      // pushed — taking the shell's mode with it. Ghostty masks for the same
-      // reason.
-      push(id, flags & FLAGS_MAX);
-      return true;
-    }),
-    // CSI < n u — pop n levels, defaulting to one.
-    term.parser.registerCsiHandler({ prefix: "<", final: "u" }, (params) => {
-      pop(id, params.length === 1 ? (param(params, 0) ?? 1) : 1);
-      return true;
-    }),
-    // CSI = flags ; mode u — set/or/clear in place.
-    term.parser.registerCsiHandler({ prefix: "=", final: "u" }, (params) => {
-      const flags = param(params, 0) ?? 0;
-      const mode = params.length >= 2 ? (param(params, 1) ?? 1) : 1;
-      if (flags <= FLAGS_MAX) set(id, flags, mode);
-      return true;
-    }),
-    // ESC c — a full terminal reset. A program that enabled the protocol and
-    // then died without popping would otherwise leave every later keystroke
-    // encoded for a reader that is gone; `reset` is how a user fixes that.
-    term.parser.registerEscHandler({ final: "c" }, () => {
-      resetKittyState(id);
-      // Not handled: xterm still needs to do the actual reset.
-      return false;
-    }),
-    // OSC 133;A — the shell integration marking a prompt. The automatic
-    // version of the `reset` above: see clearLeakedFlags.
-    term.parser.registerOscHandler(133, (data) => {
-      if (data === "A" || data.startsWith("A;")) clearLeakedFlags(id);
-      // Not ours exclusively — the mark stays visible to any other consumer.
-      return false;
-    }),
-  ];
-  return () => handlers.forEach((h) => h.dispose());
+  flagsById.delete(id);
 }
 
 // ---------------------------------------------------------------------------

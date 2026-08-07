@@ -4,7 +4,7 @@ import {
   encodeKittyKey,
   forgetKittyState,
   kittyFlags,
-  registerKittyHandlers,
+  setKittyFlags,
 } from "./kitty-keys";
 
 const DISAMBIGUATE = 1;
@@ -16,314 +16,64 @@ function key(
   return new KeyboardEvent(type, { code: init.key, ...init });
 }
 
-/** A stand-in for xterm's parser that records the handlers it is given. */
-function fakeTerm() {
-  const handlers = new Map<
-    string,
-    (params: (number | number[])[]) => boolean
-  >();
-  const escHandlers = new Map<string, () => boolean>();
-  const oscHandlers = new Map<number, (data: string) => boolean>();
-  const bufferListeners: (() => void)[] = [];
-  const buffer = {
-    active: { type: "normal" as "normal" | "alternate" },
-    onBufferChange(cb: () => void) {
-      bufferListeners.push(cb);
-      return { dispose: () => {} };
-    },
-  };
-  return {
-    handlers,
-    escHandlers,
-    oscHandlers,
-    buffer,
-    /** What xterm does on `CSI ?1049h` / `l`: switch, then announce. */
-    switchScreen(type: "normal" | "alternate") {
-      buffer.active.type = type;
-      bufferListeners.forEach((cb) => cb());
-    },
-    parser: {
-      registerCsiHandler(
-        id: { prefix?: string; final: string },
-        cb: (params: (number | number[])[]) => boolean,
-      ) {
-        const slot = `${id.prefix ?? ""}${id.final}`;
-        handlers.set(slot, cb);
-        return {
-          dispose: () => {
-            handlers.delete(slot);
-          },
-        };
-      },
-      registerEscHandler(id: { final: string }, cb: () => boolean) {
-        escHandlers.set(id.final, cb);
-        return {
-          dispose: () => {
-            escHandlers.delete(id.final);
-          },
-        };
-      },
-      registerOscHandler(ident: number, cb: (data: string) => boolean) {
-        oscHandlers.set(ident, cb);
-        return {
-          dispose: () => {
-            oscHandlers.delete(ident);
-          },
-        };
-      },
-    },
-  };
-}
-
 afterEach(() => {
   forgetKittyState("t");
 });
 
-describe("negotiation", () => {
-  it("is off until a program asks for it", () => {
+/**
+ * The negotiation itself lives in the daemon (`core/src/terminal/kitty.rs`,
+ * driven by the status scanner) — what a window does is remember the mode each
+ * status reported and encode against it.
+ */
+describe("the mode the daemon reports", () => {
+  it("is off until a status says otherwise", () => {
     expect(kittyFlags("t")).toBe(0);
   });
 
-  it("pushes, pops, and reports the mode on query", () => {
-    const term = fakeTerm();
-    const replies: string[] = [];
-    registerKittyHandlers(term, "t", (d) => replies.push(d));
-
-    term.handlers.get(">u")!([DISAMBIGUATE]);
+  it("is whatever the last status carried", () => {
+    setKittyFlags("t", 1);
     expect(kittyFlags("t")).toBe(1);
-
-    // A nested program pushes its own richer mode...
-    term.handlers.get(">u")!([9]);
+    // A program pushed a richer mode, then popped back to the shell's.
+    setKittyFlags("t", 9);
     expect(kittyFlags("t")).toBe(9);
-
-    term.handlers.get("?u")!([]);
-    expect(replies[replies.length - 1]).toBe("\x1b[?9u");
-
-    // ...and popping restores what the parent had.
-    term.handlers.get("<u")!([]);
-    expect(kittyFlags("t")).toBe(1);
-  });
-
-  it("sets, adds and clears bits in place", () => {
-    const term = fakeTerm();
-    registerKittyHandlers(term, "t", () => {});
-
-    term.handlers.get("=u")!([1, 1]); // set
-    expect(kittyFlags("t")).toBe(1);
-    term.handlers.get("=u")!([8, 2]); // or
-    expect(kittyFlags("t")).toBe(9);
-    term.handlers.get("=u")!([1, 3]); // not
-    expect(kittyFlags("t")).toBe(8);
-  });
-
-  /** A garbled sequence must not silently change how every key is encoded. */
-  it("ignores malformed requests rather than guessing", () => {
-    const term = fakeTerm();
-    registerKittyHandlers(term, "t", () => {});
-    term.handlers.get(">u")!([1]);
-
-    term.handlers.get("=u")!([2, 99]); // mode outside 1..3
-    expect(kittyFlags("t")).toBe(1);
-  });
-
-  // A push carrying bits we do not implement is a valid push, not a garbled
-  // one — the protocol reserves room above the five bits here. Dropping it
-  // while still honouring the program's later pop would unwind a level it
-  // never pushed, taking the shell's mode with it.
-  it("masks unknown flag bits instead of dropping the push", () => {
-    const term = fakeTerm();
-    registerKittyHandlers(term, "t", () => {});
-    term.handlers.get(">u")!([1]);
-
-    term.handlers.get(">u")!([999]); // wider than five bits
-    expect(kittyFlags("t")).toBe(999 & 31);
-
-    term.handlers.get("<u")!([1]);
-    expect(kittyFlags("t")).toBe(1);
-  });
-
-  it("unwinds completely when a program pops past the bottom", () => {
-    const term = fakeTerm();
-    registerKittyHandlers(term, "t", () => {});
-    term.handlers.get(">u")!([1]);
-    term.handlers.get("<u")!([64]);
+    setKittyFlags("t", 0);
     expect(kittyFlags("t")).toBe(0);
   });
 
-  it("clears the mode on a terminal reset, which is how a user recovers", () => {
-    const term = fakeTerm();
-    registerKittyHandlers(term, "t", () => {});
-    term.handlers.get(">u")!([1]);
+  it("keeps terminals apart, and forgets one with its session", () => {
+    setKittyFlags("t", 1);
+    setKittyFlags("other", 9);
     expect(kittyFlags("t")).toBe(1);
 
-    // ESC c, what `reset` sends.
-    expect(term.escHandlers.get("c")!()).toBe(false); // xterm still resets
-    expect(kittyFlags("t")).toBe(0);
-  });
-});
-
-describe("screen buffers", () => {
-  /**
-   * The bug this exists to prevent: a TUI enables the protocol on the alternate
-   * screen and is killed before it can pop. With one shared stack the shell
-   * inherits the mode and every keystroke encodes for a reader that is gone —
-   * Ctrl+C arrives as `CSI 99;5u`, so the terminal cannot even be told `reset`.
-   */
-  it("does not let an alt-screen mode follow the shell home", () => {
-    const term = fakeTerm();
-    registerKittyHandlers(term, "t", () => {});
-
-    term.switchScreen("alternate");
-    term.handlers.get(">u")!([DISAMBIGUATE]);
+    forgetKittyState("other");
+    expect(kittyFlags("other")).toBe(0);
     expect(kittyFlags("t")).toBe(1);
-
-    // The TUI dies. Nothing pops; the shell simply gets its screen back.
-    term.switchScreen("normal");
-    expect(kittyFlags("t")).toBe(0);
-  });
-
-  it("keeps a program's mode while it visits the main screen", () => {
-    const term = fakeTerm();
-    registerKittyHandlers(term, "t", () => {});
-
-    term.switchScreen("alternate");
-    term.handlers.get(">u")!([9]);
-    // Dropping out to run a child process and coming back is a normal thing
-    // for a full-screen program to do.
-    term.switchScreen("normal");
-    term.switchScreen("alternate");
-    expect(kittyFlags("t")).toBe(9);
-  });
-
-  it("keeps the shell's own mode across a program's visit", () => {
-    const term = fakeTerm();
-    registerKittyHandlers(term, "t", () => {});
-
-    // A shell that negotiated the protocol for its own line editor.
-    term.handlers.get(">u")!([DISAMBIGUATE]);
-    term.switchScreen("alternate");
-    term.handlers.get(">u")!([9]);
-    term.switchScreen("normal");
-    expect(kittyFlags("t")).toBe(1);
-  });
-
-  it("clears both screens on a terminal reset", () => {
-    const term = fakeTerm();
-    registerKittyHandlers(term, "t", () => {});
-    term.handlers.get(">u")!([DISAMBIGUATE]);
-    term.switchScreen("alternate");
-    term.handlers.get(">u")!([9]);
-
-    term.escHandlers.get("c")!();
-
-    // A reset returns to the main screen, and finds nothing set there...
-    expect(kittyFlags("t")).toBe(0);
-    // ...nor waiting on the screen it just left.
-    term.switchScreen("alternate");
-    expect(kittyFlags("t")).toBe(0);
-  });
-
-  /**
-   * A TUI that dies without popping leaks its mode onto the alternate screen,
-   * where the next full-screen program would inherit it as keys it cannot
-   * parse. The shell integration's prompt mark is the "no program is running"
-   * signal that clears the leak — from both screens.
-   */
-  it("clears leaked flags on both screens at a shell prompt", () => {
-    const term = fakeTerm();
-    registerKittyHandlers(term, "t", () => {});
-    term.switchScreen("alternate");
-    term.handlers.get(">u")!([25]);
-    term.switchScreen("normal"); // the TUI is killed; nothing popped
-
-    term.oscHandlers.get(133)!("A");
-
-    term.switchScreen("alternate"); // vim starts
-    expect(kittyFlags("t")).toBe(0);
-  });
-
-  it("only the prompt-start mark clears; command marks do not", () => {
-    const term = fakeTerm();
-    registerKittyHandlers(term, "t", () => {});
-    term.handlers.get(">u")!([DISAMBIGUATE]);
-
-    // The command-start and command-end marks arrive *around* a running
-    // program — clearing on those would strip the mode out from under it.
-    term.oscHandlers.get(133)!("C");
-    term.oscHandlers.get(133)!("D;0");
-    expect(kittyFlags("t")).toBe(1);
-
-    // Prompt marks can carry parameters (`A;k=s`); still a prompt.
-    term.oscHandlers.get(133)!("A;k=s");
-    expect(kittyFlags("t")).toBe(0);
   });
 });
 
 /**
- * The fake above tests the logic; this tests the seam. Both fixes here read
- * state that xterm owns — `buffer.active.type` and `modes` — off events xterm
- * decides when to fire, and a fake that agrees with a wrong assumption about
- * either would pass while the terminal stayed broken.
+ * The one piece of terminal state the encoder still reads out of xterm: DECCKM,
+ * off `term.modes`, which xterm owns and updates as it parses. A fake that
+ * agreed with a wrong assumption about it would pass while arrow keys stayed
+ * broken inside every pager.
  */
 describe("against a real xterm", () => {
   const write = (term: Terminal, data: string) =>
     new Promise<void>((resolve) => term.write(data, resolve));
 
-  it("tracks the screen buffer and DECCKM as xterm parses them", async () => {
+  it("tracks DECCKM as xterm parses it", async () => {
     const term = new Terminal({ allowProposedApi: true });
-    registerKittyHandlers(term, "real", () => {});
-
-    // A TUI starts: alternate screen, protocol on, application cursor keys.
-    await write(term, "\x1b[?1049h");
-    expect(term.buffer.active.type).toBe("alternate");
-    await write(term, "\x1b[>1u");
-    expect(kittyFlags("real")).toBe(1);
-    await write(term, "\x1b[?1h");
+    // A TUI starts: alternate screen, protocol on (per the daemon), and
+    // application cursor keys.
+    setKittyFlags("t", 1);
+    await write(term, "\x1b[?1049h\x1b[?1h");
     expect(term.modes.applicationCursorKeysMode).toBe(true);
     expect(
-      encodeKittyKey(key({ key: "ArrowUp" }), kittyFlags("real"), {
+      encodeKittyKey(key({ key: "ArrowUp" }), kittyFlags("t"), {
         applicationCursorKeys: term.modes.applicationCursorKeysMode,
       }),
     ).toBe("\x1bOA");
 
-    // It exits without popping. The shell must get a clean keyboard back.
-    await write(term, "\x1b[?1049l");
-    expect(term.buffer.active.type).toBe("normal");
-    expect(kittyFlags("real")).toBe(0);
-
-    forgetKittyState("real");
-    term.dispose();
-  });
-
-  /**
-   * The full shape of the bug this guards against: a kitty TUI is killed on
-   * the alternate screen, the shell prompts, and then vim — which never asks
-   * for the protocol — starts on that same alternate screen. Without the
-   * prompt-mark reset it inherits the dead program's flags and every
-   * keystroke reaches it as `CSI …u` sequences it silently drops.
-   */
-  it("hands vim a clean keyboard after a kitty TUI died on the alt screen", async () => {
-    const term = new Terminal({ allowProposedApi: true });
-    registerKittyHandlers(term, "real", () => {});
-
-    // TUI up, mode pushed, then killed: 1049l from its atexit teardown but no
-    // kitty pop — the leak.
-    await write(term, "\x1b[?1049h\x1b[>25u\x1b[?1049l");
-
-    // The shell integration prompts.
-    await write(term, "\x1b]133;A\x07");
-
-    // vim's actual startup negotiation (captured from vim 9.1 under
-    // TERM=xterm-256color): alt screen, modifyOtherKeys, DECCKM — no kitty.
-    await write(term, "\x1b[?1049h\x1b[>4;2m\x1b[?1h\x1b=\x1b[?2004h");
-
-    expect(kittyFlags("real")).toBe(0);
-    // null = xterm's stock key encoding, which is what vim expects.
-    expect(
-      encodeKittyKey(key({ key: "Escape" }), kittyFlags("real")),
-    ).toBeNull();
-
-    forgetKittyState("real");
     term.dispose();
   });
 });
