@@ -103,9 +103,11 @@ function reviewTabText(): string {
 }
 
 function hasCheck(): boolean {
-  return (
-    screen.getByRole("tab", { name: /Review/ }).querySelector("svg") !== null
-  );
+  // The check specifically, not any svg — the tab also renders its own icon
+  // (shown at narrow widths), which is present whatever the review's state.
+  return [
+    ...screen.getByRole("tab", { name: /Review/ }).querySelectorAll("svg"),
+  ].some((svg) => svg.classList.contains("text-status-approved"));
 }
 
 beforeEach(() => {
