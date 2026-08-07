@@ -853,6 +853,13 @@ export interface TerminalStatus {
   enteredStateAt: number;
   shellIntegrationActive: boolean;
   /**
+   * Kitty keyboard protocol flags the running program negotiated, 0 when the
+   * protocol is off. The push/pop stack behind them lives in the daemon, which
+   * sees every PTY byte for the session's whole life; a window encodes
+   * keystrokes against whatever this last said (see `Terminal/kitty-keys.ts`).
+   */
+  kittyFlags: number;
+  /**
    * Text of the desktop-notification escape that raised the attention overlay
    * (OSC 9 from Codex, OSC 777 from Claude Code). Null when the overlay is
    * clear, or when a plain bell raised it and there was nothing to say.

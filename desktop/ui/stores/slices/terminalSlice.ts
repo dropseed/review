@@ -10,6 +10,7 @@ import type {
 import { makeReviewKey } from "../../utils/review-key";
 import { notifyTerminalAttention } from "../../utils/terminal-notifications";
 import type { SliceCreatorWithClientAndStorage } from "../types";
+import { setKittyFlags } from "../../components/Terminal/kitty-keys";
 import {
   type TerminalTab,
   type PaneNode,
@@ -1986,6 +1987,11 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
       // replaced. A second delivery of the same status finds prev === next
       // and stays quiet.
       notifyTerminalAttention(get().terminalStatuses[status.id], status);
+      // Keystroke encoding reads the negotiated kitty mode straight out of the
+      // registry, which cannot reach the store (it is imported by
+      // preferencesSlice), so the mode is handed over here — the one funnel
+      // every status passes through, live stream and cold-reattach replay both.
+      setKittyFlags(status.id, status.kittyFlags);
       set(applyTerminalStatus(get(), status));
     },
     applyTerminalExit: (exit) => set(applyTerminalExit(get(), exit)),

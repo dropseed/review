@@ -3,7 +3,9 @@
 //! Threading model: one dedicated **reader thread** per session does blocking
 //! reads on the PTY master. For each chunk it runs, in order: append to the
 //! scrollback ring, call each registered [`OutputSink`] (synchronously, in
-//! order), then fan the chunk out to subscribers.
+//! order), then fan the chunk out to subscribers. It also feeds the status
+//! scanner and writes back whatever answer a device report in that chunk asked
+//! for, so a program is answered whether or not a window is attached.
 //! On EOF it reaps the child's exit code, finalizes status, notifies sinks, and
 //! emits a final [`TerminalMessage::Exit`]. All other methods
 //! (`write`/`resize`/`kill`) are called from arbitrary threads and coordinate
@@ -52,6 +54,10 @@ struct Shared {
     status: Mutex<SessionStatus>,
     /// The status engine: OSC/bell scanner + phase state machine.
     scanner: Mutex<StatusScanner>,
+    /// Writable side of the PTY master (stdin to the child). Shared rather than
+    /// owned by the session handle because the reader thread answers device
+    /// reports (the kitty keyboard mode query) on the thread that parsed them.
+    writer: Mutex<Box<dyn std::io::Write + Send>>,
     exited: AtomicBool,
     exit_code: Mutex<Option<i32>>,
     /// Owned child handle, used by the reader thread to reap the exit code.
@@ -70,6 +76,14 @@ impl Shared {
         *self.status.lock().unwrap() = status.clone();
         fanout(&self.subscribers, &TerminalMessage::Status(status));
     }
+
+    /// Write bytes to the child's stdin.
+    fn write_pty(&self, data: &[u8]) -> Result<()> {
+        let mut writer = self.writer.lock().unwrap();
+        writer.write_all(data).context("Failed to write to pty")?;
+        writer.flush().context("Failed to flush pty")?;
+        Ok(())
+    }
 }
 
 /// A live terminal session. Stored as `Arc<Session>` by the manager.
@@ -83,8 +97,6 @@ pub struct Session {
     size: Mutex<(u16, u16)>,
     /// Signals the child to terminate from any thread (independent of `wait`).
     killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
-    /// Writable side of the PTY master (stdin to the child).
-    writer: Mutex<Box<dyn std::io::Write + Send>>,
     /// The PTY master; dropped on `kill` to help the reader unblock via EOF.
     master: Mutex<Option<Box<dyn MasterPty + Send>>>,
     reader_handle: Mutex<Option<JoinHandle<()>>>,
@@ -182,6 +194,7 @@ impl Session {
             subscribers: Mutex::new(Vec::new()),
             status: Mutex::new(status),
             scanner: Mutex::new(scanner),
+            writer: Mutex::new(writer),
             exited: AtomicBool::new(false),
             exit_code: Mutex::new(None),
             child: Mutex::new(child),
@@ -196,7 +209,6 @@ impl Session {
             shell_pid,
             size: Mutex::new((cols, rows)),
             killer: Mutex::new(killer),
-            writer: Mutex::new(writer),
             master: Mutex::new(Some(pair.master)),
             reader_handle: Mutex::new(Some(reader_handle)),
             vt: Mutex::new(Some(vt)),
@@ -256,11 +268,7 @@ impl Session {
         if self.has_exited() {
             return Err(anyhow!("terminal {} has exited", self.shared.id));
         }
-        {
-            let mut writer = self.writer.lock().unwrap();
-            writer.write_all(data).context("Failed to write to pty")?;
-            writer.flush().context("Failed to flush pty")?;
-        }
+        self.shared.write_pty(data)?;
         if self.shared.scanner.lock().unwrap().on_write() {
             self.shared.publish_status();
         }
@@ -406,9 +414,22 @@ fn spawn_reader_thread(
                                 seq,
                             },
                         );
-                        // Scan for OSC 133 / bell / title / OSC 7 and publish any
-                        // status change to subscribers.
-                        if shared.scanner.lock().unwrap().feed(chunk) {
+                        // Scan for OSC 133 / bell / title / OSC 7 / kitty
+                        // keyboard negotiation, then publish any status change
+                        // to subscribers.
+                        let (changed, reply) = {
+                            let mut scanner = shared.scanner.lock().unwrap();
+                            (scanner.feed(chunk), scanner.take_reply())
+                        };
+                        // A device report is answered here, on the thread that
+                        // parsed it, so a program querying the terminal gets its
+                        // answer whether or not a window is attached. The
+                        // answers are a handful of bytes; a failed write means
+                        // the child is going away and there is nobody to tell.
+                        if let Some(reply) = reply {
+                            let _ = shared.write_pty(&reply);
+                        }
+                        if changed {
                             shared.publish_status();
                         }
                     }

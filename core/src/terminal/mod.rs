@@ -22,6 +22,8 @@ pub use wire::{Phase, SessionStatus, TerminalId, TerminalSummary};
 #[cfg(feature = "terminal")]
 mod engine_ghostty;
 #[cfg(feature = "terminal")]
+mod kitty;
+#[cfg(feature = "terminal")]
 mod manager;
 #[cfg(feature = "terminal")]
 mod poll;

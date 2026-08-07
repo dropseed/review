@@ -70,6 +70,14 @@ pub struct SessionStatus {
     pub entered_state_at: u64,
     /// Whether shell integration (OSC 133 marks) is active.
     pub shell_integration_active: bool,
+    /// Kitty keyboard protocol flags in force on the screen the running program
+    /// is drawing on, 0 when the protocol is off. The stack that produces them
+    /// is negotiated in the daemon (see `terminal::kitty`); a window encodes
+    /// keystrokes against whatever this last said, so a reattaching window
+    /// inherits the mode instead of re-deriving it from replayed scrollback the
+    /// push may have already fallen out of.
+    #[serde(default)]
+    pub kitty_flags: u8,
 }
 
 /// Summary of a session — the canonical `TerminalSessionInfo` wire shape.

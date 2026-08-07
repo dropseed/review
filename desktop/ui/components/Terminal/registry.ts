@@ -18,12 +18,7 @@ import { IS_MAC, matchesEvent } from "../../commands/shortcuts";
 import { getAllCommands } from "../../commands/registry";
 import { getPlatformServices } from "../../platform";
 import { buildXtermTheme } from "./xterm-theme";
-import {
-  encodeKittyKey,
-  forgetKittyState,
-  kittyFlags,
-  registerKittyHandlers,
-} from "./kitty-keys";
+import { encodeKittyKey, forgetKittyState, kittyFlags } from "./kitty-keys";
 
 /**
  * Module-level registry of live xterm instances, keyed by terminal id. This is
@@ -45,8 +40,6 @@ interface RegistryEntry {
   webgl: WebglAddon | null;
   /** Detaches the output stream; called only from disposeTerminal. */
   unsubOutput: (() => void) | null;
-  /** Removes the kitty keyboard negotiation handlers. */
-  disposeKitty: (() => void) | null;
   /**
    * Live output held back until a cold reattach's replay has been written, so
    * historical scrollback lands ahead of new bytes. `null` once flushed.
@@ -127,12 +120,6 @@ export function acquireTerminal(
   // The grid changing shape is the other half of "a row is this tall" — the
   // pane was resized, or the font reflowed it.
   term.onResize(() => forgetCellHeight(term));
-  // Lets a program negotiate the kitty keyboard protocol, so chords like
-  // Ctrl+Enter and Shift+Tab arrive distinguishable instead of collapsing onto
-  // the same bytes as their unmodified forms.
-  const disposeKitty = registerKittyHandlers(term, id, (data) =>
-    writeToPty(id, data),
-  );
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.loadAddon(new WebLinksAddon((_event, uri) => openTerminalLink(uri)));
@@ -153,7 +140,6 @@ export function acquireTerminal(
     fit,
     webgl: null,
     unsubOutput: null,
-    disposeKitty,
     // A brand-new instance has nothing on screen yet, so hold output until the
     // caller has decided whether it needs a replay first.
     pending: [],
@@ -488,8 +474,6 @@ export function disposeTerminal(id: string): void {
   if (!entry) return;
   entry.unsubOutput?.();
   entry.unsubOutput = null;
-  entry.disposeKitty?.();
-  entry.disposeKitty = null;
   // The keyboard mode belongs to the program that negotiated it, so it dies
   // with the session rather than leaking into whatever reuses this id.
   forgetKittyState(id);
