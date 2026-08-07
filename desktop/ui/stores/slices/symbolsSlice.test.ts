@@ -133,6 +133,33 @@ describe("loadSymbols", () => {
     });
   });
 
+  it("discards a response that resolves after the comparison changed", async () => {
+    let resolveFetch: (value: unknown) => void;
+    getFileSymbolDiffs.mockReturnValue(
+      new Promise((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
+
+    const promise = useReviewStore.getState().loadSymbols();
+
+    // Simulate switching comparisons while the request is in flight; the new
+    // comparison's own load claims the loading flag.
+    useReviewStore.setState({
+      comparison: { base: "main", head: "b", key: "main..b" },
+      ...symbolsResetState,
+      symbolsLoading: true,
+    } as never);
+
+    resolveFetch!([{ filePath: "old.ts", symbols: [] }]);
+    await promise;
+
+    const state = useReviewStore.getState();
+    expect(state.symbolDiffs).toEqual([]);
+    expect(state.symbolsLoaded).toBe(false);
+    expect(state.symbolsLoading).toBe(true);
+  });
+
   it("discards a rejection that resolves after the comparison changed", async () => {
     let rejectFetch: (err: unknown) => void;
     getFileSymbolDiffs.mockReturnValue(
@@ -143,10 +170,12 @@ describe("loadSymbols", () => {
 
     const promise = useReviewStore.getState().loadSymbols();
 
-    // Simulate switching comparisons while the request is in flight.
+    // Simulate switching comparisons while the request is in flight; the new
+    // comparison's own load claims the loading flag.
     useReviewStore.setState({
       comparison: { base: "main", head: "b", key: "main..b" },
       ...symbolsResetState,
+      symbolsLoading: true,
     } as never);
 
     rejectFetch!(new Error("network error"));
@@ -155,6 +184,7 @@ describe("loadSymbols", () => {
     const state = useReviewStore.getState();
     expect(state.symbolDiffs).toEqual([]);
     expect(state.symbolsLoaded).toBe(false);
+    expect(state.symbolsLoading).toBe(true);
   });
 
   it("settles loading/loaded when the comparison hasn't changed and the fetch fails", async () => {

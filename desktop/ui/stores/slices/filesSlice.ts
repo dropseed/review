@@ -675,10 +675,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
       }
       try {
         const allFiles = await client.listAllFiles(repoPath, comparison);
-        if (isStale()) {
-          set({ allFilesLoading: false });
-          return;
-        }
+        if (isStale()) return;
         set({ allFiles, allFilesLoading: false });
       } catch (err) {
         console.error("Failed to load all files:", err);
@@ -698,10 +695,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
       set({ allFilesLoading: true });
       try {
         const allFiles = await client.listRepoFiles(repoPath);
-        if (isStale()) {
-          set({ allFilesLoading: false });
-          return;
-        }
+        if (isStale()) return;
         set({ allFiles, allFilesLoading: false });
       } catch (err) {
         console.error("Failed to load repo files:", err);
