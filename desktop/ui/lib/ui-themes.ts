@@ -10,6 +10,7 @@
  */
 
 import { registerCustomTheme } from "@pierre/diffs";
+import { setActiveUiTheme } from "./active-theme";
 
 export interface UiTheme {
   id: string;
@@ -20,6 +21,37 @@ export interface UiTheme {
   /** Recommended code (Shiki) theme to pair with this UI theme */
   codeTheme: string;
   tokens: UiThemeTokens;
+  /**
+   * The theme's own 16-color ANSI ramp, when it carries one. Themes resolved
+   * from VS Code JSON fill this from their `terminal.ansi*` colors; the
+   * bundled themes' ramps are transcribed in `terminal-palettes.ts`, which is
+   * also where the shared fallback for themes that publish nothing lives.
+   */
+  ansi?: AnsiPalette;
+}
+
+/**
+ * The 16 ANSI colors a terminal addresses by index. Declared here because it
+ * is part of a theme's shape; the values and their provenance live in
+ * `components/Terminal/terminal-palettes.ts`.
+ */
+export interface AnsiPalette {
+  black: string;
+  red: string;
+  green: string;
+  yellow: string;
+  blue: string;
+  magenta: string;
+  cyan: string;
+  white: string;
+  brightBlack: string;
+  brightRed: string;
+  brightGreen: string;
+  brightYellow: string;
+  brightBlue: string;
+  brightMagenta: string;
+  brightCyan: string;
+  brightWhite: string;
 }
 
 export interface UiThemeTokens {
@@ -987,10 +1019,10 @@ const TOKEN_TO_CSS_VAR: Record<keyof UiThemeTokens, string> = {
 export function applyUiTheme(theme: UiTheme): void {
   const el = document.documentElement;
   el.style.setProperty("color-scheme", theme.colorScheme);
-  // The terminal needs to know *which* theme is active, not just its colors:
-  // its 16-color ANSI ramp is per-theme published data that cannot be derived
-  // from the handful of semantic tokens below.
-  el.dataset.uiTheme = theme.id;
+  // The terminal needs the theme itself, not just its colors: its 16-color
+  // ANSI ramp is per-theme published data that cannot be derived from the
+  // handful of semantic tokens below.
+  setActiveUiTheme(theme);
 
   for (const [token, value] of Object.entries(theme.tokens)) {
     const cssVar = TOKEN_TO_CSS_VAR[token as keyof UiThemeTokens];

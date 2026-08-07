@@ -7,7 +7,7 @@
  */
 
 import { registerCustomTheme } from "@pierre/diffs";
-import type { UiTheme, UiThemeTokens } from "./ui-themes";
+import type { AnsiPalette, UiTheme, UiThemeTokens } from "./ui-themes";
 import { UI_THEMES } from "./ui-themes";
 import { mixColors } from "./color";
 
@@ -200,6 +200,54 @@ const COLOR_MAP: [keyof UiThemeTokens, string[]][] = [
   ["status-warning", ["editorWarning.foreground", "list.warningForeground"]],
   ["status-info", ["editorInfo.foreground"]],
 ];
+
+// ---------------------------------------------------------------------------
+// Terminal ANSI ramp
+// ---------------------------------------------------------------------------
+
+/**
+ * VS Code publishes the 16 terminal colors under fixed keys, so a theme that
+ * sets them is handing us exactly the ramp our terminal needs.
+ */
+const ANSI_KEYS: [keyof AnsiPalette, string][] = [
+  ["black", "terminal.ansiBlack"],
+  ["red", "terminal.ansiRed"],
+  ["green", "terminal.ansiGreen"],
+  ["yellow", "terminal.ansiYellow"],
+  ["blue", "terminal.ansiBlue"],
+  ["magenta", "terminal.ansiMagenta"],
+  ["cyan", "terminal.ansiCyan"],
+  ["white", "terminal.ansiWhite"],
+  ["brightBlack", "terminal.ansiBrightBlack"],
+  ["brightRed", "terminal.ansiBrightRed"],
+  ["brightGreen", "terminal.ansiBrightGreen"],
+  ["brightYellow", "terminal.ansiBrightYellow"],
+  ["brightBlue", "terminal.ansiBrightBlue"],
+  ["brightMagenta", "terminal.ansiBrightMagenta"],
+  ["brightCyan", "terminal.ansiBrightCyan"],
+  ["brightWhite", "terminal.ansiBrightWhite"],
+];
+
+/**
+ * Pull the theme's own terminal ramp out of its colors.
+ *
+ * All sixteen or nothing: a half-published ramp topped up from the shared
+ * fallback would pair one theme's normals with another's brights, which is the
+ * mismatch this is meant to avoid rather than a smaller version of it.
+ */
+function resolveAnsiPalette(
+  colors: Record<string, string>,
+): AnsiPalette | undefined {
+  const palette = {} as AnsiPalette;
+
+  for (const [slot, key] of ANSI_KEYS) {
+    const value = colors[key];
+    if (!value) return undefined;
+    palette[slot] = value;
+  }
+
+  return palette;
+}
 
 // ---------------------------------------------------------------------------
 // Shiki theme resolution
@@ -445,5 +493,6 @@ export function resolveVscodeTheme(detection: VscodeThemeDetection): UiTheme {
     preview: [tokens.surface, tokens["fg-secondary"], tokens["focus-ring"]],
     codeTheme,
     tokens,
+    ansi: resolveAnsiPalette(detection.colors),
   };
 }

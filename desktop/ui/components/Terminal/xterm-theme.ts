@@ -1,4 +1,5 @@
 import type { ITheme } from "@xterm/xterm";
+import { getActiveUiTheme } from "../../lib/active-theme";
 import { ansiPaletteFor } from "./terminal-palettes";
 
 /**
@@ -26,7 +27,7 @@ export function buildXtermTheme(): ITheme {
 
   const scheme =
     cs.getPropertyValue("color-scheme").trim() === "light" ? "light" : "dark";
-  const ansi = ansiPaletteFor(el.dataset.uiTheme ?? "", scheme, background);
+  const ansi = ansiPaletteFor(getActiveUiTheme(), scheme, background);
 
   return {
     background,
