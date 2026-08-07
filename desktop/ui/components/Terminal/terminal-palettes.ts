@@ -14,28 +14,14 @@
  *
  * Provenance is recorded per palette. Where Ghostty's vendored copy disagreed
  * with the theme's own upstream, the note says which one won and why.
+ *
+ * These are the bundled themes' ramps. A theme resolved from VS Code publishes
+ * its own sixteen colors and carries them on `UiTheme.ansi`, which wins over
+ * anything here — see `lib/vscode-theme-resolver.ts`.
  */
 
 import { contrast, mixColors } from "../../lib/color";
-
-export interface AnsiPalette {
-  black: string;
-  red: string;
-  green: string;
-  yellow: string;
-  blue: string;
-  magenta: string;
-  cyan: string;
-  white: string;
-  brightBlack: string;
-  brightRed: string;
-  brightGreen: string;
-  brightYellow: string;
-  brightBlue: string;
-  brightMagenta: string;
-  brightCyan: string;
-  brightWhite: string;
-}
+import type { AnsiPalette, UiTheme } from "../../lib/ui-themes";
 
 /** Tomorrow Night — Ghostty's own compiled-in default (`terminal/color.zig`). */
 const TOMORROW_NIGHT: AnsiPalette = {
@@ -254,8 +240,10 @@ function nudgeUntilVisible(
 }
 
 /**
- * The palette for a theme, or a shared ramp when the theme has no published
- * one (Review's own light theme, and anything derived from a VS Code theme).
+ * The palette for a theme: the ramp the theme carries itself (VS Code themes
+ * publish their sixteen `terminal.ansi*` colors), else the one transcribed
+ * above for it, else a shared ramp for themes with no published palette at all
+ * (Review's own light theme, and VS Code themes that set no terminal colors).
  *
  * Both schemes get one correction, for the same defect at opposite ends.
  *
@@ -271,12 +259,13 @@ function nudgeUntilVisible(
  * fine is passed through untouched.
  */
 export function ansiPaletteFor(
-  themeId: string,
+  theme: UiTheme | null,
   colorScheme: "light" | "dark",
   background: string,
 ): AnsiPalette {
   const base =
-    PALETTES[themeId] ??
+    theme?.ansi ??
+    (theme ? PALETTES[theme.id] : undefined) ??
     (colorScheme === "light" ? GITHUB_LIGHT : TOMORROW_NIGHT);
   // 1.6:1 is well below a text-legibility threshold — the goal is only to stop
   // a color being *identical* to the background, not to restyle the theme.
