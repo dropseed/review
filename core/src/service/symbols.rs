@@ -1,7 +1,7 @@
 //! Symbol extraction and diff orchestration.
 
 use anyhow::Context;
-use log::{debug, info};
+use log::{debug, info, warn};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::time::Instant;
@@ -27,9 +27,21 @@ pub fn get_file_symbol_diffs(
         file_paths.len()
     );
 
-    file_paths
+    // A path that escapes the repo is dropped rather than failing the call:
+    // this runs once per comparison over every changed file, and one unreadable
+    // name (including an innocent literal `..` like `foo..bar.txt`) shouldn't
+    // cost the whole diff its symbols.
+    let safe_paths: Vec<&str> = file_paths
         .iter()
-        .try_for_each(|p| reject_path_traversal(p))?;
+        .filter(|p| match reject_path_traversal(p.as_str()) {
+            Ok(()) => true,
+            Err(err) => {
+                warn!("[get_file_symbol_diffs] skipping {p}: {err}");
+                false
+            }
+        })
+        .map(String::as_str)
+        .collect();
 
     let source = LocalGitSource::new(repo_path.to_path_buf()).context("Failed to open repo")?;
 
@@ -64,8 +76,9 @@ pub fn get_file_symbol_diffs(
         Option<String>,
         Vec<DiffHunk>,
     )> = std::thread::scope(|s| {
-        let handles: Vec<_> = file_paths
+        let handles: Vec<_> = safe_paths
             .iter()
+            .copied()
             .map(|file_path| {
                 let source = &source;
                 let all_hunks = &all_hunks;
@@ -76,7 +89,7 @@ pub fn get_file_symbol_diffs(
                 s.spawn(move || {
                     // Get old content (use old path for renamed files)
                     let old_path = rename_map
-                        .get(file_path.as_str())
+                        .get(file_path)
                         .map(|s| s.as_str())
                         .unwrap_or(file_path);
                     let old_content = source
@@ -97,7 +110,7 @@ pub fn get_file_symbol_diffs(
 
                     let file_hunks: Vec<_> = all_hunks
                         .iter()
-                        .filter(|h| h.file_path == *file_path)
+                        .filter(|h| h.file_path == file_path)
                         .cloned()
                         .collect();
 
@@ -463,4 +476,66 @@ pub async fn find_definitions_via_lsp(
     );
 
     Ok(defs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::process::Command as Cmd;
+
+    fn git(dir: &Path, args: &[&str]) {
+        let ok = Cmd::new("git")
+            .args(args)
+            .current_dir(dir)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .status()
+            .unwrap()
+            .success();
+        assert!(ok, "git {args:?} failed");
+    }
+
+    fn git_out(dir: &Path, args: &[&str]) -> String {
+        let out = Cmd::new("git")
+            .args(args)
+            .current_dir(dir)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    }
+
+    /// This runs once for a whole comparison, so a file name that merely
+    /// contains a literal `..` — legal on POSIX and Windows alike — must cost
+    /// only that file its symbols, not the entire diff.
+    #[test]
+    fn get_file_symbol_diffs_skips_unsafe_paths_instead_of_failing() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path();
+        git(p, &["init", "-q"]);
+
+        std::fs::write(p.join("good.rs"), "fn a() {}\n").unwrap();
+        std::fs::write(p.join("odd..name.rs"), "fn b() {}\n").unwrap();
+        git(p, &["add", "."]);
+        git(p, &["commit", "-qm", "base"]);
+        let base = git_out(p, &["rev-parse", "HEAD"]);
+
+        std::fs::write(p.join("good.rs"), "fn a() {}\nfn c() {}\n").unwrap();
+        std::fs::write(p.join("odd..name.rs"), "fn b() {}\nfn d() {}\n").unwrap();
+        git(p, &["add", "."]);
+        git(p, &["commit", "-qm", "head"]);
+        let head = git_out(p, &["rev-parse", "HEAD"]);
+
+        let files = vec!["good.rs".to_owned(), "odd..name.rs".to_owned()];
+        let diffs = get_file_symbol_diffs(p, &files, &Comparison::new(&base, &head))
+            .expect("one odd file name should not fail the whole comparison");
+
+        let paths: Vec<&str> = diffs.iter().map(|d| d.file_path.as_str()).collect();
+        assert_eq!(paths, ["good.rs"]);
+    }
 }
