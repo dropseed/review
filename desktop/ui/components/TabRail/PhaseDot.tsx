@@ -14,9 +14,15 @@ interface PhaseDotProps {
  * The status dot for a terminal phase.
  *
  * Kept as a component rather than another `phaseDotClass` call site because
- * the class is only half the rule — which phases pulse is the other half, and
- * it was being restated at every dot in the app. Lives here rather than in
- * `terminal-status-format` so that module stays JSX-free and unit-testable.
+ * the colour is only half the rule — an exited session reads as grey whatever
+ * phase it died in, and that was being restated at every dot in the app. Lives
+ * here rather than in `terminal-status-format` so that module stays JSX-free
+ * and unit-testable.
+ *
+ * The dot does not animate. `working` and `needs_attention` used to pulse,
+ * which meant any window with a live agent in the sidebar ran a CSS animation
+ * forever — style resolution and a layer commit every frame, for a signal the
+ * colour already carries.
  */
 export function PhaseDot({
   phase,
@@ -28,9 +34,6 @@ export function PhaseDot({
       className={clsx(
         "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
         dead ? "bg-fg-faint" : phaseDotClass(phase),
-        !dead &&
-          (phase === "working" || phase === "needs_attention") &&
-          "animate-pulse",
         className,
       )}
     />
