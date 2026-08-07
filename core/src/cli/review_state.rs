@@ -632,6 +632,13 @@ fn validate_trust_pattern(pattern: &str) -> Result<(), String> {
     reject_blank("pattern", pattern)
 }
 
+/// Reject an empty/whitespace-only appended note, matching the guard already
+/// applied to trust patterns, guide group titles, and comment content.
+/// `note set` is exempt: an empty string is its only way to clear notes.
+fn validate_note_append(text: &str) -> Result<(), String> {
+    reject_blank("text", text)
+}
+
 /// `review trust` — inspect or edit the trust list.
 pub fn run_trust(args: TrustArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
@@ -721,6 +728,7 @@ pub fn run_note(args: NoteArgs) -> Result<(), String> {
             println!("Notes updated for {}", review.comparison.key);
         }
         NoteAction::Append { text } => {
+            validate_note_append(&text)?;
             let (review, hunks, _) = load_for_mutation(&repo, args.target.spec.as_deref())?;
             mutate_review(&repo, &review.ref_name, &hunks, |state| {
                 if state.notes.trim().is_empty() {
@@ -794,5 +802,12 @@ mod tests {
         assert!(validate_trust_pattern("   ").is_err());
         assert!(validate_trust_pattern("").is_err());
         assert!(validate_trust_pattern("imports:added").is_ok());
+    }
+
+    #[test]
+    fn validate_note_append_rejects_blank() {
+        assert!(validate_note_append("   ").is_err());
+        assert!(validate_note_append("").is_err());
+        assert!(validate_note_append("looks good").is_ok());
     }
 }
