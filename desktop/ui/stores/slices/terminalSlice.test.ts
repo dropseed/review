@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   applyTerminalStatus,
+  sameTerminalStatus,
   applyTerminalExit,
   addTerminalToState,
   removeTerminalFromState,
@@ -118,6 +119,31 @@ describe("terminalSlice reducers", () => {
   it("applyTerminalStatus records the status by id", () => {
     const next = applyTerminalStatus(emptyState(), status("a", "working"));
     expect(next.terminalStatuses).toEqual({ a: status("a", "working") });
+  });
+
+  it("sameTerminalStatus is true for a redundant redelivery", () => {
+    expect(
+      sameTerminalStatus(status("a", "working"), status("a", "working")),
+    ).toBe(true);
+  });
+
+  it("sameTerminalStatus separates statuses that differ only by title", () => {
+    // The field an agent rewrites every turn, and the reason the dedupe pays.
+    expect(
+      sameTerminalStatus(
+        status("a", "working", { title: "npm test" }),
+        status("a", "working", { title: "npm build" }),
+      ),
+    ).toBe(false);
+  });
+
+  it("sameTerminalStatus separates a phase change", () => {
+    expect(
+      sameTerminalStatus(
+        status("a", "working"),
+        status("a", "needs_attention"),
+      ),
+    ).toBe(false);
   });
 
   it("addTerminalToState groups by review key and makes the new one active", () => {

@@ -557,6 +557,32 @@ type TabState = Pick<
   "terminalTabsByReviewKey" | "activeTabIdByReviewKey"
 >;
 
+/**
+ * Whether two statuses say the same thing about a session.
+ *
+ * Every field is a primitive, so this is a plain field-wise compare rather
+ * than anything structural. It exists because the same status is delivered on
+ * three channels (per-session, per-pane, global roll-up) and the redundant
+ * copies must not each allocate a new `terminalStatuses` map — see
+ * `applyTerminalStatus` on the slice.
+ */
+export function sameTerminalStatus(
+  a: TerminalStatus,
+  b: TerminalStatus,
+): boolean {
+  return (
+    a.id === b.id &&
+    a.phase === b.phase &&
+    a.runningCommand === b.runningCommand &&
+    a.lastExitCode === b.lastExitCode &&
+    a.cwd === b.cwd &&
+    a.title === b.title &&
+    a.enteredStateAt === b.enteredStateAt &&
+    a.shellIntegrationActive === b.shellIntegrationActive &&
+    a.attentionMessage === b.attentionMessage
+  );
+}
+
 export function applyTerminalStatus(
   state: TerminalState,
   status: TerminalStatus,
@@ -1985,7 +2011,16 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
       // order, and only the first to arrive still sees the phase being
       // replaced. A second delivery of the same status finds prev === next
       // and stays quiet.
-      notifyTerminalAttention(get().terminalStatuses[status.id], status);
+      const prev = get().terminalStatuses[status.id];
+      notifyTerminalAttention(prev, status);
+      // ...and the redundant deliveries stop here rather than reaching the
+      // store. Three channels carry each status, and a write allocates a new
+      // `terminalStatuses` map, so every surface that summarizes sessions --
+      // both rails, the tab strip, the sidebar badge, the overview grid --
+      // would re-render two extra times per change. Titles are the field that
+      // moves most (an agent rewrites its own on every turn), so those extra
+      // renders are the steady-state cost of an idle window, not a rare one.
+      if (prev && sameTerminalStatus(prev, status)) return;
       set(applyTerminalStatus(get(), status));
     },
     applyTerminalExit: (exit) => set(applyTerminalExit(get(), exit)),

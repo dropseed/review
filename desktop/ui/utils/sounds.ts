@@ -4,6 +4,20 @@
 let audioContext: AudioContext | null = null;
 let soundEnabled = true;
 
+/**
+ * Context time the last scheduled tone runs out, so `parkWhenDone` can wait for
+ * silence without every caller restating its own note math.
+ */
+let scheduledUntil = 0;
+let parkTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Grace period after the last tone before the context is parked. Long enough
+ * that a run of approvals keeps one context running rather than thrashing
+ * suspend/resume between keystrokes.
+ */
+const PARK_DELAY_MS = 1000;
+
 function prefersReducedMotion(): boolean {
   return (
     typeof window !== "undefined" &&
@@ -17,11 +31,48 @@ function getAudioContext(): AudioContext | null {
   if (!audioContext) {
     audioContext = new AudioContext();
   }
+  // Parked between sounds (see `park`), so every play path has to wake it.
+  // Resuming is async; tones scheduled against the frozen `currentTime` land
+  // just after the clock restarts, which is inaudible at these durations.
+  if (audioContext.state === "suspended") void audioContext.resume();
   return audioContext;
+}
+
+/**
+ * Suspend the context until something asks for a sound again.
+ *
+ * A *running* AudioContext holds a realtime audio render thread open and keeps
+ * pulling the hardware graph forever, whether or not anything is connected to
+ * it -- so the handful of blips this module plays would otherwise cost a wakeup
+ * every buffer for the life of the window, and keep the process off idle. The
+ * context is suspended rather than closed because the graph and the clock
+ * survive, so waking it is far cheaper than building a new one.
+ */
+function park(): void {
+  if (parkTimer !== null) {
+    clearTimeout(parkTimer);
+    parkTimer = null;
+  }
+  if (audioContext && audioContext.state === "running") {
+    void audioContext.suspend();
+  }
+}
+
+/** Arm the park for once the tones scheduled so far have finished sounding. */
+function parkWhenDone(ctx: AudioContext): void {
+  if (parkTimer !== null) clearTimeout(parkTimer);
+  const remaining = Math.max(0, scheduledUntil - ctx.currentTime) * 1000;
+  parkTimer = setTimeout(() => {
+    parkTimer = null;
+    if (ctx.state === "running") void ctx.suspend();
+  }, remaining + PARK_DELAY_MS);
 }
 
 export function setSoundEnabled(enabled: boolean): void {
   soundEnabled = enabled;
+  // Muting mid-session should release the audio thread now, not after whatever
+  // the last sound happened to schedule.
+  if (!enabled) park();
 }
 
 interface ToneOptions {
@@ -66,6 +117,7 @@ function playTone(ctx: AudioContext, opts: ToneOptions): void {
   osc.connect(gain).connect(ctx.destination);
   osc.start(opts.startTime);
   osc.stop(opts.startTime + opts.duration);
+  scheduledUntil = Math.max(scheduledUntil, opts.startTime + opts.duration);
 }
 
 /** Two quick ascending sine tones -- crisp "pop" */
@@ -88,6 +140,7 @@ export function playApproveSound(): void {
     duration: 0.04,
     volume: 0.15,
   });
+  parkWhenDone(ctx);
 }
 
 /** Single descending tone -- muted thud */
@@ -103,6 +156,7 @@ export function playRejectSound(): void {
     duration: 0.06,
     volume: 0.12,
   });
+  parkWhenDone(ctx);
 }
 
 /** Quick ascending arpeggio C5-E5-G5-C6 -- triangle wave for warmth */
@@ -123,6 +177,7 @@ export function playBulkSound(): void {
       volume: 0.12,
     });
   }
+  parkWhenDone(ctx);
 }
 
 /** Synthesized celebration fanfare -- ascending major chord with shimmer */
@@ -157,4 +212,5 @@ export function playCelebrationSound(): void {
       fadeIn: 0.03,
     });
   }
+  parkWhenDone(ctx);
 }
