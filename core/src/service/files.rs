@@ -85,6 +85,10 @@ pub fn list_directory_contents(repo_path: &Path, dir_path: &str) -> anyhow::Resu
         "[list_directory_contents] repo_path={}, dir_path={dir_path}",
         repo_path.display()
     );
+
+    // Validate the logical path doesn't escape the repo.
+    reject_path_traversal(dir_path)?;
+
     let source = LocalGitSource::new(repo_path.to_path_buf()).context("Failed to open repo")?;
     let result = source
         .list_directory_contents(dir_path)
@@ -643,6 +647,9 @@ pub fn get_file_raw_content(repo_path: &Path, file_path: &str) -> anyhow::Result
         "[get_file_raw_content] repo_path={}, file_path={file_path}",
         repo_path.display()
     );
+
+    // Validate the logical path doesn't escape the repo.
+    reject_path_traversal(file_path)?;
 
     let source = LocalGitSource::new(repo_path.to_path_buf()).context("Failed to open repo")?;
 
