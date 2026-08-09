@@ -461,3 +461,40 @@ pub async fn find_definitions_via_lsp(
 
     Ok(defs)
 }
+
+/// Get hover information at a position via LSP (language server).
+#[cfg(feature = "lsp")]
+pub async fn find_hover_via_lsp(
+    client: &crate::lsp::client::LspClient,
+    repo_path: &Path,
+    file_path: &str,
+    line: u32,
+    character: u32,
+) -> anyhow::Result<Option<lsp_types::Hover>> {
+    reject_path_traversal(file_path)?;
+    let abs_file = repo_path.join(file_path);
+
+    client.hover(&abs_file, line, character).await
+}
+
+/// Find references to a symbol at a position via LSP (language server).
+///
+/// Converts LSP `Location` results to `SymbolDefinition`, marking locations
+/// outside the repo as external.
+#[cfg(feature = "lsp")]
+pub async fn find_references_via_lsp(
+    client: &crate::lsp::client::LspClient,
+    repo_path: &Path,
+    file_path: &str,
+    line: u32,
+    character: u32,
+) -> anyhow::Result<Vec<SymbolDefinition>> {
+    reject_path_traversal(file_path)?;
+    let abs_file = repo_path.join(file_path);
+
+    let locations = client.references(&abs_file, line, character).await?;
+
+    Ok(crate::lsp::client::locations_to_definitions(
+        &locations, repo_path,
+    ))
+}
