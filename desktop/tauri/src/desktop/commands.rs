@@ -1523,15 +1523,6 @@ async fn get_lsp_client(
         .ok_or_else(|| "No LSP server running for this file".to_owned())
 }
 
-/// Resolve a file path to absolute, joining with repo_path if relative.
-fn resolve_file_path(repo_path: &str, file_path: &str) -> PathBuf {
-    if std::path::Path::new(file_path).is_absolute() {
-        PathBuf::from(file_path)
-    } else {
-        PathBuf::from(repo_path).join(file_path)
-    }
-}
-
 #[tauri::command]
 pub async fn lsp_goto_definition(
     state: tauri::State<'_, LspServers>,
@@ -1565,12 +1556,15 @@ pub async fn lsp_hover(
     let key = find_lsp_key_for_file(&state, &repo_path, &file_path).await?;
     let client = get_lsp_client(&state, &key).await?;
 
-    let abs_file = resolve_file_path(&repo_path, &file_path);
-
-    let hover = client
-        .hover(&abs_file, line, character)
-        .await
-        .map_err(|e| e.to_string())?;
+    let hover = review::service::symbols::find_hover_via_lsp(
+        &client,
+        &PathBuf::from(&repo_path),
+        &file_path,
+        line,
+        character,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
 
     match hover {
         Some(h) => serde_json::to_value(h).map(Some).map_err(|e| e.to_string()),
@@ -1589,17 +1583,15 @@ pub async fn lsp_find_references(
     let key = find_lsp_key_for_file(&state, &repo_path, &file_path).await?;
     let client = get_lsp_client(&state, &key).await?;
 
-    let abs_file = resolve_file_path(&repo_path, &file_path);
-    let repo = PathBuf::from(&repo_path);
-
-    let locations = client
-        .references(&abs_file, line, character)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    Ok(review::lsp::client::locations_to_definitions(
-        &locations, &repo,
-    ))
+    review::service::symbols::find_references_via_lsp(
+        &client,
+        &PathBuf::from(&repo_path),
+        &file_path,
+        line,
+        character,
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
