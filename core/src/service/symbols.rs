@@ -12,6 +12,8 @@ use crate::sources::traits::{Comparison, DiffSource};
 use crate::symbols::{self, FileSymbolDiff, Symbol, SymbolDefinition};
 
 use super::util::reject_path_traversal;
+#[cfg(feature = "lsp")]
+use super::util::reject_relative_path_traversal;
 use super::RepoFileSymbols;
 
 /// Compute symbol-level diffs for files.
@@ -432,6 +434,21 @@ pub fn find_symbol_definitions(
     Ok(all_defs)
 }
 
+/// Resolve an LSP file path to absolute, allowing paths outside the repo
+/// through unchanged (external navigation, e.g. into a vendored dependency
+/// or the language's stdlib) while still rejecting `..`-escaping relative
+/// paths.
+#[cfg(feature = "lsp")]
+fn resolve_lsp_file_path(repo_path: &Path, file_path: &str) -> anyhow::Result<std::path::PathBuf> {
+    reject_relative_path_traversal(file_path)?;
+    let path = Path::new(file_path);
+    Ok(if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        repo_path.join(file_path)
+    })
+}
+
 /// Find symbol definitions via LSP (language server).
 ///
 /// Converts LSP `Location` results to `SymbolDefinition`, marking locations
@@ -446,8 +463,7 @@ pub async fn find_definitions_via_lsp(
 ) -> anyhow::Result<Vec<SymbolDefinition>> {
     let t0 = Instant::now();
     info!("[find_definitions_via_lsp] file={file_path} line={line} char={character}");
-    reject_path_traversal(file_path)?;
-    let abs_file = repo_path.join(file_path);
+    let abs_file = resolve_lsp_file_path(repo_path, file_path)?;
 
     let locations = client.goto_definition(&abs_file, line, character).await?;
 
@@ -471,8 +487,7 @@ pub async fn find_hover_via_lsp(
     line: u32,
     character: u32,
 ) -> anyhow::Result<Option<lsp_types::Hover>> {
-    reject_path_traversal(file_path)?;
-    let abs_file = repo_path.join(file_path);
+    let abs_file = resolve_lsp_file_path(repo_path, file_path)?;
 
     client.hover(&abs_file, line, character).await
 }
@@ -489,8 +504,7 @@ pub async fn find_references_via_lsp(
     line: u32,
     character: u32,
 ) -> anyhow::Result<Vec<SymbolDefinition>> {
-    reject_path_traversal(file_path)?;
-    let abs_file = repo_path.join(file_path);
+    let abs_file = resolve_lsp_file_path(repo_path, file_path)?;
 
     let locations = client.references(&abs_file, line, character).await?;
 

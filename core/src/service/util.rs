@@ -166,6 +166,21 @@ pub fn reject_path_traversal(file_path: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Like `reject_path_traversal`, but allows absolute paths through
+/// unchanged instead of rejecting them.
+///
+/// Used by the LSP commands, which legitimately navigate to absolute paths
+/// outside the repo (e.g. "go to definition" landing in a vendored
+/// dependency or the language's stdlib) rather than joining onto the repo
+/// root. Relative paths are still checked for `..` escapes.
+pub fn reject_relative_path_traversal(file_path: &str) -> anyhow::Result<()> {
+    let is_absolute = file_path.starts_with('/') || file_path.starts_with('\\');
+    if !is_absolute && file_path.contains("..") {
+        bail!("Path traversal detected: file path escapes repository");
+    }
+    Ok(())
+}
+
 /// Validate that a path is within .git/review/ or ~/.review/ for security.
 pub fn validate_review_path(path: &str) -> anyhow::Result<PathBuf> {
     let path_buf = PathBuf::from(path);
@@ -257,6 +272,19 @@ mod tests {
         assert!(reject_path_traversal("src/../../etc/passwd").is_err());
         assert!(reject_path_traversal("/etc/passwd").is_err());
         assert!(reject_path_traversal("\\etc\\passwd").is_err());
+    }
+
+    #[test]
+    fn reject_relative_path_traversal_allows_ordinary_and_absolute_paths() {
+        assert!(reject_relative_path_traversal("src/main.rs").is_ok());
+        assert!(reject_relative_path_traversal("file.txt").is_ok());
+        assert!(reject_relative_path_traversal("/usr/lib/python3/os.py").is_ok());
+    }
+
+    #[test]
+    fn reject_relative_path_traversal_rejects_relative_escapes() {
+        assert!(reject_relative_path_traversal("../etc/passwd").is_err());
+        assert!(reject_relative_path_traversal("src/../../etc/passwd").is_err());
     }
 
     #[test]
