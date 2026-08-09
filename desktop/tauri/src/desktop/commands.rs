@@ -19,9 +19,9 @@ use review::review::storage::{self, GlobalReviewSummary};
 use review::service::pr::ReviewTierInfo;
 use review::service::usage::AgentUsage;
 use review::service::{
-    CommitOutputLine, CommitResult, DetectMovePairsResponse, ExpandedContextResult, FileContent,
-    RepoFileSymbols, RepoLocalActivity, ReviewFreshnessInput, ReviewFreshnessResult,
-    VscodeThemeDetection,
+    util::reject_path_traversal, CommitOutputLine, CommitResult, DetectMovePairsResponse,
+    ExpandedContextResult, FileContent, RepoFileSymbols, RepoLocalActivity,
+    ReviewFreshnessInput, ReviewFreshnessResult, VscodeThemeDetection,
 };
 use review::sources::github::{GhCliProvider, GitHubPrRef, GitHubProvider, PullRequest};
 use review::sources::local_git::{
@@ -1523,13 +1523,11 @@ async fn get_lsp_client(
         .ok_or_else(|| "No LSP server running for this file".to_owned())
 }
 
-/// Resolve a file path to absolute, joining with repo_path if relative.
-fn resolve_file_path(repo_path: &str, file_path: &str) -> PathBuf {
-    if std::path::Path::new(file_path).is_absolute() {
-        PathBuf::from(file_path)
-    } else {
-        PathBuf::from(repo_path).join(file_path)
-    }
+/// Resolve a repo-relative file path to absolute, rejecting paths that
+/// would escape the repo (see `reject_path_traversal`).
+fn resolve_file_path(repo_path: &str, file_path: &str) -> Result<PathBuf, String> {
+    reject_path_traversal(file_path).map_err(|e| e.to_string())?;
+    Ok(PathBuf::from(repo_path).join(file_path))
 }
 
 #[tauri::command]
@@ -1565,7 +1563,7 @@ pub async fn lsp_hover(
     let key = find_lsp_key_for_file(&state, &repo_path, &file_path).await?;
     let client = get_lsp_client(&state, &key).await?;
 
-    let abs_file = resolve_file_path(&repo_path, &file_path);
+    let abs_file = resolve_file_path(&repo_path, &file_path)?;
 
     let hover = client
         .hover(&abs_file, line, character)
@@ -1589,7 +1587,7 @@ pub async fn lsp_find_references(
     let key = find_lsp_key_for_file(&state, &repo_path, &file_path).await?;
     let client = get_lsp_client(&state, &key).await?;
 
-    let abs_file = resolve_file_path(&repo_path, &file_path);
+    let abs_file = resolve_file_path(&repo_path, &file_path)?;
     let repo = PathBuf::from(&repo_path);
 
     let locations = client

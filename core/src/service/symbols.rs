@@ -446,11 +446,8 @@ pub async fn find_definitions_via_lsp(
 ) -> anyhow::Result<Vec<SymbolDefinition>> {
     let t0 = Instant::now();
     info!("[find_definitions_via_lsp] file={file_path} line={line} char={character}");
-    let abs_file = if std::path::Path::new(file_path).is_absolute() {
-        std::path::PathBuf::from(file_path)
-    } else {
-        repo_path.join(file_path)
-    };
+    reject_path_traversal(file_path)?;
+    let abs_file = repo_path.join(file_path);
 
     let locations = client.goto_definition(&abs_file, line, character).await?;
 
