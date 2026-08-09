@@ -7,7 +7,8 @@
 //! desktop app — every wire-facing struct serializes as `camelCase` JSON.
 //!
 //! Each session also runs a VT thread (for on-demand content peek) and a status
-//! scanner (OSC 133 / foreground-process phase tracking) on its reader thread.
+//! scanner on its reader thread, which tracks phase from OSC 133 marks, the
+//! foreground process, and the title spinner an agent animates while it works.
 //!
 //! Two features split the module. The wire contract in [`wire`] is always here
 //! (`terminal-types`); the PTY machinery below it needs `terminal`. That is what

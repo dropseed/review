@@ -12,6 +12,25 @@
 //! [`poller`](super::poll) becomes the sole phase authority via
 //! [`StatusScanner::on_poll`]; it always supplies `running_command` regardless.
 //!
+//! ## Title activity (agent phase)
+//!
+//! Neither of those says anything useful while a long-lived TUI holds the
+//! terminal: OSC 133 marks stop at the `C` that launched it, so a session
+//! running Claude Code or Codex would read `Working` from launch to exit, right
+//! through every pause where it is in fact waiting on the user.
+//!
+//! Both agents already broadcast the answer in the OSC 0 title, animating a
+//! braille spinner frame into it while they work and dropping it when they hand
+//! control back (`⠂ Fix the parser` → `✳ Fix the parser` for Claude Code,
+//! `⠼ review` → `review` for Codex). The first spinner frame promotes the title
+//! to `agent_phase`, an authority that outranks both `base_phase` sources; any
+//! OSC 133 mark demotes it again, because only the shell emits those, so one
+//! arriving means the agent has exited.
+//!
+//! The leading marker is stripped from the surfaced `title`, so the label stays
+//! put at the task summary instead of flickering through spinner frames — which
+//! also keeps a working agent from publishing a status frame per animation tick.
+//!
 //! ## Bell overlay
 //!
 //! The bell sets a `needs_attention` overlay *on top of* the OSC/poll-driven
@@ -43,6 +62,9 @@ struct Sink {
     phase: Phase,
     /// Phase driven by OSC 133 / the poller, without the bell overlay.
     base_phase: Phase,
+    /// Phase claimed by an agent's title spinner, once one has been seen.
+    /// `Some` outranks `base_phase`; an OSC 133 mark clears it.
+    agent_phase: Option<Phase>,
     /// Bell overlay: something rang the bell and wants the user's attention.
     needs_attention: bool,
     /// Text of the notification that raised the overlay, if it carried any.
@@ -63,6 +85,7 @@ impl Sink {
             id,
             phase: Phase::Working,
             base_phase: Phase::Working,
+            agent_phase: None,
             needs_attention: false,
             attention_message: None,
             running_command: None,
@@ -108,6 +131,13 @@ impl Sink {
         }
     }
 
+    fn set_agent_phase(&mut self, phase: Option<Phase>) {
+        if self.agent_phase != phase {
+            self.agent_phase = phase;
+            self.dirty = true;
+        }
+    }
+
     fn set_last_exit(&mut self, code: Option<i32>) {
         if self.last_exit_code != code {
             self.last_exit_code = code;
@@ -139,13 +169,30 @@ impl Sink {
         }
     }
 
+    /// Apply an OSC 0/2 title: fold its activity marker into `agent_phase` and
+    /// surface the title with that marker stripped.
     fn set_title(&mut self, value: Option<&&[u8]>) {
-        if let Some(bytes) = value {
-            let title = String::from_utf8_lossy(bytes).into_owned();
-            if self.title.as_deref() != Some(title.as_str()) {
-                self.title = Some(title);
-                self.dirty = true;
-            }
+        let Some(bytes) = value else { return };
+        let raw = String::from_utf8_lossy(bytes);
+        let (working, label) = split_activity(raw.trim());
+        self.note_title_activity(working);
+        if self.title.as_deref() != Some(label) {
+            self.title = Some(label.to_owned());
+            self.dirty = true;
+        }
+    }
+
+    /// Fold in what a title says about an agent's activity. The first spinner
+    /// frame makes the title the phase authority for this session; from then on
+    /// a title without one means the agent handed control back to the user.
+    ///
+    /// A title that never carries a spinner never claims the authority, so a
+    /// shell that retitles itself per command (`cargo build`) is left alone.
+    fn note_title_activity(&mut self, working: bool) {
+        if working {
+            self.set_agent_phase(Some(Phase::Working));
+        } else if self.agent_phase.is_some() {
+            self.set_agent_phase(Some(Phase::WaitingForInput));
         }
     }
 
@@ -163,6 +210,9 @@ impl Sink {
     /// Apply an OSC 133 shell-integration mark.
     fn osc_133(&mut self, params: &[&[u8]]) {
         self.activate_integration();
+        // Only the shell emits 133 marks, so seeing one means any agent that had
+        // claimed the phase is gone and the shell's own state is authoritative.
+        self.set_agent_phase(None);
         let Some(sub) = params.get(1) else { return };
         match sub.first() {
             // Prompt start: at a prompt, waiting for input; clear the bell.
@@ -250,7 +300,7 @@ impl Sink {
         let effective = if self.needs_attention {
             Phase::NeedsAttention
         } else {
-            self.base_phase
+            self.agent_phase.unwrap_or(self.base_phase)
         };
         if effective != self.phase {
             self.entered_state_at = now_millis();
@@ -295,6 +345,26 @@ fn join_params(params: &[&[u8]]) -> String {
 /// A notification with no text raises the overlay but carries no message.
 fn non_empty(text: String) -> Option<String> {
     (!text.is_empty()).then_some(text)
+}
+
+/// Claude Code's ready marker — the glyph its title carries in place of a
+/// spinner frame while it waits on the user.
+const READY_MARKER: char = '✳';
+
+/// Split a title into whether it leads with a spinner frame, and the title with
+/// that leading activity marker removed.
+///
+/// A spinner frame is any glyph from the Braille Patterns block: it is what both
+/// Claude Code and Codex animate, and no static title starts with one. The
+/// marker is stripped so the surfaced label is the part that means something —
+/// and so it stops changing ten times a second while an agent works.
+fn split_activity(title: &str) -> (bool, &str) {
+    let mut chars = title.chars();
+    match chars.next() {
+        Some('\u{2800}'..='\u{28FF}') => (true, chars.as_str().trim_start()),
+        Some(READY_MARKER) => (false, chars.as_str().trim_start()),
+        _ => (false, title),
+    }
 }
 
 /// Parse an OSC 7 `file://<host><path>` value into its (percent-decoded) path.
@@ -544,6 +614,106 @@ mod tests {
         let mut s = scanner();
         let status = feed(&mut s, b"\x1b]0;My Title\x07").expect("OSC 0 changed status");
         assert_eq!(status.title.as_deref(), Some("My Title"));
+    }
+
+    #[test]
+    fn title_spinner_outranks_the_command_running_mark() {
+        let mut s = scanner();
+        // Launching the agent is the last 133 mark until it exits, so without
+        // the title tier this session reads Working for its whole life.
+        feed(&mut s, b"\x1b]133;C\x07");
+
+        let working =
+            feed(&mut s, "\x1b]0;⠂ Fix the parser\x07".as_bytes()).expect("spinner changed status");
+        assert_eq!(working.phase, Phase::Working);
+        assert_eq!(working.title.as_deref(), Some("Fix the parser"));
+
+        let waiting = feed(&mut s, "\x1b]0;✳ Fix the parser\x07".as_bytes())
+            .expect("ready marker changed status");
+        assert_eq!(waiting.phase, Phase::WaitingForInput);
+        // Both markers strip to the same label, so it never flickered.
+        assert_eq!(waiting.title.as_deref(), Some("Fix the parser"));
+    }
+
+    #[test]
+    fn codex_style_bare_title_ends_the_working_state() {
+        let mut s = scanner();
+        // Codex spins over the plain directory name and drops back to it.
+        let working =
+            feed(&mut s, "\x1b]0;⠼ review\x07".as_bytes()).expect("spinner changed status");
+        assert_eq!(working.phase, Phase::Working);
+        assert_eq!(working.title.as_deref(), Some("review"));
+
+        let waiting = feed(&mut s, b"\x1b]0;review\x07").expect("bare title changed status");
+        assert_eq!(waiting.phase, Phase::WaitingForInput);
+    }
+
+    #[test]
+    fn spinner_frames_do_not_republish() {
+        let mut s = scanner();
+        feed(&mut s, "\x1b]0;⠂ Fix the parser\x07".as_bytes());
+        // Every later frame strips to the same label and the same phase, so a
+        // working agent must not push a status frame per animation tick.
+        assert!(!s.feed("\x1b]0;⠐ Fix the parser\x07".as_bytes()));
+        assert!(!s.feed("\x1b]0;⠠ Fix the parser\x07".as_bytes()));
+    }
+
+    #[test]
+    fn a_title_without_a_spinner_never_claims_the_phase() {
+        let mut s = scanner();
+        feed(&mut s, b"\x1b]133;C\x07");
+        // A shell that retitles itself per command must not be read as an agent
+        // going idle while its command is still running.
+        let titled = feed(&mut s, b"\x1b]0;cargo build\x07").expect("title changed status");
+        assert_eq!(titled.phase, Phase::Working);
+        assert_eq!(titled.title.as_deref(), Some("cargo build"));
+    }
+
+    #[test]
+    fn a_shell_mark_releases_the_agent_phase() {
+        let mut s = scanner();
+        feed(&mut s, "\x1b]0;⠂ Fix the parser\x07".as_bytes());
+        assert_eq!(s.build_status().phase, Phase::Working);
+
+        // The agent exited and the shell came back: its marks win again.
+        let done = feed(&mut s, b"\x1b]133;D;0\x07").expect("D changed status");
+        assert_eq!(done.phase, Phase::Idle);
+
+        // And a spinner-less title must not reclaim the authority on its own.
+        let retitled = feed(&mut s, b"\x1b]0;review\x07").expect("title changed status");
+        assert_eq!(retitled.phase, Phase::Idle);
+    }
+
+    #[test]
+    fn agent_waiting_still_yields_to_the_bell_overlay() {
+        let mut s = scanner();
+        feed(&mut s, "\x1b]0;⠂ Fix the parser\x07".as_bytes());
+        // Claude Code notifies and then goes quiet; the notification outranks
+        // the plain waiting state so the pane is badged, not just idle.
+        feed(&mut s, b"\x1b]777;notify;Claude;Waiting for input\x07");
+        feed(&mut s, "\x1b]0;✳ Fix the parser\x07".as_bytes());
+        let status = s.build_status();
+        assert_eq!(status.phase, Phase::NeedsAttention);
+
+        // Answering it reveals the agent's own waiting state, not the shell's.
+        assert!(s.on_write());
+        assert_eq!(s.build_status().phase, Phase::WaitingForInput);
+    }
+
+    #[test]
+    fn poll_does_not_override_a_working_agent() {
+        let mut s = scanner();
+        feed(&mut s, "\x1b]0;⠂ Fix the parser\x07".as_bytes());
+        // No shell integration, so the poller owns `base_phase` — but the agent
+        // is the foreground process, and the title is the better witness.
+        s.on_poll(false, Some("claude".to_owned()));
+        let status = s.build_status();
+        assert_eq!(status.phase, Phase::Working);
+        assert_eq!(status.running_command.as_deref(), Some("claude"));
+
+        feed(&mut s, "\x1b]0;✳ Fix the parser\x07".as_bytes());
+        s.on_poll(false, Some("claude".to_owned()));
+        assert_eq!(s.build_status().phase, Phase::WaitingForInput);
     }
 
     #[test]
