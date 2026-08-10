@@ -2917,14 +2917,20 @@ fn run_git_cmd(dir: &std::path::Path, args: &[&str]) -> Result<String, LocalGitE
     }
 }
 
-/// Split a git remote URL into `(host, org/repo)`, with any `.git` suffix
-/// removed.
+/// Split a git remote URL into `(host, org/repo)`, with any `.git` suffix and
+/// any port removed.
 ///
 /// Supported formats:
 /// - `https://github.com/org/repo.git`
 /// - `https://github.com/org/repo`
 /// - `git@github.com:org/repo.git`
 /// - `ssh://git@github.com/org/repo.git`
+/// - `ssh://git@ssh.github.com:443/org/repo.git`
+///
+/// The two colons are not the same colon: in a URL a `:` after the host starts
+/// a port, while in the scp shorthand it starts the path. Only the URL form
+/// gets its port stripped — `git@github.com:22/repo.git` really is a repo under
+/// a directory named `22`, which is what git itself would fetch.
 pub(crate) fn split_remote_url(url: &str) -> Option<(&str, &str)> {
     // SSH shorthand: git@host:org/repo.git
     if let Some(rest) = url.strip_prefix("git@") {
@@ -2945,9 +2951,19 @@ pub(crate) fn split_remote_url(url: &str) -> Option<(&str, &str)> {
         .map_or(without_scheme, |(_user, rest)| rest);
 
     let (host, path) = without_user.split_once('/')?;
+    let host = strip_port(host);
     let path = path.strip_suffix(".git").unwrap_or(path);
     // Ensure we have at least org/repo (two path segments)
     path.contains('/').then_some((host, path))
+}
+
+/// Drop a trailing `:<digits>` from a URL host. Ports are transport detail —
+/// `ssh.github.com:443` and `github.com:22` are the same GitHub as `github.com`.
+fn strip_port(host: &str) -> &str {
+    match host.rsplit_once(':') {
+        Some((bare, port)) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => bare,
+        _ => host,
+    }
 }
 
 /// Parse a git remote URL into a `RemoteInfo` with org/repo name and browse URL.
@@ -3099,6 +3115,49 @@ mod tests {
         let source = LocalGitSource::new(repo_path.to_path_buf()).unwrap();
         let head_sha = source.resolve_ref_or_empty_tree("HEAD");
         (env, review_home, repo_dir, source, head_sha)
+    }
+
+    #[test]
+    fn split_remote_url_handles_every_form_git_hands_out() {
+        for url in [
+            "https://github.com/dropseed/review.git",
+            "https://github.com/dropseed/review",
+            "git@github.com:dropseed/review.git",
+            "git@github.com:dropseed/review",
+            "ssh://git@github.com/dropseed/review.git",
+            // Ports belong to the transport, not the identity of the repo.
+            "ssh://git@github.com:22/dropseed/review.git",
+            "https://github.com:443/dropseed/review.git",
+        ] {
+            assert_eq!(
+                split_remote_url(url),
+                Some(("github.com", "dropseed/review")),
+                "failed on {url}"
+            );
+        }
+
+        // GitHub's SSH-over-443 endpoint is a different host name.
+        assert_eq!(
+            split_remote_url("ssh://git@ssh.github.com:443/dropseed/review.git"),
+            Some(("ssh.github.com", "dropseed/review"))
+        );
+    }
+
+    /// The scp shorthand has no port: everything after the colon is the path,
+    /// so a leading numeric segment must survive as a directory name.
+    #[test]
+    fn split_remote_url_does_not_read_an_scp_path_as_a_port() {
+        assert_eq!(
+            split_remote_url("git@github.com:22/dropseed/review.git"),
+            Some(("github.com", "22/dropseed/review"))
+        );
+    }
+
+    #[test]
+    fn split_remote_url_rejects_what_it_cannot_place() {
+        for url in ["/srv/git/review.git", "", "https://github.com/dropseed"] {
+            assert_eq!(split_remote_url(url), None, "should not parse: {url}");
+        }
     }
 
     /// Fetched PR heads live under `refs/review/`, never `refs/heads/`, so a PR

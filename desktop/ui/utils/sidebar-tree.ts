@@ -79,7 +79,21 @@ export interface SidebarOpenPrEntry {
   repoPath: string;
   /** The review ref this PR maps to — its head branch. */
   ref: string;
+  /** Keyed by PR number, not by `ref` — see `openPrRowRef`. */
   reviewKey: string;
+}
+
+/**
+ * The ref half of a synthesized `open-pr` row's key.
+ *
+ * Deliberately not the head branch, which is what the row *activates* as: two
+ * open PRs can share one head branch — a fork whose PRs all come off `main`, a
+ * branch reopened after a merge — and keying on it would collapse them into a
+ * single row with a single dismissal. The number is unique within the repo and
+ * stable across refreshes, which is what a dismissal has to survive.
+ */
+export function openPrRowRef(pr: ViewerPr): string {
+  return `pr/${pr.number}`;
 }
 
 export type SidebarEntry =
@@ -473,26 +487,43 @@ export function buildSidebarTree(
   //    materialized as their own rows where nothing does. Runs after every
   //    other source so "nothing represents this PR" is a question about the
   //    finished tree, not about whichever step happened to run first.
-  for (const pr of viewerPrs) {
+  //
+  //    Newest first, because a row can only carry one badge and two PRs can
+  //    want it: the most recently updated one is the one you're working on, so
+  //    it takes the row and the others get rows of their own. Every PR ends up
+  //    somewhere — dropping the loser would hide an open PR entirely.
+  const claimed = new Set<SidebarRow>();
+  const prsByRecency = [...viewerPrs].sort(
+    (a, b) => parseTime(b.updatedAt) - parseTime(a.updatedAt),
+  );
+
+  for (const pr of prsByRecency) {
     const repoPath = pr.repoPath;
     if (repoPath == null) continue;
 
     const bucket = buckets.get(repoPath);
+    const candidates: SidebarRow[] = bucket
+      ? [...(bucket.head ? [bucket.head] : []), ...bucket.rows].filter(
+          (row) => !claimed.has(row),
+        )
+      : [];
+
     // A PR's head branch is the ref its row would be keyed by — but a review
     // started *from* the PR keeps its own ref, so a PR-keyed review is matched
     // by number instead. Without that, a PR whose review ref isn't the branch
     // name would badge nothing and then be duplicated as an `open-pr` row.
-    const existing = bucket
-      ? [bucket.head, ...bucket.rows].find(
-          (row) =>
-            row != null &&
-            (row.ref === pr.headRefName ||
-              (row.entry.kind === "review" &&
-                row.entry.review.githubPr?.number === pr.number)),
-        )
-      : undefined;
+    // Number beats branch name when both exist, and only one of them wins: a
+    // `pr-7-head` review and the `feature` branch it was cut from are the same
+    // PR seen twice, and badging both says there are two.
+    const existing =
+      candidates.find(
+        (row) =>
+          row.entry.kind === "review" &&
+          row.entry.review.githubPr?.number === pr.number,
+      ) ?? candidates.find((row) => row.ref === pr.headRefName);
 
     if (existing) {
+      claimed.add(existing);
       existing.openPr = pr;
       if (prIsLive(pr, now)) {
         existing.reasons.push("open-pr");
@@ -510,12 +541,14 @@ export function buildSidebarTree(
     // show and disappears on its own when the PR closes.
     const target =
       bucket ?? bucketFor(repoPath, repoPath.split("/").pop() ?? repoPath, "");
-    const key = makeReviewKey(repoPath, pr.headRefName);
+    const key = makeReviewKey(repoPath, openPrRowRef(pr));
     const reasons: LiveReason[] = prIsLive(pr, now) ? ["open-pr"] : [];
 
-    target.rows.push({
+    const row: SidebarRow = {
       reviewKey: key,
       repoPath,
+      // The ref it will *become* once activated, which is the head branch —
+      // the key is what distinguishes it from another PR on the same branch.
       ref: pr.headRefName,
       entry: {
         kind: "open-pr",
@@ -530,7 +563,10 @@ export function buildSidebarTree(
       openPr: pr,
       reasons,
       live: isLive(key, reasons, dismissedSet),
-    });
+    };
+    target.rows.push(row);
+    // Its own row already, so a later PR on the same branch can't badge it.
+    claimed.add(row);
   }
 
   // 5. Split each bucket into live/rest and rank.

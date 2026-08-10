@@ -65,7 +65,15 @@ export function getSidebarTree(
   // any one caller would miss the cache and hand every subscriber a new tree.
   const minute = Math.floor(now / 60_000);
   const terminalKeys = Object.keys(selectLiveSessionsByReviewKey(state)).sort();
-  const viewerPrs = state.viewerPrs?.prs ?? NO_PRS;
+  // `available: false` means `gh` is gone or logged out, and the backend hands
+  // back the *last cached* PRs alongside it rather than an empty list. Those
+  // have to be dropped here, at the one place the tree reads them: the sidebar
+  // deliberately shows no warning in that state, so badges and PR rows built
+  // from that cache would be stale indefinitely with nothing on screen saying
+  // so — the exact failure this feature exists to avoid.
+  const snapshot = state.viewerPrs;
+  const viewerPrs =
+    snapshot == null || !snapshot.available ? NO_PRS : snapshot.prs;
 
   // Everything the build reads, in one list: adding an input to the tree means
   // one edit here rather than three matching ones. Compared by identity, so

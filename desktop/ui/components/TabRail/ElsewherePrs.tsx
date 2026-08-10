@@ -15,19 +15,21 @@ const NEVER_FETCHED = 0;
  * The honesty marker.
  *
  * Everything else in this section is data; this is the statement that the data
- * might be wrong. It renders whenever the last fetch failed, whether or not any
- * PRs came back, because the failure mode this whole feature has to avoid is a
- * sidebar that looks calm because `gh` is broken. Truncation rides along in the
- * same tooltip: showing 100 of 140 PRs is a smaller lie, but still one.
+ * might be wrong. It renders whenever a fetch that could have worked failed,
+ * whether or not any PRs came back, because the failure mode this whole feature
+ * has to avoid is a sidebar that looks calm because `gh` is broken.
+ *
+ * "Could have worked" is the whole of `available`: a machine with no `gh`, or
+ * one that never logged in, is not a broken fetch — it's a user who doesn't
+ * have this feature, and a permanent warning they can do nothing about is
+ * noise. That case renders nothing at all; see `ElsewherePrs`.
  */
 function SnapshotWarning({
   error,
   fetchedAt,
-  truncated,
 }: {
   error: string;
   fetchedAt: string;
-  truncated: boolean;
 }): ReactNode {
   const at = new Date(fetchedAt).getTime();
   const age =
@@ -40,7 +42,6 @@ function SnapshotWarning({
         <span>
           GitHub: {error}
           {age ? ` — showing PRs from ${age} ago` : " — no PRs fetched yet"}
-          {truncated ? ". Showing the newest 100." : ""}
         </span>
       }
     >
@@ -48,6 +49,28 @@ function SnapshotWarning({
         <WarningIcon className="h-3 w-3 shrink-0" />
         <span className="text-[10px]">GitHub unavailable</span>
       </span>
+    </SimpleTooltip>
+  );
+}
+
+/**
+ * Its own line, not a clause in the warning's tooltip.
+ *
+ * A truncated snapshot is a successful fetch, so it has no error to ride along
+ * with — hanging it off one meant the only case where PRs are actually missing
+ * from the sidebar was the case you couldn't be told about.
+ */
+function TruncationNote(): ReactNode {
+  return (
+    <SimpleTooltip
+      side="right"
+      content={
+        <span>
+          You have more than 100 open PRs; the rest aren&rsquo;t shown here.
+        </span>
+      }
+    >
+      <span className="text-[10px] text-fg-faint/60">showing newest 100</span>
     </SimpleTooltip>
   );
 }
@@ -95,9 +118,14 @@ export function ElsewherePrs(): ReactNode {
   );
 
   const count = groups.reduce((n, group) => n + group.prs.length, 0);
-  const error = snapshot?.error ?? null;
+  // No snapshot yet is not the same as no GitHub: assume the feature exists
+  // until a snapshot says otherwise, or the first paint would flash nothing.
+  const available = snapshot?.available ?? true;
+  const error = available ? (snapshot?.error ?? null) : null;
+  const truncated = available && (snapshot?.truncated ?? false);
 
-  if (count === 0 && error == null) return null;
+  if (!available) return null;
+  if (count === 0 && error == null && !truncated) return null;
 
   return (
     <div className="mt-1.5 border-t border-t-edge/40 pt-1">
@@ -122,9 +150,9 @@ export function ElsewherePrs(): ReactNode {
           <SnapshotWarning
             error={error}
             fetchedAt={snapshot?.fetchedAt ?? new Date(0).toISOString()}
-            truncated={snapshot?.truncated ?? false}
           />
         )}
+        {truncated && <TruncationNote />}
       </div>
 
       {open &&

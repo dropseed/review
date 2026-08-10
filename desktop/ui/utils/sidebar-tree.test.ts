@@ -88,6 +88,9 @@ function viewerPr(overrides: Partial<ViewerPr> = {}): ViewerPr {
     baseRefName: "main",
     repoNameWithOwner: "o/r",
     repoUrl: "https://github.com/o/r",
+    // Same-repo PR by default; a fork PR is one the backend hands over with
+    // `repoPath: null`, which the elsewhere-bucket tests cover.
+    headRepoNameWithOwner: "o/r",
     reviewDecision: null,
     checksState: null,
     repoPath: "/r",
@@ -604,7 +607,8 @@ describe("open pull requests", () => {
     const [row] = node.live;
     expect(row.ref).toBe("unseen");
     expect(row.entry.kind).toBe("open-pr");
-    expect(row.reviewKey).toBe("/r:unseen");
+    // Keyed by PR number, so two PRs on one branch stay two rows.
+    expect(row.reviewKey).toBe("/r:pr/7");
     // Nothing exists on disk for it — no checkout, and no review record until
     // the row is activated.
     expect(row.checkoutPath).toBeNull();
@@ -733,13 +737,68 @@ describe("open pull requests", () => {
     expect(refs(node.rest)).toContain("feature");
   });
 
-  it("dismisses a synthesized row too", () => {
+  it("dismisses a synthesized row by its PR key", () => {
     const [node] = build(withMaster(), {
-      dismissed: ["/r:unseen"],
-      viewerPrs: [viewerPr({ headRefName: "unseen" })],
+      dismissed: ["/r:pr/7"],
+      viewerPrs: [viewerPr({ number: 7, headRefName: "unseen" })],
     });
     expect(refs(node.live)).not.toContain("unseen");
     expect(refs(node.rest)).toContain("unseen");
+  });
+
+  it("badges the PR-keyed review rather than the branch it came from", () => {
+    // Both rows exist and both look like PR #7's; badging each would show one
+    // PR twice, once per row. The review record is the more specific match.
+    const reviews = [
+      review("/r", "pr-7-head", 1000, {
+        githubPr: {
+          number: 7,
+          title: "Add the thing",
+          headRefName: "feature",
+          baseRefName: "main",
+        },
+      }),
+    ];
+    const [node] = build(withMaster([branch({ name: "feature" })]), {
+      reviews,
+      viewerPrs: [viewerPr({ number: 7, headRefName: "feature" })],
+    });
+
+    const rows = [...node.live, ...node.rest];
+    expect(rows.filter((r) => r.openPr != null).map((r) => r.ref)).toEqual([
+      "pr-7-head",
+    ]);
+  });
+
+  it("gives the row to the newest of two PRs on one branch, and the other its own row", () => {
+    // Reopened work and fork branches both produce this. Letting the second PR
+    // lose the join silently would drop an open PR out of the sidebar.
+    const newer = viewerPr({ number: 9, updatedAt: iso(1000) });
+    const older = viewerPr({ number: 5, updatedAt: iso(50_000) });
+    const [node] = build(withMaster([branch({ name: "feature" })]), {
+      viewerPrs: [older, newer],
+    });
+
+    const rows = [...node.live, ...node.rest];
+    const branchRow = rows.find((r) => r.reviewKey === "/r:feature");
+    expect(branchRow?.openPr?.number).toBe(9);
+
+    const ownRow = rows.find((r) => r.reviewKey === "/r:pr/5");
+    expect(ownRow?.entry.kind).toBe("open-pr");
+    expect(ownRow?.ref).toBe("feature");
+    expect(rows).toHaveLength(2);
+  });
+
+  it("keeps two branchless PRs on one head branch apart", () => {
+    const [node] = build(withMaster(), {
+      viewerPrs: [
+        viewerPr({ number: 5, headRefName: "unseen" }),
+        viewerPr({ number: 9, headRefName: "unseen" }),
+      ],
+    });
+
+    const rows = [...node.live, ...node.rest];
+    expect(rows.map((r) => r.reviewKey).sort()).toEqual(["/r:pr/5", "/r:pr/9"]);
   });
 
   it("keeps PRs with no local repo out of the tree entirely", () => {

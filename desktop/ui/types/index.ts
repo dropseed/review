@@ -191,8 +191,18 @@ export interface ViewerPr {
   updatedAt: string;
   headRefName: string;
   baseRefName: string;
-  repoNameWithOwner: string; // "dropseed/review"
+  repoNameWithOwner: string; // the BASE repo — "dropseed/review"
   repoUrl: string;
+  /**
+   * The head (fork) repo the branch lives in, null when it has been deleted.
+   *
+   * Display uses `repoNameWithOwner` — the base repo is where the PR *is*.
+   * This exists because the local join runs off the head repo alone: a
+   * stranger's fork PR targeting a repo you have cloned must not badge your
+   * branch of the same name, so it arrives with `repoPath: null` and lands in
+   * the elsewhere bucket.
+   */
+  headRepoNameWithOwner: string | null;
   reviewDecision: string | null; // APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED
   checksState: string | null; // SUCCESS | FAILURE | PENDING | ERROR | EXPECTED
   /** Local path of the registered repo this PR belongs to, when Review knows it. */
@@ -207,6 +217,13 @@ export interface ViewerPrSnapshot {
   prs: ViewerPr[];
   truncated: boolean; // more open PRs than the query's page of 100
   error: string | null;
+  /**
+   * Whether GitHub is reachable *in principle* — false only when `gh` is
+   * missing or unauthenticated. That is not a failure to report, it's a user
+   * who doesn't have the feature, so the UI shows nothing rather than a warning
+   * that can never be cleared. `error` still carries the reason for debugging.
+   */
+  available: boolean;
 }
 
 // Comparison - the resolved base..head pair the data endpoints diff. This is

@@ -16,6 +16,7 @@ pub mod ai;
 pub mod classify;
 pub mod diff;
 pub mod filters;
+pub mod process;
 pub mod review;
 pub mod sources;
 pub mod symbols;

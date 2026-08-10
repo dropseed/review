@@ -5,7 +5,37 @@
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Output};
+use std::time::Duration;
+
+use crate::process::output_with_timeout;
+
+// ---------------------------------------------------------------------------
+// Running gh
+// ---------------------------------------------------------------------------
+
+/// `gh auth status` only talks to one endpoint; anything slower than this is a
+/// network that isn't going to answer.
+const AUTH_TIMEOUT: Duration = Duration::from_secs(10);
+/// Listing or querying can be a real request against a large account.
+const QUERY_TIMEOUT: Duration = Duration::from_secs(45);
+
+/// Run a `gh` command under a deadline, mapping both "never came back" and
+/// "couldn't start" onto [`GhError`] so callers have one thing to handle.
+///
+/// Every `gh` call goes through here. `gh` talks to the network, and a request
+/// that never returns would otherwise hold its caller — a refresh, a freshness
+/// poll — open forever.
+fn gh_output(cmd: &mut Command, timeout: Duration, what: &str) -> Result<Output, GhError> {
+    match output_with_timeout(cmd, timeout) {
+        Ok(Some(output)) => Ok(output),
+        Ok(None) => Err(GhError::Timeout(format!(
+            "{what} timed out after {}s",
+            timeout.as_secs()
+        ))),
+        Err(e) => Err(GhError::Io(e.to_string())),
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -82,27 +112,23 @@ impl GitHubProvider for GhCliProvider {
     type Error = GhError;
 
     fn is_available(&self) -> bool {
-        Command::new("gh")
-            .args(["auth", "status"])
-            .current_dir(&self.repo_path)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map(|s| s.success())
+        let mut cmd = Command::new("gh");
+        cmd.args(["auth", "status"]).current_dir(&self.repo_path);
+        gh_output(&mut cmd, AUTH_TIMEOUT, "gh auth status")
+            .map(|o| o.status.success())
             .unwrap_or(false)
     }
 
     fn list_pull_requests(&self) -> Result<Vec<PullRequest>, GhError> {
-        let output = Command::new("gh")
-            .args([
-                "pr",
-                "list",
-                "--json",
-                "number,title,headRefName,baseRefName,url,author,state,isDraft,updatedAt,body",
-            ])
-            .current_dir(&self.repo_path)
-            .output()
-            .map_err(|e| GhError::Io(e.to_string()))?;
+        let mut cmd = Command::new("gh");
+        cmd.args([
+            "pr",
+            "list",
+            "--json",
+            "number,title,headRefName,baseRefName,url,author,state,isDraft,updatedAt,body",
+        ])
+        .current_dir(&self.repo_path);
+        let output = gh_output(&mut cmd, QUERY_TIMEOUT, "gh pr list")?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -124,6 +150,8 @@ pub enum GhError {
     Io(String),
     Command(String),
     Parse(String),
+    /// The command was still running at its deadline and got killed.
+    Timeout(String),
 }
 
 impl std::fmt::Display for GhError {
@@ -132,6 +160,7 @@ impl std::fmt::Display for GhError {
             Self::Io(msg) => write!(f, "gh I/O error: {msg}"),
             Self::Command(msg) => write!(f, "gh command error: {msg}"),
             Self::Parse(msg) => write!(f, "gh parse error: {msg}"),
+            Self::Timeout(msg) => write!(f, "gh timed out: {msg}"),
         }
     }
 }
@@ -154,9 +183,16 @@ pub struct ViewerPr {
     pub updated_at: String,
     pub head_ref_name: String,
     pub base_ref_name: String,
-    /// `owner/name`, as GitHub spells it.
+    /// `owner/name` of the *base* repo — where the PR is open — as GitHub
+    /// spells it. This is the repo the PR belongs to for display purposes.
     pub repo_name_with_owner: String,
     pub repo_url: String,
+    /// `owner/name` of the repo the head branch lives in, which differs from
+    /// [`Self::repo_name_with_owner`] for a PR opened from a fork. `None` when
+    /// the head repo has been deleted. This is what the local join keys on: the
+    /// head repo is the one whose branch a checkout would have.
+    #[serde(default)]
+    pub head_repo_name_with_owner: Option<String>,
     /// `APPROVED` | `CHANGES_REQUESTED` | `REVIEW_REQUIRED`, or `None` when no
     /// review has been asked for.
     pub review_decision: Option<String>,
@@ -180,12 +216,28 @@ query {
       nodes {
         number title isDraft url updatedAt reviewDecision headRefName baseRefName
         repository { nameWithOwner url }
+        headRepository { nameWithOwner }
         commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
       }
     }
   }
 }
 ";
+
+/// What `gh auth status` had to say, in the three shapes callers care about.
+///
+/// The distinction that matters is [`Self::Unusable`] versus everything else:
+/// it is the only answer that means "this user doesn't have GitHub tooling",
+/// which is a reason to hide the feature rather than to warn about it. A
+/// timeout is not that — `gh` is installed, it just didn't answer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GhAuth {
+    Authenticated,
+    /// `gh` is missing, or installed and logged out.
+    Unusable(String),
+    /// `gh` is there but overran its deadline, so its state is unknown.
+    Timeout(String),
+}
 
 /// Whether the `gh` CLI is installed and authenticated for github.com, asked
 /// without a repository to stand in. [`GitHubProvider::is_available`] answers
@@ -195,14 +247,15 @@ query {
 /// configured host and fails if any of them does, so one unreachable GHES
 /// instance would otherwise report github.com as logged out — after waiting out
 /// its 30-second timeout.
-pub fn is_gh_authenticated() -> bool {
-    Command::new("gh")
-        .args(["auth", "status", "--hostname", "github.com"])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+pub fn gh_auth_status() -> GhAuth {
+    let mut cmd = Command::new("gh");
+    cmd.args(["auth", "status", "--hostname", "github.com"]);
+    match gh_output(&mut cmd, AUTH_TIMEOUT, "gh auth status") {
+        Ok(output) if output.status.success() => GhAuth::Authenticated,
+        Ok(_) => GhAuth::Unusable("GitHub CLI is not authenticated for github.com".to_owned()),
+        Err(GhError::Timeout(msg)) => GhAuth::Timeout(msg),
+        Err(e) => GhAuth::Unusable(e.to_string()),
+    }
 }
 
 /// Every open PR the authenticated user has out, newest first, plus whether
@@ -211,11 +264,10 @@ pub fn is_gh_authenticated() -> bool {
 /// Account-wide, so this is a free function rather than a [`GhCliProvider`]
 /// method — there is no repository for it to run in.
 pub fn fetch_viewer_open_prs() -> Result<(Vec<ViewerPr>, bool), GhError> {
-    let output = Command::new("gh")
-        .args(["api", "graphql", "-f"])
-        .arg(format!("query={VIEWER_PRS_QUERY}"))
-        .output()
-        .map_err(|e| GhError::Io(e.to_string()))?;
+    let mut cmd = Command::new("gh");
+    cmd.args(["api", "graphql", "-f"])
+        .arg(format!("query={VIEWER_PRS_QUERY}"));
+    let output = gh_output(&mut cmd, QUERY_TIMEOUT, "the open-PR query")?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -269,6 +321,9 @@ struct ViewerPrNode {
     head_ref_name: String,
     base_ref_name: String,
     repository: RepositoryNode,
+    /// Null once the fork the PR came from is deleted.
+    #[serde(default)]
+    head_repository: Option<HeadRepositoryNode>,
     commits: CommitConnection,
 }
 
@@ -277,6 +332,12 @@ struct ViewerPrNode {
 struct RepositoryNode {
     name_with_owner: String,
     url: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HeadRepositoryNode {
+    name_with_owner: String,
 }
 
 #[derive(Deserialize)]
@@ -337,6 +398,7 @@ fn parse_viewer_prs(body: &[u8]) -> Result<(Vec<ViewerPr>, bool), GhError> {
             base_ref_name: node.base_ref_name,
             repo_name_with_owner: node.repository.name_with_owner,
             repo_url: node.repository.url,
+            head_repo_name_with_owner: node.head_repository.map(|r| r.name_with_owner),
             review_decision: node.review_decision,
             checks_state: node
                 .commits
@@ -367,17 +429,16 @@ pub struct PrStatus {
 impl GhCliProvider {
     /// Get the current status (state + head SHA) of a pull request.
     pub fn get_pr_status(&self, number: u32) -> Result<PrStatus, GhError> {
-        let output = Command::new("gh")
-            .args([
-                "pr",
-                "view",
-                &number.to_string(),
-                "--json",
-                "state,headRefOid",
-            ])
-            .current_dir(&self.repo_path)
-            .output()
-            .map_err(|e| GhError::Io(e.to_string()))?;
+        let mut cmd = Command::new("gh");
+        cmd.args([
+            "pr",
+            "view",
+            &number.to_string(),
+            "--json",
+            "state,headRefOid",
+        ])
+        .current_dir(&self.repo_path);
+        let output = gh_output(&mut cmd, QUERY_TIMEOUT, "gh pr view")?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -395,7 +456,8 @@ mod tests {
     use super::*;
 
     /// Trimmed from a real `gh api graphql` response: one PR with CI, one
-    /// without, and a `totalCount` larger than the page.
+    /// without (and opened from a fork), and a `totalCount` larger than the
+    /// page.
     const VIEWER_PRS_FIXTURE: &str = r#"{
       "data": {
         "viewer": {
@@ -415,6 +477,7 @@ mod tests {
                   "nameWithOwner": "dropseed/plain",
                   "url": "https://github.com/dropseed/plain"
                 },
+                "headRepository": { "nameWithOwner": "dropseed/plain" },
                 "commits": {
                   "nodes": [{ "commit": { "statusCheckRollup": { "state": "SUCCESS" } } }]
                 }
@@ -432,6 +495,7 @@ mod tests {
                   "nameWithOwner": "dropseed/review",
                   "url": "https://github.com/dropseed/review"
                 },
+                "headRepository": { "nameWithOwner": "davegaeddert/review" },
                 "commits": { "nodes": [{ "commit": { "statusCheckRollup": null } }] }
               }
             ]
@@ -458,11 +522,40 @@ mod tests {
             first.repo_path, None,
             "the join fills this in, not the parse"
         );
+        assert_eq!(
+            first.head_repo_name_with_owner.as_deref(),
+            Some("dropseed/plain")
+        );
 
         // A repo without CI reports no state rather than a fabricated one.
         assert_eq!(prs[1].checks_state, None);
         assert_eq!(prs[1].review_decision, None);
         assert!(!prs[1].is_draft);
+        // A fork PR: base and head repos are different, and the join needs the
+        // head one to find the clone that actually has the branch.
+        assert_eq!(prs[1].repo_name_with_owner, "dropseed/review");
+        assert_eq!(
+            prs[1].head_repo_name_with_owner.as_deref(),
+            Some("davegaeddert/review")
+        );
+    }
+
+    /// GitHub returns `headRepository: null` once the fork a PR came from is
+    /// deleted. That has to parse, not blow up the whole page of PRs.
+    #[test]
+    fn a_deleted_head_repo_parses_as_no_head_repo() {
+        let body = r#"{"data":{"viewer":{"pullRequests":{"totalCount":1,"nodes":[{
+          "number": 5, "title": "Orphan", "isDraft": false,
+          "url": "https://github.com/dropseed/review/pull/5",
+          "updatedAt": "2026-08-01T16:10:34Z", "reviewDecision": null,
+          "headRefName": "gone", "baseRefName": "master",
+          "repository": { "nameWithOwner": "dropseed/review", "url": "https://github.com/dropseed/review" },
+          "headRepository": null,
+          "commits": { "nodes": [] }
+        }]}}}}"#;
+        let (prs, _) = parse_viewer_prs(body.as_bytes()).unwrap();
+        assert_eq!(prs[0].head_repo_name_with_owner, None);
+        assert_eq!(prs[0].checks_state, None);
     }
 
     #[test]

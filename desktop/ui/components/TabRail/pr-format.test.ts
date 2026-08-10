@@ -13,6 +13,7 @@ function pr(overrides: Partial<ViewerPr> = {}): ViewerPr {
     baseRefName: "main",
     repoNameWithOwner: "o/r",
     repoUrl: "https://github.com/o/r",
+    headRepoNameWithOwner: "o/r",
     reviewDecision: null,
     checksState: null,
     repoPath: "/r",
