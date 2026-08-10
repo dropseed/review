@@ -271,6 +271,32 @@ describe("loadAllFiles", () => {
     expect(useReviewStore.getState().allFilesLoading).toBe(true);
   });
 
+  it("discards a response that resolves after the comparison changed", async () => {
+    let resolveFetch: (value: unknown) => void;
+    listAllFiles.mockReturnValue(
+      new Promise((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
+
+    const promise = useReviewStore.getState().loadAllFiles();
+
+    // Simulate switching comparisons while the request is in flight; the
+    // new comparison's own load claims the loading flag.
+    useReviewStore.setState({
+      comparison: { base: "main", head: "b", key: "main..b" },
+      allFiles: [],
+      allFilesLoading: true,
+    } as never);
+
+    resolveFetch!([{ name: "old.ts", path: "old.ts", isDirectory: false }]);
+    await promise;
+
+    const state = useReviewStore.getState();
+    expect(state.allFiles).toEqual([]);
+    expect(state.allFilesLoading).toBe(true);
+  });
+
   it("settles loading when the comparison hasn't changed and the fetch fails", async () => {
     listAllFiles.mockRejectedValue(new Error("network error"));
 
@@ -302,6 +328,32 @@ describe("loadRepoFiles", () => {
     await promise;
 
     expect(useReviewStore.getState().allFilesLoading).toBe(true);
+  });
+
+  it("discards a response that resolves after the repo changed", async () => {
+    let resolveFetch: (value: unknown) => void;
+    listRepoFiles.mockReturnValue(
+      new Promise((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
+
+    const promise = useReviewStore.getState().loadRepoFiles();
+
+    // Simulate switching repos while the request is in flight; the new
+    // repo's own load claims the loading flag.
+    useReviewStore.setState({
+      repoPath: "/repo-b",
+      allFiles: [],
+      allFilesLoading: true,
+    } as never);
+
+    resolveFetch!([{ name: "old.ts", path: "old.ts", isDirectory: false }]);
+    await promise;
+
+    const state = useReviewStore.getState();
+    expect(state.allFiles).toEqual([]);
+    expect(state.allFilesLoading).toBe(true);
   });
 
   it("settles loading when the repo hasn't changed and the fetch fails", async () => {
