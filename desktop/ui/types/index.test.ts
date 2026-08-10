@@ -4,6 +4,7 @@ import {
   isHunkTrusted,
   isHunkReviewed,
   attributed,
+  describeTrustedLabel,
   type HunkState,
 } from "./index";
 
@@ -73,6 +74,20 @@ describe("isHunkTrusted", () => {
       classification: attributed(["imports:added"], "static"),
     };
     expect(isHunkTrusted(hunkState, [])).toBe(false);
+  });
+});
+
+describe("describeTrustedLabel", () => {
+  it("shows only the label for an exact-match pattern", () => {
+    expect(
+      describeTrustedLabel("formatting:whitespace", "formatting:whitespace"),
+    ).toBe('"formatting:whitespace"');
+  });
+
+  it("names the wildcard pattern when it differs from the label", () => {
+    expect(describeTrustedLabel("imports:added", "imports:*")).toBe(
+      '"imports:added" (pattern "imports:*")',
+    );
   });
 });
 

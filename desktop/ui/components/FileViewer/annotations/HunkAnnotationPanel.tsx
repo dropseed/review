@@ -1,5 +1,10 @@
 import type { CommitEntry, DiffHunk, HunkState, Source } from "../../../types";
-import { isHunkTrusted, hunkLabels, findMatchingPattern } from "../../../types";
+import {
+  isHunkTrusted,
+  hunkLabels,
+  findMatchingPattern,
+  describeTrustedLabel,
+} from "../../../types";
 import { useReviewStore } from "../../../stores";
 import { useIsFocusedHunk } from "../../../hooks";
 import {
@@ -348,15 +353,13 @@ export function HunkAnnotationPanel({
             {hunkLabels(hunkState).map((lbl, i) => {
               const matchedPattern = findMatchingPattern(lbl, trustList);
               const isTrustedLabel = matchedPattern !== undefined;
-              const untrustTooltip =
-                matchedPattern === lbl
-                  ? `Click to untrust "${lbl}"`
-                  : `Click to untrust "${lbl}" (removes trust pattern "${matchedPattern}")`;
               return (
                 <SimpleTooltip
                   key={i}
                   content={
-                    isTrustedLabel ? untrustTooltip : `Click to trust "${lbl}"`
+                    isTrustedLabel
+                      ? `Click to untrust ${describeTrustedLabel(lbl, matchedPattern)}`
+                      : `Click to trust "${lbl}"`
                   }
                 >
                   <button
