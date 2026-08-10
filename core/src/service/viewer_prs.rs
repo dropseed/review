@@ -153,28 +153,12 @@ fn refresh_now() -> ViewerPrSnapshot {
 
 /// Fetch from GitHub and stamp each PR with the local repo it belongs to.
 fn fetch_and_join() -> Result<ViewerPrSnapshot, FetchFailure> {
-    // Asked first because it's the common failure and `gh`'s own error for it
-    // is a wall of setup instructions.
-    match github::gh_auth_status() {
-        GhAuth::Authenticated => {}
-        GhAuth::Unusable(message) => {
-            return Err(FetchFailure {
-                message,
-                gh_available: false,
-            })
-        }
-        GhAuth::Timeout(message) => {
-            return Err(FetchFailure {
-                message,
-                gh_available: true,
-            })
-        }
-    }
-
-    let (mut prs, truncated) = github::fetch_viewer_open_prs().map_err(|e| FetchFailure {
-        message: e.to_string(),
-        gh_available: true,
-    })?;
+    // Straight to the query. `gh auth status` answers one thing the query's own
+    // error doesn't — whether `gh` is usable at all — but asking it first spent
+    // a second `gh` spawn on every refresh, the path that always runs, to
+    // pre-empt a failure that mostly doesn't happen. It is asked on failure now.
+    let (mut prs, truncated) = github::fetch_viewer_open_prs()
+        .map_err(|e| classify_failure(&e, github::gh_auth_status()))?;
     join_registered_repos(&mut prs);
 
     Ok(ViewerPrSnapshot {
@@ -184,6 +168,27 @@ fn fetch_and_join() -> Result<ViewerPrSnapshot, FetchFailure> {
         error: None,
         available: true,
     })
+}
+
+/// What a failed viewer query means, given what `gh auth status` says about the
+/// CLI itself. Pure, so the mapping is testable without a `gh` on the machine.
+fn classify_failure(error: &github::GhError, auth: GhAuth) -> FetchFailure {
+    match auth {
+        // The one answer that means "this user doesn't do GitHub from here",
+        // which hides the feature. `gh`'s own logged-out message is a wall of
+        // setup instructions and says far more than the query's error, so it is
+        // the one carried.
+        GhAuth::Unusable(message) => FetchFailure {
+            message,
+            gh_available: false,
+        },
+        // Authenticated, or too slow to say. Either way `gh` is there, so the
+        // query failing is something to warn about rather than to hide.
+        GhAuth::Authenticated | GhAuth::Timeout(_) => FetchFailure {
+            message: error.to_string(),
+            gh_available: true,
+        },
+    }
 }
 
 /// Stamp each PR with the path of the registered repo it lives in, when there
@@ -365,6 +370,37 @@ mod tests {
                 "failed on {url}"
             );
         }
+    }
+
+    /// `available` is what decides between hiding the feature and warning about
+    /// it, and the query now runs before the auth check that sets it. Only a
+    /// `gh` that is missing or logged out may turn it off.
+    #[test]
+    fn only_an_unusable_gh_makes_the_feature_unavailable() {
+        let error = github::GhError::Command("HTTP 502".to_owned());
+
+        let logged_out = classify_failure(
+            &error,
+            GhAuth::Unusable("gh: not logged in to github.com".to_owned()),
+        );
+        assert!(!logged_out.gh_available);
+        assert_eq!(
+            logged_out.message, "gh: not logged in to github.com",
+            "gh's own setup message says more than the query's error"
+        );
+
+        let query_broke = classify_failure(&error, GhAuth::Authenticated);
+        assert!(
+            query_broke.gh_available,
+            "a query failure on a working gh is worth warning about, not hiding"
+        );
+        assert!(query_broke.message.contains("HTTP 502"));
+
+        // An auth check too slow to answer proves nothing against `gh`, and
+        // must not be read as "no GitHub tooling here".
+        let unknown = classify_failure(&error, GhAuth::Timeout("timed out".to_owned()));
+        assert!(unknown.gh_available);
+        assert!(unknown.message.contains("HTTP 502"));
     }
 
     #[test]

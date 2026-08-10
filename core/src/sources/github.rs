@@ -4,11 +4,12 @@
 //! implementation backed by the `gh` CLI.
 
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::Duration;
 
 use crate::process::output_with_timeout;
+use crate::sources::local_git;
 
 // ---------------------------------------------------------------------------
 // Running gh
@@ -19,6 +20,13 @@ use crate::process::output_with_timeout;
 const AUTH_TIMEOUT: Duration = Duration::from_secs(10);
 /// Listing or querying can be a real request against a large account.
 const QUERY_TIMEOUT: Duration = Duration::from_secs(45);
+/// Reading one remote URL out of the local git config. Only a wedged
+/// filesystem takes longer.
+const GIT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// The host `gh` talks to unless told otherwise, and the answer whenever a repo
+/// gives no better one.
+const DEFAULT_HOST: &str = "github.com";
 
 /// Run a `gh` command under a deadline, mapping both "never came back" and
 /// "couldn't start" onto [`GhError`] so callers have one thing to handle.
@@ -108,12 +116,52 @@ impl GhCliProvider {
     }
 }
 
+/// The `gh` host a remote URL lives on, or `None` when the URL doesn't parse.
+///
+/// `ssh.github.com` normalizes to github.com: it's the same GitHub reached over
+/// port 443 by people whose network blocks 22, and `gh` only knows the account
+/// under the real hostname.
+fn gh_host_for_remote(url: &str) -> Option<String> {
+    let (host, _path) = local_git::split_remote_url(url)?;
+    Some(if host.eq_ignore_ascii_case("ssh.github.com") {
+        DEFAULT_HOST.to_owned()
+    } else {
+        host.to_lowercase()
+    })
+}
+
+/// Which GitHub host this repo's `origin` points at.
+///
+/// Falls back to github.com when there is no origin, or none that parses —
+/// that's `gh`'s own default, and guessing wrong here costs an availability
+/// answer rather than correctness.
+fn origin_host(repo_path: &Path) -> String {
+    let mut cmd = Command::new("git");
+    cmd.args(["remote", "get-url", "origin"])
+        .current_dir(repo_path);
+    // A repo with no origin exits non-zero, which is not worth logging.
+    let Ok(Some(output)) = output_with_timeout(&mut cmd, GIT_TIMEOUT) else {
+        return DEFAULT_HOST.to_owned();
+    };
+    if !output.status.success() {
+        return DEFAULT_HOST.to_owned();
+    }
+    gh_host_for_remote(String::from_utf8_lossy(&output.stdout).trim())
+        .unwrap_or_else(|| DEFAULT_HOST.to_owned())
+}
+
 impl GitHubProvider for GhCliProvider {
     type Error = GhError;
 
+    /// Scoped to the repo's own host on purpose: bare `gh auth status` reports
+    /// on *every* configured host and fails if any of them does, so one
+    /// unreachable GHES instance would report a perfectly good github.com as
+    /// logged out — after waiting out `gh`'s 30-second timeout first.
     fn is_available(&self) -> bool {
+        let host = origin_host(&self.repo_path);
         let mut cmd = Command::new("gh");
-        cmd.args(["auth", "status"]).current_dir(&self.repo_path);
+        cmd.args(["auth", "status", "--hostname", &host])
+            .current_dir(&self.repo_path);
         gh_output(&mut cmd, AUTH_TIMEOUT, "gh auth status")
             .map(|o| o.status.success())
             .unwrap_or(false)
@@ -241,15 +289,14 @@ pub enum GhAuth {
 
 /// Whether the `gh` CLI is installed and authenticated for github.com, asked
 /// without a repository to stand in. [`GitHubProvider::is_available`] answers
-/// the same question from inside a repo; the viewer query has none.
+/// the same question from inside a repo, for whichever host that repo's origin
+/// names; the viewer query is account-wide on github.com and has no repo.
 ///
-/// Scoped to github.com on purpose: bare `gh auth status` reports on *every*
-/// configured host and fails if any of them does, so one unreachable GHES
-/// instance would otherwise report github.com as logged out — after waiting out
-/// its 30-second timeout.
+/// Naming the host is not optional — see [`GitHubProvider::is_available`] for
+/// what the bare form does when any configured host is unreachable.
 pub fn gh_auth_status() -> GhAuth {
     let mut cmd = Command::new("gh");
-    cmd.args(["auth", "status", "--hostname", "github.com"]);
+    cmd.args(["auth", "status", "--hostname", DEFAULT_HOST]);
     match gh_output(&mut cmd, AUTH_TIMEOUT, "gh auth status") {
         Ok(output) if output.status.success() => GhAuth::Authenticated,
         Ok(_) => GhAuth::Unusable("GitHub CLI is not authenticated for github.com".to_owned()),
@@ -454,6 +501,43 @@ impl GhCliProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The host is what scopes `gh auth status` to one endpoint, so it has to
+    /// come out of every URL form git hands back — and `ssh.github.com` has to
+    /// come out as the host `gh` actually has an account under.
+    #[test]
+    fn the_gh_host_comes_from_the_remote_url() {
+        for (url, expected) in [
+            ("git@github.com:dropseed/review.git", "github.com"),
+            ("https://github.com/dropseed/review.git", "github.com"),
+            ("ssh://git@github.com:22/dropseed/review.git", "github.com"),
+            (
+                "ssh://git@ssh.github.com:443/dropseed/review.git",
+                "github.com",
+            ),
+            ("https://GitHub.com/DropSeed/Review", "github.com"),
+            (
+                "git@github.dropseed.dev:dropseed/review.git",
+                "github.dropseed.dev",
+            ),
+            ("https://ghe.example.com/org/repo.git", "ghe.example.com"),
+        ] {
+            assert_eq!(
+                gh_host_for_remote(url).as_deref(),
+                Some(expected),
+                "failed on {url}"
+            );
+        }
+    }
+
+    /// A remote that doesn't parse has no host to name, and the caller falls
+    /// back to github.com rather than passing `gh` something made up.
+    #[test]
+    fn an_unparseable_remote_has_no_gh_host() {
+        for url in ["/srv/git/review.git", "review.git", ""] {
+            assert_eq!(gh_host_for_remote(url), None, "should not parse: {url}");
+        }
+    }
 
     /// Trimmed from a real `gh api graphql` response: one PR with CI, one
     /// without (and opened from a fork), and a `totalCount` larger than the
