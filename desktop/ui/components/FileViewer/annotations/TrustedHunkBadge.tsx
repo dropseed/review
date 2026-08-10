@@ -1,5 +1,9 @@
 import type { CommitEntry, DiffHunk, HunkState } from "../../../types";
-import { hunkLabels } from "../../../types";
+import {
+  hunkLabels,
+  findMatchingPattern,
+  describeTrustedLabel,
+} from "../../../types";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -33,7 +37,10 @@ export function TrustedHunkBadge({
   onScopeToCommit,
 }: TrustedHunkBadgeProps) {
   const labels = hunkLabels(hunkState);
-  const trustedLabels = labels.filter((lbl) => trustList.includes(lbl));
+  const trustedLabels = labels.flatMap((lbl) => {
+    const pattern = findMatchingPattern(lbl, trustList);
+    return pattern !== undefined ? [{ label: lbl, pattern }] : [];
+  });
 
   return (
     <div
@@ -54,12 +61,12 @@ export function TrustedHunkBadge({
       </svg>
 
       <div className="flex items-center gap-1">
-        {trustedLabels.map((lbl, i) => (
+        {trustedLabels.map(({ label }, i) => (
           <span
             key={i}
             className="rounded px-1.5 py-0.5 text-xxs font-medium bg-status-renamed/10 text-status-renamed/60"
           >
-            {lbl}
+            {label}
           </span>
         ))}
       </div>
@@ -91,10 +98,10 @@ export function TrustedHunkBadge({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            {trustedLabels.map((lbl) => (
+            {trustedLabels.map(({ label, pattern }) => (
               <DropdownMenuItem
-                key={lbl}
-                onClick={() => onRemoveTrustPattern(lbl)}
+                key={label}
+                onClick={() => onRemoveTrustPattern(pattern)}
               >
                 <svg
                   fill="none"
@@ -108,7 +115,7 @@ export function TrustedHunkBadge({
                     d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"
                   />
                 </svg>
-                Untrust "{lbl}"
+                Untrust {describeTrustedLabel(label, pattern)}
               </DropdownMenuItem>
             ))}
             <DropdownMenuItem onClick={() => onApprove(hunk.id)}>

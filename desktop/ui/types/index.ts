@@ -54,6 +54,15 @@ export function findMatchingPattern(
 }
 
 /**
+ * Describe a trusted label for "untrust" UI copy: just the label when the
+ * matching trust-list entry is an exact match, or the label plus the
+ * wildcard pattern when removing that pattern would affect other labels too.
+ */
+export function describeTrustedLabel(label: string, pattern: string): string {
+  return pattern === label ? `"${label}"` : `"${label}" (pattern "${pattern}")`;
+}
+
+/**
  * Check if any label in an array matches any pattern in a list.
  */
 export function anyLabelMatchesAnyPattern(
@@ -427,7 +436,11 @@ export function isHunkTrusted(
 // the CLI's EffectiveStatus mirrors and every status consumer should route
 // through.
 export type EffectiveStatusValue =
-  "unreviewed" | "trusted" | "approved" | "rejected" | "saved";
+  | "unreviewed"
+  | "trusted"
+  | "approved"
+  | "rejected"
+  | "saved";
 
 export function effectiveHunkStatus(
   hunkState: HunkState | undefined,
@@ -835,7 +848,10 @@ export interface LspServerStatus {
  * when shell integration is active, foreground-process polling otherwise).
  */
 export type TerminalPhase =
-  "working" | "waiting_for_input" | "needs_attention" | "idle";
+  | "working"
+  | "waiting_for_input"
+  | "needs_attention"
+  | "idle";
 
 /**
  * Status snapshot for a single terminal session. Mirrors the backend

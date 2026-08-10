@@ -4,6 +4,7 @@ import { useAllHunks } from "../../stores/selectors/hunks";
 import {
   isHunkUnclassified,
   hunkLabels,
+  matchesAnyPattern,
   type DiffHunk,
   type HunkState,
 } from "../../types";
@@ -163,7 +164,7 @@ function HunkCard({
         {hunkLabels(hunkState).length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
             {hunkLabels(hunkState).map((lbl, i) => {
-              const isTrusted = trustList.includes(lbl);
+              const isTrusted = matchesAnyPattern(lbl, trustList);
               return (
                 <span
                   key={i}

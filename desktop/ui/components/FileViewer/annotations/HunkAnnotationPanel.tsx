@@ -1,5 +1,10 @@
 import type { CommitEntry, DiffHunk, HunkState, Source } from "../../../types";
-import { isHunkTrusted, hunkLabels } from "../../../types";
+import {
+  isHunkTrusted,
+  hunkLabels,
+  findMatchingPattern,
+  describeTrustedLabel,
+} from "../../../types";
 import { useReviewStore } from "../../../stores";
 import { useIsFocusedHunk } from "../../../hooks";
 import {
@@ -20,7 +25,11 @@ function setBySuffix(source: Source | undefined): string {
 }
 
 type ReviewStatus =
-  "approved" | "rejected" | "saved_for_later" | "trusted" | "pending";
+  | "approved"
+  | "rejected"
+  | "saved_for_later"
+  | "trusted"
+  | "pending";
 
 function getReviewStatus(
   hunkState: HunkState | undefined,
@@ -342,16 +351,21 @@ export function HunkAnnotationPanel({
               </span>
             </SimpleTooltip>
             {hunkLabels(hunkState).map((lbl, i) => {
-              const isTrustedLabel = trustList.includes(lbl);
+              const matchedPattern = findMatchingPattern(lbl, trustList);
+              const isTrustedLabel = matchedPattern !== undefined;
               return (
                 <SimpleTooltip
                   key={i}
-                  content={`${isTrustedLabel ? "Click to untrust" : "Click to trust"} "${lbl}"`}
+                  content={
+                    isTrustedLabel
+                      ? `Click to untrust ${describeTrustedLabel(lbl, matchedPattern)}`
+                      : `Click to trust "${lbl}"`
+                  }
                 >
                   <button
                     onClick={() => {
-                      if (isTrustedLabel) {
-                        onRemoveTrustPattern(lbl);
+                      if (matchedPattern !== undefined) {
+                        onRemoveTrustPattern(matchedPattern);
                       } else {
                         onAddTrustPattern(lbl);
                       }
