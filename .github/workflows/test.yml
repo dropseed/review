@@ -1,0 +1,57 @@
+# Same gates the Release workflow runs, on every push/PR, so a release
+# dispatch is rarely the first time CI sees the code. macOS runner because the
+# desktop crate is a macOS Tauri crate and the daemon links the zig-built VT
+# engine.
+
+name: Test
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install npm dependencies
+        run: npm ci
+        working-directory: desktop
+
+      - name: Pre-commit checks
+        run: scripts/pre-commit
+
+      # cargo test -p review-desktop builds the Tauri crate, whose externalBin
+      # config requires sidecar binaries on disk for the host triple.
+      - name: Build host sidecars
+        run: |
+          HOST_TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
+          TAURI_TARGET_TRIPLE="$HOST_TRIPLE" scripts/build-cli
+          TAURI_TARGET_TRIPLE="$HOST_TRIPLE" scripts/build-daemon-sidecar
+
+      - name: Tests
+        run: scripts/test

@@ -1,38 +1,60 @@
 ---
-description: Run the full release process — build, tag, push, and publish a GitHub release with release notes
+description: Cut a release — draft notes, bump + push, then GitHub Actions builds, signs, and publishes
 user_invocable: true
 ---
 
 # /release
 
-Orchestrate a full release of the Review desktop app.
+Cut a release of the Review desktop app. The build no longer happens locally:
+`scripts/release` pushes a version-bump commit and dispatches the Release
+workflow, which builds/signs/notarizes both architectures and creates the tag
+and GitHub release only after everything succeeds (`gh release create
+--target` — a failed run leaves no tag behind).
+
+Release notes are written **first**: they ride in the release commit's body,
+and the workflow publishes that body verbatim as the release notes.
 
 ## Steps
 
 1. **Ask the user**: Should this be a `patch` or `minor` release?
 
-2. **Run the release script**:
+2. **Draft release notes** from the commits since the last release:
+
    ```bash
-   scripts/release <patch|minor>
+   git log --oneline $(git describe --tags --abbrev=0)..HEAD
    ```
-   This bumps versions, builds both architectures, signs artifacts, commits, tags, and pushes.
 
-3. **Read the new version** from `package.json` (the `"version"` field).
+   Write concise, user-facing notes — new features, fixes, improvements from
+   the user's perspective. Skip internal/build changes. Save to a temp file.
 
-4. **Get the commit log** between the previous tag and the new tag:
+3. **Show the notes to the user for approval** (this is the one human
+   decision — everything after is automated). Edit until approved.
+
+4. **Run the release script**:
+
    ```bash
-   git log --oneline <previous-tag>..v<version>
+   scripts/release <patch|minor> <notes-file>
    ```
-   Exclude the version bump commit itself from the notes.
 
-5. **Generate release notes**: Write concise, user-facing release notes based on the commit log. Focus on what changed from the user's perspective — new features, fixes, improvements. Skip internal/build changes. Write the notes to a temp file.
+   This preflights (default branch, clean tree, synced, tag free), bumps
+   versions, commits `Release vX.Y.Z` with the notes as the body, pushes, and
+   dispatches `.github/workflows/release.yml`.
 
-6. **Create the GitHub release**:
+5. **Watch the run** (takes ~30–60 minutes; builds, signs, notarizes, then
+   publishes):
+
    ```bash
-   scripts/gh-release <version> <notes-file>
+   gh run watch --exit-status
    ```
-   This publishes the release immediately (it is NOT a draft) and uploads the
-   DMGs, updater tarballs, signatures, and `latest.json` — auto-updaters see
-   it as soon as it's created, so the notes must be final before this step.
 
-7. **Print the release URL**.
+   The user doesn't need to stay for this — the workflow needs nothing further.
+
+6. **On success, print the release URL**:
+   `https://github.com/dropseed/review/releases/tag/v<version>`
+
+   On failure: nothing was tagged or published. Diagnose the run
+   (`gh run view --log-failed`), fix, and re-dispatch — if the fix needs no
+   new commit, `gh workflow run release.yml -f tag=v<version>` reuses the
+   existing bump commit; if it needs a commit, master has moved past the bump
+   commit, so cut a fresh release (the workflow enforces HEAD being the bump
+   commit).

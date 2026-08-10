@@ -3,10 +3,23 @@ set -e
 cd "$(dirname "$0")/.."
 
 BUMP="$1"
+NOTES_FILE="$2"
 
-if [ "$BUMP" != "patch" ] && [ "$BUMP" != "minor" ]; then
-    echo "Usage: scripts/release <patch|minor>"
-    echo "Example: scripts/release patch"
+if { [ "$BUMP" != "patch" ] && [ "$BUMP" != "minor" ]; } || [ -z "$NOTES_FILE" ]; then
+    echo "Usage: scripts/release <patch|minor> <notes-file>"
+    echo "Example: scripts/release patch /tmp/release-notes.md"
+    echo ""
+    echo "Bumps versions, commits with the notes as the message body, pushes,"
+    echo "and dispatches the Release workflow. The workflow builds, signs, and"
+    echo "publishes — the tag is only created there, after the builds succeed."
+    exit 1
+fi
+
+if [ ! -s "$NOTES_FILE" ]; then
+    echo "error: notes file is missing or empty: $NOTES_FILE"
+    echo ""
+    echo "The notes become the release commit's body, which the workflow"
+    echo "publishes verbatim as the GitHub release notes. Write them first."
     exit 1
 fi
 
@@ -14,7 +27,7 @@ BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
 # Releases come off the default branch. Cutting one from a feature branch tags
 # a commit that isn't on the line users track, and the updater would ship it —
-# a mistake worth catching before the build rather than after the push.
+# a mistake worth catching before anything is pushed.
 DEFAULT_BRANCH=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')
 DEFAULT_BRANCH="${DEFAULT_BRANCH:-master}"
 if [ "$BRANCH" != "$DEFAULT_BRANCH" ]; then
@@ -25,14 +38,6 @@ if [ "$BRANCH" != "$DEFAULT_BRANCH" ]; then
     exit 1
 fi
 
-# The release builds the daemon, which links the zig-built VT engine. Name a
-# missing toolchain here with the rest of the preflight rather than partway
-# through the build.
-scripts/check-vt-toolchain
-
-# Preflight: the push at the end is the only irreversible step, and it happens
-# after a ~10 minute build. Check now that it can succeed, so a diverged branch
-# costs a fetch instead of the whole build.
 echo "Checking the branch can be pushed..."
 git fetch origin "$BRANCH"
 if [ -n "$(git log --oneline "HEAD..origin/$BRANCH")" ]; then
@@ -40,7 +45,7 @@ if [ -n "$(git log --oneline "HEAD..origin/$BRANCH")" ]; then
     git log --oneline "HEAD..origin/$BRANCH" | sed 's/^/  /'
     echo ""
     echo "Integrate them first (git pull), then re-run. Releasing now would"
-    echo "build artifacts that don't include them."
+    echo "leave them out of the release — and out of the notes."
     exit 1
 fi
 
@@ -48,35 +53,10 @@ if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
     echo "error: uncommitted changes to tracked files."
     git status --short --untracked-files=no | sed 's/^/  /'
     echo ""
-    echo "The release builds and commits the working tree, so it has to be"
-    echo "quiet. Commit or stash first."
+    echo "The release commit must contain only the version bump. Commit or"
+    echo "stash first."
     exit 1
 fi
-
-# Tauri declares the daemon sidecar an externalBin resource, so the desktop
-# crate cannot build at all without one on disk — and the gate below builds it
-# (`cargo test -p review-desktop`). A tree that has never built the sidecar
-# would fail that gate for a reason that has nothing to do with the change
-# being released, so make sure the host's exists. Both triples are rebuilt from
-# the bumped version further down.
-#
-# Do NOT clear the sidecars here instead: a previous abort can leave one
-# stamped a version ahead of the tree, but deleting it is what breaks this
-# gate. That staleness is handled where it is understood — the identity test
-# skips a sidecar whose version doesn't match the tree, and the honest check
-# runs below under REVIEW_REQUIRE_SIDECAR_TESTS once they match again.
-HOST_TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
-if [ ! -f "desktop/tauri/binaries/review-daemon-$HOST_TRIPLE" ]; then
-    echo "No host daemon sidecar on disk — building one for the test gate..."
-    TAURI_TARGET_TRIPLE="$HOST_TRIPLE" ./scripts/build-daemon-sidecar
-fi
-
-# Gate: run checks before anything else
-echo "Running pre-commit checks..."
-scripts/pre-commit
-
-echo "Running tests..."
-scripts/test
 
 # Read current version from package.json
 CURRENT=$(grep '"version"' desktop/package.json | head -1 | sed 's/.*"version": "\([^"]*\)".*/\1/')
@@ -93,6 +73,12 @@ case "$BUMP" in
 esac
 
 VERSION="${MAJOR}.${MINOR}.${PATCH}"
+
+if git ls-remote --exit-code origin "refs/tags/v$VERSION" > /dev/null 2>&1; then
+    echo "error: tag v$VERSION already exists on origin."
+    exit 1
+fi
+
 echo ""
 echo "Bumping version: $CURRENT -> $VERSION"
 
@@ -108,9 +94,9 @@ awk -v ver="$VERSION" '!done && /^version = "/ { sub(/^version = "[^"]*"/, "vers
 # Update desktop/tauri/tauri.conf.json
 sed -i '' 's/"version": "[^"]*"/"version": "'"$VERSION"'"/' desktop/tauri/tauri.conf.json
 
-# Update Cargo.lock
-echo "Running cargo check to update Cargo.lock..."
-cargo check --manifest-path desktop/tauri/Cargo.toml 2>/dev/null
+# Sync Cargo.lock to the bumped manifests. --workspace touches only workspace
+# members, and unlike `cargo check` it doesn't compile anything.
+cargo update --workspace --quiet
 
 echo ""
 echo "Updated versions:"
@@ -119,91 +105,38 @@ echo "  core/Cargo.toml:               $(grep '^version' core/Cargo.toml | head 
 echo "  desktop/tauri/Cargo.toml:      $(grep '^version' desktop/tauri/Cargo.toml | head -1 | xargs)"
 echo "  desktop/tauri/tauri.conf.json: $(grep '"version"' desktop/tauri/tauri.conf.json | xargs)"
 
-# Fetch signing secrets from 1Password
-echo ""
-# Pin the 1Password account that holds the Dropseed vault. Two accounts share
-# the same email, so the account User ID is the only unambiguous identifier;
-# without this, `op read` targets whatever account is currently active and
-# fails with "Dropseed isn't a vault in this account".
-export OP_ACCOUNT="7ZLPC2L3AJGXDDAMZG5Q44NZGE"
-echo "Fetching signing secrets from 1Password..."
-TAURI_SIGNING_PRIVATE_KEY=$(op read "op://Dropseed/c6fvj2hcdkxkyzi6mvym5aimge/review.key")
-TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$(op read "op://Dropseed/c6fvj2hcdkxkyzi6mvym5aimge/password")
-export TAURI_SIGNING_PRIVATE_KEY
-export TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+# The release commit carries the notes as its body: the workflow republishes
+# that body verbatim as the GitHub release notes, so they live in git history
+# and survive re-dispatches.
+MSG_FILE=$(mktemp)
+trap 'rm -f "$MSG_FILE"' EXIT
+{
+    echo "Release v$VERSION"
+    echo ""
+    cat "$NOTES_FILE"
+} > "$MSG_FILE"
 
-# Fetch Apple code signing and notarization credentials from 1Password
-echo "Fetching Apple signing credentials from 1Password..."
-APPLE_SIGNING_IDENTITY=$(op read "op://Dropseed/c6fvj2hcdkxkyzi6mvym5aimge/APPLE_SIGNING_IDENTITY")
-APPLE_ID=$(op read "op://Dropseed/c6fvj2hcdkxkyzi6mvym5aimge/APPLE_ID")
-APPLE_PASSWORD=$(op read "op://Dropseed/c6fvj2hcdkxkyzi6mvym5aimge/APPLE_PASSWORD")
-APPLE_TEAM_ID=$(op read "op://Dropseed/c6fvj2hcdkxkyzi6mvym5aimge/APPLE_TEAM_ID")
-export APPLE_SIGNING_IDENTITY
-export APPLE_ID
-export APPLE_PASSWORD
-export APPLE_TEAM_ID
-
-# Pre-build sidecar binaries for both targets (Tauri's beforeBuildCommand
-# only runs once, so the second target would be missing its sidecar)
-echo ""
-echo "Building sidecar binaries..."
-TAURI_TARGET_TRIPLE=aarch64-apple-darwin ./scripts/build-cli
-TAURI_TARGET_TRIPLE=x86_64-apple-darwin ./scripts/build-cli
-TAURI_TARGET_TRIPLE=aarch64-apple-darwin ./scripts/build-daemon-sidecar
-TAURI_TARGET_TRIPLE=x86_64-apple-darwin ./scripts/build-daemon-sidecar
-
-# The release-built daemon and the debug-built app must compute the same build
-# identity; if they don't, every launch respawns the daemon and no terminal
-# session ever survives. That test skips itself when no sidecar is on disk, so
-# REVIEW_REQUIRE_SIDECAR_TESTS turns the skip into a failure — and here is the
-# only place it can be enforced honestly: the sidecars above were just built
-# from the bumped version, so they and this test binary agree on the version.
-# (The scripts/test gate above runs before those builds, where the newest
-# sidecar on disk may still carry a previous version.)
-echo ""
-echo "Verifying the release daemon's build identity..."
-REVIEW_REQUIRE_SIDECAR_TESTS=1 cargo test -p review --features daemon,daemon-client \
-    a_release_built_daemon_reports_the_identity_we_expect
-
-# Build both targets
-echo ""
-echo "Building aarch64-apple-darwin..."
-(cd desktop && npm run tauri build -- --target aarch64-apple-darwin --features symbols-all)
-# Detach any auto-mounted DMGs to prevent Finder from opening
-hdiutil detach /Volumes/Review 2>/dev/null || true
+git commit desktop/package.json core/Cargo.toml desktop/tauri/Cargo.toml desktop/tauri/tauri.conf.json Cargo.lock -F "$MSG_FILE"
 
 echo ""
-echo "Building x86_64-apple-darwin..."
-(cd desktop && npm run tauri build -- --target x86_64-apple-darwin --features symbols-all)
-hdiutil detach /Volumes/Review 2>/dev/null || true
+echo "Created release commit for v$VERSION"
+
+# No tag here — the workflow creates it via `gh release create --target` only
+# after both builds are signed and notarized. A failed run leaves just this
+# bump commit behind, which the next dispatch reuses.
+git push origin "$BRANCH"
 
 echo ""
-echo "Both builds succeeded!"
+echo "Dispatching the Release workflow..."
+gh workflow run release.yml --ref "$BRANCH" -f tag="v$VERSION"
 
-# Commit, tag, and push (only after builds succeed)
-git add desktop/package.json core/Cargo.toml desktop/tauri/Cargo.toml desktop/tauri/tauri.conf.json Cargo.lock
-git commit -m "Release v$VERSION"
-git tag -m "v$VERSION" "v$VERSION"
-
-echo ""
-echo "Created commit and tag v$VERSION"
-
-# One atomic push of both refs. Two things went wrong here before:
-#
-#   git push && git push --tags
-#
-# `git push` already carries the annotated tag along with the branch, so when
-# the branch was rejected (someone merged a PR during the ~10 minute build) the
-# tag still landed — leaving a published tag pointing at a commit on no branch.
-# And `set -e` ignores a failing command that isn't the last in an `&&` list, so
-# the script sailed past the rejection and reported success.
-#
-# --atomic makes the remote take both refs or neither, and pushing the refs
-# explicitly means nothing rides along implicitly.
-git push --atomic origin "$BRANCH" "v$VERSION"
+# The dispatch API is async; give the run a moment to exist before looking it up.
+sleep 3
+RUN_URL=$(gh run list --workflow=release.yml --branch "$BRANCH" --limit 1 --json url --jq '.[0].url' || true)
 
 echo ""
-echo "Pushed to remote."
+echo "Release v$VERSION dispatched."
+echo "  ${RUN_URL:-https://github.com/dropseed/review/actions/workflows/release.yml}"
 echo ""
-echo "Build, tag, and push complete for v$VERSION."
-echo "Run scripts/gh-release to create the GitHub release."
+echo "Watch it with: gh run watch --exit-status"
+echo "The tag and GitHub release are created by the workflow on success."

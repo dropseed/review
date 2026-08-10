@@ -4,10 +4,15 @@ cd "$(dirname "$0")/.."
 
 VERSION="$1"
 NOTES_FILE="$2"
+TARGET_SHA="$3"
 
 if [ -z "$VERSION" ] || [ -z "$NOTES_FILE" ]; then
-    echo "Usage: scripts/gh-release <version> <notes-file>"
+    echo "Usage: scripts/gh-release <version> <notes-file> [<target-sha>]"
     echo "Example: scripts/gh-release 0.0.4 /tmp/release-notes.md"
+    echo ""
+    echo "With <target-sha>, the tag v<version> is created at that commit by"
+    echo "the release itself (how the release workflow publishes — no tag"
+    echo "exists until the artifacts do). Without it, the tag must already exist."
     exit 1
 fi
 
@@ -66,7 +71,11 @@ echo "Generated latest.json"
 # Create GitHub release with all staged artifacts
 echo ""
 echo "Creating GitHub release v$VERSION..."
-gh release create "v$VERSION" --title "v$VERSION" --notes-file "$NOTES_FILE" \
+TARGET_ARGS=()
+if [ -n "$TARGET_SHA" ]; then
+    TARGET_ARGS=(--target "$TARGET_SHA")
+fi
+gh release create "v$VERSION" "${TARGET_ARGS[@]}" --title "v$VERSION" --notes-file "$NOTES_FILE" \
     "$STAGING/Review_aarch64.dmg" \
     "$STAGING/Review_x64.dmg" \
     "$STAGING/Review_aarch64.app.tar.gz" \

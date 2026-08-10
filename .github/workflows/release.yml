@@ -1,0 +1,158 @@
+# Dispatch-driven release: builds, signs, and notarizes both macOS targets,
+# and only if everything succeeds creates the GitHub release — which is also
+# what creates the tag (`gh release create --target`). A failed run leaves no
+# tag and no release behind; fix and re-dispatch.
+#
+# Dispatched by scripts/release, which pushes the version-bump commit first.
+# Release notes travel in that commit's message body.
+
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v0.1.2) — must match the version-bump commit at HEAD"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 120
+    env:
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      # Everything below is expensive, so fail here if this isn't the commit
+      # the tag claims: HEAD must be the "Release vX.Y.Z" bump commit, the
+      # bumped files must agree with the tag, and the tag must not exist yet.
+      - name: Verify release commit
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "error: tag '$TAG' is not vMAJOR.MINOR.PATCH"
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+
+          CONF_VERSION=$(jq -r .version desktop/tauri/tauri.conf.json)
+          PKG_VERSION=$(jq -r .version desktop/package.json)
+          if [ "$CONF_VERSION" != "$VERSION" ] || [ "$PKG_VERSION" != "$VERSION" ]; then
+            echo "error: tag $TAG but tauri.conf.json=$CONF_VERSION package.json=$PKG_VERSION"
+            echo "HEAD is not the bump commit for this tag."
+            exit 1
+          fi
+
+          SUBJECT=$(git log -1 --format=%s)
+          if [ "$SUBJECT" != "Release v$VERSION" ]; then
+            echo "error: HEAD is '$SUBJECT', expected 'Release v$VERSION'."
+            echo "Master moved past the bump commit — cut a new release instead."
+            exit 1
+          fi
+
+          if [ -z "$(git log -1 --format=%b)" ]; then
+            echo "error: the release commit has no body — that body is the release notes."
+            exit 1
+          fi
+
+          if git ls-remote --exit-code origin "refs/tags/$TAG" > /dev/null 2>&1; then
+            echo "error: tag $TAG already exists on origin."
+            exit 1
+          fi
+
+          echo "Releasing $TAG from $GITHUB_SHA"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      - name: Add x86_64 Rust target
+        run: rustup target add x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install npm dependencies
+        run: npm ci
+        working-directory: desktop
+
+      - name: Gate — pre-commit checks
+        run: scripts/pre-commit
+
+      # cargo test -p review-desktop builds the Tauri crate, which requires a
+      # host daemon sidecar on disk (externalBin) — build it before the gate.
+      - name: Build host sidecar for test gate
+        run: |
+          HOST_TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
+          TAURI_TARGET_TRIPLE="$HOST_TRIPLE" scripts/build-daemon-sidecar
+
+      - name: Gate — tests
+        run: scripts/test
+
+      # Tauri's beforeBuildCommand only builds sidecars for one triple, so
+      # pre-build all four; both tauri builds then find theirs on disk.
+      - name: Build sidecar binaries
+        run: |
+          TAURI_TARGET_TRIPLE=aarch64-apple-darwin scripts/build-cli
+          TAURI_TARGET_TRIPLE=x86_64-apple-darwin scripts/build-cli
+          TAURI_TARGET_TRIPLE=aarch64-apple-darwin scripts/build-daemon-sidecar
+          TAURI_TARGET_TRIPLE=x86_64-apple-darwin scripts/build-daemon-sidecar
+
+      # The release-built daemon and the app must compute the same build
+      # identity, or every launch respawns the daemon. The sidecars were just
+      # built from this tree, so the version-match skip can be forbidden here.
+      - name: Verify daemon build identity
+        run: |
+          REVIEW_REQUIRE_SIDECAR_TESTS=1 cargo test -p review --features daemon,daemon-client \
+            a_release_built_daemon_reports_the_identity_we_expect
+
+      - name: Build, sign, and notarize (aarch64)
+        run: npm run tauri build -- --target aarch64-apple-darwin --features symbols-all
+        working-directory: desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Build, sign, and notarize (x86_64)
+        run: npm run tauri build -- --target x86_64-apple-darwin --features symbols-all
+        working-directory: desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      # The only side-effecting step. Creating the release against a
+      # not-yet-existing tag makes GitHub create the tag at --target, so tag
+      # and release appear together, only after both builds succeeded.
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git log -1 --format=%b > "$RUNNER_TEMP/notes.md"
+          scripts/gh-release "${TAG#v}" "$RUNNER_TEMP/notes.md" "$GITHUB_SHA"
