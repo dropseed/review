@@ -11,6 +11,7 @@ import { getPlatformServices } from "../../platform";
 import { ChangeBaseMenu } from "./ChangeBaseMenu";
 import { SidebarHideMenuItem } from "./SidebarHideMenuItem";
 import { RowStatus } from "./RowStatus";
+import { samePrBadge } from "./pr-format";
 import { useTerminalTabDrop } from "./useTerminalTabDrop";
 import {
   ROW_ACTIONS,
@@ -34,6 +35,26 @@ interface LocalBranchItemProps {
   /** The user's open PR for this branch, when the tree joined one onto it. */
   openPr?: ViewerPr;
   onActivate: (repoPath: string, branch: string, defaultBranch: string) => void;
+}
+
+/** Value-based comparison so rows skip re-render when the tree is rebuilt. */
+function arePropsEqual(
+  prev: LocalBranchItemProps,
+  next: LocalBranchItemProps,
+): boolean {
+  if (prev.branch.name !== next.branch.name) return false;
+  if (prev.branch.commitsAhead !== next.branch.commitsAhead) return false;
+  if (prev.branch.worktreePath !== next.branch.worktreePath) return false;
+  if (prev.branch.hasWorkingTreeChanges !== next.branch.hasWorkingTreeChanges)
+    return false;
+  if (prev.repoPath !== next.repoPath) return false;
+  if (prev.repoName !== next.repoName) return false;
+  if (prev.defaultBranch !== next.defaultBranch) return false;
+  if (prev.itemKind !== next.itemKind) return false;
+  if (prev.checkoutPath !== next.checkoutPath) return false;
+  if (!samePrBadge(prev.openPr, next.openPr)) return false;
+  if (prev.onActivate !== next.onActivate) return false;
+  return true;
 }
 
 export const LocalBranchItem = memo(function LocalBranchItem({
@@ -288,4 +309,4 @@ export const LocalBranchItem = memo(function LocalBranchItem({
         )}
     </>
   );
-});
+}, arePropsEqual);

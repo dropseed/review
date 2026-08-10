@@ -1,5 +1,6 @@
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import { useReviewStore } from "../stores";
+import { usePollWhileVisible } from "./usePollWhileVisible";
 
 /** How often to re-ask GitHub while the window is visible. */
 const VIEWER_PR_POLL_MS = 300_000;
@@ -12,11 +13,8 @@ const VIEWER_PR_POLL_MS = 300_000;
  * second would leave the sidebar visibly assembling itself on every launch;
  * doing only the first would show yesterday's PRs forever.
  *
- * After that, one interval while the window is visible — the same shape as the
- * activity poll in `AppShell`, and for the same reason: this costs a `gh`
- * subprocess and an API call, which is not something to spend on a window
- * nobody is looking at. Coming back to a hidden window refreshes immediately
- * rather than waiting out the remainder of an interval that wasn't running.
+ * After that, `usePollWhileVisible` — this costs a `gh` subprocess and an API
+ * call, which is not something to spend on a window nobody is looking at.
  */
 export function useViewerPrsSync(): void {
   const loadViewerPrs = useReviewStore((s) => s.loadViewerPrs);
@@ -24,44 +22,18 @@ export function useViewerPrsSync(): void {
 
   useEffect(() => {
     let cancelled = false;
-    let intervalId: ReturnType<typeof setInterval> | null = null;
-
-    const refresh = (): void => {
-      if (!cancelled) void refreshViewerPrs();
-    };
-
     void loadViewerPrs().then(() => {
-      if (!cancelled) refresh();
+      // The cache read outlives an unmount, and the refresh chained behind it
+      // must not fire into a torn-down store.
+      if (!cancelled) void refreshViewerPrs();
     });
-
-    const start = (): void => {
-      if (intervalId === null) {
-        intervalId = setInterval(refresh, VIEWER_PR_POLL_MS);
-      }
-    };
-    const stop = (): void => {
-      if (intervalId !== null) {
-        clearInterval(intervalId);
-        intervalId = null;
-      }
-    };
-
-    const handleVisibility = (): void => {
-      if (document.visibilityState === "visible") {
-        refresh();
-        start();
-      } else {
-        stop();
-      }
-    };
-
-    if (document.visibilityState === "visible") start();
-    document.addEventListener("visibilitychange", handleVisibility);
-
     return () => {
       cancelled = true;
-      stop();
-      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [loadViewerPrs, refreshViewerPrs]);
+
+  usePollWhileVisible(
+    useCallback(() => void refreshViewerPrs(), [refreshViewerPrs]),
+    VIEWER_PR_POLL_MS,
+  );
 }

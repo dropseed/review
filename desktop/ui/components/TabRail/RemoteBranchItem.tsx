@@ -2,6 +2,7 @@ import { memo, useCallback } from "react";
 import { useReviewStore } from "../../stores";
 import type { ViewerPr } from "../../types";
 import { PrBadge } from "./PrBadge";
+import { samePrBadge } from "./pr-format";
 
 interface RemoteBranchItemProps {
   branchName: string;
@@ -12,6 +13,21 @@ interface RemoteBranchItemProps {
   /** The user's open PR for this branch, when the tree joined one onto it. */
   openPr?: ViewerPr;
   onActivate: (repoPath: string, branch: string, defaultBranch: string) => void;
+}
+
+/** Value-based comparison so rows skip re-render when the tree is rebuilt. */
+function arePropsEqual(
+  prev: RemoteBranchItemProps,
+  next: RemoteBranchItemProps,
+): boolean {
+  if (prev.branchName !== next.branchName) return false;
+  if (prev.remoteRef !== next.remoteRef) return false;
+  if (prev.repoPath !== next.repoPath) return false;
+  if (prev.defaultBranch !== next.defaultBranch) return false;
+  if (prev.lastCommitDate !== next.lastCommitDate) return false;
+  if (!samePrBadge(prev.openPr, next.openPr)) return false;
+  if (prev.onActivate !== next.onActivate) return false;
+  return true;
 }
 
 /**
@@ -81,4 +97,4 @@ export const RemoteBranchItem = memo(function RemoteBranchItem({
       </div>
     </div>
   );
-});
+}, arePropsEqual);

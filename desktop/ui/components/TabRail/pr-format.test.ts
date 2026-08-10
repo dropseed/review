@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { prBadgeClass, prSummary } from "./pr-format";
+import { prBadgeClass, prSummary, samePrBadge } from "./pr-format";
 import type { ViewerPr } from "../../types";
 
 function pr(overrides: Partial<ViewerPr> = {}): ViewerPr {
@@ -61,6 +61,32 @@ describe("prBadgeClass", () => {
   it("still says open when checks are merely pending or unreported", () => {
     expect(prBadgeClass(pr({ checksState: "PENDING" }))).toBe("text-pr-open");
     expect(prBadgeClass(pr({ checksState: null }))).toBe("text-pr-open");
+  });
+});
+
+describe("samePrBadge", () => {
+  it("ignores everything the badge doesn't draw", () => {
+    // The poll rebuilds every PR object, and fields like updatedAt move on
+    // their own. A row that re-rendered for those would re-render constantly.
+    expect(
+      samePrBadge(
+        pr(),
+        pr({ updatedAt: "2026-02-01T00:00:00Z", title: "New" }),
+      ),
+    ).toBe(true);
+  });
+
+  it("notices each state the badge does draw", () => {
+    expect(samePrBadge(pr(), pr({ number: 98 }))).toBe(false);
+    expect(samePrBadge(pr(), pr({ isDraft: true }))).toBe(false);
+    expect(samePrBadge(pr(), pr({ reviewDecision: "APPROVED" }))).toBe(false);
+    expect(samePrBadge(pr(), pr({ checksState: "FAILURE" }))).toBe(false);
+  });
+
+  it("treats a PR appearing or disappearing as a change", () => {
+    expect(samePrBadge(undefined, undefined)).toBe(true);
+    expect(samePrBadge(undefined, pr())).toBe(false);
+    expect(samePrBadge(pr(), undefined)).toBe(false);
   });
 });
 

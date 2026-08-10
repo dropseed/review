@@ -11,6 +11,7 @@ import { PrPreviewCard } from "./PrPreviewCard";
 import { SimpleTooltip } from "../ui/tooltip";
 import { ROW_ACTIONS, ROW_LABEL_HOVER_FADE, ROW_STATUS } from "./row-chrome";
 import { PrBadge } from "./PrBadge";
+import { samePrBadge } from "./pr-format";
 import { useTerminalTabDrop } from "./useTerminalTabDrop";
 
 /**
@@ -63,12 +64,7 @@ function arePropsEqual(
   if (prev.missingRefs?.join() !== next.missingRefs?.join()) return false;
   if (prev.review.tier !== next.review.tier) return false;
   if (prev.review.worktreePath !== next.review.worktreePath) return false;
-  // The snapshot is rebuilt on every poll, so compare what the badge renders
-  // rather than the object — otherwise every row re-renders every 5 minutes.
-  if (prev.openPr?.number !== next.openPr?.number) return false;
-  if (prev.openPr?.isDraft !== next.openPr?.isDraft) return false;
-  if (prev.openPr?.reviewDecision !== next.openPr?.reviewDecision) return false;
-  if (prev.openPr?.checksState !== next.openPr?.checksState) return false;
+  if (!samePrBadge(prev.openPr, next.openPr)) return false;
   if (prev.onActivate !== next.onActivate) return false;
   if (prev.onDelete !== next.onDelete) return false;
   return true;

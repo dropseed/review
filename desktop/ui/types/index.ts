@@ -310,8 +310,24 @@ export interface AgentUsage {
   observedAtUnix: number | null;
 }
 
+/**
+ * What a PR has to say for a review to be started from it — the part
+ * `PullRequest` (repo-scoped) and `ViewerPr` (account-wide) have in common.
+ *
+ * `body` is optional because the account-wide query doesn't ask for
+ * descriptions: dozens of them, to render a sidebar. A review started from the
+ * sidebar therefore has no PR body in its overview.
+ */
+interface PrReviewSource {
+  number: number;
+  title: string;
+  headRefName: string;
+  baseRefName: string;
+  body?: string;
+}
+
 // A PR reviews its head branch, with the PR's base branch as the base override.
-export function prReviewTarget(pr: PullRequest): ReviewTarget {
+export function prReviewTarget(pr: PrReviewSource): ReviewTarget {
   return {
     ref: pr.headRefName,
     baseOverride: pr.baseRefName,
@@ -321,26 +337,6 @@ export function prReviewTarget(pr: PullRequest): ReviewTarget {
       headRefName: pr.headRefName,
       baseRefName: pr.baseRefName,
       body: pr.body || undefined,
-    },
-  };
-}
-
-/**
- * The same target for a PR that came from the account-wide viewer query.
- *
- * No `body`: the account-wide query doesn't ask for descriptions — dozens of
- * them, to render a sidebar — so a review started this way has no PR body in
- * its overview. Everything else identifying the PR is the same.
- */
-export function viewerPrReviewTarget(pr: ViewerPr): ReviewTarget {
-  return {
-    ref: pr.headRefName,
-    baseOverride: pr.baseRefName,
-    githubPr: {
-      number: pr.number,
-      title: pr.title,
-      headRefName: pr.headRefName,
-      baseRefName: pr.baseRefName,
     },
   };
 }

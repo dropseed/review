@@ -52,6 +52,24 @@ const CHECKS_LABELS: Record<string, string> = {
  * `EXPECTED` checks are among those: a check that has been announced but never
  * ran is not news.
  */
+/**
+ * Whether two open-PR props would draw the same thing.
+ *
+ * Every row's `openPr` comes out of a snapshot the poll rebuilds from scratch,
+ * so object identity changes every five minutes even when nothing about the PR
+ * did. Rows compare these four fields instead — the whole of what `PrBadge` and
+ * `RowStatus` read — and a memoized row then re-renders only when the badge it
+ * would draw actually differs.
+ */
+export function samePrBadge(a?: ViewerPr, b?: ViewerPr): boolean {
+  return (
+    a?.number === b?.number &&
+    a?.isDraft === b?.isDraft &&
+    a?.reviewDecision === b?.reviewDecision &&
+    a?.checksState === b?.checksState
+  );
+}
+
 export function prSummary(pr: ViewerPr): string {
   const parts = [`#${pr.number}`];
   if (pr.isDraft) parts.push("Draft");

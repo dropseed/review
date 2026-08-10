@@ -8,6 +8,7 @@ export { useTerminalFileDrop } from "./useTerminalFileDrop";
 export { useRepoActivitySync } from "./useRepoActivitySync";
 export { useTerminalCheckoutSync } from "./useTerminalCheckoutSync";
 export { useViewerPrsSync } from "./useViewerPrsSync";
+export { usePollWhileVisible } from "./usePollWhileVisible";
 export {
   useRepositoryInit,
   getStoredRepoPath,

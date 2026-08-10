@@ -18,11 +18,7 @@ import { getSidebarTree } from "./stores/selectors/sidebar";
 import { activateSidebarRow, allSidebarRows } from "./utils/sidebar-tree";
 import { makeReviewKey } from "./utils/review-key";
 import { getErrorMessage } from "./utils/errors";
-import {
-  viewerPrReviewTarget,
-  type ReviewTarget,
-  type ViewerPr,
-} from "./types";
+import { prReviewTarget, type ReviewTarget, type ViewerPr } from "./types";
 import {
   useRepositoryInit,
   useComparisonLoader,
@@ -32,6 +28,7 @@ import {
   useRepoActivitySync,
   useTerminalCheckoutSync,
   useViewerPrsSync,
+  usePollWhileVisible,
   type RepoStatus,
 } from "./hooks";
 import { useReviewFreshness } from "./hooks/useReviewFreshness";
@@ -71,30 +68,7 @@ function AppShell() {
   // Backstop poll for working-tree edits in non-active repos — their
   // lightweight watchers only see git metadata. Paused while hidden since
   // snapshotting every registered repo isn't free.
-  useEffect(() => {
-    let intervalId: ReturnType<typeof setInterval> | null = null;
-
-    const handleVisibility = () => {
-      if (document.visibilityState === "visible") {
-        loadLocalActivity();
-        if (intervalId === null) {
-          intervalId = setInterval(loadLocalActivity, ACTIVITY_POLL_MS);
-        }
-      } else if (intervalId !== null) {
-        clearInterval(intervalId);
-        intervalId = null;
-      }
-    };
-
-    if (document.visibilityState === "visible") {
-      intervalId = setInterval(loadLocalActivity, ACTIVITY_POLL_MS);
-    }
-    document.addEventListener("visibilitychange", handleVisibility);
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibility);
-      if (intervalId !== null) clearInterval(intervalId);
-    };
-  }, [loadLocalActivity]);
+  usePollWhileVisible(loadLocalActivity, ACTIVITY_POLL_MS);
 
   const {
     repoStatus,
@@ -123,12 +97,10 @@ function AppShell() {
   const handleActivateOpenPr = useCallback(
     (pr: ViewerPr) => {
       if (pr.repoPath == null) return;
-      void handleStartReview(pr.repoPath, viewerPrReviewTarget(pr)).catch(
-        (err) => {
-          console.error("Failed to open PR:", err);
-          toast.error(`Couldn't open #${pr.number}: ${getErrorMessage(err)}`);
-        },
-      );
+      void handleStartReview(pr.repoPath, prReviewTarget(pr)).catch((err) => {
+        console.error("Failed to open PR:", err);
+        toast.error(`Couldn't open #${pr.number}: ${getErrorMessage(err)}`);
+      });
     },
     [handleStartReview],
   );
