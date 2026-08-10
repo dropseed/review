@@ -91,19 +91,12 @@ jobs:
         run: npm ci
         working-directory: desktop
 
-      - name: Gate — pre-commit checks
-        run: scripts/pre-commit
-
-      # cargo test -p review-desktop builds the Tauri crate, which requires
-      # both host sidecars on disk (externalBin) — build them before the gate.
-      - name: Build host sidecars for test gate
-        run: |
-          HOST_TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
-          TAURI_TARGET_TRIPLE="$HOST_TRIPLE" scripts/build-cli
-          TAURI_TARGET_TRIPLE="$HOST_TRIPLE" scripts/build-daemon-sidecar
-
-      - name: Gate — tests
-        run: scripts/test
+      # No test gate here, deliberately: releasing assumes the code is already
+      # tested. The push of the bump commit triggers the Test workflow on this
+      # same SHA, and master is expected to be green before a release is cut —
+      # this workflow neither re-runs the gates nor blocks on that run. (The
+      # daemon identity test below is not a duplicate of Test: it validates
+      # the release-built sidecars specifically.)
 
       # Tauri's beforeBuildCommand only builds sidecars for one triple, so
       # pre-build all four; both tauri builds then find theirs on disk.
