@@ -20,7 +20,11 @@ function setBySuffix(source: Source | undefined): string {
 }
 
 type ReviewStatus =
-  "approved" | "rejected" | "saved_for_later" | "trusted" | "pending";
+  | "approved"
+  | "rejected"
+  | "saved_for_later"
+  | "trusted"
+  | "pending";
 
 function getReviewStatus(
   hunkState: HunkState | undefined,
@@ -344,10 +348,16 @@ export function HunkAnnotationPanel({
             {hunkLabels(hunkState).map((lbl, i) => {
               const matchedPattern = findMatchingPattern(lbl, trustList);
               const isTrustedLabel = matchedPattern !== undefined;
+              const untrustTooltip =
+                matchedPattern === lbl
+                  ? `Click to untrust "${lbl}"`
+                  : `Click to untrust "${lbl}" (removes trust pattern "${matchedPattern}")`;
               return (
                 <SimpleTooltip
                   key={i}
-                  content={`${isTrustedLabel ? `Click to untrust "${matchedPattern}"` : `Click to trust "${lbl}"`}`}
+                  content={
+                    isTrustedLabel ? untrustTooltip : `Click to trust "${lbl}"`
+                  }
                 >
                   <button
                     onClick={() => {
