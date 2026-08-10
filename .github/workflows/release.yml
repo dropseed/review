@@ -94,11 +94,12 @@ jobs:
       - name: Gate — pre-commit checks
         run: scripts/pre-commit
 
-      # cargo test -p review-desktop builds the Tauri crate, which requires a
-      # host daemon sidecar on disk (externalBin) — build it before the gate.
-      - name: Build host sidecar for test gate
+      # cargo test -p review-desktop builds the Tauri crate, which requires
+      # both host sidecars on disk (externalBin) — build them before the gate.
+      - name: Build host sidecars for test gate
         run: |
           HOST_TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
+          TAURI_TARGET_TRIPLE="$HOST_TRIPLE" scripts/build-cli
           TAURI_TARGET_TRIPLE="$HOST_TRIPLE" scripts/build-daemon-sidecar
 
       - name: Gate — tests
