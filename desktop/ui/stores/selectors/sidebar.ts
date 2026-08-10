@@ -11,18 +11,12 @@ export interface SidebarTreeState extends Pick<
   localActivity: RepoLocalActivity[];
   globalReviews: GlobalReviewSummary[];
   globalReviewsByKey: Record<string, GlobalReviewSummary>;
-  sidebarPinned: string[];
   sidebarDismissed: string[];
 }
 
 interface CacheEntry {
-  localActivity: RepoLocalActivity[];
-  globalReviews: GlobalReviewSummary[];
-  globalReviewsByKey: Record<string, GlobalReviewSummary>;
-  sidebarPinned: string[];
-  sidebarDismissed: string[];
-  minute: number;
-  terminalKeys: string;
+  /** Compared positionally against a freshly built list — see `deps` below. */
+  deps: readonly unknown[];
   output: RepoNode[];
 }
 
@@ -59,20 +53,22 @@ export function getSidebarTree(
   // any one caller would miss the cache and hand every subscriber a new tree.
   const minute = Math.floor(now / 60_000);
   const terminalKeys = Object.keys(selectLiveSessionsByReviewKey(state)).sort();
-  const terminalKeysId = terminalKeys.join("\n");
+
+  // Everything the build reads, in one list: adding an input to the tree means
+  // one edit here rather than three matching ones. Compared by identity, so
+  // terminal membership joins as a string — see above for why.
+  const deps: readonly unknown[] = [
+    state.localActivity,
+    state.globalReviews,
+    state.globalReviewsByKey,
+    state.sidebarDismissed,
+    minute,
+    terminalKeys.join("\n"),
+  ];
 
   const cacheKey = openRepoPath ?? "";
   const hit = cache.get(cacheKey);
-  if (
-    hit &&
-    hit.localActivity === state.localActivity &&
-    hit.globalReviews === state.globalReviews &&
-    hit.globalReviewsByKey === state.globalReviewsByKey &&
-    hit.sidebarPinned === state.sidebarPinned &&
-    hit.sidebarDismissed === state.sidebarDismissed &&
-    hit.minute === minute &&
-    hit.terminalKeys === terminalKeysId
-  ) {
+  if (hit && deps.every((dep, i) => dep === hit.deps[i])) {
     return hit.output;
   }
 
@@ -80,22 +76,12 @@ export function getSidebarTree(
     state.localActivity,
     state.globalReviews,
     state.globalReviewsByKey,
-    state.sidebarPinned,
     state.sidebarDismissed,
     minute * 60_000,
     openRepoPath,
     terminalKeys,
   );
 
-  cache.set(cacheKey, {
-    localActivity: state.localActivity,
-    globalReviews: state.globalReviews,
-    globalReviewsByKey: state.globalReviewsByKey,
-    sidebarPinned: state.sidebarPinned,
-    sidebarDismissed: state.sidebarDismissed,
-    minute,
-    terminalKeys: terminalKeysId,
-    output,
-  });
+  cache.set(cacheKey, { deps, output });
   return output;
 }

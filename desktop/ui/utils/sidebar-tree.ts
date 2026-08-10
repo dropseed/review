@@ -82,19 +82,16 @@ export type SidebarEntry =
  * opened with `review .`, or a fresh clone, satisfies none of the other rules.
  */
 export type LiveReason =
-  | "pinned"
   | "open-repo"
   | "checkout"
   | "uncommitted"
   | "recent-review"
   | "recent-own-commit"
   /**
-   * A shell is running in this row's checkout right now. The strongest
-   * evidence there is that someone is working here — stronger than any of the
-   * time-window rules, which only say someone *was*. It deliberately affects
-   * membership and nothing else: terminal phase changes every few seconds, so
-   * ranking on it would reshuffle the list under the cursor, which is the
-   * failure the ordering rules below were written to avoid.
+   * A shell is running in this row's checkout right now — the strongest
+   * evidence there is that someone is working here, where every time-window
+   * rule only says someone *was*. It also lifts the row's repo to the top of
+   * the list; step 5 has the ordering rationale.
    */
   | "terminal";
 
@@ -120,10 +117,14 @@ export interface SidebarRow {
   presence: RowPresence;
   /** Ranking key: max(working-tree mtime, tip committer date, review updatedAt). */
   activityAt: number;
-  pinned: boolean;
   reasons: LiveReason[];
   /** Shown without expanding the repo's `⋯ more`. */
   live: boolean;
+}
+
+/** The one spelling of "a shell is running here", shared by tree and rail. */
+export function isTerminalRow(row: SidebarRow): boolean {
+  return row.reasons.includes("terminal");
 }
 
 export interface RepoNode {
@@ -144,12 +145,10 @@ export interface RepoNode {
   /** Has anything live: drives default expansion and top-of-list placement. */
   isActive: boolean;
   /**
-   * Best (lowest) pin position among this repo's rows, or null when none are
-   * pinned. Repos with a pin lead the list, ordered by the pin the user put
-   * first — pinning is the one ordering signal they control by hand, so it
-   * outranks everything derived.
+   * A shell is running in one of this repo's checkouts. Leads the ordering —
+   * see step 5.
    */
-  pinRank: number | null;
+  hasActiveTerminal: boolean;
 }
 
 function parseTime(iso: string | null | undefined): number {
@@ -172,16 +171,13 @@ function branchItemKind(
 }
 
 /**
- * Membership precedence: pinned wins, then dismiss excludes, then any derived
- * reason includes.
+ * Membership precedence: a dismiss excludes, then any derived reason includes.
  */
 function isLive(
   key: string,
   reasons: LiveReason[],
-  pinnedSet: Set<string>,
   dismissedSet: Set<string>,
 ): boolean {
-  if (pinnedSet.has(key)) return true;
   if (dismissedSet.has(key)) return false;
   return reasons.length > 0;
 }
@@ -197,18 +193,14 @@ export function buildSidebarTree(
   localActivity: RepoLocalActivity[],
   globalReviews: GlobalReviewSummary[],
   globalReviewsByKey: Record<string, GlobalReviewSummary>,
-  pinnedKeys: string[],
   dismissedKeys: string[],
   now: number,
   openRepoPath: string | null = null,
   /** Review keys whose checkout currently hosts a live terminal session. */
   terminalKeys: readonly string[] = [],
 ): RepoNode[] {
-  const pinnedSet = new Set(pinnedKeys);
   const dismissedSet = new Set(dismissedKeys);
   const terminalSet = new Set(terminalKeys);
-  /** pin order → rank; earlier in the array ranks first. */
-  const pinOrder = new Map(pinnedKeys.map((k, i) => [k, i]));
 
   interface Bucket {
     repoPath: string;
@@ -274,7 +266,6 @@ export function buildSidebarTree(
         !branch.isCurrent && branch.worktreePath != null;
 
       const reasons: LiveReason[] = [];
-      if (pinnedSet.has(key)) reasons.push("pinned");
       // The repo you have open is live by definition. Its row is the repo-root
       // checkout, so this lands on the current branch — and only for that one
       // repo, which is what keeps the rest of the staleness rules honest.
@@ -311,9 +302,8 @@ export function buildSidebarTree(
         checkoutPath,
         presence: checkoutPath ? "checkout" : hasReview ? "review" : "ref",
         activityAt: Math.max(branch.lastModifiedAt ?? 0, tipAt, reviewAt),
-        pinned: pinnedSet.has(key),
         reasons,
-        live: isLive(key, reasons, pinnedSet, dismissedSet),
+        live: isLive(key, reasons, dismissedSet),
       };
 
       if (branch.isCurrent) bucket.head = row;
@@ -334,7 +324,6 @@ export function buildSidebarTree(
     const checkoutPath = review.worktreePath ?? null;
 
     const reasons: LiveReason[] = [];
-    if (pinnedSet.has(key)) reasons.push("pinned");
     if (checkoutPath) reasons.push("checkout");
     if (terminalSet.has(key)) reasons.push("terminal");
     if (reviewAt > 0 && now - reviewAt <= REVIEW_ACTIVE_WINDOW_MS) {
@@ -349,9 +338,8 @@ export function buildSidebarTree(
       checkoutPath,
       presence: checkoutPath ? "checkout" : "review",
       activityAt: reviewAt,
-      pinned: pinnedSet.has(key),
       reasons,
-      live: isLive(key, reasons, pinnedSet, dismissedSet),
+      live: isLive(key, reasons, dismissedSet),
     });
   }
 
@@ -363,7 +351,6 @@ export function buildSidebarTree(
     for (const remote of bucket.recentRemote) {
       if (claimed.has(remote.branchName)) continue;
       const key = makeReviewKey(bucket.repoPath, remote.branchName);
-      const reasons: LiveReason[] = pinnedSet.has(key) ? ["pinned"] : [];
 
       bucket.rows.push({
         reviewKey: key,
@@ -383,21 +370,16 @@ export function buildSidebarTree(
         checkoutPath: null,
         presence: "ref",
         activityAt: parseTime(remote.lastCommitDate),
-        pinned: pinnedSet.has(key),
-        reasons,
-        live: isLive(key, reasons, pinnedSet, dismissedSet),
+        // A remote branch we haven't touched is never live: none of the rules
+        // can fire on one, so it always starts behind the `⋯ more` toggle.
+        reasons: [],
+        live: false,
       });
     }
   }
 
   // 4. Split each bucket into live/rest and rank.
   const byRank = (a: SidebarRow, b: SidebarRow): number => {
-    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-    if (a.pinned && b.pinned) {
-      return (
-        (pinOrder.get(a.reviewKey) ?? 0) - (pinOrder.get(b.reviewKey) ?? 0)
-      );
-    }
     const rank = presenceRank(a.presence) - presenceRank(b.presence);
     if (rank !== 0) return rank;
     if (b.activityAt !== a.activityAt) return b.activityAt - a.activityAt;
@@ -408,15 +390,6 @@ export function buildSidebarTree(
   for (const bucket of buckets.values()) {
     const live = bucket.rows.filter((r) => r.live).sort(byRank);
     const rest = bucket.rows.filter((r) => !r.live).sort(byRank);
-
-    let pinRank: number | null = null;
-    for (const row of [bucket.head, ...bucket.rows]) {
-      if (!row) continue;
-      const rank = pinOrder.get(row.reviewKey);
-      if (rank !== undefined && (pinRank === null || rank < pinRank)) {
-        pinRank = rank;
-      }
-    }
 
     nodes.push({
       repoPath: bucket.repoPath,
@@ -435,21 +408,26 @@ export function buildSidebarTree(
         bucket.repoPath === openRepoPath ||
         (bucket.head?.live ?? false) ||
         live.length > 0,
-      pinRank,
+      hasActiveTerminal: [bucket.head, ...bucket.rows].some(
+        (row) => row != null && isTerminalRow(row),
+      ),
     });
   }
 
-  // 5. Three bands: repos you pinned something in, then active repos, then the
-  //    rest. Pinned leads because it's the only ordering the user states
-  //    outright — everything below it is inferred, and an inference shouldn't
-  //    outrank an instruction. Pinned repos follow pin order; the other two
-  //    bands stay alphabetical, deliberately *not* by recency: ordering by
-  //    last-touched made the list reshuffle under the cursor while you worked,
-  //    and a stable position is worth more than a fresh one.
-  const pinBand = (node: RepoNode): number => node.pinRank ?? Infinity;
+  // 5. Three bands: repos with a shell running in them, then the rest of the
+  //    active ones, then the quiet ones. A running shell leads because it's the
+  //    strongest evidence of where the work is. Note that it's the shell's
+  //    *liveness* that ranks, never its phase: a shell is either running or it
+  //    isn't, whereas phase flips between working and idle every few seconds,
+  //    and ranking on that would reshuffle the list under the cursor. Every
+  //    band is alphabetical for the same reason, deliberately *not* by
+  //    recency: ordering by last-touched made the list reshuffle while you
+  //    worked, and a stable position is worth more than a fresh one.
+  const band = (node: RepoNode): number =>
+    node.hasActiveTerminal ? 0 : node.isActive ? 1 : 2;
   nodes.sort((a, b) => {
-    if (pinBand(a) !== pinBand(b)) return pinBand(a) - pinBand(b);
-    if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+    const byBand = band(a) - band(b);
+    if (byBand !== 0) return byBand;
     const byName = a.repoName.localeCompare(b.repoName);
     if (byName !== 0) return byName;
     return a.repoPath < b.repoPath ? -1 : a.repoPath > b.repoPath ? 1 : 0;
@@ -461,7 +439,7 @@ export function buildSidebarTree(
 /**
  * Whether a repo's children are showing. Active repos default to expanded,
  * inactive ones to collapsed; `collapsedRepos` holds only explicit overrides,
- * so a repo going quiet re-collapses unless the user pinned it open.
+ * so a repo going quiet re-collapses unless the user expanded it by hand.
  */
 export function isRepoExpanded(
   collapsedRepos: Record<string, boolean>,
@@ -481,6 +459,21 @@ export function allSidebarRows(nodes: RepoNode[]): SidebarRow[] {
   for (const node of nodes) {
     if (node.head) out.push(node.head);
     out.push(...node.live, ...node.rest);
+  }
+  return out;
+}
+
+/**
+ * Just the rows with a shell running in them, in the same order. The collapsed
+ * rail's entire content, so it walks the tree once rather than materializing
+ * every repo's `rest` tail only to throw it away.
+ */
+export function terminalSidebarRows(nodes: RepoNode[]): SidebarRow[] {
+  const out: SidebarRow[] = [];
+  for (const node of nodes) {
+    if (node.head && isTerminalRow(node.head)) out.push(node.head);
+    for (const row of node.live) if (isTerminalRow(row)) out.push(row);
+    for (const row of node.rest) if (isTerminalRow(row)) out.push(row);
   }
   return out;
 }

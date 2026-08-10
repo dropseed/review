@@ -3,7 +3,8 @@ import { getSidebarTree } from "../stores/selectors/sidebar";
 import { type RepoNode } from "../utils/sidebar-tree";
 
 /**
- * The sidebar tree — repos in pin/activity order, each carrying its own rows.
+ * The sidebar tree — repos in terminal/activity order, each carrying its own
+ * rows.
  *
  * Recomputed at most once per minute (the 7/14-day liveness windows don't need
  * finer granularity) and whenever its inputs change. The build itself is

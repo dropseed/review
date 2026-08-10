@@ -210,8 +210,7 @@ const defaults = {
   expandedRepoRest: {} as Record<string, boolean>,
   // Whether repos with nothing live are listed at all.
   showInactiveRepos: false,
-  // Sidebar row overrides, keyed `${repoPath}:${ref}`.
-  sidebarPinned: [] as string[],
+  // Sidebar rows the user hid, keyed `${repoPath}:${ref}`.
   sidebarDismissed: [] as string[],
   fileSortOrder: "name" as FileSortOrder,
   guideSideNavCollapsed: false,
@@ -295,9 +294,8 @@ export interface PreferencesSlice {
   // Whether repos with nothing live are listed below the active ones.
   showInactiveRepos: boolean;
 
-  // Sidebar row overrides, keyed `${repoPath}:${ref}`.
-  // Pinned rows always show (ranked first); dismissed rows never show.
-  sidebarPinned: string[];
+  // Sidebar rows the user hid, keyed `${repoPath}:${ref}`. A dismissed row
+  // never shows, whatever the derived liveness rules say.
   sidebarDismissed: string[];
 
   // File sort order (shared across browse + changes tabs)
@@ -385,10 +383,7 @@ export interface PreferencesSlice {
   toggleInactiveRepos: () => void;
 
   // Sidebar row actions (key = `${repoPath}:${ref}`)
-  pinSidebarRow: (key: string) => void;
-  unpinSidebarRow: (key: string) => void;
-  dismissSidebarRow: (key: string) => void;
-  undismissSidebarRow: (key: string) => void;
+  toggleSidebarRowDismissed: (key: string) => void;
 
   // File sort order actions
   setFileSortOrder: (order: FileSortOrder) => void;
@@ -722,36 +717,11 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       storage.set("showInactiveRepos", next);
     },
 
-    pinSidebarRow: (key) => {
-      // Pinning wins over a prior dismiss — clear it from both sets, then add.
-      const pinned = get().sidebarPinned.filter((k) => k !== key);
-      pinned.push(key);
-      const dismissed = get().sidebarDismissed.filter((k) => k !== key);
-      set({ sidebarPinned: pinned, sidebarDismissed: dismissed });
-      storage.set("sidebarPinned", pinned);
-      storage.set("sidebarDismissed", dismissed);
-    },
-
-    unpinSidebarRow: (key) => {
-      if (!get().sidebarPinned.includes(key)) return;
-      const pinned = get().sidebarPinned.filter((k) => k !== key);
-      set({ sidebarPinned: pinned });
-      storage.set("sidebarPinned", pinned);
-    },
-
-    dismissSidebarRow: (key) => {
-      // Dismissing a pinned row un-pins it first.
-      const pinned = get().sidebarPinned.filter((k) => k !== key);
-      const dismissed = get().sidebarDismissed.filter((k) => k !== key);
-      dismissed.push(key);
-      set({ sidebarPinned: pinned, sidebarDismissed: dismissed });
-      storage.set("sidebarPinned", pinned);
-      storage.set("sidebarDismissed", dismissed);
-    },
-
-    undismissSidebarRow: (key) => {
-      if (!get().sidebarDismissed.includes(key)) return;
-      const dismissed = get().sidebarDismissed.filter((k) => k !== key);
+    toggleSidebarRowDismissed: (key) => {
+      const current = get().sidebarDismissed;
+      const dismissed = current.includes(key)
+        ? current.filter((k) => k !== key)
+        : [...current, key];
       set({ sidebarDismissed: dismissed });
       storage.set("sidebarDismissed", dismissed);
     },

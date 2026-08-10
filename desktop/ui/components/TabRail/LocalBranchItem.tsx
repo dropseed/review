@@ -9,7 +9,7 @@ import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { getApiClient } from "../../api";
 import { getPlatformServices } from "../../platform";
 import { ChangeBaseMenu } from "./ChangeBaseMenu";
-import { SidebarRowMenuItems } from "./SidebarRowMenuItems";
+import { SidebarHideMenuItem } from "./SidebarHideMenuItem";
 import { RowStatus } from "./RowStatus";
 import { useTerminalTabDrop } from "./useTerminalTabDrop";
 import {
@@ -272,7 +272,7 @@ export const LocalBranchItem = memo(function LocalBranchItem({
                   </span>
                 </button>
                 <div className="my-1 border-t border-edge/30" />
-                <SidebarRowMenuItems
+                <SidebarHideMenuItem
                   repoPath={repoPath}
                   reviewRef={reviewRef}
                   onDone={() => setShowContextMenu(false)}

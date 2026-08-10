@@ -83,21 +83,22 @@ function byKey(
 
 function build(
   activity: RepoLocalActivity[],
-  reviews: GlobalReviewSummary[] = [],
-  pinned: string[] = [],
-  dismissed: string[] = [],
-  openRepoPath: string | null = null,
-  terminalKeys: string[] = [],
+  opts: {
+    reviews?: GlobalReviewSummary[];
+    dismissed?: string[];
+    openRepoPath?: string | null;
+    terminalKeys?: string[];
+  } = {},
 ): RepoNode[] {
+  const reviews = opts.reviews ?? [];
   return buildSidebarTree(
     activity,
     reviews,
     byKey(reviews),
-    pinned,
-    dismissed,
+    opts.dismissed ?? [],
     NOW,
-    openRepoPath,
-    terminalKeys,
+    opts.openRepoPath ?? null,
+    opts.terminalKeys ?? [],
   );
 }
 
@@ -182,7 +183,7 @@ describe("the repo row is the repo-root checkout", () => {
 
   it("carries a review's own worktree as its checkout", () => {
     const reviews = [review("/r", "abc123", 0, { worktreePath: "/wt/abc" })];
-    const [node] = build([repo("/r", [])], reviews);
+    const [node] = build([repo("/r", [])], { reviews });
     expect(node.live[0].checkoutPath).toBe("/wt/abc");
   });
 });
@@ -207,15 +208,23 @@ describe("liveness rules", () => {
           branch({ name: "agent-work" }),
         ]),
       ],
-      [],
-      [],
-      [],
-      null,
-      ["/r:agent-work"],
+      { terminalKeys: ["/r:agent-work"] },
     );
     expect(refs(node.live)).toContain("agent-work");
     expect(node.live[0].reasons).toContain("terminal");
     expect(node.isActive).toBe(true);
+    expect(node.hasActiveTerminal).toBe(true);
+  });
+
+  it("counts a shell in the repo-root checkout, not just a child row", () => {
+    const [node] = build(
+      [repo("/r", [branch({ name: "master", isCurrent: true })])],
+      {
+        terminalKeys: ["/r:master"],
+      },
+    );
+    expect(node.head?.reasons).toContain("terminal");
+    expect(node.hasActiveTerminal).toBe(true);
   });
 
   it("does not let a running terminal reorder rows", () => {
@@ -232,11 +241,7 @@ describe("liveness rules", () => {
               branch({ name: "b", hasWorkingTreeChanges: true }),
             ]),
           ],
-          [],
-          [],
-          [],
-          null,
-          terminalKeys,
+          { terminalKeys },
         )[0].live,
       );
     expect(rowsFor(["/r:b"])).toEqual(rowsFor([]));
@@ -251,7 +256,7 @@ describe("liveness rules", () => {
           branch({ name: "feat" }),
         ]),
       ],
-      reviews,
+      { reviews },
     );
     expect(refs(node.live)).toContain("feat");
   });
@@ -265,7 +270,7 @@ describe("liveness rules", () => {
           branch({ name: "feat" }),
         ]),
       ],
-      reviews,
+      { reviews },
     );
     expect(refs(node.live)).not.toContain("feat");
     expect(refs(node.rest)).toContain("feat");
@@ -308,7 +313,7 @@ describe("liveness rules", () => {
       repo("/r", [branch({ name: "master", isCurrent: true })]),
     ];
 
-    const [open] = build(activity, [], [], [], "/r");
+    const [open] = build(activity, { openRepoPath: "/r" });
     expect(open.head?.reasons).toContain("open-repo");
     expect(open.head?.live).toBe(true);
     expect(open.isActive).toBe(true);
@@ -322,7 +327,7 @@ describe("liveness rules", () => {
       repo("/r", [branch({ name: "master", isCurrent: true })]),
     ];
 
-    const [other] = build(activity, [], [], [], "/somewhere-else");
+    const [other] = build(activity, { openRepoPath: "/somewhere-else" });
     expect(other.head?.reasons).toEqual([]);
     expect(other.isActive).toBe(false);
     expect(flattenSidebarTree([other], {}, {}, false)).toEqual([]);
@@ -332,70 +337,32 @@ describe("liveness rules", () => {
     // A repo known only through reviews has no head row to carry the reason,
     // and a dismissed head row would refuse it — neither may hide the repo
     // the window is displaying.
-    const [bare] = build([repo("/r", [])], [], [], [], "/r");
+    const [bare] = build([repo("/r", [])], { openRepoPath: "/r" });
     expect(bare.head).toBeNull();
     expect(bare.isActive).toBe(true);
 
     const [dismissed] = build(
       [repo("/r", [branch({ name: "master", isCurrent: true })])],
-      [],
-      [],
-      ["/r:master"],
-      "/r",
+      { dismissed: ["/r:master"], openRepoPath: "/r" },
     );
     expect(dismissed.head?.live).toBe(false);
     expect(dismissed.isActive).toBe(true);
   });
 
-  it("pins a row live and dismisses one out", () => {
+  it("dismisses a row out of the live list", () => {
     const activity = [
       repo("/r", [
         branch({ name: "master", isCurrent: true }),
-        branch({ name: "stale" }),
         branch({ name: "dirty", hasWorkingTreeChanges: true }),
       ]),
     ];
-    const [pinnedNode] = build(activity, [], ["/r:stale"]);
-    expect(refs(pinnedNode.live)).toContain("stale");
-
-    const [dismissedNode] = build(activity, [], [], ["/r:dirty"]);
-    expect(refs(dismissedNode.live)).not.toContain("dirty");
-    expect(refs(dismissedNode.rest)).toContain("dirty");
-  });
-
-  it("lets a pin win over a dismiss for the same row", () => {
-    const [node] = build(
-      [
-        repo("/r", [
-          branch({ name: "master", isCurrent: true }),
-          branch({ name: "feat" }),
-        ]),
-      ],
-      [],
-      ["/r:feat"],
-      ["/r:feat"],
-    );
-    expect(refs(node.live)).toContain("feat");
+    const [node] = build(activity, { dismissed: ["/r:dirty"] });
+    expect(refs(node.live)).not.toContain("dirty");
+    expect(refs(node.rest)).toContain("dirty");
   });
 });
 
 describe("row ranking", () => {
-  it("ranks pinned rows first, in pin order", () => {
-    const [node] = build(
-      [
-        repo("/r", [
-          branch({ name: "master", isCurrent: true }),
-          branch({ name: "p1" }),
-          branch({ name: "p2" }),
-          branch({ name: "wt", worktreePath: "/wt" }),
-        ]),
-      ],
-      [],
-      ["/r:p2", "/r:p1"],
-    );
-    expect(refs(node.live).slice(0, 2)).toEqual(["p2", "p1"]);
-  });
-
   it("ranks equal-presence rows by recency, with size no longer a factor", () => {
     // Ordering takes no sort-order input any more. The menu that set one is
     // gone, so a persisted "size" would have kept reordering rows with nothing
@@ -404,7 +371,7 @@ describe("row ranking", () => {
       review("/r", "huge", 5000, { totalHunks: 900 }),
       review("/r", "tiny", 1000, { totalHunks: 1 }),
     ];
-    const [node] = build([repo("/r", [])], reviews);
+    const [node] = build([repo("/r", [])], { reviews });
     expect(refs(node.live)).toEqual(["tiny", "huge"]);
   });
 
@@ -428,7 +395,7 @@ describe("row ranking", () => {
           }),
         ]),
       ],
-      reviews,
+      { reviews },
     );
     expect(refs(node.live)).toEqual(["wt", "reviewed", "bare"]);
   });
@@ -480,30 +447,32 @@ describe("repo ordering", () => {
     ]);
   });
 
-  it("puts repos holding a pin above active ones, in pin order", () => {
+  it("puts repos with a shell running in them above the other active ones", () => {
     const nodes = build(
       [
-        repo("/busy", [
+        repo("/a-busy", [
           branch({
             name: "master",
             isCurrent: true,
             hasWorkingTreeChanges: true,
           }),
         ]),
-        repo("/quiet-first-pin", [branch({ name: "old" })]),
-        repo("/quiet-second-pin", [branch({ name: "old" })]),
+        repo("/z-quiet", [branch({ name: "old" })]),
+        // Alphabetically last, and live for no reason but the shell.
+        repo("/z-terminal", [
+          branch({ name: "master", isCurrent: true }),
+          branch({ name: "agent-work" }),
+        ]),
       ],
-      [],
-      // Pin order is the user's own ordering, so it survives alphabetization.
-      ["/quiet-second-pin:old", "/quiet-first-pin:old"],
+      { terminalKeys: ["/z-terminal:agent-work"] },
     );
     expect(nodes.map((n) => n.repoPath)).toEqual([
-      "/quiet-second-pin",
-      "/quiet-first-pin",
-      "/busy",
+      "/z-terminal",
+      "/a-busy",
+      "/z-quiet",
     ]);
-    expect(nodes[0].pinRank).toBe(0);
-    expect(nodes[2].pinRank).toBeNull();
+    expect(nodes[0].hasActiveTerminal).toBe(true);
+    expect(nodes[1].hasActiveTerminal).toBe(false);
   });
 
   it("keeps the same order when only activity timestamps move", () => {
@@ -532,7 +501,7 @@ describe("repo ordering", () => {
 
 describe("remote-recent rows", () => {
   it("dedupes against branches and reviews already represented", () => {
-    const reviews = [review("/r", "pinned-ref", 1000)];
+    const reviews = [review("/r", "reviewed-ref", 1000)];
     const [node] = build(
       [
         repo("/r", [branch({ name: "master", isCurrent: true })], {
@@ -543,8 +512,8 @@ describe("remote-recent rows", () => {
               lastCommitDate: iso(0),
             },
             {
-              remoteRef: "origin/pinned-ref",
-              branchName: "pinned-ref",
+              remoteRef: "origin/reviewed-ref",
+              branchName: "reviewed-ref",
               lastCommitDate: iso(0),
             },
             {
@@ -555,11 +524,11 @@ describe("remote-recent rows", () => {
           ],
         }),
       ],
-      reviews,
+      { reviews },
     );
     const all = [...node.live, ...node.rest].map((r) => r.ref);
     expect(all.filter((r) => r === "master")).toHaveLength(0); // head only
-    expect(all.filter((r) => r === "pinned-ref")).toHaveLength(1);
+    expect(all.filter((r) => r === "reviewed-ref")).toHaveLength(1);
     expect(refs(node.rest)).toContain("fresh");
   });
 });

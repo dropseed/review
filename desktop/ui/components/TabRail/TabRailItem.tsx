@@ -4,7 +4,7 @@ import type { GlobalReviewSummary } from "../../types";
 import { useReviewStore } from "../../stores";
 import { WarningIcon } from "../ui/icons";
 import { ChangeBaseMenu } from "./ChangeBaseMenu";
-import { SidebarRowMenuItems } from "./SidebarRowMenuItems";
+import { SidebarHideMenuItem } from "./SidebarHideMenuItem";
 import { CheckoutMenuItem } from "./CheckoutMenuItem";
 import { RowStatus } from "./RowStatus";
 import { PrPreviewCard } from "./PrPreviewCard";
@@ -288,7 +288,7 @@ export const TabRailItem = memo(function TabRailItem({
                   checkoutPath={review.worktreePath}
                   onDone={() => setShowContextMenu(false)}
                 />
-                <SidebarRowMenuItems
+                <SidebarHideMenuItem
                   repoPath={review.repoPath}
                   reviewRef={review.ref}
                   onDone={() => setShowContextMenu(false)}

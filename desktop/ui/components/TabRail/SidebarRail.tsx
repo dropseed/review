@@ -6,7 +6,7 @@ import { terminalSeverity } from "../../stores/slices/terminalSlice";
 import { makeReviewKey } from "../../utils/review-key";
 import {
   activateSidebarRow,
-  allSidebarRows,
+  terminalSidebarRows,
   type SidebarRow,
 } from "../../utils/sidebar-tree";
 import { Rail, RailButton, RailSeparator, RailTab } from "../ui/rail";
@@ -34,10 +34,10 @@ interface SidebarRailProps {
  * drop the sidebar to zero width and float a lone toggle over the content,
  * which read as a stray button in dead space.
  *
- * What it carries is what survives losing the labels: the rows you pinned, in
- * your order, and any row with a shell running in it. Both are jump targets —
- * collapsed is meant to still be a way to move between the things you're
- * working on, not just a button that undoes itself.
+ * What it carries is what survives losing the labels: every row with a shell
+ * running in it. They're jump targets — collapsed is meant to still be a way to
+ * move between the things you're working on, not just a button that undoes
+ * itself.
  */
 export function SidebarRail({
   onExpand,
@@ -45,25 +45,13 @@ export function SidebarRail({
   onActivateLocalBranch,
 }: SidebarRailProps): ReactNode {
   const tree = useSidebarTree();
-  const sidebarPinned = useReviewStore((s) => s.sidebarPinned);
   const terminalStatuses = useReviewStore((s) => s.terminalStatuses);
   const activeReviewKey = useReviewStore((s) => s.activeReviewKey);
   const liveSessions = useLiveSessionsByReviewKey();
 
-  const rows = allSidebarRows(tree);
-  const byKey = new Map(rows.map((row) => [row.reviewKey, row]));
-
-  // Pin order is the user's own ordering, so it isn't re-sorted here.
-  const pinnedRows = sidebarPinned
-    .map((key) => byKey.get(key))
-    .filter((row): row is SidebarRow => row != null);
-
   // "Has a shell running in it" is already a liveness reason the tree
   // computed — asking it again here would be a second copy of the rule.
-  const pinnedKeys = new Set(pinnedRows.map((row) => row.reviewKey));
-  const busyRows = rows.filter(
-    (row) => !pinnedKeys.has(row.reviewKey) && row.reasons.includes("terminal"),
-  );
+  const busyRows = terminalSidebarRows(tree);
 
   const activeKey = activeReviewKey
     ? makeReviewKey(activeReviewKey.repoPath, activeReviewKey.ref)
@@ -109,15 +97,9 @@ export function SidebarRail({
         <SidebarPanelIcon className="h-3.5 w-3.5" />
       </RailButton>
 
-      {(pinnedRows.length > 0 || busyRows.length > 0) && <RailSeparator />}
+      {busyRows.length > 0 && <RailSeparator />}
 
       <div className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto scrollbar-thin">
-        {pinnedRows.map(renderRow)}
-        {/* Unpinned, but something is running there — the rail's own reason to
-            interrupt you, kept below the list you curated. */}
-        {busyRows.length > 0 && pinnedRows.length > 0 && (
-          <RailSeparator className="w-3 bg-edge/40" />
-        )}
         {busyRows.map(renderRow)}
       </div>
 
