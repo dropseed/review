@@ -1,7 +1,7 @@
 import { memo, useCallback, useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useReviewStore } from "../../stores";
-import type { LocalBranchInfo } from "../../types";
+import type { LocalBranchInfo, ViewerPr } from "../../types";
 import type { SidebarItemKind } from "../../utils/sidebar-tree";
 import { XIcon } from "../ui/icons";
 import { Spinner } from "../ui/spinner";
@@ -31,6 +31,8 @@ interface LocalBranchItemProps {
    * root and the branch checked out in it drifted into two different answers.
    */
   checkoutPath: string | null;
+  /** The user's open PR for this branch, when the tree joined one onto it. */
+  openPr?: ViewerPr;
   onActivate: (repoPath: string, branch: string, defaultBranch: string) => void;
 }
 
@@ -41,6 +43,7 @@ export const LocalBranchItem = memo(function LocalBranchItem({
   defaultBranch,
   itemKind,
   checkoutPath,
+  openPr,
   onActivate,
 }: LocalBranchItemProps) {
   // The review's identity is the branch name.
@@ -203,6 +206,7 @@ export const LocalBranchItem = memo(function LocalBranchItem({
               checkoutPath={checkoutPath}
               tier={checkoutPath ? "materialized" : "fetched"}
               showWorktreeIcon={itemKind === "worktree"}
+              openPr={openPr}
             />
             {branch.hasWorkingTreeChanges && (
               <span className={ROW_MODIFIED_BADGE}>M</span>

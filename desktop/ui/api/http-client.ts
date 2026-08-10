@@ -34,6 +34,7 @@ import type {
   ReviewTierInfo,
   GitStatusSummary,
   PullRequest,
+  ViewerPrSnapshot,
   RemoteInfo,
   RepoLocalActivity,
   ReviewFreshnessInput,
@@ -297,6 +298,10 @@ export class HttpClient implements ApiClient {
 
   async listPullRequests(repoPath: string): Promise<PullRequest[]> {
     return this.post("/api/github/pull-requests", { repoPath });
+  }
+
+  async getViewerPrs(refresh: boolean): Promise<ViewerPrSnapshot> {
+    return this.post("/api/github/viewer-prs", { refresh });
   }
 
   // ----- Review tiers -----

@@ -644,6 +644,7 @@ pub fn run() {
             commands::get_current_repo,
             commands::check_github_available,
             commands::list_pull_requests,
+            commands::get_viewer_prs,
             commands::get_review_tier,
             commands::get_agent_usage,
             commands::fetch_pull_request,

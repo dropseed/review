@@ -23,6 +23,7 @@ import {
   type RepoLocalActivity,
   type RecentRemoteBranch,
   type GlobalReviewSummary,
+  type ViewerPr,
 } from "../types";
 import { makeReviewKey } from "./review-key";
 
@@ -64,8 +65,28 @@ export interface SidebarRemoteEntry {
   reviewKey: string;
 }
 
+/**
+ * An open PR in a registered repo that nothing else in the tree accounts for —
+ * no local branch, no remote-tracking branch, no saved review.
+ *
+ * It exists only for as long as the PR is open and unmatched: no review record
+ * is written until the row is activated, so the sidebar can show work that
+ * lives entirely on GitHub without inventing local state for it.
+ */
+export interface SidebarOpenPrEntry {
+  kind: "open-pr";
+  pr: ViewerPr;
+  repoPath: string;
+  /** The review ref this PR maps to — its head branch. */
+  ref: string;
+  reviewKey: string;
+}
+
 export type SidebarEntry =
-  SidebarBranchEntry | SidebarReviewEntry | SidebarRemoteEntry;
+  | SidebarBranchEntry
+  | SidebarReviewEntry
+  | SidebarRemoteEntry
+  | SidebarOpenPrEntry;
 
 /**
  * Why a row is live (union of rules; useful for tests and tooltips).
@@ -91,9 +112,17 @@ export type LiveReason =
    * A shell is running in this row's checkout right now — the strongest
    * evidence there is that someone is working here, where every time-window
    * rule only says someone *was*. It also lifts the row's repo to the top of
-   * the list; step 5 has the ordering rationale.
+   * the list; step 6 has the ordering rationale.
    */
-  | "terminal";
+  | "terminal"
+  /**
+   * An open PR points at this row — but only one that still wants something
+   * from you: blocked at any age, or simply recent. See `prIsLive`. Drafts and
+   * months-old PRs are excluded for the same reason the time windows above
+   * exist, and it is not hypothetical — a single repo of PRs left open since
+   * July was enough to own the live zone on its own.
+   */
+  | "open-pr";
 
 /**
  * How present a row is locally — the tier ladder, as a display concern.
@@ -117,6 +146,12 @@ export interface SidebarRow {
   presence: RowPresence;
   /** Ranking key: max(working-tree mtime, tip committer date, review updatedAt). */
   activityAt: number;
+  /**
+   * The user's open PR for this row's ref, when they have one. Set on rows the
+   * tree built from local state as well as on the tree's own `open-pr` rows —
+   * a badge, not an identity.
+   */
+  openPr?: ViewerPr;
   reasons: LiveReason[];
   /** Shown without expanding the repo's `⋯ more`. */
   live: boolean;
@@ -146,7 +181,7 @@ export interface RepoNode {
   isActive: boolean;
   /**
    * A shell is running in one of this repo's checkouts. Leads the ordering —
-   * see step 5.
+   * see step 6.
    */
   hasActiveTerminal: boolean;
 }
@@ -168,6 +203,55 @@ function branchItemKind(
   if (branch.isCurrent) return "working-tree";
   if (branch.worktreePath != null) return "worktree";
   return hasReview ? "review-branch" : "branch";
+}
+
+/**
+ * Whether a PR is blocked on something: changes requested, or CI that failed
+ * or couldn't run.
+ *
+ * The one definition, because this is also exactly when the badge goes red
+ * (`prBadgeClass` imports it). "Red" and "live" are the same judgement — a row
+ * that shows a red badge but sits behind `⋯ more`, or the reverse, is the
+ * sidebar contradicting itself.
+ */
+export function prNeedsAttention(pr: ViewerPr): boolean {
+  return (
+    pr.reviewDecision === "CHANGES_REQUESTED" ||
+    pr.checksState === "FAILURE" ||
+    pr.checksState === "ERROR"
+  );
+}
+
+/**
+ * Whether an open PR earns a place in the live zone.
+ *
+ * Three rules, in order:
+ *
+ * 1. Blocked wins outright, draft or not, however old. Age makes a PR waiting
+ *    on you *worse*, so this is the one case a staleness window must not park.
+ * 2. A draft that isn't blocked stays parked. It's unfinished by definition.
+ * 3. Anything else is live only while it's recent.
+ *
+ * Rule 3 uses `COMMIT_BY_USER_WINDOW_MS`, not the review window, because a
+ * PR's `updatedAt` is the *author's* own activity — the same thing
+ * `recent-own-commit` measures, so the two share a window. The 14-day window
+ * is for review activity, which is a different clock: someone else's attention
+ * arrives on its own schedule and is worth waiting longer for.
+ *
+ * That the shorter window is also the one that works is not a coincidence.
+ * "Non-draft means live" reads fine with a handful of PRs and collapses with a
+ * real account: a single repo of batch-opened PRs put a dozen rows in the live
+ * zone that nobody had touched since they were created. At 14 days they still
+ * qualified with two days to spare — checked against the real snapshot, the
+ * whole batch sat at 12 days old — which is the failure the staleness rules
+ * exist to prevent. Seven days parks them. Parked PRs keep their row and their
+ * badge one `⋯ more` click away; nothing is hidden, it just stops shouting.
+ */
+export function prIsLive(pr: ViewerPr, now: number): boolean {
+  if (prNeedsAttention(pr)) return true;
+  if (pr.isDraft) return false;
+  const updatedAt = parseTime(pr.updatedAt);
+  return updatedAt > 0 && now - updatedAt <= COMMIT_BY_USER_WINDOW_MS;
 }
 
 /**
@@ -198,6 +282,13 @@ export function buildSidebarTree(
   openRepoPath: string | null = null,
   /** Review keys whose checkout currently hosts a live terminal session. */
   terminalKeys: readonly string[] = [],
+  /**
+   * The viewer's open PRs. Only the ones the backend matched to a registered
+   * repo (`repoPath != null`) reach the tree; the rest are the sidebar's
+   * "elsewhere" bucket, which is a flat list rather than part of any repo — see
+   * `groupPrsElsewhere`.
+   */
+  viewerPrs: readonly ViewerPr[] = [],
 ): RepoNode[] {
   const dismissedSet = new Set(dismissedKeys);
   const terminalSet = new Set(terminalKeys);
@@ -378,7 +469,71 @@ export function buildSidebarTree(
     }
   }
 
-  // 4. Split each bucket into live/rest and rank.
+  // 4. Open PRs, joined onto the rows that already represent them and
+  //    materialized as their own rows where nothing does. Runs after every
+  //    other source so "nothing represents this PR" is a question about the
+  //    finished tree, not about whichever step happened to run first.
+  for (const pr of viewerPrs) {
+    const repoPath = pr.repoPath;
+    if (repoPath == null) continue;
+
+    const bucket = buckets.get(repoPath);
+    // A PR's head branch is the ref its row would be keyed by — but a review
+    // started *from* the PR keeps its own ref, so a PR-keyed review is matched
+    // by number instead. Without that, a PR whose review ref isn't the branch
+    // name would badge nothing and then be duplicated as an `open-pr` row.
+    const existing = bucket
+      ? [bucket.head, ...bucket.rows].find(
+          (row) =>
+            row != null &&
+            (row.ref === pr.headRefName ||
+              (row.entry.kind === "review" &&
+                row.entry.review.githubPr?.number === pr.number)),
+        )
+      : undefined;
+
+    if (existing) {
+      existing.openPr = pr;
+      if (prIsLive(pr, now)) {
+        existing.reasons.push("open-pr");
+        existing.live = isLive(
+          existing.reviewKey,
+          existing.reasons,
+          dismissedSet,
+        );
+      }
+      continue;
+    }
+
+    // Nothing local knows about this PR yet. The row is ephemeral — no review
+    // record is written until someone activates it — so it costs nothing to
+    // show and disappears on its own when the PR closes.
+    const target =
+      bucket ?? bucketFor(repoPath, repoPath.split("/").pop() ?? repoPath, "");
+    const key = makeReviewKey(repoPath, pr.headRefName);
+    const reasons: LiveReason[] = prIsLive(pr, now) ? ["open-pr"] : [];
+
+    target.rows.push({
+      reviewKey: key,
+      repoPath,
+      ref: pr.headRefName,
+      entry: {
+        kind: "open-pr",
+        pr,
+        repoPath,
+        ref: pr.headRefName,
+        reviewKey: key,
+      },
+      checkoutPath: null,
+      presence: "ref",
+      activityAt: parseTime(pr.updatedAt),
+      openPr: pr,
+      reasons,
+      live: isLive(key, reasons, dismissedSet),
+    });
+  }
+
+  // 5. Split each bucket into live/rest and rank.
   const byRank = (a: SidebarRow, b: SidebarRow): number => {
     const rank = presenceRank(a.presence) - presenceRank(b.presence);
     if (rank !== 0) return rank;
@@ -414,7 +569,7 @@ export function buildSidebarTree(
     });
   }
 
-  // 5. Three bands: repos with a shell running in them, then the rest of the
+  // 6. Three bands: repos with a shell running in them, then the rest of the
   //    active ones, then the quiet ones. A running shell leads because it's the
   //    strongest evidence of where the work is. Note that it's the shell's
   //    *liveness* that ranks, never its phase: a shell is either running or it
@@ -492,11 +647,15 @@ export function activateSidebarRow(
       branch: string,
       defaultBranch: string,
     ) => void;
+    /** Starts a review from the PR — the first thing that gives it a record. */
+    onActivateOpenPr: (pr: ViewerPr) => void;
   },
 ): void {
   const { entry } = row;
   if (entry.kind === "review") {
     handlers.onActivateReview(entry.review);
+  } else if (entry.kind === "open-pr") {
+    handlers.onActivateOpenPr(entry.pr);
   } else if (entry.kind === "remote-recent") {
     handlers.onActivateLocalBranch(
       entry.repoPath,
@@ -510,6 +669,54 @@ export function activateSidebarRow(
       entry.repo.defaultBranch,
     );
   }
+}
+
+/** One repo's worth of open PRs in a repo Review doesn't have locally. */
+export interface ElsewhereRepoPrs {
+  repoNameWithOwner: string;
+  repoUrl: string;
+  prs: ViewerPr[];
+}
+
+/**
+ * The open PRs that belong to no repo in the tree, grouped by their GitHub
+ * repo.
+ *
+ * These are deliberately *outside* the tree rather than a fourth ordering band
+ * in it: every row in `RepoNode` promises a local path — that promise is what
+ * lets terminals, LSP and staging read `checkoutPath` instead of re-deriving
+ * it — and a PR in a repo that was never cloned here has none. Keeping them in
+ * their own list means the tree's invariant needs no exception, and the rows
+ * can behave like what they are: links out.
+ *
+ * Repos and PRs are both ordered most-recently-updated first, so the bucket
+ * reads as a single recency list once expanded.
+ */
+export function groupPrsElsewhere(
+  viewerPrs: readonly ViewerPr[],
+): ElsewhereRepoPrs[] {
+  const groups = new Map<string, ElsewhereRepoPrs>();
+  for (const pr of viewerPrs) {
+    if (pr.repoPath != null) continue;
+    let group = groups.get(pr.repoNameWithOwner);
+    if (!group) {
+      group = {
+        repoNameWithOwner: pr.repoNameWithOwner,
+        repoUrl: pr.repoUrl,
+        prs: [],
+      };
+      groups.set(pr.repoNameWithOwner, group);
+    }
+    group.prs.push(pr);
+  }
+
+  const byUpdated = (a: ViewerPr, b: ViewerPr): number =>
+    parseTime(b.updatedAt) - parseTime(a.updatedAt);
+
+  const out = [...groups.values()];
+  for (const group of out) group.prs.sort(byUpdated);
+  out.sort((a, b) => byUpdated(a.prs[0], b.prs[0]));
+  return out;
 }
 
 /** The rows keyboard navigation walks, in render order. */

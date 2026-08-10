@@ -17,7 +17,7 @@ import { useAutoUpdater } from "../../hooks/useAutoUpdater";
 import { computeReviewProgress } from "../../hooks/useReviewProgress";
 import { getPlatformServices } from "../../platform";
 import { TabRailItem } from "./TabRailItem";
-import { type GlobalReviewSummary } from "../../types";
+import { type GlobalReviewSummary, type ViewerPr } from "../../types";
 import { SidebarPanelIcon } from "../ui/icons";
 import {
   DropdownMenu,
@@ -106,6 +106,8 @@ import {
 } from "./row-chrome";
 import { useTerminalTabDrop } from "./useTerminalTabDrop";
 import { TerminalRowList } from "./TerminalRowList";
+import { OpenPrItem } from "./OpenPrItem";
+import { ElsewherePrs } from "./ElsewherePrs";
 
 interface SidebarListProps {
   onActivateReview: (review: GlobalReviewSummary) => void;
@@ -114,11 +116,13 @@ interface SidebarListProps {
     branch: string,
     defaultBranch: string,
   ) => void;
+  onActivateOpenPr: (pr: ViewerPr) => void;
 }
 
 function SidebarList({
   onActivateReview,
   onActivateLocalBranch,
+  onActivateOpenPr,
 }: SidebarListProps): ReactNode {
   const tree = useSidebarTree();
   const navigate = useNavigate();
@@ -187,7 +191,21 @@ function SidebarList({
           repoPath={entry.repoPath}
           defaultBranch={entry.defaultBranch}
           lastCommitDate={entry.lastCommitDate}
+          openPr={row.openPr}
           onActivate={onActivateLocalBranch}
+        />
+      );
+    }
+
+    // Nor an open PR nothing local represents yet — it has no ref on disk at
+    // all until activating it fetches one.
+    if (entry.kind === "open-pr") {
+      return (
+        <OpenPrItem
+          key={row.reviewKey}
+          pr={entry.pr}
+          repoPath={entry.repoPath}
+          onActivate={onActivateOpenPr}
         />
       );
     }
@@ -195,7 +213,10 @@ function SidebarList({
     return (
       <Fragment key={row.reviewKey}>
         {entry.kind === "review" ? (
-          <TabRailItem {...reviewItemPropsFor(entry.review)} />
+          <TabRailItem
+            {...reviewItemPropsFor(entry.review)}
+            openPr={row.openPr}
+          />
         ) : (
           <LocalBranchItem
             branch={entry.branch}
@@ -203,6 +224,7 @@ function SidebarList({
             defaultBranch={entry.repo.defaultBranch}
             itemKind={entry.kind}
             checkoutPath={row.checkoutPath}
+            openPr={row.openPr}
             onActivate={onActivateLocalBranch}
           />
         )}
@@ -559,6 +581,7 @@ function RepoNodeView({
             <RowStatus
               checkoutPath={head.checkoutPath}
               tier={head.checkoutPath ? "materialized" : "fetched"}
+              openPr={head.openPr}
             />
           )}
           {headBranch?.hasWorkingTreeChanges && (
@@ -703,11 +726,13 @@ interface TabRailProps {
     branch: string,
     defaultBranch: string,
   ) => void;
+  onActivateOpenPr: (pr: ViewerPr) => void;
 }
 
 export const TabRail = memo(function TabRail({
   onActivateReview,
   onActivateLocalBranch,
+  onActivateOpenPr,
 }: TabRailProps) {
   const collapsed = useReviewStore((s) => s.tabRailCollapsed);
   const toggleTabRail = useReviewStore((s) => s.toggleTabRail);
@@ -752,6 +777,7 @@ export const TabRail = memo(function TabRail({
           onExpand={toggleTabRail}
           onActivateReview={onActivateReview}
           onActivateLocalBranch={onActivateLocalBranch}
+          onActivateOpenPr={onActivateOpenPr}
         />
       )}
 
@@ -782,7 +808,12 @@ export const TabRail = memo(function TabRail({
             <SidebarList
               onActivateReview={onActivateReview}
               onActivateLocalBranch={onActivateLocalBranch}
+              onActivateOpenPr={onActivateOpenPr}
             />
+            {/* Outside the list, not inside it: the list renders nothing when
+                the tree is empty, and an empty sidebar is exactly when a
+                failed GitHub fetch most needs saying. */}
+            <ElsewherePrs />
           </div>
 
           <AgentUsageIndicator />

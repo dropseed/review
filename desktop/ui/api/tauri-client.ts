@@ -37,6 +37,7 @@ import type {
   ReviewTierInfo,
   GitStatusSummary,
   PullRequest,
+  ViewerPrSnapshot,
   RemoteInfo,
   RepoLocalActivity,
   ReviewFreshnessInput,
@@ -197,6 +198,10 @@ export class TauriClient implements ApiClient {
 
   async listPullRequests(repoPath: string): Promise<PullRequest[]> {
     return invoke<PullRequest[]>("list_pull_requests", { repoPath });
+  }
+
+  async getViewerPrs(refresh: boolean): Promise<ViewerPrSnapshot> {
+    return invoke<ViewerPrSnapshot>("get_viewer_prs", { refresh });
   }
 
   // ----- Review tiers -----

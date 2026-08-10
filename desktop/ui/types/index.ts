@@ -181,6 +181,34 @@ export interface PullRequest {
   body: string;
 }
 
+// One open PR the user has out, from the account-wide viewer query — not
+// scoped to a repository the way PullRequest is.
+export interface ViewerPr {
+  number: number;
+  title: string;
+  url: string;
+  isDraft: boolean;
+  updatedAt: string;
+  headRefName: string;
+  baseRefName: string;
+  repoNameWithOwner: string; // "dropseed/review"
+  repoUrl: string;
+  reviewDecision: string | null; // APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED
+  checksState: string | null; // SUCCESS | FAILURE | PENDING | ERROR | EXPECTED
+  /** Local path of the registered repo this PR belongs to, when Review knows it. */
+  repoPath: string | null;
+}
+
+// Last known state of the user's open PRs. `error` and `prs` are independent:
+// an errored snapshot still carries the last good data, dated when it was
+// fetched, so a failure never masquerades as "no open PRs".
+export interface ViewerPrSnapshot {
+  fetchedAt: string; // ISO 8601; the Unix epoch means "never fetched"
+  prs: ViewerPr[];
+  truncated: boolean; // more open PRs than the query's page of 100
+  error: string | null;
+}
+
 // Comparison - the resolved base..head pair the data endpoints diff. This is
 // *plumbing*, not identity: a review is identified by its `ref` (see
 // ResolvedReview / ReviewState), and the base is derived at read time. The
@@ -276,6 +304,26 @@ export function prReviewTarget(pr: PullRequest): ReviewTarget {
       headRefName: pr.headRefName,
       baseRefName: pr.baseRefName,
       body: pr.body || undefined,
+    },
+  };
+}
+
+/**
+ * The same target for a PR that came from the account-wide viewer query.
+ *
+ * No `body`: the account-wide query doesn't ask for descriptions — dozens of
+ * them, to render a sidebar — so a review started this way has no PR body in
+ * its overview. Everything else identifying the PR is the same.
+ */
+export function viewerPrReviewTarget(pr: ViewerPr): ReviewTarget {
+  return {
+    ref: pr.headRefName,
+    baseOverride: pr.baseRefName,
+    githubPr: {
+      number: pr.number,
+      title: pr.title,
+      headRefName: pr.headRefName,
+      baseRefName: pr.baseRefName,
     },
   };
 }

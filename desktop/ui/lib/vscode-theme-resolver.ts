@@ -8,7 +8,7 @@
 
 import { registerCustomTheme } from "@pierre/diffs";
 import type { UiTheme, UiThemeTokens } from "./ui-themes";
-import { UI_THEMES } from "./ui-themes";
+import { PR_TOKENS_DARK, PR_TOKENS_LIGHT, UI_THEMES } from "./ui-themes";
 import { mixColors } from "./color";
 
 // ---------------------------------------------------------------------------
@@ -319,6 +319,7 @@ const DARK_FALLBACK_TOKENS: UiThemeTokens = {
   "status-moved": "#38bdf8",
   "status-warning": "#fbbf24",
   "status-info": "#38bdf8",
+  ...PR_TOKENS_DARK,
   "diff-added": "#7aad8a",
   "diff-removed": "#e0776b",
   red: "#fb7185",
@@ -361,6 +362,7 @@ const LIGHT_FALLBACK_TOKENS: UiThemeTokens = {
   "status-moved": "#0284c7",
   "status-warning": "#d97706",
   "status-info": "#0284c7",
+  ...PR_TOKENS_LIGHT,
   "diff-added": "#5a9e6f",
   "diff-removed": "#c9584c",
   red: "#e11d48",

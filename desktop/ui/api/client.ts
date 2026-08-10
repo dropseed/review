@@ -14,6 +14,7 @@ import type {
   AgentUsage,
   ReviewTierInfo,
   PullRequest,
+  ViewerPrSnapshot,
   CommitEntry,
   CommitDetail,
   HunkAttribution,
@@ -166,6 +167,13 @@ export interface ApiClient {
 
   /** List open pull requests for the repository */
   listPullRequests(repoPath: string): Promise<PullRequest[]>;
+
+  /**
+   * Every open PR the user has out, account-wide, joined to registered repos.
+   * `refresh` queries GitHub; without it this reads the cached snapshot, which
+   * is what the sidebar paints with before gh has answered.
+   */
+  getViewerPrs(refresh: boolean): Promise<ViewerPrSnapshot>;
 
   // ----- Review tiers -----
 

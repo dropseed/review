@@ -80,6 +80,7 @@ pub fn build_api_router() -> Router {
         // GitHub
         .route("/api/github/available", post(github_available))
         .route("/api/github/pull-requests", post(github_pull_requests))
+        .route("/api/github/viewer-prs", post(github_viewer_prs))
         .route("/api/review/tier", post(review_tier))
         .route(
             "/api/github/fetch-pull-request",
@@ -725,6 +726,20 @@ async fn github_pull_requests(Json(req): Json<RepoPathRequest>) -> ApiResult<Vec
         provider.list_pull_requests().map_err(Into::into)
     })
     .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ViewerPrsRequest {
+    /// Query GitHub. Absent means read the cached snapshot off disk.
+    #[serde(default)]
+    refresh: bool,
+}
+
+async fn github_viewer_prs(
+    Json(req): Json<ViewerPrsRequest>,
+) -> ApiResult<crate::service::viewer_prs::ViewerPrSnapshot> {
+    blocking(move || Ok(crate::service::viewer_prs::get_viewer_prs(req.refresh))).await
 }
 
 // ============================================================

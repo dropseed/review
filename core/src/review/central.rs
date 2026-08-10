@@ -19,6 +19,7 @@
 //!       symbol-cache/<comparison-key>.json
 //!   worktrees/<repo-id>/              # Review-managed git worktrees
 //!   settings.json                     # desktop UI preferences
+//!   viewer_prs.json                   # DISPOSABLE — last GitHub PR snapshot
 //! ```
 //!
 //! `repo-id` is a 16-hex hash of the git **common dir**, so a repository and

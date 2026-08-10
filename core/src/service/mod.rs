@@ -15,6 +15,7 @@ pub mod symbols;
 pub mod targets;
 pub mod usage;
 pub mod util;
+pub mod viewer_prs;
 pub mod vscode;
 pub mod watcher_events;
 

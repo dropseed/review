@@ -1,8 +1,8 @@
 import { useCallback, useState, useRef, useEffect, memo } from "react";
 import { createPortal } from "react-dom";
-import type { GlobalReviewSummary } from "../../types";
+import type { GlobalReviewSummary, ViewerPr } from "../../types";
 import { useReviewStore } from "../../stores";
-import { WarningIcon } from "../ui/icons";
+import { PullRequestIcon, WarningIcon } from "../ui/icons";
 import { ChangeBaseMenu } from "./ChangeBaseMenu";
 import { SidebarHideMenuItem } from "./SidebarHideMenuItem";
 import { CheckoutMenuItem } from "./CheckoutMenuItem";
@@ -10,6 +10,7 @@ import { RowStatus } from "./RowStatus";
 import { PrPreviewCard } from "./PrPreviewCard";
 import { SimpleTooltip } from "../ui/tooltip";
 import { ROW_ACTIONS, ROW_LABEL_HOVER_FADE, ROW_STATUS } from "./row-chrome";
+import { PrBadge } from "./PrBadge";
 import { useTerminalTabDrop } from "./useTerminalTabDrop";
 
 /**
@@ -28,20 +29,6 @@ function formatReviewLabel(
   return ref;
 }
 
-/** GitHub pull request icon (open state style). */
-function PullRequestIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 16 16"
-      fill="currentColor"
-      aria-hidden="true"
-    >
-      <path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z" />
-    </svg>
-  );
-}
-
 interface TabRailItemProps {
   review: GlobalReviewSummary;
   repoName: string;
@@ -49,6 +36,8 @@ interface TabRailItemProps {
   missingRefs?: string[];
   /** When set, render `{repoLabel} / ` before the label (zone-1 "Working on"). */
   repoLabel?: string;
+  /** The user's open PR for this review's ref, joined on by the tree builder. */
+  openPr?: ViewerPr;
   onActivate: (review: GlobalReviewSummary) => void;
   onDelete: (review: GlobalReviewSummary) => void;
 }
@@ -74,6 +63,12 @@ function arePropsEqual(
   if (prev.missingRefs?.join() !== next.missingRefs?.join()) return false;
   if (prev.review.tier !== next.review.tier) return false;
   if (prev.review.worktreePath !== next.review.worktreePath) return false;
+  // The snapshot is rebuilt on every poll, so compare what the badge renders
+  // rather than the object — otherwise every row re-renders every 5 minutes.
+  if (prev.openPr?.number !== next.openPr?.number) return false;
+  if (prev.openPr?.isDraft !== next.openPr?.isDraft) return false;
+  if (prev.openPr?.reviewDecision !== next.openPr?.reviewDecision) return false;
+  if (prev.openPr?.checksState !== next.openPr?.checksState) return false;
   if (prev.onActivate !== next.onActivate) return false;
   if (prev.onDelete !== next.onDelete) return false;
   return true;
@@ -85,6 +80,7 @@ export const TabRailItem = memo(function TabRailItem({
   defaultBranch,
   missingRefs,
   repoLabel,
+  openPr,
   onActivate,
   onDelete,
 }: TabRailItemProps) {
@@ -105,6 +101,10 @@ export const TabRailItem = memo(function TabRailItem({
   const pr = review.githubPr;
   const isPr = pr != null;
   const hasMissingRefs = missingRefs != null && missingRefs.length > 0;
+  // A PR review already leads with a pull-request glyph, so the live state
+  // colours *that* one rather than adding a second identical shape to the
+  // status cluster. Only a review that isn't itself PR-keyed gets the badge.
+  const statusPr = isPr ? undefined : openPr;
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -169,9 +169,15 @@ export const TabRailItem = memo(function TabRailItem({
       title={titleText}
     >
       <div className="flex items-center gap-1.5 min-w-0">
-        {isPr && (
-          <PullRequestIcon className="h-3 w-3 shrink-0 text-status-approved" />
-        )}
+        {/* The badge itself when GitHub has told us anything about the PR —
+            same octicon, same colours, one place. Without a snapshot the row
+            still says "pull request", just without claiming a state. */}
+        {isPr &&
+          (openPr ? (
+            <PrBadge pr={openPr} />
+          ) : (
+            <PullRequestIcon className="h-3 w-3 shrink-0 text-pr-open" />
+          ))}
         <span
           className={`text-xs truncate flex-1 min-w-0 ${ROW_LABEL_HOVER_FADE} ${
             isActive
@@ -187,7 +193,11 @@ export const TabRailItem = memo(function TabRailItem({
             appears just left of it, over the label's fading tail (see
             row-chrome), rather than reserving width the label needs. */}
         <span className={ROW_STATUS}>
-          <RowStatus checkoutPath={review.worktreePath} tier={review.tier} />
+          <RowStatus
+            checkoutPath={review.worktreePath}
+            tier={review.tier}
+            openPr={statusPr}
+          />
           {hasMissingRefs && (
             <WarningIcon className="h-3 w-3 shrink-0 text-status-rejected" />
           )}

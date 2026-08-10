@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
-import type { ReviewTier } from "../../types";
+import type { ReviewTier, ViewerPr } from "../../types";
 import { GitTreeIcon } from "../ui/icons";
+import { PrBadge } from "./PrBadge";
 
 /**
  * Tier marker for a sidebar row.
@@ -31,6 +32,8 @@ interface RowStatusProps {
   /** Show the worktree glyph. Suppressed for the main working tree, which is
    *  a checkout but not a *linked* worktree. */
   showWorktreeIcon?: boolean;
+  /** The user's open PR for this row's ref, joined on by the tree builder. */
+  openPr?: ViewerPr | null;
 }
 
 /**
@@ -48,10 +51,12 @@ export function RowStatus({
   checkoutPath,
   tier,
   showWorktreeIcon = false,
+  openPr,
 }: RowStatusProps): ReactNode {
   return (
     <>
       <TierDot tier={tier} />
+      {openPr && <PrBadge pr={openPr} />}
       {showWorktreeIcon && checkoutPath && (
         <span className="text-fg-faint" title="worktree">
           <GitTreeIcon className="h-3.5 w-3.5" />

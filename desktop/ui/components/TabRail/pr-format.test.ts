@@ -1,0 +1,88 @@
+import { describe, it, expect } from "vitest";
+import { prBadgeClass, prSummary } from "./pr-format";
+import type { ViewerPr } from "../../types";
+
+function pr(overrides: Partial<ViewerPr> = {}): ViewerPr {
+  return {
+    number: 97,
+    title: "Add the thing",
+    url: "https://github.com/o/r/pull/97",
+    isDraft: false,
+    updatedAt: "2026-01-20T00:00:00Z",
+    headRefName: "feature",
+    baseRefName: "main",
+    repoNameWithOwner: "o/r",
+    repoUrl: "https://github.com/o/r",
+    reviewDecision: null,
+    checksState: null,
+    repoPath: "/r",
+    ...overrides,
+  };
+}
+
+describe("prBadgeClass", () => {
+  it("goes red for requested changes or a CI failure", () => {
+    expect(prBadgeClass(pr({ reviewDecision: "CHANGES_REQUESTED" }))).toBe(
+      "text-pr-attention",
+    );
+    expect(prBadgeClass(pr({ checksState: "FAILURE" }))).toBe(
+      "text-pr-attention",
+    );
+    // A check that couldn't run is not a check that passed.
+    expect(prBadgeClass(pr({ checksState: "ERROR" }))).toBe(
+      "text-pr-attention",
+    );
+  });
+
+  it("keeps a red draft red", () => {
+    // The draft colour is the quiet one, so applying it first would hide
+    // exactly the drafts worth noticing.
+    expect(prBadgeClass(pr({ isDraft: true, checksState: "FAILURE" }))).toBe(
+      "text-pr-attention",
+    );
+  });
+
+  it("greys a draft and greens everything else", () => {
+    expect(prBadgeClass(pr({ isDraft: true }))).toBe("text-pr-draft");
+    expect(prBadgeClass(pr())).toBe("text-pr-open");
+  });
+
+  it("paints approved the same green as plain open, like GitHub does", () => {
+    expect(prBadgeClass(pr({ reviewDecision: "APPROVED" }))).toBe(
+      "text-pr-open",
+    );
+    // …but a green review decision never outranks red CI.
+    expect(
+      prBadgeClass(pr({ reviewDecision: "APPROVED", checksState: "FAILURE" })),
+    ).toBe("text-pr-attention");
+  });
+
+  it("still says open when checks are merely pending or unreported", () => {
+    expect(prBadgeClass(pr({ checksState: "PENDING" }))).toBe("text-pr-open");
+    expect(prBadgeClass(pr({ checksState: null }))).toBe("text-pr-open");
+  });
+});
+
+describe("prSummary", () => {
+  it("composes the parts that apply", () => {
+    expect(
+      prSummary(
+        pr({
+          isDraft: true,
+          reviewDecision: "CHANGES_REQUESTED",
+          checksState: "FAILURE",
+        }),
+      ),
+    ).toBe("#97 · Draft · Changes requested · CI failing");
+  });
+
+  it("says only the number when there is nothing else to say", () => {
+    expect(prSummary(pr())).toBe("#97");
+  });
+
+  it("omits states it has no honest label for", () => {
+    // `EXPECTED` is a check that was announced and never ran — not news, and
+    // "unknown" would read as a problem.
+    expect(prSummary(pr({ checksState: "EXPECTED" }))).toBe("#97");
+  });
+});

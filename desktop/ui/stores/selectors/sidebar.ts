@@ -1,7 +1,12 @@
 import { selectLiveSessionsByReviewKey } from "../slices/terminalSlice";
 import { buildSidebarTree, type RepoNode } from "../../utils/sidebar-tree";
 import type { TerminalSlice } from "../slices/terminalSlice";
-import type { GlobalReviewSummary, RepoLocalActivity } from "../../types";
+import type {
+  GlobalReviewSummary,
+  RepoLocalActivity,
+  ViewerPr,
+  ViewerPrSnapshot,
+} from "../../types";
 
 /** Everything `buildSidebarTree` needs that lives in the store. */
 export interface SidebarTreeState extends Pick<
@@ -12,7 +17,14 @@ export interface SidebarTreeState extends Pick<
   globalReviews: GlobalReviewSummary[];
   globalReviewsByKey: Record<string, GlobalReviewSummary>;
   sidebarDismissed: string[];
+  viewerPrs: ViewerPrSnapshot | null;
 }
+
+/**
+ * Stands in for "no snapshot yet" — a shared identity, because the cache keys
+ * on input identity and a fresh `[]` per call would miss it every time.
+ */
+const NO_PRS: ViewerPr[] = [];
 
 interface CacheEntry {
   /** Compared positionally against a freshly built list — see `deps` below. */
@@ -53,6 +65,7 @@ export function getSidebarTree(
   // any one caller would miss the cache and hand every subscriber a new tree.
   const minute = Math.floor(now / 60_000);
   const terminalKeys = Object.keys(selectLiveSessionsByReviewKey(state)).sort();
+  const viewerPrs = state.viewerPrs?.prs ?? NO_PRS;
 
   // Everything the build reads, in one list: adding an input to the tree means
   // one edit here rather than three matching ones. Compared by identity, so
@@ -64,6 +77,7 @@ export function getSidebarTree(
     state.sidebarDismissed,
     minute,
     terminalKeys.join("\n"),
+    viewerPrs,
   ];
 
   const cacheKey = openRepoPath ?? "";
@@ -80,6 +94,7 @@ export function getSidebarTree(
     minute * 60_000,
     openRepoPath,
     terminalKeys,
+    viewerPrs,
   );
 
   cache.set(cacheKey, { deps, output });

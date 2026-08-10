@@ -22,7 +22,7 @@ Key command groups:
 - **Trust**: `get_trust_taxonomy`, `match_trust_pattern`
 - **Symbols**: `get_file_symbol_diffs`, `get_file_symbols`
 - **Navigation**: `open_repo_window`
-- **GitHub**: `check_github_available`, `list_pull_requests`
+- **GitHub**: `check_github_available`, `list_pull_requests`, `get_viewer_prs`
 - **Misc**: `search_file_contents`, `generate_narrative`, `write_text_file`, `append_to_file`
 
 ## Watcher Events

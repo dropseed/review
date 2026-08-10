@@ -18,6 +18,7 @@ use review::review::state::{ReviewState, ReviewSummary};
 use review::review::storage::{self, GlobalReviewSummary};
 use review::service::pr::ReviewTierInfo;
 use review::service::usage::AgentUsage;
+use review::service::viewer_prs::ViewerPrSnapshot;
 use review::service::{
     CommitOutputLine, CommitResult, DetectMovePairsResponse, ExpandedContextResult, FileContent,
     RepoFileSymbols, RepoLocalActivity, ReviewFreshnessInput, ReviewFreshnessResult,
@@ -146,6 +147,27 @@ pub fn check_github_available(repo_path: String) -> bool {
 pub fn list_pull_requests(repo_path: String) -> Result<Vec<PullRequest>, String> {
     let provider = GhCliProvider::new(PathBuf::from(&repo_path));
     provider.list_pull_requests().map_err(|e| e.to_string())
+}
+
+/// Every open PR the user has out, joined to the repos Review has registered.
+///
+/// `refresh` queries GitHub; without it this reads the cached snapshot off
+/// disk, which is what the sidebar paints with before `gh` has answered.
+#[tauri::command]
+pub async fn get_viewer_prs(refresh: bool) -> Result<ViewerPrSnapshot, String> {
+    tokio::task::spawn_blocking(move || {
+        let t0 = Instant::now();
+        let snapshot = review::service::viewer_prs::get_viewer_prs(refresh);
+        info!(
+            "get_viewer_prs refresh={} -> {} prs in {:?}",
+            refresh,
+            snapshot.prs.len(),
+            t0.elapsed()
+        );
+        snapshot
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

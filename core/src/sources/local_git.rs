@@ -2917,22 +2917,19 @@ fn run_git_cmd(dir: &std::path::Path, args: &[&str]) -> Result<String, LocalGitE
     }
 }
 
-/// Parse a git remote URL into a `RemoteInfo` with org/repo name and browse URL.
+/// Split a git remote URL into `(host, org/repo)`, with any `.git` suffix
+/// removed.
 ///
 /// Supported formats:
 /// - `https://github.com/org/repo.git`
 /// - `https://github.com/org/repo`
 /// - `git@github.com:org/repo.git`
 /// - `ssh://git@github.com/org/repo.git`
-fn parse_remote_url(url: &str) -> Result<RemoteInfo, LocalGitError> {
+pub(crate) fn split_remote_url(url: &str) -> Option<(&str, &str)> {
     // SSH shorthand: git@host:org/repo.git
     if let Some(rest) = url.strip_prefix("git@") {
         if let Some((host, path)) = rest.split_once(':') {
-            let path = path.strip_suffix(".git").unwrap_or(path);
-            return Ok(RemoteInfo {
-                name: path.to_owned(),
-                browse_url: format!("https://{host}/{path}"),
-            });
+            return Some((host, path.strip_suffix(".git").unwrap_or(path)));
         }
     }
 
@@ -2940,30 +2937,27 @@ fn parse_remote_url(url: &str) -> Result<RemoteInfo, LocalGitError> {
     let without_scheme = url
         .strip_prefix("https://")
         .or_else(|| url.strip_prefix("http://"))
-        .or_else(|| url.strip_prefix("ssh://"));
+        .or_else(|| url.strip_prefix("ssh://"))?;
 
-    if let Some(without_scheme) = without_scheme {
-        // Strip optional user@ prefix (e.g. git@)
-        let without_user = without_scheme
-            .split_once('@')
-            .map_or(without_scheme, |(_user, rest)| rest);
+    // Strip optional user@ prefix (e.g. git@)
+    let without_user = without_scheme
+        .split_once('@')
+        .map_or(without_scheme, |(_user, rest)| rest);
 
-        // Split into host and path
-        if let Some((host, path)) = without_user.split_once('/') {
-            let path = path.strip_suffix(".git").unwrap_or(path);
-            // Ensure we have at least org/repo (two path segments)
-            if path.contains('/') {
-                return Ok(RemoteInfo {
-                    name: path.to_owned(),
-                    browse_url: format!("https://{host}/{path}"),
-                });
-            }
-        }
-    }
+    let (host, path) = without_user.split_once('/')?;
+    let path = path.strip_suffix(".git").unwrap_or(path);
+    // Ensure we have at least org/repo (two path segments)
+    path.contains('/').then_some((host, path))
+}
 
-    Err(LocalGitError::Git(format!(
-        "Could not parse remote URL: {url}"
-    )))
+/// Parse a git remote URL into a `RemoteInfo` with org/repo name and browse URL.
+fn parse_remote_url(url: &str) -> Result<RemoteInfo, LocalGitError> {
+    let (host, path) = split_remote_url(url)
+        .ok_or_else(|| LocalGitError::Git(format!("Could not parse remote URL: {url}")))?;
+    Ok(RemoteInfo {
+        name: path.to_owned(),
+        browse_url: format!("https://{host}/{path}"),
+    })
 }
 
 /// Parse `git diff --shortstat` output into (files_changed, insertions, deletions).

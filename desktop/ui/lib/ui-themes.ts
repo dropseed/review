@@ -68,6 +68,17 @@ export interface UiThemeTokens {
   "status-warning": string;
   "status-info": string;
 
+  /**
+   * Pull request states, in GitHub's palette rather than the app's.
+   *
+   * A theme still owns them — a light theme on a light surface needs Primer's
+   * light values, not its dark ones — but the two variants come from GitHub,
+   * so a badge means the same thing here as on the PR page it describes.
+   */
+  "pr-open": string;
+  "pr-draft": string;
+  "pr-attention": string;
+
   // Diff
   "diff-added": string;
   "diff-removed": string;
@@ -84,6 +95,27 @@ export interface UiThemeTokens {
 // ---------------------------------------------------------------------------
 // Bundled themes
 // ---------------------------------------------------------------------------
+
+/**
+ * GitHub's pull request colours, in Primer's dark and light values.
+ *
+ * Every theme picks one of these two triples by its `colorScheme` instead of
+ * choosing a green of its own, which is the point: these three colours are
+ * quoting GitHub, so a badge that means "failing" must look the same whichever
+ * theme is on. Themes stay free to restyle everything else — those tokens
+ * describe *this* app, and these describe someone else's.
+ */
+export const PR_TOKENS_DARK = {
+  "pr-open": "#3fb950",
+  "pr-draft": "#8b949e",
+  "pr-attention": "#f85149",
+} as const;
+
+export const PR_TOKENS_LIGHT = {
+  "pr-open": "#1a7f37",
+  "pr-draft": "#59636e",
+  "pr-attention": "#cf222e",
+} as const;
 
 const DARK_DEFAULT_TOKENS: UiThemeTokens = {
   surface: "#0c0a09",
@@ -117,6 +149,7 @@ const DARK_DEFAULT_TOKENS: UiThemeTokens = {
   "status-moved": "#38bdf8",
   "status-warning": "#fbbf24",
   "status-info": "#38bdf8",
+  ...PR_TOKENS_DARK,
   "diff-added": "#7aad8a",
   "diff-removed": "#e0776b",
   red: "#fb7185",
@@ -556,6 +589,7 @@ export const UI_THEMES: UiTheme[] = [
       "status-moved": "#0284c7",
       "status-warning": "#d97706",
       "status-info": "#0284c7",
+      ...PR_TOKENS_LIGHT,
       "diff-added": "#5a9e6f",
       "diff-removed": "#c9584c",
       red: "#e11d48",
@@ -784,6 +818,7 @@ export const UI_THEMES: UiTheme[] = [
       "status-moved": "#4385BE",
       "status-warning": "#D0A215",
       "status-info": "#4385BE",
+      ...PR_TOKENS_DARK,
       "diff-added": "#879A39",
       "diff-removed": "#D14D41",
       red: "#D14D41",
@@ -832,6 +867,7 @@ export const UI_THEMES: UiTheme[] = [
       "status-moved": "#205EA6",
       "status-warning": "#AD8301",
       "status-info": "#205EA6",
+      ...PR_TOKENS_LIGHT,
       "diff-added": "#66800B",
       "diff-removed": "#AF3029",
       red: "#AF3029",
@@ -880,6 +916,7 @@ export const UI_THEMES: UiTheme[] = [
       "status-moved": "#268bd2",
       "status-warning": "#b58900",
       "status-info": "#268bd2",
+      ...PR_TOKENS_LIGHT,
       "diff-added": "#5a9e6f",
       "diff-removed": "#c9584c",
       red: "#dc322f",
@@ -970,6 +1007,9 @@ const TOKEN_TO_CSS_VAR: Record<keyof UiThemeTokens, string> = {
   "status-moved": "--color-status-moved",
   "status-warning": "--color-status-warning",
   "status-info": "--color-status-info",
+  "pr-open": "--color-pr-open",
+  "pr-draft": "--color-pr-draft",
+  "pr-attention": "--color-pr-attention",
   "diff-added": "--color-diff-added",
   "diff-removed": "--color-diff-removed",
   red: "--color-red",

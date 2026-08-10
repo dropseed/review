@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useRef } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef } from "react";
 import {
   BrowserRouter,
   Routes,
@@ -18,7 +18,11 @@ import { getSidebarTree } from "./stores/selectors/sidebar";
 import { activateSidebarRow, allSidebarRows } from "./utils/sidebar-tree";
 import { makeReviewKey } from "./utils/review-key";
 import { getErrorMessage } from "./utils/errors";
-import type { ReviewTarget } from "./types";
+import {
+  viewerPrReviewTarget,
+  type ReviewTarget,
+  type ViewerPr,
+} from "./types";
 import {
   useRepositoryInit,
   useComparisonLoader,
@@ -27,6 +31,7 @@ import {
   useMenuState,
   useRepoActivitySync,
   useTerminalCheckoutSync,
+  useViewerPrsSync,
   type RepoStatus,
 } from "./hooks";
 import { useReviewFreshness } from "./hooks/useReviewFreshness";
@@ -106,6 +111,28 @@ function AppShell() {
     handleStartReview,
   } = useRepositoryInit();
 
+  /**
+   * Open a PR the sidebar surfaced but nothing local represents yet.
+   *
+   * The same path the comparison picker takes for a PR row — fetch the head,
+   * write the review with its `githubPr`, resolve, navigate. Sharing it is the
+   * point: a review started from the sidebar has to be indistinguishable from
+   * one started from the picker, or the ephemeral row would produce a second
+   * kind of PR review with its own quirks.
+   */
+  const handleActivateOpenPr = useCallback(
+    (pr: ViewerPr) => {
+      if (pr.repoPath == null) return;
+      void handleStartReview(pr.repoPath, viewerPrReviewTarget(pr)).catch(
+        (err) => {
+          console.error("Failed to open PR:", err);
+          toast.error(`Couldn't open #${pr.number}: ${getErrorMessage(err)}`);
+        },
+      );
+    },
+    [handleStartReview],
+  );
+
   // Stable refs so the effect doesn't re-register on every render
   const handleOpenRepoRef = useRef(handleOpenRepo);
   handleOpenRepoRef.current = handleOpenRepo;
@@ -113,6 +140,8 @@ function AppShell() {
   activateReviewRef.current = handleActivateReview;
   const activateLocalBranchRef = useRef(handleActivateLocalBranch);
   activateLocalBranchRef.current = handleActivateLocalBranch;
+  const activateOpenPrRef = useRef(handleActivateOpenPr);
+  activateOpenPrRef.current = handleActivateOpenPr;
 
   // The app's commands, and the shell-level actions they need. Shortcuts are
   // dispatched here rather than by the native menu, so they work identically
@@ -149,6 +178,7 @@ function AppShell() {
                 }),
               onActivateLocalBranch: (...args) =>
                 activateLocalBranchRef.current(...args),
+              onActivateOpenPr: (pr) => activateOpenPrRef.current(pr),
             });
             return;
           }
@@ -164,6 +194,7 @@ function AppShell() {
   useReviewFreshness();
   useRepoActivitySync();
   useTerminalCheckoutSync();
+  useViewerPrsSync();
 
   useComparisonLoader(comparisonReady, setInitialLoading);
 
@@ -179,6 +210,7 @@ function AppShell() {
         <TabRail
           onActivateReview={handleActivateReview}
           onActivateLocalBranch={handleActivateLocalBranch}
+          onActivateOpenPr={handleActivateOpenPr}
         />
 
         <div className="flex flex-1 flex-col overflow-hidden bg-surface">

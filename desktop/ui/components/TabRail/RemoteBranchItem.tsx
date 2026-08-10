@@ -1,5 +1,7 @@
 import { memo, useCallback } from "react";
 import { useReviewStore } from "../../stores";
+import type { ViewerPr } from "../../types";
+import { PrBadge } from "./PrBadge";
 
 interface RemoteBranchItemProps {
   branchName: string;
@@ -7,6 +9,8 @@ interface RemoteBranchItemProps {
   repoPath: string;
   defaultBranch: string;
   lastCommitDate: string;
+  /** The user's open PR for this branch, when the tree joined one onto it. */
+  openPr?: ViewerPr;
   onActivate: (repoPath: string, branch: string, defaultBranch: string) => void;
 }
 
@@ -21,6 +25,7 @@ export const RemoteBranchItem = memo(function RemoteBranchItem({
   repoPath,
   defaultBranch,
   lastCommitDate,
+  openPr,
   onActivate,
 }: RemoteBranchItemProps) {
   // A remote branch's review identity is its (unprefixed) branch name.
@@ -69,6 +74,7 @@ export const RemoteBranchItem = memo(function RemoteBranchItem({
         >
           {branchName}
         </span>
+        {openPr && <PrBadge pr={openPr} />}
         <span className="text-[9px] rounded-full bg-fg/[0.06] text-fg-faint/70 px-1.5 py-px shrink-0">
           remote
         </span>

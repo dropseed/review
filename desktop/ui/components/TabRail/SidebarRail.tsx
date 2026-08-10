@@ -16,7 +16,11 @@ import { PhaseDot } from "./PhaseDot";
 import { basename, phaseSummary } from "./terminal-status-format";
 import { primaryStatus } from "../Terminal/glance";
 import { TerminalGlanceCard } from "../Terminal/TerminalGlanceCard";
-import type { GlobalReviewSummary, TerminalStatus } from "../../types";
+import type {
+  GlobalReviewSummary,
+  TerminalStatus,
+  ViewerPr,
+} from "../../types";
 
 interface SidebarRailProps {
   onExpand: () => void;
@@ -26,6 +30,13 @@ interface SidebarRailProps {
     branch: string,
     defaultBranch: string,
   ) => void;
+  /**
+   * Threaded through for completeness rather than reachability: the rail shows
+   * only rows with a shell running in them, and a PR with nothing checked out
+   * can't host one. Passing it keeps `activateSidebarRow` exhaustive, so a new
+   * row kind is a compile error here rather than a silent dead click.
+   */
+  onActivateOpenPr: (pr: ViewerPr) => void;
 }
 
 /**
@@ -43,6 +54,7 @@ export function SidebarRail({
   onExpand,
   onActivateReview,
   onActivateLocalBranch,
+  onActivateOpenPr,
 }: SidebarRailProps): ReactNode {
   const tree = useSidebarTree();
   const terminalStatuses = useReviewStore((s) => s.terminalStatuses);
@@ -58,7 +70,11 @@ export function SidebarRail({
     : null;
 
   const activate = (row: SidebarRow): void =>
-    activateSidebarRow(row, { onActivateReview, onActivateLocalBranch });
+    activateSidebarRow(row, {
+      onActivateReview,
+      onActivateLocalBranch,
+      onActivateOpenPr,
+    });
 
   const renderRow = (row: SidebarRow): ReactNode => {
     const ids = liveSessions[row.reviewKey] ?? [];
