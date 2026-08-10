@@ -20,6 +20,24 @@ export function phaseDotClass(phase: TerminalPhase): string {
   }
 }
 
+/**
+ * Tailwind text class for a phase, for markers drawn as a glyph rather than
+ * filled shape. Same colours as `phaseDotClass`, on the property a stroked or
+ * filled `currentColor` icon inherits.
+ */
+export function phaseTextClass(phase: TerminalPhase): string {
+  switch (phase) {
+    case "needs_attention":
+      return "text-status-rejected";
+    case "waiting_for_input":
+      return "text-blue";
+    case "working":
+      return "text-status-warning";
+    case "idle":
+      return "text-fg-faint";
+  }
+}
+
 /** Humanized label for a phase. */
 export function phaseLabel(phase: TerminalPhase): string {
   switch (phase) {

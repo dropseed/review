@@ -78,6 +78,34 @@ export function TerminalIcon({ className = "w-4 h-4" }: IconProps) {
   );
 }
 
+/**
+ * Terminal glyph sized for a status marker rather than a button.
+ *
+ * `TerminalIcon` is the 24px Lucide shape — a bare prompt with no frame, drawn
+ * across only the left half of its box. Shrunk to 12px it reads as a stray tick
+ * and sits off-centre next to text. This one is drawn on a 12-unit grid so it
+ * renders 1:1 at `h-3 w-3`, with strokes on half-pixel centres, and keeps the
+ * screen border so the silhouette still says "terminal" at that size.
+ */
+export function TerminalGlyphIcon({ className = "w-3 h-3" }: IconProps) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 12 12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="1.5" y="2.5" width="9" height="7" rx="1.5" />
+      <polyline points="3.5 4.5 5.5 6 3.5 7.5" />
+      <line x1="6.75" y1="7.5" x2="8.75" y2="7.5" />
+    </svg>
+  );
+}
+
 /** Warning triangle icon. */
 export function WarningIcon({ className = "w-4 h-4" }: IconProps) {
   return (
@@ -343,6 +371,47 @@ export function RefreshIcon({ className = "h-3 w-3" }: IconProps) {
     >
       <path d="M21 12a9 9 0 1 1-2.64-6.36" />
       <polyline points="21 3 21 9 15 9" />
+    </svg>
+  );
+}
+
+/**
+ * Primer's `git-pull-request-16` — an open pull request.
+ *
+ * Octicon path data, unmodified, so the mark is the one GitHub draws rather
+ * than an approximation of it. Filled rather than stroked, which is what makes
+ * it survive `h-3 w-3`: the shape is three small circles and a hairline, and at
+ * a stroke width that reads at 12px the circles close up into dots.
+ */
+export function PullRequestIcon({ className = "h-3 w-3" }: IconProps) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z" />
+    </svg>
+  );
+}
+
+/**
+ * Primer's `git-pull-request-draft-16` — a pull request still in draft.
+ *
+ * The branch line is broken into dots instead of drawn solid, which is the
+ * whole point: a draft reads as unfinished from the silhouette alone, so the
+ * badge says "parked" even to someone who can't tell its grey from its green.
+ */
+export function PullRequestDraftIcon({ className = "h-3 w-3" }: IconProps) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M3.25 1A2.25 2.25 0 0 1 4 5.372v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.251 2.251 0 0 1 3.25 1Zm9.5 14a2.25 2.25 0 1 1 0-4.5 2.25 2.25 0 0 1 0 4.5ZM2.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0ZM3.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm9.5 0a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM14 7.5a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Zm0-4.25a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Z" />
     </svg>
   );
 }

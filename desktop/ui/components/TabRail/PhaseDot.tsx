@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
-import { phaseDotClass } from "./terminal-status-format";
+import { phaseTextClass } from "./terminal-status-format";
+import { TerminalGlyphIcon } from "../ui/icons";
 import type { TerminalPhase } from "../../types";
 
 interface PhaseDotProps {
@@ -11,15 +12,21 @@ interface PhaseDotProps {
 }
 
 /**
- * The status dot for a terminal phase.
+ * The status marker for a terminal phase: a terminal glyph coloured by phase.
  *
- * Kept as a component rather than another `phaseDotClass` call site because
+ * It was a 6px dot, which said "something has a state" but not what kind of
+ * thing — in a sidebar where rows also carry PR and presence markers, a bare
+ * dot is the one shape that names nothing. The glyph says "terminal" and the
+ * colour still carries the phase, so no row needs a second marker to explain
+ * the first.
+ *
+ * Kept as a component rather than another `phaseTextClass` call site because
  * the colour is only half the rule — an exited session reads as grey whatever
- * phase it died in, and that was being restated at every dot in the app. Lives
- * here rather than in `terminal-status-format` so that module stays JSX-free
- * and unit-testable.
+ * phase it died in, and that was being restated at every marker in the app.
+ * Lives here rather than in `terminal-status-format` so that module stays
+ * JSX-free and unit-testable.
  *
- * The dot does not animate. `working` and `needs_attention` used to pulse,
+ * The marker does not animate. `working` and `needs_attention` used to pulse,
  * which meant any window with a live agent in the sidebar ran a CSS animation
  * forever — style resolution and a layer commit every frame, for a signal the
  * colour already carries.
@@ -30,10 +37,10 @@ export function PhaseDot({
   className,
 }: PhaseDotProps): ReactNode {
   return (
-    <span
+    <TerminalGlyphIcon
       className={clsx(
-        "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
-        dead ? "bg-fg-faint" : phaseDotClass(phase),
+        "inline-block h-3 w-3 shrink-0",
+        dead ? "text-fg-faint" : phaseTextClass(phase),
         className,
       )}
     />

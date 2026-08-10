@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   phaseDotClass,
+  phaseTextClass,
   phaseLabel,
   formatDuration,
   basename,
@@ -26,6 +27,34 @@ describe("phaseDotClass", () => {
     ];
     for (const [phase, expected] of cases) {
       expect(phaseDotClass(phase)).toBe(expected);
+    }
+  });
+});
+
+describe("phaseTextClass", () => {
+  it("maps each phase to its status color", () => {
+    const cases: Array<[TerminalPhase, string]> = [
+      ["needs_attention", "text-status-rejected"],
+      ["waiting_for_input", "text-blue"],
+      ["working", "text-status-warning"],
+      ["idle", "text-fg-faint"],
+    ];
+    for (const [phase, expected] of cases) {
+      expect(phaseTextClass(phase)).toBe(expected);
+    }
+  });
+
+  it("colors the same phases as the background variant", () => {
+    const phases: TerminalPhase[] = [
+      "needs_attention",
+      "waiting_for_input",
+      "working",
+      "idle",
+    ];
+    for (const phase of phases) {
+      expect(phaseTextClass(phase)).toBe(
+        phaseDotClass(phase).replace(/^bg-/, "text-"),
+      );
     }
   });
 });
