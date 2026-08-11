@@ -16,6 +16,7 @@ export function TerminalOverview(): ReactNode {
   const terminalSessions = useReviewStore((s) => s.terminalSessions);
   const terminalStatuses = useReviewStore((s) => s.terminalStatuses);
   const terminalExited = useReviewStore((s) => s.terminalExited);
+  const terminalCheckouts = useReviewStore((s) => s.terminalCheckouts);
   const sessionsByHomeKey = useSessionsByHomeKey();
 
   const groups = useMemo(
@@ -25,8 +26,15 @@ export function TerminalOverview(): ReactNode {
         terminalSessions,
         terminalStatuses,
         terminalExited,
+        terminalCheckouts,
       ),
-    [sessionsByHomeKey, terminalSessions, terminalStatuses, terminalExited],
+    [
+      sessionsByHomeKey,
+      terminalSessions,
+      terminalStatuses,
+      terminalExited,
+      terminalCheckouts,
+    ],
   );
 
   if (groups.length === 0) {

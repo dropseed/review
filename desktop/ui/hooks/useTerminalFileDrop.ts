@@ -43,6 +43,21 @@ function toCssPixels(
   return { x: position.x / ratio, y: position.y / ratio };
 }
 
+/**
+ * How long the strip-and-sidebar rects are trusted before being re-measured.
+ *
+ * Those drop targets are hit-tested against cached `getBoundingClientRect`s
+ * rather than `elementFromPoint`, which would force a style+layout recalc on
+ * every pointer move while the terminals underneath dirty the DOM
+ * continuously. But the sidebar is not frozen mid-drag — it can scroll, and
+ * its rows pop in as their statuses stream in — and rects measured once at
+ * pickup drift away from what is on screen, putting the highlight and the
+ * drop on the wrong row. Re-measuring on a throttle keeps both honest at a
+ * few recalcs per second instead of one per move. The pane rects are not
+ * throttled: panes can't move mid-drag, so they keep their one-measure cache.
+ */
+const REMEASURE_MS = 150;
+
 /** A pane the cursor is over, and where in it — see `paneAt`. */
 interface PaneHit {
   el: HTMLElement;
@@ -103,7 +118,10 @@ export function useTerminalFileDrop(): void {
     }[] = [];
     let newTabSlot: DOMRect | null = null;
     let homeRows: { rect: DOMRect; reviewKey: string; rowId: string }[] = [];
-    let stripMeasured = false;
+    let stripMeasuredAt: number | null = null;
+
+    const stale = (at: number | null): boolean =>
+      at === null || performance.now() - at > REMEASURE_MS;
 
     const inRect = (rect: DOMRect, x: number, y: number): boolean =>
       x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
@@ -150,27 +168,29 @@ export function useTerminalFileDrop(): void {
         reviewKey: el.dataset.tabHomeKey ?? "",
         rowId: el.dataset.tabHomeRow ?? "",
       }));
-      stripMeasured = true;
+      stripMeasuredAt = performance.now();
     };
 
     const forgetStrip = () => {
       stripTabs = [];
       newTabSlot = null;
       homeRows = [];
-      stripMeasured = false;
+      stripMeasuredAt = null;
     };
 
-    // A drag that begins inside the webview — a pane picked up by its grip, or
-    // a tab off the strip — is already over the page and never announces
-    // itself with an `enter`, so its pane rects are taken when it is picked
-    // up. The subscription also fires for the drop target, which moves
-    // constantly; only the pickup measures.
+    // A drag that begins inside the webview — a pane picked up by its grip, a
+    // tab off the strip, or a sidebar terminal row — is already over the page
+    // and never announces itself with an `enter`, so the pickup is what resets
+    // the caches; the first `over` measures, after React has committed the
+    // pickup's own render (the extract slot appearing can rewrap the strip).
+    // The subscription also fires for the drop target, which moves constantly;
+    // only the pickup resets.
     let carriedByGrip: string | null = null;
     const unsubDrag = subscribePaneDrag(() => {
       const dragging =
         draggedPane() ?? draggedTabSource()?.tabId ?? draggedTerminal();
       if (dragging && !carriedByGrip) {
-        measurePanes();
+        forgetPanes();
         forgetStrip();
       }
       carriedByGrip = dragging;
@@ -181,7 +201,7 @@ export function useTerminalFileDrop(): void {
      * in CSS pixels — a dragged pane lands in whichever half of the target it
      * was released over, so where in the pane matters as well as which one.
      *
-     * Hit-tested against rects measured when the drag entered rather than via
+     * Hit-tested against rects measured once per drag rather than via
      * `elementFromPoint`, which would force a style+layout recalc on every
      * pointer move — and the terminal underneath is dirtying the DOM
      * continuously while it streams. Panes can't move mid-drag, so one
@@ -243,7 +263,10 @@ export function useTerminalFileDrop(): void {
             carried ??= draggedPane();
             carriedTab ??= draggedTabSource();
             carriedTerminal ??= draggedTerminal();
-            if ((carried || carriedTab || carriedTerminal) && !stripMeasured) {
+            if (
+              (carried || carriedTab || carriedTerminal) &&
+              stale(stripMeasuredAt)
+            ) {
               measureStrip();
             }
             const pt = toCssPixels(payload.position, scaled);
@@ -308,9 +331,14 @@ export function useTerminalFileDrop(): void {
             setHovered(paneAt(pt)?.el ?? null);
             return;
           }
-          // drop
+          // drop — the strip resolves against the rects the visible highlight
+          // used, even if they have aged past the throttle: re-measuring here
+          // could land the drop somewhere other than the row shown lit.
           if (!measured) measurePanes();
-          if ((carried || carriedTab || carriedTerminal) && !stripMeasured) {
+          if (
+            (carried || carriedTab || carriedTerminal) &&
+            stripMeasuredAt === null
+          ) {
             measureStrip();
           }
           const pt = toCssPixels(payload.position, scaled);

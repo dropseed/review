@@ -1,6 +1,8 @@
 import {
   PHASE_SEVERITY,
+  repoOfKey,
   terminalSeverity,
+  type CheckoutIndex,
 } from "../../stores/slices/terminalSlice";
 import { basename } from "../TabRail/terminal-status-format";
 import { refFromReviewKey } from "../../utils/review-key";
@@ -104,6 +106,7 @@ export function overviewGroups(
   sessions: Record<string, TerminalSessionInfo>,
   statuses: Record<string, TerminalStatus>,
   exited: Record<string, number | null>,
+  checkouts: CheckoutIndex,
 ): TerminalGroup[] {
   const rank = (id: string): number => {
     if (id in exited) return -1; // corpses sort after everything
@@ -126,7 +129,11 @@ export function overviewGroups(
         .filter((id) => !(id in exited))
         .map((id) => statuses[id])
         .filter((s): s is TerminalStatus => s != null);
-      const repoPath = sessions[sorted[0]]?.repoPath ?? "";
+      // The row's own repo, not the first session's: a terminal dragged onto
+      // another repo's row is grouped under that repo, and the label should
+      // name the row it sits on.
+      const repoPath =
+        repoOfKey(checkouts, key) ?? sessions[sorted[0]]?.repoPath ?? "";
       const ref = refFromReviewKey(key, repoPath) ?? key;
       return {
         key,

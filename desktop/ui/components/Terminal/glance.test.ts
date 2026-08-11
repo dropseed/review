@@ -152,6 +152,7 @@ describe("overviewGroups", () => {
         asking: terminalStatus("needs_attention", { id: "asking" }),
       },
       {},
+      {},
     );
     expect(groups.map((g) => g.key)).toEqual(["/repo:hot", "/repo:quiet"]);
     expect(groups[0].ids).toEqual(["asking", "busy"]);
@@ -167,6 +168,7 @@ describe("overviewGroups", () => {
         quiet: terminalStatus("idle", { id: "quiet" }),
       },
       { gone: 0 },
+      {},
     );
     expect(groups[0].ids).toEqual(["quiet", "gone"]);
     expect(groups[0].severity).toBe("idle");

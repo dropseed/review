@@ -6,7 +6,6 @@ import {
   addTerminalToState,
   removeTerminalFromState,
   ingestTerminalList,
-  selectTerminalIdsForReview,
   selectSessionsByHomeKey,
   selectLiveSessionsByReviewKey,
   sessionCheckout,
@@ -297,46 +296,6 @@ describe("terminalSlice reducers", () => {
   });
 });
 
-describe("selectTerminalIdsForReview", () => {
-  it("returns sessions for the repo in bucket order", () => {
-    let state = { ...emptyState() };
-    state = {
-      ...state,
-      ...addTerminalToState(state, session("a", "/r"), "k1"),
-    };
-    state = {
-      ...state,
-      ...addTerminalToState(state, session("b", "/r"), "k1"),
-    };
-    const ids = selectTerminalIdsForReview(state, "/r", "k1");
-    expect(ids).toEqual(["a", "b"]);
-  });
-
-  it("includes matching sessions grouped under another key (reattach)", () => {
-    let state = { ...emptyState() };
-    // Session grouped under a stale key but same repoPath still surfaces.
-    state = {
-      ...state,
-      ...addTerminalToState(state, session("a", "/r"), "old-key"),
-    };
-    const ids = selectTerminalIdsForReview(state, "/r", "current-key");
-    expect(ids).toEqual(["a"]);
-  });
-
-  it("excludes sessions from other repos", () => {
-    let state = { ...emptyState() };
-    state = {
-      ...state,
-      ...addTerminalToState(state, session("a", "/r"), "k1"),
-    };
-    state = {
-      ...state,
-      ...addTerminalToState(state, session("b", "/other"), "k2"),
-    };
-    expect(selectTerminalIdsForReview(state, "/r", "k1")).toEqual(["a"]);
-  });
-});
-
 describe("selectSessionsByHomeKey", () => {
   // A repo on `main` at its root, with `feature` in a linked worktree and
   // `idle` checked out nowhere.
@@ -434,6 +393,7 @@ describe("selectSessionsByHomeKey", () => {
 
 describe("sessionHomeKey", () => {
   // Built rather than hand-written, so the shape can't drift from the builder.
+  // A second repo, because homes can be dragged across projects.
   const index = buildCheckoutIndex([
     {
       repoPath: "/r",
@@ -443,6 +403,13 @@ describe("sessionHomeKey", () => {
         branch("main", { isCurrent: true }),
         branch("feature", { worktreePath: "/wt/feature" }),
       ],
+      recentRemoteBranches: [],
+    },
+    {
+      repoPath: "/other",
+      repoName: "other",
+      defaultBranch: "dev",
+      branches: [branch("dev", { isCurrent: true })],
       recentRemoteBranches: [],
     },
   ]);
@@ -473,6 +440,18 @@ describe("sessionHomeKey", () => {
   it("leaves a home alone for a repo nothing is known about", () => {
     // An empty index is not evidence the row went away.
     expect(reachableKey({}, "/other", "/other:branch")).toBe("/other:branch");
+  });
+
+  it("keeps a home dropped on another repo's row", () => {
+    expect(
+      sessionHomeKey(index, { a: "/other:dev" }, session("a", "/r"), ""),
+    ).toBe("/other:dev");
+  });
+
+  it("rescues a cross-repo home whose row is gone to the session's own root", () => {
+    expect(
+      sessionHomeKey(index, { a: "/other:deleted" }, session("a", "/r"), ""),
+    ).toBe("/r:main");
   });
 });
 

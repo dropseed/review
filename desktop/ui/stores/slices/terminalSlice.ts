@@ -425,6 +425,9 @@ export function sessionReviewKey(
  * at the root row; the stored value is deliberately left alone, and the tab
  * goes home if the row comes back.
  *
+ * Checked against every repo's rows, not just the session's own: a home is
+ * wherever the user dropped the terminal, which can be another repo's row.
+ *
  * A repo the index has never seen returns the key untouched: an empty index is
  * not evidence that a row is gone.
  */
@@ -435,7 +438,20 @@ export function reachableKey(
 ): string {
   const repo = index[repoPath];
   if (!repo) return key;
-  return repo.rows.has(key) ? key : repo.rootKey;
+  if (repo.rows.has(key)) return key;
+  return repoOfKey(index, key) ? key : repo.rootKey;
+}
+
+/**
+ * The repo whose sidebar shows the row named by `key`, or null if no indexed
+ * repo has that row. The key alone can't be split back into repo and ref (a
+ * path may itself contain `:`), so ownership is found by asking each repo.
+ */
+export function repoOfKey(index: CheckoutIndex, key: string): string | null {
+  for (const [repoPath, repo] of Object.entries(index)) {
+    if (repo.rows.has(key)) return repoPath;
+  }
+  return null;
 }
 
 /**
@@ -1369,40 +1385,6 @@ export function ingestTabs(
   };
 }
 
-/**
- * Ordered session ids to render for a review — all sessions whose repoPath
- * matches, ordered by the review-key bucket first, then any stragglers. Keeps
- * the panel correct even after a reattach that grouped under a different key.
- */
-export function selectTerminalIdsForReview(
-  state: Pick<TerminalSlice, "terminalSessions" | "terminalIdsByReviewKey">,
-  repoPath: string,
-  reviewKey: string,
-): string[] {
-  const bucket = state.terminalIdsByReviewKey[reviewKey] ?? [];
-  const ordered: string[] = [];
-  const seen = new Set<string>();
-  for (const id of bucket) {
-    const session = state.terminalSessions[id];
-    if (session && session.repoPath === repoPath) {
-      ordered.push(id);
-      seen.add(id);
-    }
-  }
-  for (const [id, session] of Object.entries(state.terminalSessions)) {
-    if (session.repoPath === repoPath && !seen.has(id)) {
-      ordered.push(id);
-    }
-  }
-  return ordered;
-}
-
-/**
- * Session ids for a TabRail row. When the row has a dedicated worktree
- * (`review.worktreePath`), scope to sessions whose cwd falls under it —
- * branch-level. Rows without one (e.g. the main checkout) fall back to every
- * live session for the repo — repo-level, and the default case.
- */
 /**
  * The checkout a session belongs to: the longest known checkout root
  * containing its cwd, or null if it started outside all of them.

@@ -4,6 +4,7 @@ import { useReviewStore } from "../../stores";
 import {
   findTabForTerminal,
   panelReviewKey,
+  repoOfKey,
   sessionHomeKey,
 } from "../../stores/slices/terminalSlice";
 import { makeReviewKey, refFromReviewKey } from "../../utils/review-key";
@@ -46,9 +47,16 @@ export function jumpToTerminal(id: string): void {
       )
     : null;
 
-  // For this window's own repo the strip is ours to fix, so the tab is put
+  // The repo whose sidebar shows the home row — usually the session's own, but
+  // a terminal dragged onto another repo's row lives under that repo now.
+  const homeRepo =
+    session && homeKey
+      ? (repoOfKey(store.terminalCheckouts, homeKey) ?? session.repoPath)
+      : null;
+
+  // For the repo being viewed the strip is ours to fix, so the tab is put
   // where the row that was clicked will show it before anything is activated.
-  if (session && homeKey && session.repoPath === store.repoPath) {
+  if (session && homeKey && homeRepo === store.repoPath) {
     store.adoptTerminalTab(id, homeKey);
   }
 
@@ -66,10 +74,10 @@ export function jumpToTerminal(id: string): void {
       // Visible in the strip being viewed — a pinned visitor still needs the
       // *viewed* key pointed at it, since that's the key the panel reads.
       store.setActiveTab(currentKey, found.tab.id);
-    } else if (homeKey !== currentKey) {
-      const ref = refFromReviewKey(homeKey, session.repoPath);
+    } else if (homeKey !== currentKey && homeRepo) {
+      const ref = refFromReviewKey(homeKey, homeRepo);
       if (ref) {
-        getCommandUi().activateReviewKey(session.repoPath, ref);
+        getCommandUi().activateReviewKey(homeRepo, ref);
       } else {
         // The placeholder `repoPath:""` key — the repo's checkouts aren't
         // known, so there is no row to switch to and nothing more this can do.
