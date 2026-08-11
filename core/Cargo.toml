@@ -107,7 +107,9 @@ lsp = ["dep:lsp-types"]
 # with this and never links a PTY stack it does not own.
 terminal-types = []
 terminal = ["terminal-types", "dep:portable-pty", "dep:vte", "dep:nix", "dep:bytes", "dep:libghostty-vt"]
-cli = ["clap"]
+# The CLI drives the terminal daemon (`review terminal …`), so it pulls in the
+# connect-side client and the wire types — neither adds PTY dependencies.
+cli = ["clap", "daemon-client", "terminal-types"]
 # Web-mode HTTP backend. Deliberately does NOT imply `terminal`: web mode has no
 # terminals — PTYs live in the `review-daemon` process and only the desktop app
 # reaches them.

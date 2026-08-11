@@ -12,18 +12,19 @@
 //! feature free of `portable-pty` and friends.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, Context, Result};
+use base64::Engine as _;
 use serde_json::Value;
 use tokio::net::unix::OwnedWriteHalf;
 use tokio::net::UnixStream;
 use tokio::sync::{mpsc, oneshot};
 
 use super::codec::{read_frame, write_frame};
-use super::protocol::{Hello, Op, OpResult, Request, Response, StreamFrame};
+use super::protocol::{Hello, Op, OpResult, Request, Response, StreamFrame, B64};
 
 /// Buffered [`StreamFrame`]s per open stream before the reader task blocks.
 /// Matches the daemon-side subscriber bound, so back-pressure surfaces there
@@ -41,6 +42,10 @@ pub struct DaemonClient {
 
 #[derive(Debug)]
 struct Inner {
+    /// The socket this client connected on; per-session stream connections
+    /// ([`DaemonClient::open_stream`]) dial it again, so holding a client is
+    /// enough to use the daemon — no caller carries the path separately.
+    socket: PathBuf,
     /// Serializes frame writes; requests are otherwise fully concurrent.
     writer: tokio::sync::Mutex<OwnedWriteHalf>,
     next_id: AtomicU64,
@@ -92,6 +97,7 @@ impl DaemonClient {
 
         Ok(Self {
             inner: Arc::new(Inner {
+                socket: socket.to_path_buf(),
                 writer: tokio::sync::Mutex::new(write_half),
                 next_id: AtomicU64::new(1),
                 pending,
@@ -133,6 +139,26 @@ impl DaemonClient {
         }
     }
 
+    /// Run one op and decode its Ok payload into `T` — the typed counterpart
+    /// of [`DaemonClient::request`] for callers that know the payload shape
+    /// (`TerminalSummary`, `SessionStatus`, …). Generic on purpose: this
+    /// module still never references `crate::terminal`.
+    pub async fn request_as<T: serde::de::DeserializeOwned>(&self, op: Op) -> Result<T> {
+        let value = self.request(op).await?;
+        serde_json::from_value(value).context("unexpected daemon response")
+    }
+
+    /// Write bytes to a session's stdin, handling the wire's base64 encoding
+    /// (the control channel is JSON; PTY input is arbitrary bytes).
+    pub async fn write(&self, terminal_id: &str, data: &[u8]) -> Result<()> {
+        self.request(Op::Write {
+            terminal_id: terminal_id.to_owned(),
+            data_b64: B64.encode(data),
+        })
+        .await
+        .map(|_| ())
+    }
+
     /// The daemon's crate version — the desktop compares it against its own and
     /// respawns the daemon on a mismatch.
     pub async fn version(&self) -> Result<String> {
@@ -148,7 +174,8 @@ impl DaemonClient {
     /// The returned handle is a dumb pump: loop on [`StreamHandle::recv`] until
     /// it yields `None`. Dropping it closes the connection, which drops the
     /// daemon-side subscription — it never kills the session.
-    pub async fn open_stream(socket: &Path, terminal_id: &str) -> Result<StreamHandle> {
+    pub async fn open_stream(&self, terminal_id: &str) -> Result<StreamHandle> {
+        let socket = &self.inner.socket;
         let stream = UnixStream::connect(socket)
             .await
             .with_context(|| format!("connecting to daemon at {}", socket.display()))?;

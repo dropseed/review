@@ -86,7 +86,12 @@ mod client;
 #[cfg(feature = "daemon")]
 mod server;
 
-pub use protocol::{Hello, Op, OpResult, ReplayPayload, Request, Response, StreamFrame};
+// Shared "real daemon on a temp socket" harness for tests in this crate that
+// exercise the wire end-to-end (server.rs, cli/terminal.rs).
+#[cfg(all(test, feature = "daemon", feature = "daemon-client"))]
+pub(crate) mod test_support;
+
+pub use protocol::{Hello, Op, OpResult, ReplayPayload, Request, Response, StreamFrame, B64};
 
 #[cfg(feature = "daemon-client")]
 pub use client::{DaemonClient, StreamHandle};

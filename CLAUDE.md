@@ -149,11 +149,20 @@ The **guide** is an agent-authored grouping of a comparison's hunks into a theme
 - `review changes [--staged|--unstaged|--file GLOB|--label PATTERN|--hunk ID] [--json] [--diff]`
 - `review stage|unstage <hunk-id|file>...`
 
+**Terminal sessions** — drive the daemon-backed terminals the desktop app shows. Thin clients of the `review-daemon` control socket (`~/.review/daemon.sock`); the daemon must already be running (the app spawns it). Ids accept unique prefixes.
+
+- `review terminal list [--repo PATH|--all] [--json]` · `review terminal start [--id NAME] [--cwd DIR] [--cols N] [--rows N] [--shell SH] [--json]`
+- `review terminal send <id> [TEXT] [--key KEY]... [--enter]` — write to the PTY; named keys: enter, tab, esc, backspace, space, arrows, home/end, ctrl-\<letter\>
+- `review terminal peek <id>` — plain-text snapshot of the visible screen (the libghostty-vt render)
+- `review terminal wait <id> [--until <phase|exit>] [--match REGEX] [--timeout SECS]` — block until a status transition, new output matching the regex, or exit; built client-side on the stream connection
+- `review terminal resize <id> --cols N --rows M` · `review terminal kill <id>...`
+
 **Skills**: `review skill install` writes the bundled skills into `~/.claude/skills/` and `$CODEX_HOME/skills/` (defaulting to `~/.codex/skills/`). Canonical sources live in `core/resources/skills/*/SKILL.md`, `include_str!`-embedded into the binary so the shipped CLI carries them:
 
 - `review-guide` — reviewer-side: help a human work through a large diff.
+- `review-terminals` — agent-side: drive the app's daemon-backed terminal sessions (`review terminal ...`).
 
-Source layout: `mod.rs` (Cli, Commands enum, dispatch, comparison resolution shared with `review start`, `review use`); `common.rs` (`EffectiveStatus`, `mutate_review` retry, hunk-target parsing, spec-resolution precedence, `sync_classification`); `staging.rs`; `review_state.rs`; `comments.rs` (line-level comments / annotations + batch `comments submit`); `guide.rs` (guide grouping); `skill.rs`. Mutations use optimistic version-conflict retry against `~/.review/.../*.json`.
+Source layout: `mod.rs` (Cli, Commands enum, dispatch, comparison resolution shared with `review start`, `review use`); `common.rs` (`EffectiveStatus`, `mutate_review` retry, hunk-target parsing, spec-resolution precedence, `sync_classification`); `staging.rs`; `review_state.rs`; `comments.rs` (line-level comments / annotations + batch `comments submit`); `guide.rs` (guide grouping); `skill.rs`; `terminal.rs` (daemon-backed terminal control). Mutations use optimistic version-conflict retry against `~/.review/.../*.json`.
 
 ## Debugging / Traces
 

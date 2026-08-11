@@ -15,14 +15,13 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::future::Future;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use base64::Engine as _;
 use log::{error, info, warn};
-use review::daemon::{DaemonClient, Op, ReplayPayload, StreamFrame, StreamHandle};
+use review::daemon::{DaemonClient, Op, ReplayPayload, StreamFrame, StreamHandle, B64};
 use review::terminal::{SessionStatus, TerminalSummary};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
@@ -47,8 +46,6 @@ pub struct TerminalState {
     /// is deliberately not reconnected to — its sessions died with it, so a
     /// relaunch is the honest recovery.
     client: tokio::sync::Mutex<Option<DaemonClient>>,
-    /// Socket path, used to open per-session stream connections.
-    socket: PathBuf,
     /// Sessions with a live drain task, so a re-mount or a repeated
     /// `terminal_replay` cannot start a second stream for the same session.
     ///
@@ -59,12 +56,17 @@ pub struct TerminalState {
     drains: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
 }
 
+impl Default for TerminalState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TerminalState {
     /// State for a daemon that has not been contacted yet.
-    pub fn new(socket: PathBuf) -> Self {
+    pub fn new() -> Self {
         Self {
             client: tokio::sync::Mutex::new(None),
-            socket,
             drains: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -101,10 +103,6 @@ impl TerminalState {
     }
 }
 
-/// Standard base64 engine used for every bytes-over-events payload.
-const B64: base64::engine::general_purpose::GeneralPurpose =
-    base64::engine::general_purpose::STANDARD;
-
 /// `terminal:output:{id}` payload — raw PTY bytes (base64-encoded) tagged with
 /// the scrollback byte cursor (`seq`) they end at, so a reattaching pane can
 /// deduplicate live output against a `terminal_replay` snapshot.
@@ -139,8 +137,7 @@ async fn request<T: serde::de::DeserializeOwned>(
     client: &DaemonClient,
     op: Op,
 ) -> Result<T, String> {
-    let value = client.request(op).await.map_err(|e| e.to_string())?;
-    serde_json::from_value(value).map_err(|e| format!("unexpected daemon response: {e}"))
+    client.request_as(op).await.map_err(|e| format!("{e:#}"))
 }
 
 /// The per-session drain registry: session id → "forward raw output" flag.
@@ -163,12 +160,18 @@ type Drains = Mutex<HashMap<String, Arc<AtomicBool>>>;
 /// and returning would simply be lost. Connecting first also makes this
 /// cancellation-safe: the slot is claimed only once there is a stream to hand
 /// to the task that will release it.
-async fn ensure_drain(app: AppHandle, state: &TerminalState, terminal_id: String, output: bool) {
+async fn ensure_drain(
+    app: AppHandle,
+    state: &TerminalState,
+    client: &DaemonClient,
+    terminal_id: String,
+    output: bool,
+) {
     if upgrade_drain(&state.drains, &terminal_id, output) {
         return;
     }
 
-    let stream = match DaemonClient::open_stream(&state.socket, &terminal_id).await {
+    let stream = match client.open_stream(&terminal_id).await {
         Ok(stream) => stream,
         Err(e) => {
             warn!("[terminal] could not open the output stream for {terminal_id}: {e}");
@@ -323,7 +326,7 @@ pub async fn terminal_start(
 
     // Subscribe after start (the session now exists); the fresh session's replay
     // is empty, so the drain just carries live output.
-    ensure_drain(app, &state, terminal_id.clone(), true).await;
+    ensure_drain(app, &state, &client, terminal_id.clone(), true).await;
 
     info!("[terminal_start] {terminal_id} in {:?}", t0.elapsed());
     Ok(summary)
@@ -355,15 +358,10 @@ pub async fn terminal_write(
     data: String,
 ) -> Result<(), String> {
     let client = state.client(&app).await?;
-    request(
-        &client,
-        Op::Write {
-            terminal_id,
-            // The control channel is JSON; PTY input is arbitrary bytes.
-            data_b64: B64.encode(data.as_bytes()),
-        },
-    )
-    .await
+    client
+        .write(&terminal_id, data.as_bytes())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -409,7 +407,7 @@ pub async fn terminal_list(
     let client = state.client(&app).await?;
     let summaries: Vec<TerminalSummary> = request(&client, Op::List { repo_path }).await?;
     for summary in &summaries {
-        ensure_drain(app.clone(), &state, summary.id.to_string(), false).await;
+        ensure_drain(app.clone(), &state, &client, summary.id.to_string(), false).await;
     }
     Ok(summaries)
 }
@@ -434,7 +432,7 @@ pub async fn terminal_replay(
     // A replay is a cold reattach (new window, or the app reopened onto a daemon
     // that kept running). If `terminal_list` already opened a status-only drain
     // for this session, this upgrades it to carry output.
-    ensure_drain(app, &state, terminal_id, true).await;
+    ensure_drain(app, &state, &client, terminal_id, true).await;
 
     Ok(TerminalReplay {
         data_b64: payload.data_b64,
@@ -474,7 +472,7 @@ mod tests {
     /// launch starts in. Enough to exercise `ensure_drain`'s bookkeeping, which
     /// never touches the client.
     fn detached_state() -> TerminalState {
-        TerminalState::new(PathBuf::from("/nonexistent/daemon.sock"))
+        TerminalState::new()
     }
 
     #[test]

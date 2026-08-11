@@ -13,6 +13,7 @@ mod guide;
 mod review_state;
 mod skill;
 mod staging;
+mod terminal;
 mod url;
 
 #[derive(Debug, Parser)]
@@ -138,6 +139,9 @@ pub enum Commands {
 
     /// Set (or show/clear) the default comparison so commands don't need `-s`
     Use(UseArgs),
+
+    /// Inspect and drive the app's terminal sessions (list, start, send, peek, wait)
+    Terminal(terminal::TerminalArgs),
 }
 
 /// `review use [spec]` — the repo's stored default comparison. With a spec,
@@ -216,7 +220,7 @@ fn run_use(args: UseArgs) -> Result<(), String> {
 }
 
 /// Resolve a potentially relative path to an absolute one.
-fn resolve_absolute(path: &Path) -> Result<PathBuf, String> {
+pub(crate) fn resolve_absolute(path: &Path) -> Result<PathBuf, String> {
     if path.is_absolute() {
         return Ok(path.to_path_buf());
     }
@@ -296,6 +300,7 @@ pub fn run(cli: Cli) -> Result<(), String> {
         Some(Commands::Url(args)) => url::run_url(args),
         Some(Commands::Skill(args)) => skill::run_skill(args),
         Some(Commands::Use(args)) => run_use(args),
+        Some(Commands::Terminal(args)) => terminal::run_terminal(args),
         None => run_open(cli.path, has_home_override),
     }
 }

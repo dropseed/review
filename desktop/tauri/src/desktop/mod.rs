@@ -576,9 +576,7 @@ pub fn run() {
             // — seconds of quit-and-spawn — off the path the window waits on,
             // and leaves a failed first attempt retryable. See
             // `TerminalState::client`.
-            app.manage(terminal_commands::TerminalState::new(
-                review::daemon::socket_path().unwrap_or_default(),
-            ));
+            app.manage(terminal_commands::TerminalState::new());
 
             // Start lightweight watchers for local activity on registered repos
             let app_handle = app.handle().clone();

@@ -25,13 +25,9 @@ use tokio::sync::{Mutex, Notify};
 use super::codec::{read_frame, write_frame};
 use super::pid_path;
 use super::protocol::{
-    encode_output_framed, Hello, Op, OpResult, ReplayPayload, Request, Response, StreamFrame,
+    encode_output_framed, Hello, Op, OpResult, ReplayPayload, Request, Response, StreamFrame, B64,
 };
 use crate::terminal::{SessionManager, SessionSpec, Subscription, TerminalId, TerminalMessage};
-
-/// Standard base64 engine for the `replay`/`write` payloads.
-const B64: base64::engine::general_purpose::GeneralPurpose =
-    base64::engine::general_purpose::STANDARD;
 
 /// Serve terminal sessions on `socket` until Ctrl-C, SIGTERM, or [`Op::Quit`].
 ///
@@ -384,66 +380,10 @@ async fn serve_stream(
 #[cfg(all(test, feature = "daemon-client"))]
 mod tests {
     use super::*;
+    use crate::daemon::test_support::{start_op, Harness, TIMEOUT};
     use crate::daemon::DaemonClient;
     use serde_json::Value;
     use std::time::Duration;
-    use tokio::task::JoinHandle;
-
-    /// Anything slower than this in a local round trip is a hang, not slowness.
-    const TIMEOUT: Duration = Duration::from_secs(10);
-
-    /// A daemon serving on a socket inside a temp dir, torn down on drop.
-    struct Harness {
-        socket: PathBuf,
-        _dir: tempfile::TempDir,
-        task: JoinHandle<()>,
-    }
-
-    impl Harness {
-        async fn start() -> Self {
-            let dir = tempfile::TempDir::new().unwrap();
-            let socket = dir.path().join("daemon.sock");
-            let task = tokio::spawn({
-                let socket = socket.clone();
-                async move {
-                    serve(socket).await.unwrap();
-                }
-            });
-            // Wait for the listener to exist before connecting.
-            let deadline = tokio::time::Instant::now() + TIMEOUT;
-            while !socket.exists() && tokio::time::Instant::now() < deadline {
-                tokio::time::sleep(Duration::from_millis(5)).await;
-            }
-            Self {
-                socket,
-                _dir: dir,
-                task,
-            }
-        }
-
-        async fn client(&self) -> DaemonClient {
-            DaemonClient::connect(&self.socket).await.unwrap()
-        }
-    }
-
-    impl Drop for Harness {
-        fn drop(&mut self) {
-            self.task.abort();
-        }
-    }
-
-    /// Start a `/bin/sh` session in a temp-dir "repo".
-    fn start_op(id: &str, repo: &Path) -> Op {
-        let path = repo.to_string_lossy().into_owned();
-        Op::Start {
-            terminal_id: id.to_owned(),
-            repo_path: path.clone(),
-            cwd: path,
-            cols: 80,
-            rows: 24,
-            shell: Some("/bin/sh".into()),
-        }
-    }
 
     #[tokio::test]
     async fn socket_is_created_with_owner_only_permissions() {
@@ -605,9 +545,7 @@ mod tests {
         assert_eq!(summary["cols"], 80);
 
         // Subscribe before writing so no output is missed.
-        let mut stream = DaemonClient::open_stream(&harness.socket, id)
-            .await
-            .unwrap();
+        let mut stream = client.open_stream(id).await.unwrap();
 
         client
             .request(Op::Write {
@@ -716,9 +654,8 @@ mod tests {
     #[tokio::test]
     async fn stream_to_unknown_terminal_yields_an_error_frame() {
         let harness = Harness::start().await;
-        let mut stream = DaemonClient::open_stream(&harness.socket, "nope")
-            .await
-            .unwrap();
+        let client = harness.client().await;
+        let mut stream = client.open_stream("nope").await.unwrap();
 
         let frame = tokio::time::timeout(TIMEOUT, stream.recv())
             .await
@@ -793,16 +730,8 @@ mod tests {
         {
             let client = harness.client().await;
             client.request(start_op(id, repo.path())).await.unwrap();
-            let mut stream = DaemonClient::open_stream(&harness.socket, id)
-                .await
-                .unwrap();
-            client
-                .request(Op::Write {
-                    terminal_id: id.to_owned(),
-                    data_b64: B64.encode(b"echo before-quit\n"),
-                })
-                .await
-                .unwrap();
+            let mut stream = client.open_stream(id).await.unwrap();
+            client.write(id, b"echo before-quit\n").await.unwrap();
             let mut seen: Vec<u8> = Vec::new();
             let saw = tokio::time::timeout(TIMEOUT, async {
                 while let Some(frame) = stream.recv().await {
@@ -846,16 +775,8 @@ mod tests {
         );
 
         // And the shell is still live: a fresh stream sees new output.
-        let mut stream = DaemonClient::open_stream(&harness.socket, id)
-            .await
-            .unwrap();
-        client
-            .request(Op::Write {
-                terminal_id: id.to_owned(),
-                data_b64: B64.encode(b"echo after-reattach\n"),
-            })
-            .await
-            .unwrap();
+        let mut stream = client.open_stream(id).await.unwrap();
+        client.write(id, b"echo after-reattach\n").await.unwrap();
         let mut seen: Vec<u8> = Vec::new();
         let saw = tokio::time::timeout(TIMEOUT, async {
             while let Some(frame) = stream.recv().await {

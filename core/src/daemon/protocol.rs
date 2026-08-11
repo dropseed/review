@@ -22,6 +22,12 @@ use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+/// Standard base64 engine for every bytes-over-JSON field on this wire
+/// (`data_b64`) — one definition shared by the daemon, the desktop app, and
+/// the CLI, so the encoding convention can't drift between them.
+pub const B64: base64::engine::general_purpose::GeneralPurpose =
+    base64::engine::general_purpose::STANDARD;
+
 // ============================================================
 // Hello
 // ============================================================

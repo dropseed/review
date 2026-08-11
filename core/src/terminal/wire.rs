@@ -49,6 +49,19 @@ pub enum Phase {
     Idle,
 }
 
+/// The serde wire names (`working`, `waiting_for_input`, …), so human-facing
+/// output agrees with JSON payloads instead of inventing a second spelling.
+impl std::fmt::Display for Phase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Phase::Working => "working",
+            Phase::WaitingForInput => "waiting_for_input",
+            Phase::NeedsAttention => "needs_attention",
+            Phase::Idle => "idle",
+        })
+    }
+}
+
 /// The full status of a session — the canonical `TerminalStatus` wire shape.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
