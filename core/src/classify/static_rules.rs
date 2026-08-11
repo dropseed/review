@@ -257,7 +257,7 @@ fn comment_prefixes(ext: &str) -> Option<&'static [&'static str]> {
     match ext {
         "js" | "jsx" | "ts" | "tsx" | "mjs" | "mts" | "cjs" | "cts" | "rs" | "go" | "java"
         | "kt" | "kts" | "scala" | "swift" | "c" | "cc" | "cpp" | "cxx" | "h" | "hpp" | "cs"
-        | "m" | "mm" | "zig" | "v" | "dart" | "groovy" | "gradle" | "css" => Some(&["//"]),
+        | "m" | "mm" | "zig" | "v" | "dart" | "groovy" | "gradle" => Some(&["//"]),
         "py" | "rb" | "sh" | "bash" | "zsh" | "fish" | "yml" | "yaml" | "toml" | "pl" | "pm"
         | "r" | "jl" | "ex" | "exs" | "cr" | "nim" | "coffee" | "mk" | "cmake" | "tf" | "hcl" => {
             Some(&["#"])
@@ -1398,6 +1398,21 @@ mod tests {
         let result = classify_comments(&hunk);
         assert!(result.is_some());
         assert_eq!(result.unwrap().label, vec!["comments:removed"]);
+    }
+
+    #[test]
+    fn test_css_url_change_is_not_comment_only() {
+        // CSS has no `//` line-comment syntax; a `//` inside a url() is real
+        // content, not a comment marker. This must not classify as comments:modified.
+        let hunk = make_hunk(
+            "styles.css",
+            vec![
+                removed("  background: url(http://old.example.com/img.png);"),
+                added("  background: url(http://new.example.com/img.png);"),
+            ],
+        );
+        let result = classify_comments(&hunk);
+        assert!(result.is_none());
     }
 
     #[test]
