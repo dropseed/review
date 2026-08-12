@@ -15,9 +15,15 @@ import {
   subscribePaneDrag,
   type TabDragSource,
 } from "../components/Terminal/pane-drag";
-import type { DropEdge } from "../components/Terminal/pane-tree";
+import {
+  expandedLeafIds,
+  type DropEdge,
+} from "../components/Terminal/pane-tree";
 import { useReviewStore } from "../stores";
-import { panelReviewKey } from "../stores/slices/terminalSlice";
+import {
+  findTabForTerminal,
+  panelReviewKey,
+} from "../stores/slices/terminalSlice";
 
 /**
  * Convert a drag-drop position to CSS pixels within the webview.
@@ -422,6 +428,23 @@ export function useTerminalFileDrop(): void {
             toast.error("Only files can be dropped into a terminal");
             return;
           }
+          // Dropping onto a folded pane's title bar unfolds it: the path is
+          // about to be typed at that prompt, and inserting it into a shell the
+          // user can't see reads as the drop having gone nowhere. Focusing is
+          // what unfolds a pane, so this is the same one call.
+          const store = useReviewStore.getState();
+          const found = findTabForTerminal(
+            store.terminalTabsByReviewKey,
+            terminalId,
+          );
+          if (found && !expandedLeafIds(found.tab.root).includes(terminalId)) {
+            store.setFocusedTerminalPane(
+              found.reviewKey,
+              found.tab.id,
+              terminalId,
+            );
+          }
+
           const text = payload.paths.map(quoteShellPath).join(" ") + " ";
           getApiClient()
             .terminalWrite(terminalId, text)

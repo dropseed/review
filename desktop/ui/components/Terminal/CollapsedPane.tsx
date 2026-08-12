@@ -48,7 +48,14 @@ export function CollapsedPane({
   return (
     // The gutter a pane has, kept so folding one doesn't move the seam between
     // it and its neighbour.
-    <div className="group/bar relative flex h-full w-full p-1.5">
+    <div
+      // A folded pane is still a session, and still the thing occupying this
+      // strip of the panel — so it answers to the same hit test an open pane
+      // does, and a file dropped here reaches its shell (see
+      // useTerminalFileDrop, which unfolds it first).
+      data-terminal-id={id}
+      className="group/bar relative flex h-full w-full p-1.5"
+    >
       <SimpleTooltip
         content={
           dead ? `${title} — exited` : <TerminalGlanceCard sessionId={id} />
