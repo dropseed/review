@@ -1,5 +1,4 @@
 import type {
-  DiffShortStat,
   GitHubPrRef,
   GlobalReviewSummary,
   ResolvedReview,
@@ -36,7 +35,6 @@ export interface GlobalReviewsSlice {
   globalReviewsLoading: boolean;
   activeReviewKey: ActiveReviewKey | null;
   repoMetadata: Record<string, RepoMetadata>;
-  reviewDiffStats: Record<string, DiffShortStat>;
   reviewActiveState: Record<string, boolean>;
   reviewCachedShas: Record<
     string,
@@ -68,10 +66,10 @@ export interface GlobalReviewsSlice {
   ) => Promise<ResolvedReview | null>;
   /**
    * Check which saved reviews are stale (diff SHAs moved, refs deleted) and
-   * refresh their cached diff stats. Scoped by default to the live sidebar rows
-   * (plus the active review) so the recurring pass stays cheap; pass explicit
-   * `scopeKeys` to check a specific set — e.g. one repo's reviews when the user
-   * expands it.
+   * refresh their cached active state. Scoped by default to the live sidebar
+   * rows (plus the active review) so the recurring pass stays cheap; pass
+   * explicit `scopeKeys` to check a specific set — e.g. one repo's reviews
+   * when the user expands it.
    */
   checkReviewsFreshness: (scopeKeys?: string[]) => Promise<void>;
   /** Save current navigation state before switching away from a review. */
@@ -95,7 +93,6 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
     globalReviewsLoading: false,
     activeReviewKey: null,
     repoMetadata: {},
-    reviewDiffStats: {},
     reviewActiveState: {},
     reviewCachedShas: {},
     reviewMissingRefs: {},
@@ -137,9 +134,9 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
           reviewsByKey[key] = review;
         }
 
-        // diffStats / active state are populated asynchronously by
-        // checkReviewsFreshness; the backend does not ship them inline (each
-        // shortstat fans out to ~5 git spawns).
+        // Active state is populated asynchronously by checkReviewsFreshness;
+        // the backend does not ship it inline (each shortstat fans out to
+        // ~5 git spawns).
         set({
           globalReviews: reviews,
           globalReviewsByKey: reviewsByKey,
@@ -147,9 +144,9 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
           repoMetadata: newMetadata,
         });
 
-        // Fire-and-forget so diff stats fill in promptly without making callers
-        // wait. Freshness short-circuits when SHAs match the cache, so this is
-        // cheap on subsequent loads.
+        // Fire-and-forget so active state fills in promptly without making
+        // callers wait. Freshness short-circuits when SHAs match the cache,
+        // so this is cheap on subsequent loads.
         get()
           .checkReviewsFreshness()
           .catch(() => {});
@@ -321,11 +318,10 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
           const prev = get();
           // Lazy clone — only allocate a new record when the first real
           // change for that field is found. On the common no-change path
-          // (most edits) all four references stay identical to `prev` and
+          // (most edits) all three references stay identical to `prev` and
           // the patch is empty.
           let activeState = prev.reviewActiveState;
           let cachedShas = prev.reviewCachedShas;
-          let diffStats = prev.reviewDiffStats;
           let missingRefs = prev.reviewMissingRefs;
 
           for (const result of results) {
@@ -349,20 +345,6 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
                   oldSha: result.oldSha,
                   newSha: result.newSha,
                 };
-              }
-            }
-            if (result.diffStats) {
-              const cur = diffStats[result.key];
-              if (
-                !cur ||
-                cur.fileCount !== result.diffStats.fileCount ||
-                cur.additions !== result.diffStats.additions ||
-                cur.deletions !== result.diffStats.deletions
-              ) {
-                if (diffStats === prev.reviewDiffStats) {
-                  diffStats = { ...diffStats };
-                }
-                diffStats[result.key] = result.diffStats;
               }
             }
             const nextMissing =
@@ -394,10 +376,7 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
           const patch: Partial<
             Pick<
               GlobalReviewsSlice,
-              | "reviewActiveState"
-              | "reviewCachedShas"
-              | "reviewDiffStats"
-              | "reviewMissingRefs"
+              "reviewActiveState" | "reviewCachedShas" | "reviewMissingRefs"
             >
           > = {};
           if (activeState !== prev.reviewActiveState) {
@@ -405,9 +384,6 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
           }
           if (cachedShas !== prev.reviewCachedShas) {
             patch.reviewCachedShas = cachedShas;
-          }
-          if (diffStats !== prev.reviewDiffStats) {
-            patch.reviewDiffStats = diffStats;
           }
           if (missingRefs !== prev.reviewMissingRefs) {
             patch.reviewMissingRefs = missingRefs;
