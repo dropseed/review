@@ -17,6 +17,7 @@ interface CollapsedPaneProps {
    */
   direction: SplitDirection;
   onExpand: () => void;
+  onClose: () => void;
 }
 
 /**
@@ -33,6 +34,7 @@ export function CollapsedPane({
   id,
   direction,
   onExpand,
+  onClose,
 }: CollapsedPaneProps): ReactNode {
   const session = useReviewStore((s) => s.terminalSessions[id]);
   const status = useReviewStore((s) => s.terminalStatuses[id]);
@@ -46,7 +48,7 @@ export function CollapsedPane({
   return (
     // The gutter a pane has, kept so folding one doesn't move the seam between
     // it and its neighbour.
-    <div className="flex h-full w-full p-1.5">
+    <div className="group/bar relative flex h-full w-full p-1.5">
       <SimpleTooltip
         content={
           dead ? `${title} — exited` : <TerminalGlanceCard sessionId={id} />
@@ -66,6 +68,9 @@ export function CollapsedPane({
             // The bar's own thickness — the one size in a split that isn't a
             // fraction, which is why its flex child doesn't grow.
             vertical ? "h-full w-5 flex-col py-1" : "h-5 w-full flex-row px-1",
+            // Room kept for the close control at the far end, so the title
+            // truncates short of it rather than running underneath.
+            vertical ? "pb-5" : "pr-5",
           )}
         >
           <PhaseDot phase={phase} dead={dead} />
@@ -83,6 +88,27 @@ export function CollapsedPane({
           </span>
         </button>
       </SimpleTooltip>
+
+      {/* A folded pane you've finished with shouldn't have to be unfolded just
+          to be closed. A sibling of the bar rather than a child: the bar is
+          itself a button, and one can't be nested inside another. */}
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label={`Close ${title}`}
+        title={`Close ${title}`}
+        className={clsx(
+          "absolute flex h-4 w-4 items-center justify-center rounded",
+          "text-sm leading-none text-fg-faint opacity-0 transition-opacity",
+          "hover:bg-fg/[0.08] hover:text-fg-secondary",
+          "group-hover/bar:opacity-100 focus-visible:opacity-100",
+          vertical
+            ? "bottom-2 left-1/2 -translate-x-1/2"
+            : "right-2 top-1/2 -translate-y-1/2",
+        )}
+      >
+        ×
+      </button>
     </div>
   );
 }

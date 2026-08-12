@@ -68,6 +68,14 @@ export function SplitDivider({
   const rememberedRef = useRef<number | null>(null);
   const isRow = direction === "row";
 
+  // Which panes a divider separates can change under it — folding the middle of
+  // a three-way split re-points this one at the outer two while React keeps the
+  // same instance. The size it remembers belongs to the old pair, so it is
+  // dropped rather than restored onto panes it was never measured from.
+  useEffect(() => {
+    rememberedRef.current = null;
+  }, [leftSlot, rightSlot]);
+
   const measurePair = useCallback((): PairBounds | null => {
     const parent = dividerRef.current?.parentElement;
     if (!parent) return null;

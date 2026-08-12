@@ -224,11 +224,6 @@ export interface TerminalSlice {
     terminalId: string,
     collapsed: boolean,
   ) => void;
-  /**
-   * Fold/unfold the pane holding `terminalId`, wherever it lives — the shape
-   * the keyboard command needs, which knows a focused pane and not its tab.
-   */
-  togglePaneCollapsed: (terminalId: string) => void;
   /** Set the child fractions of the split node at `path` within `tabId`. */
   resizeSplit: (
     reviewKey: string,
@@ -2011,22 +2006,6 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
       set(
         setPaneCollapsedInTab(get(), reviewKey, tabId, terminalId, collapsed),
       ),
-
-    togglePaneCollapsed: (terminalId) => {
-      const g = get();
-      const found = findTabForTerminal(g.terminalTabsByReviewKey, terminalId);
-      if (!found) return;
-      const isCollapsed = !expandedLeafIds(found.tab.root).includes(terminalId);
-      set(
-        setPaneCollapsedInTab(
-          g,
-          found.reviewKey,
-          found.tab.id,
-          terminalId,
-          !isCollapsed,
-        ),
-      );
-    },
 
     resizeSplit: (reviewKey, tabId, path, sizes) =>
       set(resizeSplitInTab(get(), reviewKey, tabId, path, sizes)),

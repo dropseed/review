@@ -110,12 +110,18 @@ export function setLeafCollapsed(
 }
 
 /**
- * A tab's only pane has nothing to collapse behind it, so a lone root leaf is
- * always unfolded. Without this, closing the last sibling of a collapsed pane
- * would leave a tab that is nothing but a title bar.
+ * Guarantee the tree still draws a terminal, unfolding its first pane if not.
+ *
+ * Folding is only allowed while another pane is still showing, but *removing*
+ * panes can retire the ones that were: fold two panes of a three-way split and
+ * close the third, and what's left is a tab of title bars with nothing to type
+ * into. Every path that drops a leaf comes through here, so that tab can't be
+ * reached — by a close, a drag onto another tab, or a reconcile against the
+ * daemon after another window closed the pane this one was showing.
  */
-function expandRootLeaf(node: PaneNode | null): PaneNode | null {
-  return node?.type === "leaf" && node.collapsed ? leaf(node.terminalId) : node;
+function ensureSomethingShows(node: PaneNode | null): PaneNode | null {
+  if (!node || showsTerminal(node)) return node;
+  return setLeafCollapsed(node, firstLeafId(node), false);
 }
 
 /** The first leaf's terminal id (used to re-pick focus). */
@@ -251,7 +257,7 @@ export function movePane(
  * null if the whole tree was the removed leaf.
  */
 export function removeLeaf(node: PaneNode, targetId: string): PaneNode | null {
-  return expandRootLeaf(removeLeafFrom(node, targetId));
+  return ensureSomethingShows(removeLeafFrom(node, targetId));
 }
 
 function removeLeafFrom(node: PaneNode, targetId: string): PaneNode | null {
@@ -282,7 +288,7 @@ export function pruneLeaves(
   node: PaneNode,
   keep: ReadonlySet<string>,
 ): PaneNode | null {
-  return expandRootLeaf(pruneLeavesOf(node, keep));
+  return ensureSomethingShows(pruneLeavesOf(node, keep));
 }
 
 function pruneLeavesOf(

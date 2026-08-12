@@ -94,6 +94,7 @@ export function PaneTree({
           id={node.terminalId}
           direction={parentDirection}
           onExpand={() => onFocus(node.terminalId)}
+          onClose={() => onClose(node.terminalId)}
         />
       );
     }

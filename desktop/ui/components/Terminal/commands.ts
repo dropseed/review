@@ -4,7 +4,10 @@ import { focusedTerminalId, focusedTerminalTab } from "./close";
 import { focusNextNeedsYou } from "./jump";
 import { hasNeedsYou } from "./glance";
 import { collectLeafIds, expandedLeafIds, type TerminalTab } from "./pane-tree";
-import { findTab, panelReviewKey } from "../../stores/slices/terminalSlice";
+import {
+  mergeVisibleTabs,
+  panelReviewKey,
+} from "../../stores/slices/terminalSlice";
 
 /**
  * The terminal answers "is a terminal focused?" for the command context.
@@ -42,8 +45,15 @@ function activeTerminalTab(
     store.repoPath,
     store.reviewRef,
   );
-  const tabId = store.activeTabIdByReviewKey[key];
-  return tabId ? findTab(store.terminalTabsByReviewKey, tabId) : null;
+  // Resolved exactly the way TerminalPanel resolves what it draws, fallback
+  // included: a key that owns no tabs of its own never gets an entry in
+  // `activeTabIdByReviewKey`, so a repo showing only a pinned visitor would
+  // otherwise leave these commands greyed out over a tab plainly on screen.
+  // `mergeVisibleTabs` also answers with the key that *owns* each tab, which is
+  // the one its layout is stored under.
+  const visible = mergeVisibleTabs(store.terminalTabsByReviewKey, key);
+  const activeId = store.activeTabIdByReviewKey[key] ?? visible[0]?.tab.id;
+  return visible.find((v) => v.tab.id === activeId) ?? null;
 }
 
 /** How many panes the active tab is drawing — folding needs at least two. */

@@ -364,6 +364,23 @@ describe("collapsing panes", () => {
     expect(expandedLeafIds(node)).toEqual([]);
   });
 
+  it("unfolds a pane when removal retires the last one showing", () => {
+    // Folding is only allowed while something else shows, but closing that
+    // something else can leave a tab of nothing but title bars.
+    let node: PaneNode = row("a", "b", "c");
+    node = setLeafCollapsed(node, "b", true);
+    node = setLeafCollapsed(node, "c", true);
+
+    const closed = removeLeaf(node, "a");
+    expect(closed).not.toBeNull();
+    expect(showsTerminal(closed!)).toBe(true);
+    expect(expandedLeafIds(closed!)).toEqual(["b"]);
+
+    // The same hole reached from a backend reconcile rather than a close.
+    const pruned = pruneLeaves(node, new Set(["b", "c"]));
+    expect(expandedLeafIds(pruned!)).toEqual(["b"]);
+  });
+
   it("unfolds a folded pane left alone at the root", () => {
     // Closing the last sibling of a folded pane would otherwise leave a tab
     // that is nothing but a title bar.
