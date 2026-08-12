@@ -13,6 +13,7 @@ import {
 } from "./FileCodeView";
 import type { TokenHoverHandler, TokenClickHandler } from "./diff-model";
 import type { ContentMode } from "./content-mode";
+import { showsMinimap } from "./content-mode";
 
 export type { TokenHoverHandler, TokenClickHandler };
 
@@ -120,6 +121,7 @@ export const FileContentRenderer = memo(function FileContentRenderer({
       onTokenLeave={onTokenLeave}
       onTokenClick={onTokenClick}
       containerRef={containerRef}
+      hideScrollbar={showsMinimap(contentMode)}
       handleRef={handleRef}
     />
   );

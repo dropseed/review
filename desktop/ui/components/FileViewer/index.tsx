@@ -47,6 +47,7 @@ import { HoverTooltip } from "./HoverTooltip";
 import { SymbolOutlinePanel } from "./SymbolOutlinePanel";
 import { useFileSymbols } from "./useFileSymbols";
 import type { ContentMode } from "./content-mode";
+import { showsMinimap } from "./content-mode";
 import { useDiffViewMode } from "./hooks/useDiffViewMode";
 import { useShapeMode } from "./hooks/useShapeMode";
 import { realLineToRow } from "./shape-model";
@@ -898,7 +899,7 @@ export function FileViewer({
           handleRef={codeViewHandleRef}
           shape={shape}
         />
-        {contentMode.type === "diff" && (
+        {showsMinimap(contentMode) && (
           <DiffMinimap
             markers={minimapMarkers}
             scrollContainer={scrollNode}

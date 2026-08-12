@@ -70,6 +70,18 @@ export interface FileCodeViewHandle {
   ): void;
 }
 
+/**
+ * Cancel CodeView's in-flight spring scroll. It cancels only on input events
+ * fired on its own scroll element, so a sibling (the minimap track) that is
+ * about to drive scrollTop directly relays a press here first — otherwise the
+ * animation rewrites scrollTop every frame and fights it. A plain `Event`
+ * (non-bubbling, no pointer fields) reaches CodeView's native listener without
+ * re-entering React's delegated handlers.
+ */
+export function cancelCodeViewScroll(scrollEl: HTMLElement): void {
+  scrollEl.dispatchEvent(new Event("pointerdown"));
+}
+
 export type FileCodeViewContent =
   | {
       kind: "diff";
@@ -101,6 +113,11 @@ interface FileCodeViewProps {
   onTokenClick?: TokenClickHandler;
   /** Receives the scroll container element (CodeView owns scrolling) */
   containerRef?: (node: HTMLDivElement | null) => void;
+  /**
+   * Set while the minimap is up beside this view: it IS the scrollbar, so the
+   * native one hides — two bars side by side is noise.
+   */
+  hideScrollbar?: boolean;
   /** Imperative scroll API */
   handleRef?: React.Ref<FileCodeViewHandle>;
   /**
@@ -130,6 +147,7 @@ export function FileCodeView({
   onTokenLeave,
   onTokenClick,
   containerRef,
+  hideScrollbar,
   handleRef,
   shape,
 }: FileCodeViewProps): ReactNode {
@@ -470,7 +488,7 @@ export function FileCodeView({
           renderAnnotation={renderAnnotation}
           containerRef={setContainerNode}
           className={`h-full min-w-0 flex-1 bg-surface-panel ${
-            isDiff ? "scrollbar-none" : "scrollbar-thin"
+            hideScrollbar ? "scrollbar-none" : "scrollbar-thin"
           }`}
           style={CODE_VIEW_STYLE}
         />
