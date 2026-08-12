@@ -1,7 +1,13 @@
 import { type DragEvent, type ReactNode, Fragment, useRef } from "react";
 import { clsx } from "clsx";
 import { useReviewStore } from "../../stores";
-import type { PaneNode, SplitDirection, DropEdge } from "./pane-tree";
+import {
+  type PaneNode,
+  type SplitDirection,
+  type DropEdge,
+  showsTerminal,
+} from "./pane-tree";
+import { CollapsedPane } from "./CollapsedPane";
 import {
   TERMINAL_PANE_MIME,
   clearPaneDropTarget,
@@ -22,6 +28,17 @@ interface PaneTreeProps {
   node: PaneNode;
   /** Child-index path from the tab root to this node (for size updates). */
   path: number[];
+  /**
+   * The direction of the split this node sits in, or null at the tab root.
+   * A leaf folds along its parent's axis, and the root has no axis to fold on.
+   */
+  parentDirection?: SplitDirection | null;
+  /**
+   * Whether folding is offered at all — false once the tab is down to the one
+   * pane still showing, since folding that one is declined anyway and a button
+   * that does nothing is worse than no button.
+   */
+  canFold: boolean;
   reviewKey: string;
   tabId: string;
   /** terminalId of the tab's focused leaf. */
@@ -55,6 +72,8 @@ function nodeKey(node: PaneNode, index: number): string {
 export function PaneTree({
   node,
   path,
+  parentDirection = null,
+  canFold,
   reviewKey,
   tabId,
   focusedId,
@@ -63,77 +82,141 @@ export function PaneTree({
   onSplit,
   onClose,
 }: PaneTreeProps): ReactNode {
-  const containerRef = useRef<HTMLDivElement | null>(null);
   const resizeSplit = useReviewStore((s) => s.resizeSplit);
+  const setPaneCollapsed = useReviewStore((s) => s.setPaneCollapsed);
 
   if (node.type === "leaf") {
+    // A folded pane shows its title bar instead of its terminal. Clicking it
+    // focuses the pane, and focusing a pane unfolds it — one path back.
+    if (node.collapsed && parentDirection) {
+      return (
+        <CollapsedPane
+          id={node.terminalId}
+          direction={parentDirection}
+          onExpand={() => onFocus(node.terminalId)}
+        />
+      );
+    }
     return (
       <PaneLeaf
         id={node.terminalId}
         // A leaf at the tab root is the only pane, so there's nothing to
         // contrast it against — dimming it would just make the whole panel
-        // look asleep, and it has nowhere to be dragged to either.
-        isOnlyPane={path.length === 0}
+        // look asleep, and it has nowhere to be dragged or folded to either.
+        isOnlyPane={parentDirection === null}
+        foldDirection={canFold ? parentDirection : null}
         isFocused={tabActive && node.terminalId === focusedId}
         onFocus={onFocus}
         onSplit={onSplit}
         onClose={onClose}
+        onCollapse={() =>
+          setPaneCollapsed(reviewKey, tabId, node.terminalId, true)
+        }
       />
     );
   }
 
-  const { direction, children, sizes } = node;
+  const { children, sizes } = node;
 
-  const handleBoundaryResize = (boundary: number, fraction: number) => {
-    // `boundary` is the divider between children[boundary-1] and [boundary].
-    const pairStart = sizes.slice(0, boundary - 1).reduce((a, b) => a + b, 0);
-    const pairTotal = sizes[boundary - 1] + sizes[boundary];
-    let first = fraction - pairStart;
-    first = Math.max(
-      MIN_PANE_FRACTION,
-      Math.min(pairTotal - MIN_PANE_FRACTION, first),
+  // A branch with nothing left to draw lays its bars out along the *parent's*
+  // axis instead of its own: its direction was a way of sharing space, and it
+  // has no space left to share. Without this the branch is sized by its
+  // contents, which for a stack of turned-on-their-side titles means a band as
+  // wide as the longest one.
+  const direction = showsTerminal(node)
+    ? node.direction
+    : (parentDirection ?? node.direction);
+
+  // Folded children hold a fixed bar's worth of space rather than a fraction,
+  // so the fractions of the ones still showing are renormalized over each
+  // other. Flex only distributes all the free space when the grow factors sum
+  // to 1 — leaving a folded child's share out would strand that much of the
+  // split empty.
+  const flexing = children.map(showsTerminal);
+  const flexTotal = sizes.reduce((a, s, i) => (flexing[i] ? a + s : a), 0);
+
+  // The child each divider trades space with — the nearest one before it that
+  // is still drawn, which is not always its neighbour. Folding the middle of a
+  // three-way split still leaves its two outer panes side by side, and they
+  // should still be resizable against each other.
+  const partner: (number | null)[] = [];
+  let previous: number | null = null;
+  children.forEach((_, i) => {
+    partner[i] = flexing[i] ? previous : null;
+    if (flexing[i]) previous = i;
+  });
+
+  const handleBoundaryResize = (
+    left: number,
+    right: number,
+    fractionOfPair: number,
+  ) => {
+    // The fraction is where the pointer sits between those two children — the
+    // only two whose sizes a divider moves.
+    const pairTotal = sizes[left] + sizes[right];
+    // A pane never shrinks to nothing, but in a many-way split the pair may be
+    // small enough that the flat floor wouldn't fit twice.
+    const min = Math.min(MIN_PANE_FRACTION, pairTotal / 3);
+    const first = Math.max(
+      min,
+      Math.min(pairTotal - min, pairTotal * fractionOfPair),
     );
     const next = [...sizes];
-    next[boundary - 1] = first;
-    next[boundary] = pairTotal - first;
+    next[left] = first;
+    next[right] = pairTotal - first;
     resizeSplit(reviewKey, tabId, path, next);
   };
 
   return (
     <div
-      ref={containerRef}
       className={clsx(
         "flex h-full w-full min-w-0 min-h-0",
         direction === "row" ? "flex-row" : "flex-col",
       )}
     >
-      {children.map((child, i) => (
-        <Fragment key={nodeKey(child, i)}>
-          {i > 0 && (
-            <SplitDivider
-              direction={direction}
-              containerRef={containerRef}
-              onResize={(fraction) => handleBoundaryResize(i, fraction)}
-            />
-          )}
-          <div
-            className="min-w-0 min-h-0 overflow-hidden"
-            style={{ flexGrow: sizes[i], flexBasis: 0 }}
-          >
-            <PaneTree
-              node={child}
-              path={[...path, i]}
-              reviewKey={reviewKey}
-              tabId={tabId}
-              focusedId={focusedId}
-              tabActive={tabActive}
-              onFocus={onFocus}
-              onSplit={onSplit}
-              onClose={onClose}
-            />
-          </div>
-        </Fragment>
-      ))}
+      {children.map((child, i) => {
+        const left = partner[i];
+        return (
+          <Fragment key={nodeKey(child, i)}>
+            {left !== null && (
+              <SplitDivider
+                direction={direction}
+                leftSlot={left}
+                rightSlot={i}
+                onResize={(fraction) => handleBoundaryResize(left, i, fraction)}
+              />
+            )}
+            <div
+              // Read back by the divider, which resizes two panes that a folded
+              // one may be sitting between.
+              data-pane-slot={i}
+              className={clsx(
+                "min-w-0 min-h-0 overflow-hidden",
+                !flexing[i] && "flex-none",
+              )}
+              style={
+                flexing[i]
+                  ? { flexGrow: sizes[i] / flexTotal, flexBasis: 0 }
+                  : undefined
+              }
+            >
+              <PaneTree
+                node={child}
+                path={[...path, i]}
+                parentDirection={direction}
+                canFold={canFold}
+                reviewKey={reviewKey}
+                tabId={tabId}
+                focusedId={focusedId}
+                tabActive={tabActive}
+                onFocus={onFocus}
+                onSplit={onSplit}
+                onClose={onClose}
+              />
+            </div>
+          </Fragment>
+        );
+      })}
     </div>
   );
 }
@@ -141,10 +224,13 @@ export function PaneTree({
 interface PaneLeafProps {
   id: string;
   isOnlyPane: boolean;
+  /** The axis this pane would fold along, or null when it can't be folded. */
+  foldDirection: SplitDirection | null;
   isFocused: boolean;
   onFocus: (terminalId: string) => void;
   onSplit: (terminalId: string, direction: SplitDirection) => void;
   onClose: (terminalId: string) => void;
+  onCollapse: () => void;
 }
 
 /**
@@ -155,10 +241,12 @@ interface PaneLeafProps {
 function PaneLeaf({
   id,
   isOnlyPane,
+  foldDirection,
   isFocused,
   onFocus,
   onSplit,
   onClose,
+  onCollapse,
 }: PaneLeafProps): ReactNode {
   const dropPaneOn = useReviewStore((s) => s.dropPaneOn);
   // Where a drop would land, whichever way the drag reached us: these handlers
@@ -298,6 +386,13 @@ function PaneLeaf({
         <PaneButton label="Split down" onClick={() => onSplit(id, "column")}>
           <SplitDownIcon />
         </PaneButton>
+        {/* Folding needs somewhere for the space to go, so the tab's only pane
+            doesn't offer it — ⌘` hides the whole panel instead. */}
+        {foldDirection && (
+          <PaneButton label="Collapse pane (⌥⌘M)" onClick={onCollapse}>
+            <CollapseIcon direction={foldDirection} />
+          </PaneButton>
+        )}
         <PaneButton label="Close pane" onClick={() => onClose(id)}>
           <span className="text-sm leading-none">×</span>
         </PaneButton>
@@ -375,6 +470,26 @@ function SplitRightIcon(): ReactNode {
     >
       <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
       <line x1="8" y1="2.5" x2="8" y2="13.5" />
+    </svg>
+  );
+}
+
+/** Arrows squeezing together along the axis the pane folds on. */
+function CollapseIcon({ direction }: { direction: SplitDirection }): ReactNode {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className={clsx("h-3.5 w-3.5", direction === "row" && "rotate-90")}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <line x1="2.5" y1="8" x2="13.5" y2="8" />
+      <path d="M5.5 2.5 8 5 10.5 2.5" />
+      <path d="M5.5 13.5 8 11 10.5 13.5" />
     </svg>
   );
 }

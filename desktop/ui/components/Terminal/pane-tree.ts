@@ -15,7 +15,16 @@ export type SplitDirection = "row" | "column";
 export type DropEdge = "left" | "right" | "top" | "bottom";
 
 export type PaneNode =
-  | { type: "leaf"; terminalId: string }
+  | {
+      type: "leaf";
+      terminalId: string;
+      /**
+       * Folded down to a title bar: the session keeps running and keeps its
+       * slice of `sizes`, it just isn't drawn. The bar's thickness is fixed, so
+       * a collapsed pane is the one child of a split that doesn't flex.
+       */
+      collapsed?: boolean;
+    }
   | {
       type: "split";
       direction: SplitDirection;
@@ -64,6 +73,49 @@ function normalize(sizes: number[]): number[] {
 export function collectLeafIds(node: PaneNode): string[] {
   if (node.type === "leaf") return [node.terminalId];
   return node.children.flatMap(collectLeafIds);
+}
+
+/** Terminal ids of the leaves actually showing a terminal, in the same order. */
+export function expandedLeafIds(node: PaneNode): string[] {
+  if (node.type === "leaf") return node.collapsed ? [] : [node.terminalId];
+  return node.children.flatMap(expandedLeafIds);
+}
+
+/** Whether anything under `node` is drawn as a terminal rather than a bar. */
+export function showsTerminal(node: PaneNode): boolean {
+  if (node.type === "leaf") return !node.collapsed;
+  return node.children.some(showsTerminal);
+}
+
+/**
+ * Fold the leaf for `targetId` down to a bar, or unfold it. Returns the
+ * original tree when nothing changes, so a reducer can skip the write.
+ */
+export function setLeafCollapsed(
+  node: PaneNode,
+  targetId: string,
+  collapsed: boolean,
+): PaneNode {
+  if (node.type === "leaf") {
+    if (node.terminalId !== targetId) return node;
+    if (!!node.collapsed === collapsed) return node;
+    return collapsed ? { ...node, collapsed: true } : leaf(node.terminalId);
+  }
+  const children = node.children.map((c) =>
+    setLeafCollapsed(c, targetId, collapsed),
+  );
+  return children.every((c, i) => c === node.children[i])
+    ? node
+    : { ...node, children };
+}
+
+/**
+ * A tab's only pane has nothing to collapse behind it, so a lone root leaf is
+ * always unfolded. Without this, closing the last sibling of a collapsed pane
+ * would leave a tab that is nothing but a title bar.
+ */
+function expandRootLeaf(node: PaneNode | null): PaneNode | null {
+  return node?.type === "leaf" && node.collapsed ? leaf(node.terminalId) : node;
 }
 
 /** The first leaf's terminal id (used to re-pick focus). */
@@ -199,6 +251,10 @@ export function movePane(
  * null if the whole tree was the removed leaf.
  */
 export function removeLeaf(node: PaneNode, targetId: string): PaneNode | null {
+  return expandRootLeaf(removeLeafFrom(node, targetId));
+}
+
+function removeLeafFrom(node: PaneNode, targetId: string): PaneNode | null {
   if (node.type === "leaf") {
     return node.terminalId === targetId ? null : node;
   }
@@ -206,7 +262,7 @@ export function removeLeaf(node: PaneNode, targetId: string): PaneNode | null {
   const children: PaneNode[] = [];
   const sizes: number[] = [];
   node.children.forEach((child, i) => {
-    const next = removeLeaf(child, targetId);
+    const next = removeLeafFrom(child, targetId);
     if (next !== null) {
       children.push(next);
       sizes.push(node.sizes[i]);
@@ -226,13 +282,20 @@ export function pruneLeaves(
   node: PaneNode,
   keep: ReadonlySet<string>,
 ): PaneNode | null {
+  return expandRootLeaf(pruneLeavesOf(node, keep));
+}
+
+function pruneLeavesOf(
+  node: PaneNode,
+  keep: ReadonlySet<string>,
+): PaneNode | null {
   if (node.type === "leaf") {
     return keep.has(node.terminalId) ? node : null;
   }
   const children: PaneNode[] = [];
   const sizes: number[] = [];
   node.children.forEach((child, i) => {
-    const next = pruneLeaves(child, keep);
+    const next = pruneLeavesOf(child, keep);
     if (next !== null) {
       children.push(next);
       sizes.push(node.sizes[i]);

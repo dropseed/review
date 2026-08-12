@@ -21,7 +21,9 @@ import {
   removeLeaf,
   pruneLeaves,
   collectLeafIds,
+  expandedLeafIds,
   firstLeafId,
+  setLeafCollapsed,
   setSizesAtPath,
   reorderTabs,
 } from "../../components/Terminal/pane-tree";
@@ -212,6 +214,21 @@ export interface TerminalSlice {
    * the new tab's id, or null when the pane was its tab's only one.
    */
   movePaneToNewTab: (sourceTerminalId: string) => string | null;
+  /**
+   * Fold a pane down to a title bar, or unfold it. Ignored when it would leave
+   * the tab showing no terminal at all.
+   */
+  setPaneCollapsed: (
+    reviewKey: string,
+    tabId: string,
+    terminalId: string,
+    collapsed: boolean,
+  ) => void;
+  /**
+   * Fold/unfold the pane holding `terminalId`, wherever it lives — the shape
+   * the keyboard command needs, which knows a focused pane and not its tab.
+   */
+  togglePaneCollapsed: (terminalId: string) => void;
   /** Set the child fractions of the split node at `path` within `tabId`. */
   resizeSplit: (
     reviewKey: string,
@@ -1023,11 +1040,16 @@ function withRepairedFocus(
   root: PaneNode | null,
 ): TerminalTab | null {
   if (!root) return null;
-  const leaves = collectLeafIds(root);
+  // Repaired against the panes still *drawn*, not merely still present: a
+  // folded pane holds no keyboard focus and shows no cursor, so landing focus
+  // there leaves the tab with a dimmed terminal and nothing typing into it.
+  const showing = expandedLeafIds(root);
   return {
     ...tab,
     root,
-    focused: leaves.includes(tab.focused) ? tab.focused : firstLeafId(root),
+    focused: showing.includes(tab.focused)
+      ? tab.focused
+      : (showing[0] ?? firstLeafId(root)),
   };
 }
 
@@ -1269,7 +1291,11 @@ export function rehomeTabs(
   };
 }
 
-/** Set the focused leaf of `tabId`. */
+/**
+ * Set the focused leaf of `tabId`. Focusing a collapsed pane unfolds it —
+ * every route to a pane (a click, ⌥⌘`, an overview card) goes through here, so
+ * none of them can land the keyboard on a title bar.
+ */
 export function setFocusedInTab(
   state: TabState,
   reviewKey: string,
@@ -1278,7 +1304,57 @@ export function setFocusedInTab(
 ): Partial<TabState> {
   const existing = state.terminalTabsByReviewKey[reviewKey] ?? [];
   const tabs = existing.map((tab) =>
-    tab.id === tabId ? { ...tab, focused: terminalId } : tab,
+    tab.id === tabId
+      ? {
+          ...tab,
+          focused: terminalId,
+          root: setLeafCollapsed(tab.root, terminalId, false),
+        }
+      : tab,
+  );
+  return {
+    terminalTabsByReviewKey: {
+      ...state.terminalTabsByReviewKey,
+      [reviewKey]: tabs,
+    },
+  };
+}
+
+/**
+ * Fold `terminalId`'s pane down to a title bar, or unfold it.
+ *
+ * Declines when it would leave the tab with nothing but bars: a collapse you
+ * can't see the way out of is a lost terminal, and the panel's own ⌘` is the
+ * gesture for hiding everything.
+ */
+export function setPaneCollapsedInTab(
+  state: TabState,
+  reviewKey: string,
+  tabId: string,
+  terminalId: string,
+  collapsed: boolean,
+): Partial<TabState> {
+  const existing = state.terminalTabsByReviewKey[reviewKey] ?? [];
+  const tab = existing.find((t) => t.id === tabId);
+  if (!tab) return {};
+
+  const root = setLeafCollapsed(tab.root, terminalId, collapsed);
+  if (root === tab.root) return {};
+  const stillShowing = expandedLeafIds(root);
+  if (stillShowing.length === 0) return {};
+
+  const tabs = existing.map((t) =>
+    t.id === tabId
+      ? {
+          ...t,
+          root,
+          // Folding the focused pane hands the keyboard to one that's still
+          // on screen rather than leaving focus on a bar.
+          focused: stillShowing.includes(t.focused)
+            ? t.focused
+            : stillShowing[0],
+        }
+      : t,
   );
   return {
     terminalTabsByReviewKey: {
@@ -1929,6 +2005,27 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
         terminalPinnedIds: setPinned([sourceTerminalId], !!source.tab.pinned),
       });
       return tabId;
+    },
+
+    setPaneCollapsed: (reviewKey, tabId, terminalId, collapsed) =>
+      set(
+        setPaneCollapsedInTab(get(), reviewKey, tabId, terminalId, collapsed),
+      ),
+
+    togglePaneCollapsed: (terminalId) => {
+      const g = get();
+      const found = findTabForTerminal(g.terminalTabsByReviewKey, terminalId);
+      if (!found) return;
+      const isCollapsed = !expandedLeafIds(found.tab.root).includes(terminalId);
+      set(
+        setPaneCollapsedInTab(
+          g,
+          found.reviewKey,
+          found.tab.id,
+          terminalId,
+          !isCollapsed,
+        ),
+      );
     },
 
     resizeSplit: (reviewKey, tabId, path, sizes) =>

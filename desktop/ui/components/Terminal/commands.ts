@@ -3,6 +3,8 @@ import type { Command, CommandContext } from "../../commands";
 import { focusedTerminalId, focusedTerminalTab } from "./close";
 import { focusNextNeedsYou } from "./jump";
 import { hasNeedsYou } from "./glance";
+import { collectLeafIds, expandedLeafIds, type TerminalTab } from "./pane-tree";
+import { findTab, panelReviewKey } from "../../stores/slices/terminalSlice";
 
 /**
  * The terminal answers "is a terminal focused?" for the command context.
@@ -19,6 +21,35 @@ function hasRepo(ctx: CommandContext): boolean {
 
 function supported(ctx: CommandContext): boolean {
   return ctx.store.terminalsSupported;
+}
+
+/**
+ * The tab the panel is showing, resolved from the store rather than from what
+ * has DOM focus.
+ *
+ * Folding commands can't ask `focusedTerminalId()` the way splitting does: a
+ * command run from the ⌘K palette is resolved while the palette's own input
+ * holds focus, so a DOM probe answers "no terminal" for every one of them —
+ * `isEnabled` included, which would grey the entry out in the only list it
+ * appears in. The tab's own `focused` leaf is the same pane anyway.
+ */
+function activeTerminalTab(
+  store: CommandContext["store"],
+): { tab: TerminalTab; reviewKey: string } | null {
+  if (!store.repoPath || store.terminalPanelMode === "closed") return null;
+  const key = panelReviewKey(
+    store.terminalCheckouts,
+    store.repoPath,
+    store.reviewRef,
+  );
+  const tabId = store.activeTabIdByReviewKey[key];
+  return tabId ? findTab(store.terminalTabsByReviewKey, tabId) : null;
+}
+
+/** How many panes the active tab is drawing — folding needs at least two. */
+function foldablePanes(store: CommandContext["store"]): number {
+  const active = activeTerminalTab(store);
+  return active ? expandedLeafIds(active.tab.root).length : 0;
 }
 
 /**
@@ -107,6 +138,57 @@ export const TERMINAL_COMMANDS: readonly Command[] = [
     isVisible: supported,
     isEnabled: (ctx) => hasRepo(ctx) && hasNeedsYou(ctx.store),
     run: () => focusNextNeedsYou(),
+  },
+  {
+    id: "view.collapseTerminalPane",
+    title: "Collapse Terminal Pane",
+    category: "View",
+    keywords: ["fold", "minimize", "hide", "shrink", "pane", "shell"],
+    // ⌘M minimizes the window; one modifier over folds a pane inside it.
+    shortcut: { code: "KeyM", mod: true, alt: true },
+    allowInTerminal: true,
+    allowInInput: true,
+    isVisible: supported,
+    isEnabled: (ctx) => foldablePanes(ctx.store) > 1,
+    run: ({ store }) => {
+      const active = activeTerminalTab(store);
+      if (active) {
+        store.setPaneCollapsed(
+          active.reviewKey,
+          active.tab.id,
+          active.tab.focused,
+          true,
+        );
+      }
+    },
+  },
+  {
+    id: "view.expandTerminalPanes",
+    title: "Expand Collapsed Terminal Panes",
+    category: "View",
+    keywords: ["unfold", "restore", "show", "pane", "shell"],
+    allowInTerminal: true,
+    allowInInput: true,
+    isVisible: supported,
+    isEnabled: (ctx) => {
+      const active = activeTerminalTab(ctx.store);
+      return (
+        !!active &&
+        foldablePanes(ctx.store) < collectLeafIds(active.tab.root).length
+      );
+    },
+    // The way back for a tab folded down from the keyboard: the bars are
+    // clickable, but a pane collapsed with ⌥⌘M shouldn't need the mouse.
+    run: ({ store }) => {
+      const active = activeTerminalTab(store);
+      if (!active) return;
+      const showing = new Set(expandedLeafIds(active.tab.root));
+      for (const id of collectLeafIds(active.tab.root)) {
+        if (!showing.has(id)) {
+          store.setPaneCollapsed(active.reviewKey, active.tab.id, id, false);
+        }
+      }
+    },
   },
   {
     id: "view.splitSideBySide",

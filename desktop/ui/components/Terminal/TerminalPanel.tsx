@@ -20,7 +20,11 @@ import { RICH_TOOLTIP_CLASS, SimpleTooltip } from "../ui/tooltip";
 import { tabGlance } from "./glance";
 import { TerminalGlanceCard } from "./TerminalGlanceCard";
 import { TerminalOverview } from "./TerminalOverview";
-import { collectLeafIds, type SplitDirection } from "./pane-tree";
+import {
+  collectLeafIds,
+  expandedLeafIds,
+  type SplitDirection,
+} from "./pane-tree";
 import {
   TERMINAL_PANE_MIME,
   clearTabDropTarget,
@@ -528,6 +532,9 @@ export function TerminalPanel(): ReactNode {
               <PaneTree
                 node={tab.root}
                 path={[]}
+                // Folding the last pane still showing is declined, so the tab
+                // stops offering it rather than offering a button that no-ops.
+                canFold={expandedLeafIds(tab.root).length > 1}
                 // The tab's own key, not the one we're viewing: focus and split
                 // sizes are stored where the tab lives.
                 reviewKey={homeKey}

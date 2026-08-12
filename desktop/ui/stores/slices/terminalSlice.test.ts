@@ -18,6 +18,7 @@ import {
   extractPaneToTab,
   removeTerminalFromTabs,
   setFocusedInTab,
+  setPaneCollapsedInTab,
   resizeSplitInTab,
   ingestTabs,
   buildCheckoutIndex,
@@ -36,6 +37,7 @@ import {
 } from "./terminalSlice";
 import {
   collectLeafIds,
+  expandedLeafIds,
   leaf,
   makeTab,
   splitLeaf,
@@ -789,6 +791,96 @@ describe("tab reducers", () => {
     state = {
       ...state,
       ...resizeSplitInTab(state, "k1", "tabA", [], [0.7, 0.3]),
+    };
+    const root = state.terminalTabsByReviewKey["k1"][0].root;
+    if (root.type !== "split") throw new Error("expected split");
+    expect(root.sizes).toEqual([0.7, 0.3]);
+  });
+
+  /** A tab with panes "a" and "b" side by side, focused on "b". */
+  function splitTab() {
+    let state = { ...emptyTabState() };
+    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
+    return {
+      ...state,
+      ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
+    };
+  }
+
+  it("setPaneCollapsedInTab folds a pane and hands focus to one still showing", () => {
+    let state = splitTab();
+    expect(state.terminalTabsByReviewKey["k1"][0].focused).toBe("b");
+    state = {
+      ...state,
+      ...setPaneCollapsedInTab(state, "k1", "tabA", "b", true),
+    };
+    const tab = state.terminalTabsByReviewKey["k1"][0];
+    expect(expandedLeafIds(tab.root)).toEqual(["a"]);
+    expect(tab.focused).toBe("a");
+  });
+
+  it("setPaneCollapsedInTab declines to fold the last pane showing", () => {
+    let state = splitTab();
+    state = {
+      ...state,
+      ...setPaneCollapsedInTab(state, "k1", "tabA", "b", true),
+    };
+    expect(setPaneCollapsedInTab(state, "k1", "tabA", "a", true)).toEqual({});
+    expect(setPaneCollapsedInTab(state, "k1", "tabA", "zz", true)).toEqual({});
+    expect(setPaneCollapsedInTab(state, "k1", "nope", "a", true)).toEqual({});
+  });
+
+  it("re-picks focus onto a pane still showing when one closes", () => {
+    // The state folding leaves behind: "a" folded, focus handed to "b". Closing
+    // "b" must not hand focus back to the folded "a" — the tab would draw only
+    // "c", dimmed, with the keyboard pointed at a title bar.
+    let state = { ...emptyTabState() };
+    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
+    state = {
+      ...state,
+      ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
+    };
+    state = {
+      ...state,
+      ...splitTabForTerminal(state, "tabA", "b", "c", "row"),
+    };
+    state = { ...state, ...setFocusedInTab(state, "k1", "tabA", "a") };
+    state = {
+      ...state,
+      ...setPaneCollapsedInTab(state, "k1", "tabA", "a", true),
+    };
+    const focusedAfterFold = state.terminalTabsByReviewKey["k1"][0].focused;
+    state = { ...state, ...removeTerminalFromTabs(state, focusedAfterFold) };
+
+    const tab = state.terminalTabsByReviewKey["k1"][0];
+    expect(expandedLeafIds(tab.root)).toContain(tab.focused);
+  });
+
+  it("setFocusedInTab unfolds the pane it focuses", () => {
+    let state = splitTab();
+    state = {
+      ...state,
+      ...setPaneCollapsedInTab(state, "k1", "tabA", "b", true),
+    };
+    state = { ...state, ...setFocusedInTab(state, "k1", "tabA", "b") };
+    const tab = state.terminalTabsByReviewKey["k1"][0];
+    expect(tab.focused).toBe("b");
+    expect(expandedLeafIds(tab.root)).toEqual(["a", "b"]);
+  });
+
+  it("folding leaves the split's sizes intact so unfolding restores them", () => {
+    let state = splitTab();
+    state = {
+      ...state,
+      ...resizeSplitInTab(state, "k1", "tabA", [], [0.7, 0.3]),
+    };
+    state = {
+      ...state,
+      ...setPaneCollapsedInTab(state, "k1", "tabA", "b", true),
+    };
+    state = {
+      ...state,
+      ...setPaneCollapsedInTab(state, "k1", "tabA", "b", false),
     };
     const root = state.terminalTabsByReviewKey["k1"][0].root;
     if (root.type !== "split") throw new Error("expected split");

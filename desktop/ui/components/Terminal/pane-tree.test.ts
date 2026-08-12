@@ -13,6 +13,9 @@ import {
   setSizesAtPath,
   reorderTabs,
   movePane,
+  setLeafCollapsed,
+  expandedLeafIds,
+  showsTerminal,
 } from "./pane-tree";
 
 describe("makeTab / leaf", () => {
@@ -316,5 +319,66 @@ describe("movePane", () => {
     expect(movePane(root, "a", "zz", "left")).toBe(root);
     expect(movePane(root, "zz", "a", "left")).toBe(root);
     expect(movePane(root, "a", "a", "left")).toBe(root);
+  });
+});
+
+describe("collapsing panes", () => {
+  const row = (...ids: string[]): PaneNode => ({
+    type: "split",
+    direction: "row",
+    children: ids.map(leaf),
+    sizes: evenSizes(ids.length),
+  });
+
+  it("folds and unfolds one leaf, leaving the sizes alone", () => {
+    const root = row("a", "b");
+    const folded = setLeafCollapsed(root, "b", true);
+    if (folded.type !== "split") throw new Error("expected split");
+    expect(folded.children[1]).toEqual({
+      type: "leaf",
+      terminalId: "b",
+      collapsed: true,
+    });
+    expect(folded.sizes).toEqual([0.5, 0.5]);
+    expect(setLeafCollapsed(folded, "b", false)).toEqual(root);
+  });
+
+  it("returns the same tree when nothing changes", () => {
+    const root = row("a", "b");
+    expect(setLeafCollapsed(root, "b", false)).toBe(root);
+    expect(setLeafCollapsed(root, "zz", true)).toBe(root);
+  });
+
+  it("reports which leaves are still showing a terminal", () => {
+    const folded = setLeafCollapsed(row("a", "b", "c"), "b", true);
+    expect(expandedLeafIds(folded)).toEqual(["a", "c"]);
+    expect(collectLeafIds(folded)).toEqual(["a", "b", "c"]);
+    expect(showsTerminal(folded)).toBe(true);
+  });
+
+  it("says a split holding only folded leaves shows nothing", () => {
+    let node: PaneNode = row("a", "b");
+    node = setLeafCollapsed(node, "a", true);
+    node = setLeafCollapsed(node, "b", true);
+    expect(showsTerminal(node)).toBe(false);
+    expect(expandedLeafIds(node)).toEqual([]);
+  });
+
+  it("unfolds a folded pane left alone at the root", () => {
+    // Closing the last sibling of a folded pane would otherwise leave a tab
+    // that is nothing but a title bar.
+    const folded = setLeafCollapsed(row("a", "b"), "b", true);
+    expect(removeLeaf(folded, "a")).toEqual(leaf("b"));
+    expect(pruneLeaves(folded, new Set(["b"]))).toEqual(leaf("b"));
+  });
+
+  it("keeps a folded pane folded when its split survives", () => {
+    const folded = setLeafCollapsed(row("a", "b", "c"), "c", true);
+    const next = removeLeaf(folded, "a");
+    if (next?.type !== "split") throw new Error("expected split");
+    expect(next.children[1]).toMatchObject({
+      terminalId: "c",
+      collapsed: true,
+    });
   });
 });
