@@ -28,7 +28,17 @@ static SKIP_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         Regex::new(r"^build/").unwrap(),
         Regex::new(r"/\.next/").unwrap(),
         Regex::new(r"^\.next/").unwrap(),
-        // Package lock files (often very noisy diffs)
+        // Package lock files (often very noisy diffs).
+        //
+        // DELIBERATELY NOT `classify::static_rules::LOCKFILE_NAMES`, which is
+        // longer. The two lists do different jobs: this one drops a file from
+        // the review entirely, so it never reaches a reviewer at all, while the
+        // classifier's list LABELS a hunk `generated:lockfile` in a file that is
+        // still listed and still counted. Only these four are noisy enough to
+        // hide outright; the rest (uv.lock, go.sum, poetry.lock, …) are meant to
+        // stay visible and auto-trusted. Widening either list to match the other
+        // changes which files a reviewer sees — and this list is mirrored again
+        // in `desktop/ui/stores/slices/filesSlice.ts`, which must stay in sync.
         Regex::new(r"package-lock\.json$").unwrap(),
         Regex::new(r"yarn\.lock$").unwrap(),
         Regex::new(r"Cargo\.lock$").unwrap(),

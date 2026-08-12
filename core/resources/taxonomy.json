@@ -18,12 +18,12 @@
         {
           "id": "imports:reordered",
           "name": "Reordered",
-          "description": "The same set of imports exists before and after, in a different order."
+          "description": "The same set of imports exists before and after, in a different order. Trusted for Python, JS/TS (without bare side-effect imports), and Go (without blank imports); other languages are not labeled."
         },
         {
           "id": "imports:modified",
           "name": "Modified",
-          "description": "All changed lines are import statements that were edited (paths changed, names added/removed)."
+          "description": "All changed lines are import statements pulling from the same modules, with the same aliases and type flags — only which names are imported changed. Verified for JS/TS, Python, and C/C++; other languages are not labeled."
         }
       ]
     },
@@ -35,17 +35,22 @@
         {
           "id": "formatting:whitespace",
           "name": "Whitespace",
-          "description": "All changed lines are empty or whitespace-only. No code characters changed."
+          "description": "All changed lines are empty or whitespace-only. Any code file (one with a comment syntax); prose and data formats are excluded, where a blank line can be content."
         },
         {
           "id": "formatting:line-length",
           "name": "Line length",
-          "description": "Code wrapped or unwrapped across lines. Joining and normalizing whitespace produces identical content."
+          "description": "Code wrapped or unwrapped across lines. Joining and normalizing whitespace outside string literals produces identical content. JS/TS and Python only."
         },
         {
           "id": "formatting:style",
           "name": "Style",
-          "description": "Only punctuation changed: semicolons added/removed, quote style (single ↔ double), or trailing commas."
+          "description": "Only punctuation changed: semicolons added/removed, quote style (single ↔ double), or trailing commas — and only where those are non-semantic. JS/TS and Python only."
+        },
+        {
+          "id": "formatting:spacing",
+          "name": "Spacing",
+          "description": "Tokens are identical; only the whitespace between or after them moved (e.g. `x=1` → `x = 1`, padding trims, alignment shifts). JS/TS and Python only."
         }
       ]
     },
