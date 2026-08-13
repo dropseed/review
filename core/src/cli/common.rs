@@ -130,7 +130,7 @@ pub fn resolve_review_arg(repo: &Path, spec: Option<&str>) -> Result<ResolvedRev
 }
 
 /// Trim `s` and return it as an owned string, unless it's blank.
-fn non_blank(s: &str) -> Option<String> {
+pub(crate) fn non_blank(s: &str) -> Option<String> {
     let s = s.trim();
     (!s.is_empty()).then(|| s.to_owned())
 }

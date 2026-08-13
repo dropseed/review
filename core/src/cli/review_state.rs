@@ -17,8 +17,8 @@ use crate::trust::matches_pattern;
 use super::comments::SourceArg;
 use super::common::{
     effective_status, hunk_labels, hunk_line_stats, load_for_mutation, load_review_view,
-    mutate_review, print_json, reject_blank, render_hunk_diff, resolve_review_arg, resolve_source,
-    sync_classification, EffectiveStatus, ReviewTarget,
+    mutate_review, non_blank, print_json, reject_blank, render_hunk_diff, resolve_review_arg,
+    resolve_source, sync_classification, EffectiveStatus, ReviewTarget,
 };
 use super::get_repo_path;
 
@@ -377,7 +377,10 @@ pub fn run_mark(args: MarkArgs, status: HunkStatus) -> Result<(), String> {
     let (known, unknown) = resolve_mark_targets(&comparison.key, &live_ids, &args.hunks)?;
 
     let existed = storage::review_exists(&repo, &review.ref_name).unwrap_or(false);
-    let reason = args.reason.clone();
+    // Blank is treated the same as omitted, rather than storing a
+    // whitespace-only reason that `review hunks` would then print as a
+    // dangling "reason: " line.
+    let reason = args.reason.as_deref().and_then(non_blank);
     let source = resolve_source(args.source)?;
     let result = mutate_review(&repo, &review.ref_name, &hunks, |state| {
         // Keep the total and per-hunk labels fresh so `review list` and the
