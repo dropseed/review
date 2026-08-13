@@ -21,6 +21,7 @@ pub mod review;
 pub mod sources;
 pub mod symbols;
 pub mod trust;
+pub mod work;
 
 // Service layer — shared business logic for Tauri and Axum
 pub mod service;

@@ -15,6 +15,7 @@ mod skill;
 mod staging;
 mod terminal;
 mod url;
+mod work;
 
 #[derive(Debug, Parser)]
 #[command(name = "review")]
@@ -134,7 +135,7 @@ pub enum Commands {
     /// Print a `review://` deep link for a file or hunk
     Url(url::UrlArgs),
 
-    /// Install the review-guide skill for Claude Code and Codex
+    /// Install the review-app skill for Claude Code and Codex
     Skill(skill::SkillArgs),
 
     /// Set (or show/clear) the default comparison so commands don't need `-s`
@@ -142,6 +143,9 @@ pub enum Commands {
 
     /// Inspect and drive the app's terminal sessions (list, start, send, peek, wait)
     Terminal(terminal::TerminalArgs),
+
+    /// Inspect and edit the global work queue (what you're working on, in order)
+    Work(work::WorkArgs),
 }
 
 /// `review use [spec]` — the repo's stored default comparison. With a spec,
@@ -301,6 +305,7 @@ pub fn run(cli: Cli) -> Result<(), String> {
         Some(Commands::Skill(args)) => skill::run_skill(args),
         Some(Commands::Use(args)) => run_use(args),
         Some(Commands::Terminal(args)) => terminal::run_terminal(args),
+        Some(Commands::Work(args)) => work::run_work(args),
         None => run_open(cli.path, has_home_override),
     }
 }
@@ -560,10 +565,11 @@ fn read_patch_input(src: &str) -> Result<String, String> {
 
 /// Path to the signal file used to communicate a repo path to the running app.
 /// On macOS, `open -a` silently drops `--args` when the app is already running.
-/// The CLI writes the requested repo path here, and the app reads it on reactivation.
+/// The CLI writes the requested repo path here, and the app reads it on
+/// reactivation. Home-scoped in core so `--home`/`$REVIEW_HOME` instances and
+/// the default app can't steer each other.
 fn open_request_path() -> PathBuf {
-    let tmp = std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_owned());
-    PathBuf::from(tmp).join("review-open-request")
+    crate::review::central::open_request_path()
 }
 
 /// Launch the Review desktop app for the given repo, optionally with a review ref and/or focused file.

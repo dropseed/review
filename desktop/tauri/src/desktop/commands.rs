@@ -34,6 +34,7 @@ use review::sources::traits::{
 };
 use review::symbols::{self, FileSymbolDiff, Symbol};
 use review::trust::patterns::TrustCategory;
+use review::work::{WorkItem, WorkRef};
 use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
@@ -423,6 +424,78 @@ pub fn get_review_storage_path(repo_path: String) -> Result<String, String> {
     review::review::central::get_repo_storage_dir(&PathBuf::from(&repo_path))
         .map(|p| p.to_string_lossy().to_string())
         .map_err(|e| e.to_string())
+}
+
+// ============================================================
+// Work queue
+//
+// The queue is global and cross-repo, so none of these take a repo path — only
+// the refs bound to an item do. See `ApiClient` for why every mutation returns
+// the full list.
+// ============================================================
+
+#[tauri::command]
+pub fn work_list() -> Result<Vec<WorkItem>, String> {
+    let t0 = Instant::now();
+    let state = review::work::list().map_err(|e| e.to_string())?;
+    info!(
+        "work_list -> {} items in {:?}",
+        state.items.len(),
+        t0.elapsed()
+    );
+    Ok(state.items)
+}
+
+#[tauri::command]
+pub fn work_add(title: String, refs: Vec<WorkRef>) -> Result<Vec<WorkItem>, String> {
+    let t0 = Instant::now();
+    let (state, item) = review::work::add(&title, refs).map_err(|e| e.to_string())?;
+    info!("work_add {} in {:?}", item.id, t0.elapsed());
+    Ok(state.items)
+}
+
+#[tauri::command]
+pub fn work_remove(id: String) -> Result<Vec<WorkItem>, String> {
+    let t0 = Instant::now();
+    let (state, item) = review::work::remove(&id).map_err(|e| e.to_string())?;
+    info!("work_remove {} in {:?}", item.id, t0.elapsed());
+    Ok(state.items)
+}
+
+#[tauri::command]
+pub fn work_rename(id: String, title: String) -> Result<Vec<WorkItem>, String> {
+    let t0 = Instant::now();
+    let (state, item) = review::work::rename(&id, &title).map_err(|e| e.to_string())?;
+    info!("work_rename {} in {:?}", item.id, t0.elapsed());
+    Ok(state.items)
+}
+
+/// Reorder an item. `position` is 0-based, matching the array the frontend
+/// dragged (the CLI's `review work move` is the 1-based surface).
+#[tauri::command]
+pub fn work_move(id: String, position: usize) -> Result<Vec<WorkItem>, String> {
+    let t0 = Instant::now();
+    let (state, item) = review::work::move_item(&id, position).map_err(|e| e.to_string())?;
+    info!("work_move {} -> {position} in {:?}", item.id, t0.elapsed());
+    Ok(state.items)
+}
+
+#[tauri::command]
+pub fn work_bind(id: String, repo_path: String, r#ref: String) -> Result<Vec<WorkItem>, String> {
+    let t0 = Instant::now();
+    let (state, item) =
+        review::work::bind(&id, WorkRef::new(&repo_path, &r#ref)).map_err(|e| e.to_string())?;
+    info!("work_bind {} {} in {:?}", item.id, r#ref, t0.elapsed());
+    Ok(state.items)
+}
+
+#[tauri::command]
+pub fn work_unbind(id: String, repo_path: String, r#ref: String) -> Result<Vec<WorkItem>, String> {
+    let t0 = Instant::now();
+    let (state, item) =
+        review::work::unbind(&id, &WorkRef::new(&repo_path, &r#ref)).map_err(|e| e.to_string())?;
+    info!("work_unbind {} {} in {:?}", item.id, r#ref, t0.elapsed());
+    Ok(state.items)
 }
 
 #[tauri::command]

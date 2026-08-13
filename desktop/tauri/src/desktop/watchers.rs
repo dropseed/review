@@ -10,7 +10,7 @@ use review::service::activity_cache::RefreshTrigger;
 use review::service::watcher_events::{
     categorize_change, is_git_state_path, ChangeKind, GitChangedPayload,
 };
-use review::service::EVENT_REPO_ACTIVITY_CHANGED;
+use review::service::{EVENT_REPO_ACTIVITY_CHANGED, EVENT_WORK_CHANGED};
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -51,6 +51,13 @@ fn log_to_file(_repo_path: &Path, _message: &str) {}
 
 // Global map of repo_path -> watcher handle (using thread for debouncer)
 static WATCHERS: Mutex<Option<HashMap<String, WatcherHandle>>> = Mutex::new(None);
+
+/// The single work-queue watcher. Kept out of `WATCHERS` because every entry
+/// there is keyed by a repo and paired with a start/stop tied to that repo's
+/// lifecycle; this one is per-process and never stops. A sentinel key in the
+/// map would survive only as long as nothing reconciles the map against the
+/// registered repos, and the failure would be silent.
+static WORK_WATCHER: Mutex<Option<WatcherHandle>> = Mutex::new(None);
 
 struct WatcherHandle {
     // Keep debouncer alive - dropping it stops watching
@@ -136,6 +143,12 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
     // Clone gitignore for the closure
     let gitignore_for_closure = gitignore.clone();
 
+    // Needed to categorize paths; this watcher is scoped to the repo, so it
+    // never actually sees a central-root path — passing it keeps both surfaces
+    // on one set of rules rather than two.
+    let central_root_for_closure =
+        review::review::central::canonical_central_root().unwrap_or_default();
+
     let mut debouncer = new_debouncer(
         Duration::from_millis(WATCHER_DEBOUNCE_MS),
         move |result: Result<Vec<notify_debouncer_mini::DebouncedEvent>, notify::Error>| {
@@ -173,7 +186,7 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
                             continue;
                         }
 
-                        let category = categorize_change(&path_str);
+                        let category = categorize_change(&path_str, &central_root_for_closure);
 
                         // Only log non-ignored events to reduce noise
                         if !matches!(category, ChangeKind::Ignored) {
@@ -181,6 +194,7 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
                                 ChangeKind::ReviewState => "ReviewState",
                                 ChangeKind::GitState => "GitState",
                                 ChangeKind::WorkingTree => "WorkingTree",
+                                ChangeKind::WorkQueue => "WorkQueue",
                                 ChangeKind::Ignored => "Ignored",
                             };
                             log_to_file(
@@ -206,7 +220,9 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
                                     changed_paths.insert(rel);
                                 }
                             }
-                            ChangeKind::Ignored => {}
+                            // The dedicated work-queue watcher owns this; a
+                            // repo watcher never sees the central root.
+                            ChangeKind::WorkQueue | ChangeKind::Ignored => {}
                         }
                     }
 
@@ -435,6 +451,58 @@ pub fn stop_local_activity_watcher(repo_path: &str) {
         map.remove(&local_activity_key(repo_path));
     }
     review::service::activity_cache::invalidate(&PathBuf::from(repo_path));
+}
+
+/// Watch the global work queue (`~/.review/work.json`) and emit `work-changed`
+/// so `review work ...` edits — and edits from another window — land live.
+///
+/// One watcher for the whole app, not one per repo: the queue is cross-repo and
+/// lives at the central root, not under `repos/<repo-id>/`, so no repo watcher
+/// covers it. The watch is on the root directory (`notify` can't watch a file
+/// that doesn't exist yet, and the atomic temp+rename write replaces the inode
+/// on every save); `categorize_change` picks `work.json` out of everything else
+/// the root holds, using the same rules as the Axum watcher.
+pub fn start_work_watcher(app: AppHandle) -> Result<(), String> {
+    let work_file = review::work::storage::work_path().map_err(|e| e.to_string())?;
+    let root = work_file
+        .parent()
+        .ok_or("The work queue path has no parent directory")?
+        .to_path_buf();
+    std::fs::create_dir_all(&root)
+        .map_err(|e| format!("Failed to create central storage dir: {e}"))?;
+
+    // Canonical only for the comparison — the events come back from the OS with
+    // every symlink resolved, and a `$REVIEW_HOME` under macOS's `/tmp` is one.
+    // The watch itself stays on the path we were given.
+    let root_for_closure =
+        review::review::central::canonical_central_root().unwrap_or_else(|_| root.clone());
+    let mut debouncer = new_debouncer(
+        Duration::from_millis(WATCHER_DEBOUNCE_MS),
+        move |result: Result<Vec<notify_debouncer_mini::DebouncedEvent>, notify::Error>| {
+            if let Ok(events) = result {
+                let queue_changed = events.iter().any(|e| {
+                    categorize_change(&e.path.to_string_lossy(), &root_for_closure)
+                        == ChangeKind::WorkQueue
+                });
+                if queue_changed {
+                    log::info!("[watcher] Work queue changed");
+                    let _ = app.emit(EVENT_WORK_CHANGED, ());
+                }
+            }
+        },
+    )
+    .map_err(|e| format!("Failed to create work watcher: {e}"))?;
+
+    debouncer
+        .watcher()
+        .watch(&root, RecursiveMode::NonRecursive)
+        .map_err(|e| format!("Failed to watch the work queue: {e}"))?;
+
+    *WORK_WATCHER.lock().expect("WORK_WATCHER mutex poisoned") = Some(WatcherHandle {
+        _debouncer: debouncer,
+    });
+    log::info!("[watcher] Started work queue watcher on {}", root.display());
+    Ok(())
 }
 
 /// Start lightweight watchers on all registered repos at startup. Each watcher

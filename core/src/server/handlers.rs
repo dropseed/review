@@ -25,6 +25,7 @@ use crate::sources::traits::{
 };
 use crate::symbols::{FileSymbolDiff, Symbol, SymbolDefinition};
 use crate::trust::patterns::TrustCategory;
+use crate::work::{self, WorkItem, WorkRef};
 
 pub(super) type ApiResult<T> = Result<Json<T>, (StatusCode, String)>;
 
@@ -124,6 +125,14 @@ pub fn build_api_router() -> Router {
         .route("/api/review/root", post(review_root))
         .route("/api/review/storage-path", post(review_storage_path))
         .route("/api/review/freshness", post(review_freshness))
+        // Work queue
+        .route("/api/work/list", post(work_list))
+        .route("/api/work/add", post(work_add))
+        .route("/api/work/remove", post(work_remove))
+        .route("/api/work/rename", post(work_rename))
+        .route("/api/work/move", post(work_move))
+        .route("/api/work/bind", post(work_bind))
+        .route("/api/work/unbind", post(work_unbind))
         // Classification
         .route("/api/classify/static", post(classify_static))
         .route("/api/classify/move-pairs", post(classify_move_pairs))
@@ -971,6 +980,80 @@ async fn review_freshness(
 }
 
 // ============================================================
+// Work queue handlers
+//
+// Same shapes as the Tauri `work_*` commands; see `ApiClient` for why every
+// mutation answers with the full list.
+// ============================================================
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkAddRequest {
+    title: String,
+    #[serde(default)]
+    refs: Vec<WorkRef>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkIdRequest {
+    id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkRenameRequest {
+    id: String,
+    title: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkMoveRequest {
+    id: String,
+    /// 0-based, matching the array the frontend reordered.
+    position: usize,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkBindRequest {
+    id: String,
+    /// The `{repoPath, ref}` pair, deserialized as the `WorkRef` it becomes
+    /// rather than respelled field by field.
+    #[serde(flatten)]
+    work_ref: WorkRef,
+}
+
+async fn work_list() -> ApiResult<Vec<WorkItem>> {
+    blocking(|| Ok(work::list()?.items)).await
+}
+
+async fn work_add(Json(req): Json<WorkAddRequest>) -> ApiResult<Vec<WorkItem>> {
+    blocking(move || Ok(work::add(&req.title, req.refs)?.0.items)).await
+}
+
+async fn work_remove(Json(req): Json<WorkIdRequest>) -> ApiResult<Vec<WorkItem>> {
+    blocking(move || Ok(work::remove(&req.id)?.0.items)).await
+}
+
+async fn work_rename(Json(req): Json<WorkRenameRequest>) -> ApiResult<Vec<WorkItem>> {
+    blocking(move || Ok(work::rename(&req.id, &req.title)?.0.items)).await
+}
+
+async fn work_move(Json(req): Json<WorkMoveRequest>) -> ApiResult<Vec<WorkItem>> {
+    blocking(move || Ok(work::move_item(&req.id, req.position)?.0.items)).await
+}
+
+async fn work_bind(Json(req): Json<WorkBindRequest>) -> ApiResult<Vec<WorkItem>> {
+    blocking(move || Ok(work::bind(&req.id, req.work_ref)?.0.items)).await
+}
+
+async fn work_unbind(Json(req): Json<WorkBindRequest>) -> ApiResult<Vec<WorkItem>> {
+    blocking(move || Ok(work::unbind(&req.id, &req.work_ref)?.0.items)).await
+}
+
+// ============================================================
 // Classification handlers
 // ============================================================
 
@@ -1280,6 +1363,12 @@ async fn events_sse(
 
     let repo_path = PathBuf::from(&params.repo_path);
     let repo_path_str = params.repo_path.clone();
+    // The central root, watched alongside this repo so `review work ...` edits
+    // reach the browser. `categorize_change` needs it to tell the app's own
+    // global state apart from a repo's files.
+    // Canonical, because the paths it is compared against arrive from the OS
+    // already resolved — see `canonical_central_root`.
+    let central_root = crate::review::central::canonical_central_root().ok();
 
     // Spawn the watcher in a blocking context. When `tx` is dropped
     // (because the SSE connection closed), the debouncer is dropped too.
@@ -1289,6 +1378,10 @@ async fn events_sse(
         let repo_for_closure = repo_path_str.clone();
         let repo_root = repo_path.clone();
         let tx_clone = tx.clone();
+        // The debouncer's closure outlives this scope, so it gets its own copy.
+        // An unresolvable root can't match any real path, which is the right
+        // answer: there is no queue to watch.
+        let central_root_for_closure = central_root.clone().unwrap_or_default();
 
         let debouncer_result = new_debouncer(
             Duration::from_millis(200),
@@ -1297,6 +1390,7 @@ async fn events_sse(
                     let mut review_changed = false;
                     let mut git_state_changed = false;
                     let mut working_tree_changed = false;
+                    let mut work_changed = false;
                     let mut changed_paths: std::collections::BTreeSet<String> =
                         std::collections::BTreeSet::new();
 
@@ -1310,10 +1404,11 @@ async fn events_sse(
                             continue;
                         }
 
-                        let category = categorize_change(&path_str);
+                        let category = categorize_change(&path_str, &central_root_for_closure);
                         match category {
                             ChangeKind::ReviewState => review_changed = true,
                             ChangeKind::GitState => git_state_changed = true,
+                            ChangeKind::WorkQueue => work_changed = true,
                             ChangeKind::WorkingTree => {
                                 working_tree_changed = true;
                                 let rel = crate::service::util::repo_relative_path(
@@ -1333,6 +1428,18 @@ async fn events_sse(
                             Event::default()
                                 .event("review-state-changed")
                                 .data(&repo_for_closure),
+                        );
+                    }
+                    if work_changed {
+                        let _ = tx_clone.blocking_send(
+                            Event::default()
+                                .event(crate::service::EVENT_WORK_CHANGED)
+                                // The event is the whole message — the client
+                                // re-reads `work.json` itself. It still needs a
+                                // payload: EventSource does not dispatch an
+                                // event whose data buffer is empty, so `""`
+                                // would never reach the page at all.
+                                .data("{}"),
                         );
                     }
                     if working_tree_changed || git_state_changed {
@@ -1397,6 +1504,16 @@ async fn events_sse(
                 let _ = debouncer
                     .watcher()
                     .watch(&central_dir, RecursiveMode::Recursive);
+            }
+        }
+
+        // …and the central root itself (non-recursively) for the global work
+        // queue, so `review work ...` edits reach the browser. The watch is on
+        // the directory because the atomic temp+rename write replaces
+        // `work.json`'s inode on every save.
+        if let Some(root) = central_root.as_deref() {
+            if std::fs::create_dir_all(root).is_ok() {
+                let _ = debouncer.watcher().watch(root, RecursiveMode::NonRecursive);
             }
         }
 

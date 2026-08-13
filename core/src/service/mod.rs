@@ -105,6 +105,11 @@ pub struct RepoActivityChangedPayload {
 /// Axum watcher paths; the TypeScript clients mirror this string.
 pub const EVENT_REPO_ACTIVITY_CHANGED: &str = "repo-activity-changed";
 
+/// Event name signalling that the global work queue (`~/.review/work.json`)
+/// changed. Carries no payload — the client re-reads the list. Shared across
+/// the Tauri and Axum watcher paths; the TypeScript clients mirror this string.
+pub const EVENT_WORK_CHANGED: &str = "work-changed";
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewFreshnessInput {

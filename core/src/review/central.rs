@@ -76,6 +76,42 @@ pub fn get_central_root() -> Result<PathBuf, CentralError> {
     Ok(home.join(".review"))
 }
 
+/// The central storage root as the filesystem reports it — what a watcher must
+/// compare its events against.
+///
+/// `notify`/FSEvents deliver *resolved* paths. On macOS `/tmp` is a symlink to
+/// `/private/tmp`, so a `$REVIEW_HOME=/tmp/review-dev` — the documented dev
+/// setup — has its `work.json` arrive as `/private/tmp/review-dev/work.json`,
+/// which matches neither the parent-equality nor the `strip_prefix` check in
+/// `categorize_change`. The queue's own saves then read as working-tree edits:
+/// no `work-changed` at all, and a spurious full diff refetch on every one.
+///
+/// Falls back to the unresolved path when the root doesn't exist yet, which
+/// behaves exactly as before.
+pub fn canonical_central_root() -> Result<PathBuf, CentralError> {
+    Ok(canonical_path(&get_central_root()?))
+}
+
+/// The CLI→app "open this repo" signal file.
+///
+/// Scoped per review home: a `$REVIEW_HOME` dev instance and the released app
+/// must not be able to steer each other, so a custom home hashes into the file
+/// name. The default home keeps the historical bare name — released binaries
+/// on both sides of the file already agree on it.
+pub fn open_request_path() -> PathBuf {
+    let tmp = std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_owned());
+    let name = match std::env::var("REVIEW_HOME") {
+        Ok(home) if !home.is_empty() => {
+            let mut hasher = Sha256::new();
+            hasher.update(home.as_bytes());
+            let digest = hex::encode(hasher.finalize());
+            format!("review-open-request-{}", &digest[..8])
+        }
+        _ => "review-open-request".to_owned(),
+    };
+    PathBuf::from(tmp).join(name)
+}
+
 /// Resolve the canonical path, falling back to the original if canonicalization fails.
 fn canonical_path(repo_path: &Path) -> PathBuf {
     repo_path
@@ -147,6 +183,19 @@ pub fn repo_root(repo_path: &Path) -> PathBuf {
         }
     }
     canonical_path(repo_path)
+}
+
+/// A repository's name for display ("review", not the full path).
+///
+/// The sidebar's registry entries and the work queue's refs both name repos
+/// this way, so they share the derivation rather than each taking `file_name()`
+/// and drifting apart.
+pub fn display_name(repo_path: &Path) -> &str {
+    repo_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .or_else(|| repo_path.to_str())
+        .unwrap_or("unknown")
 }
 
 /// Compute a 16-character hex repo ID that is stable across worktrees.
@@ -289,10 +338,7 @@ pub fn register_repo(repo_path: &Path) -> Result<(), CentralError> {
     // path we were handed, so every worktree maps to one canonical entry.
     let canonical = repo_root(repo_path);
     let canonical_str = canonical.to_string_lossy().to_string();
-    let display_name = canonical
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "unknown".to_string());
+    let display_name = display_name(&canonical).to_owned();
 
     // Write repo.json
     let repo_json = serde_json::json!({
@@ -386,6 +432,37 @@ pub(crate) mod tests {
         std::env::set_var("REVIEW_HOME", review_home.path());
         let repo_dir = TempDir::new().unwrap();
         (EnvGuard, review_home, repo_dir)
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn canonical_central_root_resolves_a_symlinked_review_home() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let real = TempDir::new().unwrap();
+        let link_dir = TempDir::new().unwrap();
+        let link = link_dir.path().join("review-home");
+        std::os::unix::fs::symlink(real.path(), &link).unwrap();
+
+        std::env::set_var("REVIEW_HOME", &link);
+        let _guard = EnvGuard;
+
+        // The watchers compare against paths the OS hands back, and those are
+        // resolved — on macOS a REVIEW_HOME under /tmp arrives as /private/tmp.
+        assert_eq!(get_central_root().unwrap(), link);
+        assert_eq!(
+            canonical_central_root().unwrap(),
+            real.path().canonicalize().unwrap()
+        );
+    }
+
+    #[test]
+    fn canonical_central_root_falls_back_when_the_root_is_absent() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let missing = "/nonexistent-review-home-for-tests";
+        std::env::set_var("REVIEW_HOME", missing);
+        let _guard = EnvGuard;
+
+        assert_eq!(canonical_central_root().unwrap(), PathBuf::from(missing));
     }
 
     #[test]

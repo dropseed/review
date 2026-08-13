@@ -5,6 +5,8 @@
 //! shape the `git-changed` payload.
 
 use serde::Serialize;
+use std::ffi::OsStr;
+use std::path::Path;
 
 /// Payload for the `git-changed` event. Carries the set of working-tree paths
 /// that changed in the debounce window, so the frontend can refresh only those
@@ -28,8 +30,13 @@ pub enum ChangeKind {
     /// branch and working-tree status.
     GitState,
     WorkingTree,
+    /// The global work queue (`<central root>/work.json`) changed.
+    WorkQueue,
     Ignored,
 }
+
+/// The file name of the global work queue, directly inside the central root.
+const WORK_QUEUE_FILE: &str = "work.json";
 
 /// Check if a path has a `.log` extension (case-insensitive).
 pub fn is_log_file(path_str: &str) -> bool {
@@ -106,13 +113,39 @@ pub fn should_ignore_path(path_str: &str) -> bool {
     noisy_patterns.iter().any(|p| path_str.contains(p))
 }
 
-pub fn categorize_change(path_str: &str) -> ChangeKind {
+/// Categorize a changed path.
+///
+/// `central_root` is `~/.review` (or `$REVIEW_HOME`). Files sitting *directly*
+/// in it are the app's own global state and belong to no repository, so they
+/// are classified here rather than falling through to [`ChangeKind::WorkingTree`]
+/// — which would push an absolute, non-repo path into a `git-changed` payload
+/// and trigger a full diff refetch for whatever repo happened to be open. Only
+/// `work.json` is actionable; its `work.json.tmp` (created and renamed on every
+/// save), `index.json`, `settings.json`, `viewer_prs.json`, and `daemon.*` are
+/// noise. Deeper paths (`repos/**`, `cache/**`) still take the arms below.
+pub fn categorize_change(path_str: &str, central_root: &Path) -> ChangeKind {
+    let path = Path::new(path_str);
+    if path.parent() == Some(central_root) {
+        return if path.file_name() == Some(OsStr::new(WORK_QUEUE_FILE)) {
+            ChangeKind::WorkQueue
+        } else {
+            ChangeKind::Ignored
+        };
+    }
+
     if should_ignore_path(path_str) {
         return ChangeKind::Ignored;
     }
 
-    let is_central_review =
-        path_str.contains("/.review/repos/") || path_str.contains("\\.review\\repos\\");
+    // Match against the actual central root, not a literal ".review": under a
+    // custom `$REVIEW_HOME` the directory can be named anything, and a literal
+    // match would misfile review-state writes as working-tree changes.
+    let is_central_review = path
+        .strip_prefix(central_root)
+        .map(|rest| rest.starts_with("repos"))
+        .unwrap_or(false)
+        || path_str.contains("/.review/repos/")
+        || path_str.contains("\\.review\\repos\\");
     let is_legacy_review =
         path_str.contains("/.git/review/") || path_str.contains("\\.git\\review\\");
 
@@ -128,4 +161,115 @@ pub fn categorize_change(path_str: &str) -> ChangeKind {
     }
 
     ChangeKind::WorkingTree
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ROOT: &str = "/home/u/.review";
+
+    fn categorize(path: &str) -> ChangeKind {
+        categorize_change(path, Path::new(ROOT))
+    }
+
+    #[test]
+    fn the_work_queue_is_its_own_kind() {
+        assert_eq!(
+            categorize("/home/u/.review/work.json"),
+            ChangeKind::WorkQueue
+        );
+    }
+
+    #[test]
+    fn other_central_root_files_are_ignored_not_working_tree() {
+        // The queue's own atomic write creates and renames this on every save,
+        // so treating it as a working-tree edit made the queue self-trigger a
+        // spurious `git-changed` for whatever repo was open.
+        for name in [
+            "work.json.tmp",
+            "viewer_prs.json",
+            "index.json",
+            "settings.json",
+            "daemon.sock",
+            "daemon.pid",
+        ] {
+            let path = format!("{ROOT}/{name}");
+            assert_eq!(
+                categorize(&path),
+                ChangeKind::Ignored,
+                "{name} must not reach the working-tree arm"
+            );
+        }
+    }
+
+    #[test]
+    fn a_custom_review_home_still_classifies_review_state() {
+        // `$REVIEW_HOME` need not be named ".review" — the repos/ check has to
+        // come from the central root, not a literal.
+        let root = Path::new("/tmp/review-dev-home");
+        assert_eq!(
+            categorize_change("/tmp/review-dev-home/repos/abc/reviews/main.json", root),
+            ChangeKind::ReviewState
+        );
+        assert_eq!(
+            categorize_change("/tmp/review-dev-home/work.json", root),
+            ChangeKind::WorkQueue
+        );
+        assert_eq!(
+            categorize_change("/tmp/review-dev-home/index.json", root),
+            ChangeKind::Ignored
+        );
+    }
+
+    #[test]
+    fn paths_deeper_than_the_root_still_categorize_normally() {
+        assert_eq!(
+            categorize("/home/u/.review/repos/abc123/reviews/main.json"),
+            ChangeKind::ReviewState
+        );
+        assert_eq!(
+            categorize("/home/u/code/app/src/main.rs"),
+            ChangeKind::WorkingTree
+        );
+        assert_eq!(
+            categorize("/home/u/code/app/.git/HEAD"),
+            ChangeKind::GitState
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_symlinked_review_home_still_finds_its_own_work_queue() {
+        // The event path comes back from the OS resolved, so the root it is
+        // compared against has to be resolved too — see
+        // `central::canonical_central_root`, which is what the watchers pass.
+        let real = tempfile::TempDir::new().unwrap();
+        let link_dir = tempfile::TempDir::new().unwrap();
+        let link = link_dir.path().join("review-home");
+        std::os::unix::fs::symlink(real.path(), &link).unwrap();
+
+        let resolved = real.path().canonicalize().unwrap();
+        let event = resolved.join(WORK_QUEUE_FILE);
+        let event_str = event.to_string_lossy();
+
+        assert_eq!(
+            categorize_change(&event_str, &link),
+            ChangeKind::WorkingTree,
+            "the un-resolved root is what the bug looked like"
+        );
+        assert_eq!(
+            categorize_change(&event_str, &resolved),
+            ChangeKind::WorkQueue
+        );
+    }
+
+    #[test]
+    fn a_work_json_outside_the_central_root_is_just_a_file() {
+        // Only the one in the central root is the queue.
+        assert_eq!(
+            categorize("/home/u/code/app/work.json"),
+            ChangeKind::WorkingTree
+        );
+    }
 }

@@ -490,6 +490,24 @@ pub(crate) fn now_iso8601() -> String {
     iso8601_from_system_time(std::time::SystemTime::now())
 }
 
+/// Seed for a freshly minted id: `{nanos}-{pid}-{counter}`.
+///
+/// The per-process counter separates ids minted within the same nanosecond, and
+/// the process id separates two processes minting in that same nanosecond
+/// (which would otherwise collide). Callers decide how to present it — the CLI
+/// prefixes it, the work queue hashes it — so the uniqueness argument lives
+/// here once instead of in each of them.
+pub(crate) fn unique_id_seed() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("{nanos}-{}-{counter}", std::process::id())
+}
+
 /// Format a `SystemTime` as an ISO 8601 UTC timestamp with milliseconds (for JS
 /// compatibility), without pulling in a date crate.
 pub(crate) fn iso8601_from_system_time(time: std::time::SystemTime) -> String {

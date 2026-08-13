@@ -41,11 +41,12 @@ pub struct MenuItems(pub std::collections::HashMap<String, MenuItem<tauri::Wry>>
 pub struct SentryConsent(pub Arc<AtomicBool>);
 
 /// Path to the signal file used by the CLI to request opening a repo.
-/// Matches the path written by `review/src/cli/commands/open.rs`.
+/// Matches the path the CLI writes — one review-home-scoped implementation in
+/// core, so a `$REVIEW_HOME` dev instance and the released app can't read each
+/// other's open requests.
 #[cfg(desktop)]
 fn open_request_path() -> std::path::PathBuf {
-    let tmp = std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_owned());
-    std::path::PathBuf::from(tmp).join("review-open-request")
+    review::review::central::open_request_path()
 }
 
 /// Parsed signal-file payload. The 5th `focused_hunk_hash` line is optional;
@@ -327,11 +328,12 @@ pub fn run() {
                 .level_for("notify", log::LevelFilter::Warn)
                 .level_for("notify_debouncer_mini", log::LevelFilter::Warn);
 
-            // In dev mode, also write logs to ~/.review/app.log so we can
-            // read traces for debugging (same file the frontend logger uses).
+            // In dev mode, also write logs to the review home's app.log so we
+            // can read traces for debugging (same file the frontend logger
+            // uses). Through get_central_root so a `$REVIEW_HOME` dev instance
+            // doesn't interleave its logs with the released app's.
             if cfg!(debug_assertions) {
-                if let Some(home) = dirs::home_dir() {
-                    let review_dir = home.join(".review");
+                if let Ok(review_dir) = review::review::central::get_central_root() {
                     let _ = std::fs::create_dir_all(&review_dir);
                     builder = builder
                         .target(tauri_plugin_log::Target::new(
@@ -587,6 +589,17 @@ pub fn run() {
                 }
             });
 
+            // The work queue is global, so its watcher is started once here
+            // rather than alongside any repo's — off the startup path for the
+            // same reason as the one above: `new_debouncer` blocks on the
+            // platform watcher's handshake.
+            let work_app_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                if let Err(e) = crate::desktop::watchers::start_work_watcher(work_app_handle) {
+                    log::error!("[setup] Failed to start work queue watcher: {e}");
+                }
+            });
+
             Ok(())
         })
         .on_menu_event(|app, event| {
@@ -698,6 +711,13 @@ pub fn run() {
             commands::list_all_reviews_global,
             commands::get_review_root,
             commands::get_review_storage_path,
+            commands::work_list,
+            commands::work_add,
+            commands::work_remove,
+            commands::work_rename,
+            commands::work_move,
+            commands::work_bind,
+            commands::work_unbind,
             commands::consume_cli_request,
             commands::open_repo_window,
             commands::check_claude_available,

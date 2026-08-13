@@ -87,6 +87,10 @@ pub struct LocalBranchInfo {
     pub name: String,
     pub is_current: bool,
     pub commits_ahead: u32,
+    /// Commits on this branch that exist nowhere but here — `@{upstream}..branch`.
+    /// A branch with no upstream (or a `gone` one) has published nothing, so this
+    /// is its whole `commits_ahead`. See [`unpushed_count`].
+    pub unpushed_commits: u32,
     pub has_working_tree_changes: bool,
     pub last_commit_date: String,
     pub last_commit_message: String,
@@ -830,8 +834,10 @@ impl LocalGitSource {
 
         // Try batch approach first using %(ahead-behind:<ref>) (Git 2.36+)
         // This gets all ahead counts in a single git call instead of N+1
+        // `%(upstream)` and its track summary ride along on the same call: an
+        // unpushed count per branch would otherwise be one `rev-list` each.
         let batch_format = format!(
-            "%(refname:short)\t%(ahead-behind:{default_branch})\t%(committerdate:iso-strict)\t%(committeremail)\t%(subject)"
+            "%(refname:short)\t%(ahead-behind:{default_branch})\t%(committerdate:iso-strict)\t%(committeremail)\t%(upstream)\t%(upstream:track,nobracket)\t%(subject)"
         );
         let mut branches = match self.run_git(&[
             "for-each-ref",
@@ -869,6 +875,7 @@ impl LocalGitSource {
             branches.push(self.build_branch_info(
                 name,
                 true,
+                0,
                 0,
                 String::new(),
                 String::new(),
@@ -910,7 +917,8 @@ impl LocalGitSource {
                 continue;
             }
 
-            let parts: Vec<&str> = line.splitn(5, '\t').collect();
+            // Subject last, and it can contain tabs — so it takes the remainder.
+            let parts: Vec<&str> = line.splitn(7, '\t').collect();
             if parts.len() < 2 {
                 continue;
             }
@@ -926,21 +934,33 @@ impl LocalGitSource {
                 .and_then(|s| s.parse::<u32>().ok())
                 .unwrap_or(0);
 
-            // Include branch if it's ahead, is the current branch, or is in a worktree
+            let last_commit_date = parts.get(2).unwrap_or(&"").trim().to_owned();
+            let committer_email = parts.get(3).unwrap_or(&"").trim();
+            let upstream = parts.get(4).unwrap_or(&"").trim();
+            let track = parts.get(5).unwrap_or(&"").trim();
+            let last_commit_message = parts.get(6).unwrap_or(&"").trim().to_owned();
+
+            // Counted before the include decision, and inclusion is one of the
+            // things it decides. The default branch is 0 ahead of itself, so
+            // filtering on `commits_ahead` alone dropped it before anyone asked
+            // whether it was pushed — hiding exactly what this count is for:
+            // commits sitting on trunk that exist nowhere but this machine
+            // while some other branch is checked out.
+            let unpushed_commits = unpushed_count(upstream, track, commits_ahead);
+
+            // Include branch if it holds unpushed work, is ahead, is the
+            // current branch, or is in a worktree
             let in_worktree = worktree_map.contains_key(&name);
-            let include = commits_ahead > 0 || is_current || in_worktree;
+            let include = unpushed_commits > 0 || commits_ahead > 0 || is_current || in_worktree;
             if !include {
                 continue;
             }
-
-            let last_commit_date = parts.get(2).unwrap_or(&"").trim().to_owned();
-            let committer_email = parts.get(3).unwrap_or(&"").trim();
-            let last_commit_message = parts.get(4).unwrap_or(&"").trim().to_owned();
 
             branches.push(self.build_branch_info(
                 name,
                 is_current,
                 commits_ahead,
+                unpushed_commits,
                 last_commit_date,
                 last_commit_message,
                 committer_email,
@@ -960,6 +980,7 @@ impl LocalGitSource {
         name: String,
         is_current: bool,
         commits_ahead: u32,
+        unpushed_commits: u32,
         last_commit_date: String,
         last_commit_message: String,
         committer_email: &str,
@@ -984,6 +1005,7 @@ impl LocalGitSource {
             worktree_path: wt_path.cloned(),
             name,
             commits_ahead,
+            unpushed_commits,
             last_commit_date,
             last_commit_message,
             last_commit_by_user: self.commit_is_by_user(committer_email),
@@ -1005,7 +1027,7 @@ impl LocalGitSource {
     ) -> Result<Vec<LocalBranchInfo>, LocalGitError> {
         let output = self.run_git(&[
             "for-each-ref",
-            "--format=%(refname:short)\t%(committerdate:iso-strict)\t%(committeremail)\t%(subject)",
+            "--format=%(refname:short)\t%(committerdate:iso-strict)\t%(committeremail)\t%(upstream)\t%(upstream:track,nobracket)\t%(subject)",
             "refs/heads/",
         ])?;
 
@@ -1017,7 +1039,7 @@ impl LocalGitSource {
                 continue;
             }
 
-            let parts: Vec<&str> = line.splitn(4, '\t').collect();
+            let parts: Vec<&str> = line.splitn(6, '\t').collect();
             if parts.is_empty() {
                 continue;
             }
@@ -1026,7 +1048,9 @@ impl LocalGitSource {
             let is_current = name == *current_branch;
             let last_commit_date = parts.get(1).unwrap_or(&"").trim().to_owned();
             let committer_email = parts.get(2).unwrap_or(&"").trim();
-            let last_commit_message = parts.get(3).unwrap_or(&"").trim().to_owned();
+            let upstream = parts.get(3).unwrap_or(&"").trim();
+            let track = parts.get(4).unwrap_or(&"").trim();
+            let last_commit_message = parts.get(5).unwrap_or(&"").trim().to_owned();
 
             // Count commits ahead of default branch
             let commits_ahead = if name == default_branch {
@@ -1036,9 +1060,14 @@ impl LocalGitSource {
                     .unwrap_or(0)
             };
 
-            // Include branch if it's ahead, is the current branch, or is in a worktree
+            // Same order as the batch path: unpushed first, because it earns
+            // inclusion on its own — see `parse_branches_batch`.
+            let unpushed_commits = unpushed_count(upstream, track, commits_ahead);
+
+            // Include branch if it holds unpushed work, is ahead, is the
+            // current branch, or is in a worktree
             let in_worktree = worktree_map.contains_key(&name);
-            let include = commits_ahead > 0 || is_current || in_worktree;
+            let include = unpushed_commits > 0 || commits_ahead > 0 || is_current || in_worktree;
             if !include {
                 continue;
             }
@@ -1057,6 +1086,7 @@ impl LocalGitSource {
                 is_current,
                 has_working_tree_changes: has_changes,
                 worktree_path: wt_path.cloned(),
+                unpushed_commits,
                 name,
                 commits_ahead,
                 last_commit_date,
@@ -2976,6 +3006,30 @@ fn parse_remote_url(url: &str) -> Result<RemoteInfo, LocalGitError> {
     })
 }
 
+/// How many of a branch's commits exist nowhere but this machine.
+///
+/// `%(upstream:track,nobracket)` already answers it for a branch that has an
+/// upstream — its ahead count *is* `git rev-list --count @{upstream}..branch` —
+/// which is why this is read off the batch `for-each-ref` rather than costing a
+/// subprocess per branch.
+///
+/// No upstream, or an upstream that is `gone`, means nothing this branch holds
+/// has been published anywhere: every commit it has over the default branch is
+/// unpushed, so `commits_ahead` is the answer. That case is the common one for
+/// a branch someone started locally and hasn't pushed yet, which is exactly the
+/// branch this count exists to surface.
+fn unpushed_count(upstream: &str, track: &str, commits_ahead: u32) -> u32 {
+    if upstream.is_empty() || track == "gone" {
+        return commits_ahead;
+    }
+    // "ahead 3, behind 1" / "ahead 3" / "behind 1" / "" when in sync.
+    track
+        .split(',')
+        .filter_map(|part| part.trim().strip_prefix("ahead "))
+        .find_map(|n| n.trim().parse::<u32>().ok())
+        .unwrap_or(0)
+}
+
 /// Parse `git diff --shortstat` output into (files_changed, insertions, deletions).
 ///
 /// Typical output: ` 3 files changed, 10 insertions(+), 5 deletions(-)\n`
@@ -3678,5 +3732,115 @@ mod tests {
             .expect("unborn branch should still have working tree stats");
         assert_eq!(stats.file_count, 2, "staged + untracked: {stats:?}");
         assert_eq!(stats.additions, 1);
+    }
+
+    #[test]
+    fn unpushed_count_reads_the_upstream_track_summary() {
+        // In sync with its upstream: nothing of it is unpublished, however far
+        // ahead of the default branch it is.
+        assert_eq!(unpushed_count("origin/feat", "", 9), 0);
+        assert_eq!(unpushed_count("origin/feat", "behind 2", 9), 0);
+        assert_eq!(unpushed_count("origin/feat", "ahead 3", 9), 3);
+        assert_eq!(unpushed_count("origin/feat", "ahead 3, behind 1", 9), 3);
+    }
+
+    #[test]
+    fn a_branch_with_no_upstream_counts_all_its_commits_as_unpushed() {
+        assert_eq!(unpushed_count("", "", 4), 4);
+        // An upstream that was deleted from the remote is no upstream at all.
+        assert_eq!(unpushed_count("origin/feat", "gone", 4), 4);
+    }
+
+    /// The sidebar shows a branch because it holds commits nobody else has.
+    /// That has to be true of a pushed branch's *new* commits and of an
+    /// unpushed branch's every commit, which is one count with two derivations.
+    #[test]
+    fn list_branches_ahead_reports_unpushed_commits_per_branch() {
+        use crate::review::central::tests::ENV_LOCK;
+
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _review_home, repo_dir) = setup_test();
+        let repo_path = repo_dir.path();
+
+        let remote_dir = tempfile::tempdir().unwrap();
+        run_git_cmd(remote_dir.path(), &["init", "--bare", "-b", "trunk"]).unwrap();
+        let remote_url = remote_dir.path().to_string_lossy().to_string();
+
+        run_git_cmd(repo_path, &["init", "-b", "trunk"]).unwrap();
+        run_git_cmd(repo_path, &["config", "user.name", "Me"]).unwrap();
+        run_git_cmd(repo_path, &["config", "user.email", "me@example.com"]).unwrap();
+        run_git_cmd(repo_path, &["commit", "--allow-empty", "-m", "init"]).unwrap();
+        run_git_cmd(repo_path, &["remote", "add", "origin", &remote_url]).unwrap();
+        run_git_cmd(repo_path, &["push", "-u", "origin", "trunk"]).unwrap();
+
+        // Pushed, then one commit on top: only that commit is unpushed.
+        run_git_cmd(repo_path, &["checkout", "-b", "pushed"]).unwrap();
+        run_git_cmd(repo_path, &["commit", "--allow-empty", "-m", "one"]).unwrap();
+        run_git_cmd(repo_path, &["push", "-u", "origin", "pushed"]).unwrap();
+        run_git_cmd(repo_path, &["commit", "--allow-empty", "-m", "two"]).unwrap();
+
+        // Never pushed: both of its commits are unpushed.
+        run_git_cmd(repo_path, &["checkout", "-b", "local-only", "trunk"]).unwrap();
+        run_git_cmd(repo_path, &["commit", "--allow-empty", "-m", "a"]).unwrap();
+        run_git_cmd(repo_path, &["commit", "--allow-empty", "-m", "b"]).unwrap();
+
+        run_git_cmd(repo_path, &["checkout", "trunk"]).unwrap();
+
+        let source = LocalGitSource::new(repo_path.to_path_buf()).unwrap();
+        let branches = source.list_branches_ahead("trunk").unwrap();
+        let by_name: HashMap<&str, &LocalBranchInfo> =
+            branches.iter().map(|b| (b.name.as_str(), b)).collect();
+
+        let pushed = by_name.get("pushed").expect("pushed branch listed");
+        assert_eq!(pushed.commits_ahead, 2);
+        assert_eq!(pushed.unpushed_commits, 1);
+
+        let local = by_name.get("local-only").expect("local branch listed");
+        assert_eq!(local.commits_ahead, 2);
+        assert_eq!(local.unpushed_commits, 2);
+
+        let trunk = by_name.get("trunk").expect("current branch listed");
+        assert_eq!(trunk.unpushed_commits, 0);
+    }
+
+    /// The default branch is 0 ahead of itself and usually isn't the one you
+    /// have checked out, so it fails every other reason to be listed. Unpushed
+    /// commits on it are then invisible — which is the one thing the count
+    /// exists to prevent.
+    #[test]
+    fn a_default_branch_holding_unpushed_commits_is_listed_while_another_is_current() {
+        use crate::review::central::tests::ENV_LOCK;
+
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _review_home, repo_dir) = setup_test();
+        let repo_path = repo_dir.path();
+
+        let remote_dir = tempfile::tempdir().unwrap();
+        run_git_cmd(remote_dir.path(), &["init", "--bare", "-b", "trunk"]).unwrap();
+        let remote_url = remote_dir.path().to_string_lossy().to_string();
+
+        run_git_cmd(repo_path, &["init", "-b", "trunk"]).unwrap();
+        run_git_cmd(repo_path, &["config", "user.name", "Me"]).unwrap();
+        run_git_cmd(repo_path, &["config", "user.email", "me@example.com"]).unwrap();
+        run_git_cmd(repo_path, &["commit", "--allow-empty", "-m", "init"]).unwrap();
+        run_git_cmd(repo_path, &["remote", "add", "origin", &remote_url]).unwrap();
+        run_git_cmd(repo_path, &["push", "-u", "origin", "trunk"]).unwrap();
+
+        // Two commits straight onto trunk, never pushed...
+        run_git_cmd(repo_path, &["commit", "--allow-empty", "-m", "one"]).unwrap();
+        run_git_cmd(repo_path, &["commit", "--allow-empty", "-m", "two"]).unwrap();
+        // ...and then off to something else, so trunk isn't current either.
+        run_git_cmd(repo_path, &["checkout", "-b", "feature"]).unwrap();
+
+        let source = LocalGitSource::new(repo_path.to_path_buf()).unwrap();
+        let branches = source.list_branches_ahead("trunk").unwrap();
+        let trunk = branches
+            .iter()
+            .find(|b| b.name == "trunk")
+            .expect("trunk listed for its unpushed commits");
+
+        assert!(!trunk.is_current);
+        assert_eq!(trunk.commits_ahead, 0, "0 ahead of itself, by definition");
+        assert_eq!(trunk.unpushed_commits, 2);
     }
 }

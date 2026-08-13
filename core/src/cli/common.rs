@@ -3,14 +3,13 @@
 
 use std::collections::HashSet;
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use clap::Args;
 use serde::Serialize;
 
 use crate::classify::{classify_hunks_static, ClassifyResponse};
 use crate::diff::parser::{DiffHunk, LineType};
-use crate::review::state::{Attributed, HunkStatus, ReviewState, Source};
+use crate::review::state::{unique_id_seed, Attributed, HunkStatus, ReviewState, Source};
 use crate::review::storage::{self, StorageError};
 use crate::service::targets::{self, ResolvedReview};
 
@@ -80,20 +79,11 @@ pub fn parse_hunk_target(arg: &str) -> HunkTarget {
     }
 }
 
-/// A unique ID suffix of the form `t{epoch_ms}-{pid}-{counter}`. The `t`
-/// prefix keeps `parse_hunk_target`'s all-hex heuristic from mistaking a
-/// store-assigned ID for a hunk hash; the per-process counter guarantees
-/// uniqueness across rapid creations within the same millisecond, and the
-/// process id discriminates between two processes minting IDs in that same
-/// millisecond (which would otherwise collide).
+/// A unique ID suffix: [`unique_id_seed`] behind a `t`, which keeps
+/// `parse_hunk_target`'s all-hex heuristic from mistaking a store-assigned ID
+/// for a hunk hash.
 pub fn new_id_suffix() -> String {
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let epoch = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
-    format!("t{epoch}-{}-{counter}", std::process::id())
+    format!("t{}", unique_id_seed())
 }
 
 /// A "42" or "42-48" line reference; never the redundant "42-42".
