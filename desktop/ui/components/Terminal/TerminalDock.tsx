@@ -37,7 +37,7 @@ import {
  * know which side the terminal is on — or whether it is there at all.
  */
 export function TerminalDock({ children }: { children: ReactNode }): ReactNode {
-  const terminalPanelMode = useReviewStore((s) => s.terminalPanelMode);
+  const contentFocus = useReviewStore((s) => s.contentFocus);
   const terminalsSupported = useReviewStore((s) => s.terminalsSupported);
   const terminalTabs = useReviewStore((s) => s.terminalTabs);
   const repoPath = useReviewStore((s) => s.repoPath);
@@ -51,11 +51,11 @@ export function TerminalDock({ children }: { children: ReactNode }): ReactNode {
     terminalTabs,
     repoPath,
   });
-  const panelMode = docked ? terminalPanelMode : "closed";
-  const maximized = panelMode === "maximized";
-  // Closed still occupies the dock edge — as a narrow rail, not nothing, so
-  // there's a way back besides remembering ⌘`.
-  const railed = docked && panelMode === "closed";
+  const focus = docked ? contentFocus : "code";
+  const terminalFocused = focus === "terminal";
+  // Focusing the code still leaves the terminal on its dock edge — as a
+  // narrow rail, not nothing, so there's a way back besides remembering ⌘`.
+  const railed = docked && focus === "code";
   const dockLeft = docked && terminalDockSide === "left";
   const dockRight = docked && terminalDockSide === "right";
 
@@ -141,9 +141,9 @@ export function TerminalDock({ children }: { children: ReactNode }): ReactNode {
       className={clsx(
         "overflow-hidden p-2",
         facing,
-        maximized ? "min-w-0 flex-1" : "shrink-0",
+        terminalFocused ? "min-w-0 flex-1" : "shrink-0",
       )}
-      style={maximized ? undefined : { width: appliedTerminalWidth }}
+      style={terminalFocused ? undefined : { width: appliedTerminalWidth }}
     >
       <TerminalPanel />
     </div>
@@ -151,7 +151,7 @@ export function TerminalDock({ children }: { children: ReactNode }): ReactNode {
 
   // The rail is fixed-width — nothing to drag.
   const terminalResize =
-    docked && !railed && !maximized ? (
+    docked && !railed && !terminalFocused ? (
       <ResizeHandle
         orientation="horizontal"
         onResize={handleTerminalResize}
@@ -159,12 +159,12 @@ export function TerminalDock({ children }: { children: ReactNode }): ReactNode {
       />
     ) : null;
 
-  // Maximized: the terminal takes the content region, and what it covered
+  // Terminal focused: it takes the content region, and what it covered
   // collapses to its own rail on the far edge — the same rule in reverse, so
   // neither side can ever vanish without a trace. The content stays mounted
-  // behind it (hidden, so it takes no space): a maximized terminal must not
+  // behind it (hidden, so it takes no space): a focused terminal must not
   // stop the review's watchers or throw away where it was scrolled to.
-  const contentRail = maximized ? (
+  const contentRail = terminalFocused ? (
     <div className="w-12 shrink-0 overflow-hidden p-2">
       <DiffRail />
     </div>
@@ -174,7 +174,7 @@ export function TerminalDock({ children }: { children: ReactNode }): ReactNode {
     <div
       className={clsx(
         "flex min-w-0 flex-1 flex-col overflow-hidden",
-        maximized && "hidden",
+        terminalFocused && "hidden",
       )}
     >
       {children}

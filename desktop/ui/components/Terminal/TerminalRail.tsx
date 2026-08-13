@@ -1,26 +1,22 @@
 import { type ReactNode } from "react";
 import { useReviewStore } from "../../stores";
 import type { TerminalTab } from "../../stores/slices/terminalSlice";
-import {
-  Rail,
-  RailButton,
-  RailSeparator,
-  RailTab,
-  RailRestoreIcon,
-} from "../ui/rail";
+import { Rail, RailSeparator, RailTab, railTooltipSide } from "../ui/rail";
 import { PhaseDot } from "../TabRail/PhaseDot";
 import { phaseSummary } from "../TabRail/terminal-status-format";
 import { tabGlance } from "./glance";
 import { TerminalGlanceCard } from "./TerminalGlanceCard";
+import { FocusSwitch } from "./FocusSwitch";
 
 /**
- * The terminal panel's closed state. Hiding the panel used to leave nothing
- * behind — the only way back was ⌘`, which you had to already know. This keeps
- * a sliver of the panel on its dock edge instead: a restore control, and every
- * tab turned on its side, so a shell that needs you is still nameable while the
- * diff has the full width. It shows the same one list the open panel does, so
- * collapsing never hides a terminal. Hovering a tab peeks at its screen — the
- * panel being collapsed doesn't mean flying blind.
+ * The terminal, while the code has focus. Focusing the code used to leave
+ * nothing behind — the only way back was ⌘`, which you had to already know.
+ * This keeps a sliver of the panel on its dock edge instead: the same focus
+ * switch the panel's header carries, and every tab turned on its side, so a
+ * shell that needs you is still nameable while the code has the full width.
+ * It shows the same one list the open panel does, so losing focus never hides
+ * a terminal. Hovering a tab peeks at its screen — the panel being collapsed
+ * doesn't mean flying blind.
  */
 export function TerminalRail(): ReactNode {
   const terminalSessions = useReviewStore((s) => s.terminalSessions);
@@ -39,13 +35,7 @@ export function TerminalRail(): ReactNode {
 
   return (
     <Rail className="panel-card w-full bg-surface-inset">
-      <RailButton
-        label="Show terminal (⌘`)"
-        edge={terminalDockSide}
-        onClick={toggleTerminalPanel}
-      >
-        <RailRestoreIcon edge={terminalDockSide} />
-      </RailButton>
+      <FocusSwitch vertical tooltipSide={railTooltipSide(terminalDockSide)} />
 
       {tabs.length > 0 && <RailSeparator />}
 

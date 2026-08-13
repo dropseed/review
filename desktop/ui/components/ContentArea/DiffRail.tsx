@@ -3,41 +3,27 @@ import { useReviewStore } from "../../stores";
 import { useReviewProgress } from "../../hooks/useReviewProgress";
 import { SimpleTooltip } from "../ui/tooltip";
 import { ProgressRing } from "../ui/progress-ring";
-import {
-  Rail,
-  RailButton,
-  RailRestoreIcon,
-  railTooltipSide,
-  type RailEdge,
-} from "../ui/rail";
+import { Rail, railTooltipSide, type RailEdge } from "../ui/rail";
+import { FocusSwitch } from "../Terminal/FocusSwitch";
 
 /**
- * The diff's collapsed state, shown while the terminal is maximized over it —
- * the mirror of TerminalRail, on the opposite edge. Maximizing means "give the
- * terminal everything", so this stays as narrow as the terminal's own rail and
- * carries exactly one thing worth knowing from a shell: how much of the review
- * is left.
+ * The code, while the terminal has focus — the mirror of TerminalRail, on the
+ * opposite edge. Focusing the terminal means "give it everything", so this
+ * stays as narrow as the terminal's own rail: the same focus switch, and
+ * exactly one thing worth knowing from a shell — how much of the review is
+ * left.
  */
 export function DiffRail(): ReactNode {
   const terminalDockSide = useReviewStore((s) => s.terminalDockSide);
-  const toggleTerminalPanelMaximized = useReviewStore(
-    (s) => s.toggleTerminalPanelMaximized,
-  );
   const progress = useReviewProgress();
 
-  // The diff is pushed to whichever edge the terminal isn't docked to.
+  // The code is pushed to whichever edge the terminal isn't docked to.
   const edge: RailEdge = terminalDockSide === "left" ? "right" : "left";
   const remaining = progress.pendingHunks + progress.savedForLaterHunks;
 
   return (
     <Rail className="bg-surface">
-      <RailButton
-        label="Show diff (⇧⌘↵)"
-        edge={edge}
-        onClick={toggleTerminalPanelMaximized}
-      >
-        <RailRestoreIcon edge={edge} />
-      </RailButton>
+      <FocusSwitch vertical tooltipSide={railTooltipSide(edge)} />
 
       {progress.totalHunks > 0 && (
         <>

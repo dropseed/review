@@ -48,7 +48,7 @@ function docked(ctx: CommandContext): boolean {
  * appears in. The tab's own `focused` leaf is the same pane anyway.
  */
 function activeTerminalTab(store: CommandContext["store"]): TerminalTab | null {
-  if (store.terminalPanelMode === "closed" || !store.activeTabId) return null;
+  if (store.contentFocus === "code" || !store.activeTabId) return null;
   return findTab(store.terminalTabs, store.activeTabId);
 }
 
@@ -98,7 +98,9 @@ export const TERMINAL_COMMANDS: readonly Command[] = [
     id: "view.toggleTerminal",
     title: "Toggle Terminal",
     category: "View",
-    keywords: ["shell", "console"],
+    // The same act named in focus terms: hiding the terminal is focusing the
+    // code, so it has to be findable by that name too.
+    keywords: ["shell", "console", "focus", "code", "hide", "show"],
     shortcut: { code: "Backquote", mod: true },
     allowInTerminal: true,
     allowInInput: true,
@@ -108,18 +110,28 @@ export const TERMINAL_COMMANDS: readonly Command[] = [
   },
   {
     id: "view.maximizeTerminal",
-    title: "Maximize Terminal",
+    title: "Focus Terminal",
     category: "View",
-    // The same act named from the other side: this is also how the diff is
-    // collapsed, so it has to be findable by that name too.
-    keywords: ["shell", "console", "full", "diff", "code", "collapse", "hide"],
+    // The same act named from the other side: this is also how the code is
+    // collapsed, so it has to be findable by those names too.
+    keywords: [
+      "shell",
+      "console",
+      "maximize",
+      "full",
+      "diff",
+      "code",
+      "collapse",
+      "hide",
+      "split",
+    ],
     // iTerm2's maximize-pane chord.
     shortcut: { code: "Enter", mod: true, shift: true },
     allowInTerminal: true,
     allowInInput: true,
     isVisible: supported,
     isEnabled: docked,
-    run: ({ store }) => store.toggleTerminalPanelMaximized(),
+    run: ({ store }) => store.toggleTerminalFocus(),
   },
   {
     id: "view.terminalOverview",

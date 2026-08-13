@@ -153,11 +153,11 @@ export function useUnattachedTabIds(): string[] {
 
 /**
  * The tab the user is in right now — the one the open panel is showing. Null
- * while the panel is closed: there is no "terminal you're in" without one on
+ * while the code has focus: there is no "terminal you're in" without one on
  * screen.
  */
 export function useCurrentTabId(): string | null {
   return useReviewStore((s) =>
-    s.terminalPanelMode === "closed" ? null : s.activeTabId,
+    s.contentFocus === "code" ? null : s.activeTabId,
   );
 }

@@ -17,7 +17,7 @@ function seed(): void {
   useReviewStore.setState({
     repoPath: REPO,
     reviewRef: "main",
-    terminalPanelMode: "split",
+    contentFocus: "split",
     terminalSessions: { a, b, z },
     terminalStatuses: { a: a.status, b: b.status, z: z.status },
     terminalTabs: [
@@ -32,7 +32,7 @@ afterEach(() => {
   useReviewStore.setState({
     repoPath: null,
     reviewRef: null,
-    terminalPanelMode: "closed",
+    contentFocus: "code",
     terminalOverviewOpen: false,
     terminalSessions: {},
     terminalStatuses: {},
@@ -69,14 +69,14 @@ describe("jumping to a terminal", () => {
   it("opens the panel and leaves the overview", () => {
     seed();
     useReviewStore.setState({
-      terminalPanelMode: "closed",
+      contentFocus: "code",
       terminalOverviewOpen: true,
     });
 
     jumpToTerminal("a");
 
     const state = useReviewStore.getState();
-    expect(state.terminalPanelMode).toBe("split");
+    expect(state.contentFocus).toBe("split");
     expect(state.terminalOverviewOpen).toBe(false);
   });
 

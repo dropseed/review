@@ -38,6 +38,7 @@ import {
 import { closeTerminalPane, closeTerminalTab } from "./close";
 import { openTerminalTab } from "./newTab";
 import { PaneTree, PaneButton } from "./PaneTree";
+import { FocusSwitch } from "./FocusSwitch";
 import { WarningIcon } from "../ui/icons";
 import {
   ContextMenu,
@@ -66,11 +67,6 @@ export function TerminalPanel(): ReactNode {
   const toggleTerminalDockSide = useReviewStore(
     (s) => s.toggleTerminalDockSide,
   );
-  const maximized = useReviewStore((s) => s.terminalPanelMode === "maximized");
-  const toggleTerminalPanelMaximized = useReviewStore(
-    (s) => s.toggleTerminalPanelMaximized,
-  );
-  const toggleTerminalPanel = useReviewStore((s) => s.toggleTerminalPanel);
   const overviewOpen = useReviewStore((s) => s.terminalOverviewOpen);
   const toggleTerminalOverview = useReviewStore(
     (s) => s.toggleTerminalOverview,
@@ -433,8 +429,8 @@ export function TerminalPanel(): ReactNode {
           </DropdownMenu>
         </div>
 
-        {/* Panel controls: overview / dock side / maximize / minimize */}
-        <div className="ml-2 flex shrink-0 items-center gap-0.5">
+        {/* Panel controls: overview / dock side / the focus switch */}
+        <div className="ml-2 flex shrink-0 items-center gap-1">
           <PaneButton
             label="All terminals (⇧⌘`)"
             onClick={toggleTerminalOverview}
@@ -452,17 +448,7 @@ export function TerminalPanel(): ReactNode {
             <DockSideIcon side={terminalDockSide} />
           </PaneButton>
 
-          <PaneButton
-            label={maximized ? "Show diff (⇧⌘↵)" : "Expand over diff (⇧⌘↵)"}
-            onClick={toggleTerminalPanelMaximized}
-            pressed={maximized}
-          >
-            <MaximizeIcon maximized={maximized} side={terminalDockSide} />
-          </PaneButton>
-
-          <PaneButton label="Hide terminal (⌘`)" onClick={toggleTerminalPanel}>
-            <MinimizeIcon side={terminalDockSide} />
-          </PaneButton>
+          <FocusSwitch tooltipSide="bottom" />
         </div>
       </div>
 
@@ -563,65 +549,6 @@ function CaretIcon(): ReactNode {
       aria-hidden="true"
     >
       <path d="M4 6.5 8 10.5l4-4" />
-    </svg>
-  );
-}
-
-/**
- * Maximize glyph: arrows pushing outward (expand over the diff) or inward
- * (restore the split), pointing along the dock axis.
- */
-function MaximizeIcon({
-  maximized,
-  side,
-}: {
-  maximized: boolean;
-  side: "left" | "right";
-}): ReactNode {
-  // Mirror so the arrows always point toward the diff being covered/revealed.
-  const flip = side === "right";
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      className={`h-3.5 w-3.5 ${flip ? "-scale-x-100" : ""}`}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
-      {maximized ? (
-        <>
-          <path d="M10.5 5.5 8 8l2.5 2.5" />
-          <line x1="12.5" y1="4" x2="12.5" y2="12" />
-        </>
-      ) : (
-        <>
-          <path d="M6 5.5 8.5 8 6 10.5" />
-          <line x1="3.5" y1="4" x2="3.5" y2="12" />
-        </>
-      )}
-    </svg>
-  );
-}
-
-/** Minimize glyph: a chevron collapsing the panel toward its dock edge. */
-function MinimizeIcon({ side }: { side: "left" | "right" }): ReactNode {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      className={`h-3.5 w-3.5 ${side === "right" ? "-scale-x-100" : ""}`}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M9 4 5 8l4 4" />
-      <line x1="12" y1="3.5" x2="12" y2="12.5" />
     </svg>
   );
 }

@@ -144,26 +144,3 @@ export function RailTab({
     </SimpleTooltip>
   );
 }
-
-/**
- * Restore glyph: the terminal panel's minimize chevron mirrored, so it points
- * off the rail's edge and into the content region — the direction the pane
- * grows when you click it.
- */
-export function RailRestoreIcon({ edge }: { edge: RailEdge }): ReactNode {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      className={`h-3.5 w-3.5 ${edge === "left" ? "-scale-x-100" : ""}`}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M9 4 5 8l4 4" />
-      <line x1="12" y1="3.5" x2="12" y2="12.5" />
-    </svg>
-  );
-}

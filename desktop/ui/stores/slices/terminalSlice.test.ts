@@ -1001,19 +1001,26 @@ describe("slice actions", () => {
   it("hydrateTerminalPrefs restores the persisted dock side", async () => {
     const { get, reads } = makeSlice();
     reads.terminalDockSide = "right";
-    reads.terminalPanelMode = "maximized";
+    reads.contentFocus = "terminal";
     reads.terminalPanelWidth = 640;
     await get().hydrateTerminalPrefs();
     expect(get().terminalDockSide).toBe("right");
-    expect(get().terminalPanelMode).toBe("maximized");
+    expect(get().contentFocus).toBe("terminal");
     expect(get().terminalPanelWidth).toBe(640);
+  });
+
+  it("hydrateTerminalPrefs upgrades the pre-focus panel mode", async () => {
+    const { get, reads } = makeSlice();
+    reads.terminalPanelMode = "maximized";
+    await get().hydrateTerminalPrefs();
+    expect(get().contentFocus).toBe("terminal");
   });
 
   it("hydrateTerminalPrefs upgrades the pre-mode open/closed boolean", async () => {
     const { get, reads } = makeSlice();
     reads.terminalPanelOpen = true;
     await get().hydrateTerminalPrefs();
-    expect(get().terminalPanelMode).toBe("split");
+    expect(get().contentFocus).toBe("split");
   });
 
   it("moveTab reorders the strip and no-ops on an unchanged order", () => {
@@ -1056,17 +1063,17 @@ describe("slice actions", () => {
     expect(get().terminalCheckouts["/r"].rootKey).toBe("/r:main");
   });
 
-  it("hiding a maximized panel reopens as a split, not over the diff", () => {
+  it("focusing code from a focused terminal reopens as a split", () => {
     const { get, writes } = makeSlice();
-    get().toggleTerminalPanelMaximized();
-    expect(get().terminalPanelMode).toBe("maximized");
+    get().toggleTerminalFocus();
+    expect(get().contentFocus).toBe("terminal");
 
     get().toggleTerminalPanel();
-    expect(get().terminalPanelMode).toBe("closed");
-    expect(writes.terminalPanelMode).toBe("closed");
+    expect(get().contentFocus).toBe("code");
+    expect(writes.contentFocus).toBe("code");
 
     get().toggleTerminalPanel();
-    expect(get().terminalPanelMode).toBe("split");
+    expect(get().contentFocus).toBe("split");
   });
 
   it("ingestTerminalList takes every repo's sessions into the one strip", () => {

@@ -20,7 +20,7 @@ import { setTerminalFocus } from "./registry";
 export function jumpToTerminal(id: string): void {
   const store = useReviewStore.getState();
 
-  if (store.terminalPanelMode === "closed") store.toggleTerminalPanel();
+  if (store.contentFocus === "code") store.toggleTerminalPanel();
   if (store.terminalOverviewOpen) store.setTerminalOverviewOpen(false);
 
   const tab = findTabForTerminal(store.terminalTabs, id);

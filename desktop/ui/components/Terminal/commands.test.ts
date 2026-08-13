@@ -24,7 +24,7 @@ function context(store: Record<string, unknown>): CommandContext {
     store: {
       repoPath: "/repo",
       reviewRef: "main",
-      terminalPanelMode: "split",
+      contentFocus: "split",
       terminalsSupported: true,
       terminalCheckouts: {},
       terminalTabs: [],
@@ -80,7 +80,7 @@ describe("fold/unfold commands", () => {
 
   it("offers neither with the panel closed", () => {
     const store = {
-      terminalPanelMode: "closed",
+      contentFocus: "code",
       terminalTabs: twoPanes,
       activeTabId: "tabA",
     };

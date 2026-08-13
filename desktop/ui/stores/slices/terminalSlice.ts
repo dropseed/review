@@ -88,8 +88,8 @@ export interface TerminalSlice {
    */
   terminalAttachments: Record<string, string>;
 
-  /** How the panel shares the content region with the diff (persisted). */
-  terminalPanelMode: TerminalPanelMode;
+  /** Which surface holds the content region's focus (persisted). */
+  contentFocus: ContentFocus;
   /** Panel width in px (persisted) — the vertical pane's own width. */
   terminalPanelWidth: number;
   /** Which side of the content region the panel docks on (persisted). */
@@ -207,14 +207,16 @@ export interface TerminalSlice {
   ) => void;
   /** Set the child fractions of the split node at `path` within `tabId`. */
   resizeSplit: (tabId: string, path: number[], sizes: number[]) => void;
-  /** Show/hide the panel. Hiding also drops a maximized layout. */
+  /** Give a surface the content region, or neither ("split"). Persisted. */
+  setContentFocus: (focus: ContentFocus) => void;
+  /** ⌘`: focus code ↔ split — the terminal in and out of view. */
   toggleTerminalPanel: () => void;
   /** Show/hide the all-terminals overview inside the panel. */
   setTerminalOverviewOpen: (open: boolean) => void;
-  /** Toggle the overview, opening the panel first if it's closed. */
+  /** Toggle the overview, bringing the terminal into view if it's railed. */
   toggleTerminalOverview: () => void;
-  /** Collapse/restore the diff beside the panel; opens the panel if closed. */
-  toggleTerminalPanelMaximized: () => void;
+  /** ⇧⌘↵: focus terminal ↔ split — full width from wherever it starts. */
+  toggleTerminalFocus: () => void;
   setTerminalPanelWidth: (width: number) => void;
   setTerminalDockSide: (side: TerminalDockSide) => void;
   /** Flip the panel between the left and right of the content region. */
@@ -244,12 +246,16 @@ export interface TerminalSlice {
 export type TerminalDockSide = "left" | "right";
 
 /**
- * How the terminal panel shares the content region with the diff. One value
- * rather than open/maximized booleans, because "maximized while closed" is not
- * a state the UI has — as two flags it would be an invariant every action had
- * to re-assert.
+ * Which surface holds the content region: the code (terminal collapses to its
+ * rail), the terminal (code collapses to its rail), or neither — "split", the
+ * shared view. You never hide a surface, you focus the other one; whatever
+ * loses focus narrows to a rail rather than vanishing.
+ *
+ * One value rather than open/maximized booleans, because "terminal focused
+ * while hidden" is not a state the UI has — as two flags it would be an
+ * invariant every action had to re-assert.
  */
-export type TerminalPanelMode = "closed" | "split" | "maximized";
+export type ContentFocus = "code" | "split" | "terminal";
 
 export const TERMINAL_PANEL_WIDTH_DEFAULT = 480;
 export const TERMINAL_PANEL_WIDTH_MIN = 320;
@@ -1186,9 +1192,9 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
     });
   }
 
-  function setPanelMode(mode: TerminalPanelMode): void {
-    set({ terminalPanelMode: mode });
-    storage.set("terminalPanelMode", mode);
+  function setFocus(focus: ContentFocus): void {
+    set({ contentFocus: focus });
+    storage.set("contentFocus", focus);
   }
 
   function unsubscribeSession(id: string): void {
@@ -1277,29 +1283,46 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
     freshTerminalIds: [],
     terminalCheckouts: {},
     terminalAttachments: {},
-    terminalPanelMode: "closed",
+    contentFocus: "code",
     terminalPanelWidth: TERMINAL_PANEL_WIDTH_DEFAULT,
     terminalDockSide: TERMINAL_DOCK_SIDE_DEFAULT,
     terminalOverviewOpen: false,
     terminalsSupported: false,
 
     hydrateTerminalPrefs: async () => {
-      const [mode, legacyOpen, width, dockSide, attachments, legacyHomes] =
-        await Promise.all([
-          storage.get<TerminalPanelMode>("terminalPanelMode"),
-          // Pre-mode installs persisted an open/closed boolean; honor it once so
-          // the panel doesn't silently close on upgrade.
-          storage.get<boolean>("terminalPanelOpen"),
-          storage.get<number>("terminalPanelWidth"),
-          storage.get<TerminalDockSide>("terminalDockSide"),
-          storage.get<Record<string, string>>("terminalAttachments"),
-          // Pre-tab installs keyed attachments by session id. That is the same
-          // namespace a tab id lives in — a rebuilt tab takes its session's id
-          // — so the old map is a valid attachments map as it stands.
-          storage.get<Record<string, string>>("terminalHomes"),
-        ]);
+      const [
+        focus,
+        legacyMode,
+        legacyOpen,
+        width,
+        dockSide,
+        attachments,
+        legacyHomes,
+      ] = await Promise.all([
+        storage.get<ContentFocus>("contentFocus"),
+        // Pre-focus installs persisted the same three states under the
+        // panel's own names; map them once so the layout survives upgrade.
+        storage.get<"closed" | "split" | "maximized">("terminalPanelMode"),
+        // And pre-mode installs persisted an open/closed boolean.
+        storage.get<boolean>("terminalPanelOpen"),
+        storage.get<number>("terminalPanelWidth"),
+        storage.get<TerminalDockSide>("terminalDockSide"),
+        storage.get<Record<string, string>>("terminalAttachments"),
+        // Pre-tab installs keyed attachments by session id. That is the same
+        // namespace a tab id lives in — a rebuilt tab takes its session's id
+        // — so the old map is a valid attachments map as it stands.
+        storage.get<Record<string, string>>("terminalHomes"),
+      ]);
+      const migrated: ContentFocus | null =
+        legacyMode === "closed"
+          ? "code"
+          : legacyMode === "maximized"
+            ? "terminal"
+            : legacyMode === "split"
+              ? "split"
+              : null;
       set({
-        terminalPanelMode: mode ?? (legacyOpen ? "split" : "closed"),
+        contentFocus: focus ?? migrated ?? (legacyOpen ? "split" : "code"),
         terminalPanelWidth: width ?? TERMINAL_PANEL_WIDTH_DEFAULT,
         terminalDockSide: dockSide ?? TERMINAL_DOCK_SIDE_DEFAULT,
         // Sessions outlive the app, so attachments written in an earlier run
@@ -1495,10 +1518,14 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
     resizeSplit: (tabId, path, sizes) =>
       set(resizeSplitInTab(get(), tabId, path, sizes)),
 
+    setContentFocus: (focus) => setFocus(focus),
+
     toggleTerminalPanel: () => {
-      // Hiding a maximized panel returns to "split" on the next open, so the
-      // diff can't stay hidden behind a panel that isn't showing.
-      setPanelMode(get().terminalPanelMode === "closed" ? "split" : "closed");
+      // From terminal focus this lands on "code", not "split" — hiding the
+      // terminal means the code gets everything, and the way back reopens as
+      // a split so the code can't stay hidden behind a panel that isn't
+      // showing.
+      setFocus(get().contentFocus === "code" ? "split" : "code");
     },
 
     setTerminalOverviewOpen: (open) => set({ terminalOverviewOpen: open }),
@@ -1507,17 +1534,17 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
       const g = get();
       const open = !g.terminalOverviewOpen;
       set({ terminalOverviewOpen: open });
-      // "Show me all my terminals" from a closed panel means open it too —
-      // an overview toggled on inside a hidden panel would read as a no-op.
-      if (open && g.terminalPanelMode === "closed") setPanelMode("split");
+      // "Show me all my terminals" while the code has focus means bring the
+      // terminal into view too — an overview toggled on inside a railed panel
+      // would read as a no-op.
+      if (open && g.contentFocus === "code") setFocus("split");
     },
 
-    toggleTerminalPanelMaximized: () => {
-      // From closed this opens maximized — the shortcut reads as "show me the
-      // terminal, full size" whichever state it starts from.
-      setPanelMode(
-        get().terminalPanelMode === "maximized" ? "split" : "maximized",
-      );
+    toggleTerminalFocus: () => {
+      // From code focus this jumps straight to terminal focus — the shortcut
+      // reads as "show me the terminal, full size" whichever state it starts
+      // from.
+      setFocus(get().contentFocus === "terminal" ? "split" : "terminal");
     },
 
     setTerminalPanelWidth: (width) => {
