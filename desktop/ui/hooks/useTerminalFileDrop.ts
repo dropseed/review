@@ -40,7 +40,7 @@ import {
 } from "../components/TabRail/work-drag";
 
 /**
- * Convert a drag-drop position to CSS pixels within the webview.
+ * Convert a drag-drop position to CSS pixels within the page's viewport.
  *
  * Tauri types this position as physical, but only some platforms make it so.
  * On macOS wry reads it from AppKit — `NSDraggingInfo.draggingLocation` against
@@ -50,17 +50,37 @@ import {
  * pixels. Dividing unconditionally therefore halved every coordinate on a
  * Retina display, which is what put drops in the wrong pane.
  *
- * The origin is the web view's own top-left on both, so no title-bar offset is
- * involved: AppKit's window base coordinate system starts at the bottom-left
- * corner, which the title bar (drawn at the top) does not move, and the web
- * view fills the content view either way.
+ * `insetY` corrects the other macOS lie: wry y-flips `draggingLocation`
+ * against the web view NSView's own frame height, but that NSView underlaps
+ * the title bar (the window reports inner == outer size) while the page's
+ * viewport starts below it. Both coordinate systems share the *bottom* edge,
+ * so the flip against the taller height lands every y one title bar too low —
+ * measured at ~32px, which put the highlight a full row under the cursor. The
+ * inset is measured (`measureDragInsetY`) rather than assumed, so wherever
+ * view and viewport agree — fullscreen, other platforms — it is zero and this
+ * is a no-op. It cannot detect wry fixing its flip upstream (tauri#10744 is
+ * the class), since the heights it compares don't change with that: when
+ * bumping wry past 0.56, re-test a drag before trusting this correction.
  */
 function toCssPixels(
   position: { x: number; y: number },
   scaled: boolean,
+  insetY: number,
 ): { x: number; y: number } {
   const ratio = scaled ? window.devicePixelRatio || 1 : 1;
-  return { x: position.x / ratio, y: position.y / ratio };
+  return { x: position.x / ratio, y: position.y / ratio - insetY };
+}
+
+/**
+ * The height difference between the native view drag positions are measured
+ * in and the page viewport — see `toCssPixels`. Async because the window size
+ * lives across the IPC; callers keep the last measurement.
+ */
+async function measureDragInsetY(): Promise<number> {
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  const w = getCurrentWindow();
+  const [inner, factor] = await Promise.all([w.innerSize(), w.scaleFactor()]);
+  return Math.max(0, Math.round(inner.height / factor - window.innerHeight));
 }
 
 /**
@@ -114,6 +134,20 @@ export function useTerminalFileDrop(): void {
   useEffect(() => {
     if (!isTauriEnvironment()) return;
     const scaled = getPlatformServices().window.getPlatformName() !== "macos";
+
+    // The title-bar inset drag positions arrive shifted by — see
+    // `toCssPixels`. Measured up front and on resize (which fullscreen also
+    // fires, where the inset drops to zero) rather than mid-drag: the value
+    // only changes with window chrome, never under the cursor.
+    let insetY = 0;
+    const refreshInsetY = () => {
+      measureDragInsetY().then(
+        (v) => (insetY = v),
+        () => {},
+      );
+    };
+    refreshInsetY();
+    window.addEventListener("resize", refreshInsetY);
     let unlisten: (() => void) | null = null;
     let disposed = false;
     let hovered: HTMLElement | null = null;
@@ -295,23 +329,25 @@ export function useTerminalFileDrop(): void {
             ) {
               measureStrip();
             }
-            const pt = toCssPixels(payload.position, scaled);
+            const pt = toCssPixels(payload.position, scaled, insetY);
             if (carriedWorkRef || carriedWorkItem) {
               // A branch row or a work card in flight: only "Working on" takes
               // either, so nothing else needs hit-testing.
-              setWorkDropTarget(workDropTargetAt(pt.x, pt.y));
+              setWorkDropTarget(
+                workDropTargetAt(pt.x, pt.y, carriedWorkRef ? "ref" : "item"),
+              );
               return;
             }
             if (carriedTerminal) {
               // A sidebar terminal row in flight: only a work card takes it.
-              setWorkDropTarget(workDropTargetAt(pt.x, pt.y));
+              setWorkDropTarget(workDropTargetAt(pt.x, pt.y, "terminal"));
               setTabDropTarget(null);
               return;
             }
             if (carriedTab) {
               // A tab in flight: a work card claims it first — attaching a
               // terminal to what it's for outranks moving it in the strip.
-              const work = workDropTargetAt(pt.x, pt.y);
+              const work = workDropTargetAt(pt.x, pt.y, "terminal");
               setWorkDropTarget(work);
               if (work) {
                 setTabDropTarget(null);
@@ -329,7 +365,7 @@ export function useTerminalFileDrop(): void {
               // A pane in flight: a work card takes it the same way it takes a
               // tab or a sidebar row — a pane is a session, and the sidebar is
               // where a session gets claimed.
-              const work = workDropTargetAt(pt.x, pt.y);
+              const work = workDropTargetAt(pt.x, pt.y, "terminal");
               setWorkDropTarget(work);
               if (work) {
                 setPaneDropTarget(null);
@@ -371,7 +407,7 @@ export function useTerminalFileDrop(): void {
           ) {
             measureStrip();
           }
-          const pt = toCssPixels(payload.position, scaled);
+          const pt = toCssPixels(payload.position, scaled, insetY);
           const hit = paneAt(pt);
           setHovered(null);
           setPaneDropTarget(null);
@@ -386,7 +422,15 @@ export function useTerminalFileDrop(): void {
             carriedTerminal ||
             carried ||
             carriedTab
-              ? workDropTargetAt(pt.x, pt.y)
+              ? workDropTargetAt(
+                  pt.x,
+                  pt.y,
+                  carriedWorkRef
+                    ? "ref"
+                    : carriedWorkItem
+                      ? "item"
+                      : "terminal",
+                )
               : null;
           setWorkDropTarget(null);
           forgetWorkTargets();
@@ -509,6 +553,7 @@ export function useTerminalFileDrop(): void {
 
     return () => {
       disposed = true;
+      window.removeEventListener("resize", refreshInsetY);
       setHovered(null);
       unsubDrag();
       unlisten?.();

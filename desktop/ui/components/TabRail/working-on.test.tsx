@@ -48,7 +48,11 @@ vi.mock("../../api", () => ({
 import { WorkingOnSection } from "./WorkingOnSection";
 import { useReviewStore } from "../../stores";
 import { itemHome } from "../../stores/slices/terminalSlice";
-import { setDraggedWorkRef, WORK_REF_MIME } from "./work-drag";
+import {
+  setDraggedWorkRef,
+  setWorkDropTarget,
+  WORK_REF_MIME,
+} from "./work-drag";
 import { setDraggedPane, TERMINAL_PANE_MIME } from "../Terminal/pane-drag";
 import { leaf, makeTab, splitLeaf } from "../Terminal/pane-tree";
 import type { TerminalSessionInfo, TerminalStatus } from "../../types";
@@ -139,6 +143,7 @@ afterEach(() => {
   cleanup();
   setDraggedWorkRef(null);
   setDraggedPane(null);
+  setWorkDropTarget(null);
   useReviewStore.setState({
     workItems: [],
     localActivity: [],
@@ -164,24 +169,33 @@ describe("WorkingOnSection", () => {
     getByText("Reply to billing email");
   });
 
+  /**
+   * The section container, which owns the drop. The target itself is published
+   * before the drop, the way `dragover` does in the app — jsdom's rects are
+   * all zero, so the geometry that picks a target from the cursor is exercised
+   * in `work-drag.test.ts` against explicit rects instead.
+   */
+  function section(container: HTMLElement): HTMLElement {
+    const found = container.querySelector<HTMLElement>("[data-work-section]");
+    if (!found) throw new Error("no section rendered");
+    return found;
+  }
+
   it("binds a ref dropped on a card", async () => {
     seed([item()]);
     const { container } = render(<WorkingOnSection />);
-    const card = container.querySelector<HTMLElement>(
-      '[data-work-drop="card"]',
-    );
-    if (!card) throw new Error("no card rendered");
 
-    // The latch is what the drop reads — under Tauri `dataTransfer` is
+    // The latches are what the drop reads — under Tauri `dataTransfer` is
     // unreadable by the time the drop arrives.
     setDraggedWorkRef({
       ref: { repoPath: REPO, ref: "other" },
       fromItemId: null,
     });
+    setWorkDropTarget({ kind: "card", itemId: "one" });
     // The optimistic write lands after the drop handler's first await, so the
     // whole gesture has to sit inside act.
     await act(async () => {
-      fireEvent.drop(card, {
+      fireEvent.drop(section(container), {
         dataTransfer: { types: [WORK_REF_MIME], getData: () => "" },
       });
       await settle();
@@ -195,15 +209,14 @@ describe("WorkingOnSection", () => {
   it("makes a new item from a ref dropped between cards", async () => {
     seed([item()]);
     const { container } = render(<WorkingOnSection />);
-    const gap = container.querySelector<HTMLElement>('[data-work-gap="0"]');
-    if (!gap) throw new Error("no gap rendered");
 
     setDraggedWorkRef({
       ref: { repoPath: REPO, ref: "other" },
       fromItemId: null,
     });
+    setWorkDropTarget({ kind: "gap", index: 0 });
     await act(async () => {
-      fireEvent.drop(gap, {
+      fireEvent.drop(section(container), {
         dataTransfer: { types: [WORK_REF_MIME], getData: () => "" },
       });
       await settle();
@@ -219,17 +232,14 @@ describe("WorkingOnSection", () => {
   it("attaches a terminal panel pane dropped on a card", async () => {
     seed([item()]);
     const { container } = render(<WorkingOnSection />);
-    const card = container.querySelector<HTMLElement>(
-      '[data-work-drop="card"]',
-    );
-    if (!card) throw new Error("no card rendered");
 
     // A pane is picked up in the terminal panel and latched by *its* module —
-    // the card reads that latch, so panel and sidebar are one drag.
+    // the section reads that latch, so panel and sidebar are one drag.
     useReviewStore.setState({ terminalTabs: [makeTab("tabA", "a")] });
     setDraggedPane("a");
+    setWorkDropTarget({ kind: "card", itemId: "one" });
     await act(async () => {
-      fireEvent.drop(card, {
+      fireEvent.drop(section(container), {
         dataTransfer: { types: [TERMINAL_PANE_MIME], getData: () => "" },
       });
       await settle();

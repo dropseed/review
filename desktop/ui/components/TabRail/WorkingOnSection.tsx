@@ -34,16 +34,12 @@ import { useAddWorkItemRequests } from "./work-add";
 import { useWorkContext } from "./work-context";
 import { describeWorkItem, type WorkContext } from "./work-status";
 import {
-  isWorkCardDrag,
-  isWorkDrag,
   setDraggedWorkItem,
   setDraggedWorkRef,
   startWorkItemDrag,
   startWorkRefDrag,
-  useWorkDragActive,
   useWorkDropTarget,
-  workDropHandlers,
-  type WorkDropTarget,
+  workSectionDropHandlers,
 } from "./work-drag";
 
 /**
@@ -60,7 +56,6 @@ export function WorkingOnSection(): ReactNode {
   const tabsByItem = useTabsByItemId();
   const phasesByItem = usePhasesByItemId();
   const currentTabId = useCurrentTabId();
-  const dragActive = useWorkDragActive();
   const addWorkItem = useReviewStore((s) => s.addWorkItem);
 
   return (
@@ -68,10 +63,17 @@ export function WorkingOnSection(): ReactNode {
       <div className="px-2.5 pb-0.5 pt-0.5 text-[9px] font-medium uppercase tracking-[0.08em] text-fg-faint/60">
         Working on
       </div>
-      <div className="space-y-1 px-1.5">
+      {/* The one drop surface: targets are computed from the cursor position
+          against the measured cards (`resolveWorkDropTarget`), not owned by
+          the elements — the gaps and cards below just draw the result. */}
+      <div
+        data-work-section
+        {...workSectionDropHandlers()}
+        className="space-y-1 px-1.5"
+      >
         {items.map((item, index) => (
           <Fragment key={item.id}>
-            <DropGap index={index} active={dragActive} />
+            <DropGap index={index} />
             <WorkCard
               item={item}
               index={index}
@@ -83,7 +85,7 @@ export function WorkingOnSection(): ReactNode {
             />
           </Fragment>
         ))}
-        <DropGap index={items.length} active={dragActive} />
+        <DropGap index={items.length} />
       </div>
       <AddRow onAdd={(title) => void addWorkItem(title, [])} />
       <WorkError />
@@ -109,31 +111,19 @@ function WorkError(): ReactNode {
 }
 
 /**
- * The strip between two cards, and the section's own end.
+ * The insertion line between two cards, and at the section's own end.
  *
- * Zero-height at rest and only a drop target while something is in flight, so
- * the list doesn't reserve space for an affordance that isn't in use. The
- * insertion line is drawn over the gap rather than by displacing the cards —
+ * Purely an indicator: zero net height, never a pointer target. Which gap is
+ * lit is decided by the section's geometry (`resolveWorkDropTarget`), and the
+ * line is drawn over the gap rather than by displacing the cards —
  * displacement mid-drag moves the target out from under the cursor.
  */
-function DropGap({
-  index,
-  active,
-}: {
-  index: number;
-  active: boolean;
-}): ReactNode {
+function DropGap({ index }: { index: number }): ReactNode {
   const target = useWorkDropTarget();
   const isOver = target?.kind === "gap" && target.index === index;
-  const self: WorkDropTarget = { kind: "gap", index };
 
   return (
-    <div
-      data-work-drop="gap"
-      data-work-gap={index}
-      {...workDropHandlers(self, isWorkDrag)}
-      className={clsx("relative -my-0.5 h-1", !active && "pointer-events-none")}
-    >
+    <div className="pointer-events-none relative -my-0.5 h-1">
       {isOver && (
         <span className="absolute inset-x-1 top-1/2 h-px -translate-y-1/2 rounded-full bg-focus-ring" />
       )}
@@ -190,7 +180,6 @@ const WorkCard = memo(function WorkCard({
   });
 
   const isOver = target?.kind === "card" && target.itemId === item.id;
-  const self: WorkDropTarget = { kind: "card", itemId: item.id };
 
   // Shared with ⌘1–9 and the collapsed rail, so a card and its number can't
   // open different things.
@@ -207,13 +196,11 @@ const WorkCard = memo(function WorkCard({
             role="button"
             tabIndex={0}
             draggable={!renaming}
-            data-work-drop="card"
-            data-work-item-id={item.id}
+            data-work-card={item.id}
             onClick={activate}
             onKeyDown={activateOnKey(activate)}
             onDragStart={(e) => startWorkItemDrag(e, { id: item.id, index })}
             onDragEnd={() => setDraggedWorkItem(null)}
-            {...workDropHandlers(self, isWorkCardDrag)}
             className={clsx(
               // Borderless: the number, indent and hover carry the card. A
               // border on every item made the queue the heaviest surface in

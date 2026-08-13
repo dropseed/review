@@ -19,7 +19,6 @@ import {
   draggedTabSource,
   draggedTerminal,
   pointerLeft,
-  subscribePaneDrag,
   TERMINAL_PANE_MIME,
   TERMINAL_SESSION_MIME,
   TERMINAL_TAB_MIME,
@@ -108,52 +107,12 @@ export function setWorkDropTarget(target: WorkDropTarget | null): void {
   notify();
 }
 
-/**
- * Clear the target, but only if it is still the one held — crossing from one
- * card to the next fires `dragenter` on the arrival before `dragleave` on the
- * departure, so an unconditional clear erases the highlight just published.
- */
-export function clearWorkDropTarget(target: WorkDropTarget): void {
-  if (sameTarget(dropTarget, target)) setWorkDropTarget(null);
-}
-
 /** The drop target, re-rendering the caller when it changes. */
 export function useWorkDropTarget(): WorkDropTarget | null {
   return useSyncExternalStore(
     subscribe,
     () => dropTarget,
     () => null,
-  );
-}
-
-/**
- * Whether anything the section takes is in flight — what opens the gaps.
- *
- * Terminals are dragged from the other module, so both are subscribed: a gap
- * that stays inert during a terminal drag is a drop the user is shown no way
- * to make. That covers every way a terminal can be picked up, panel panes and
- * tabs included — see `terminalsInFlight`.
- */
-export function useWorkDragActive(): boolean {
-  const own = useSyncExternalStore(
-    subscribe,
-    () => draggedRef !== null || draggedItem !== null,
-    () => false,
-  );
-  const terminal = useSyncExternalStore(
-    subscribePaneDrag,
-    () => terminalDragActive(),
-    () => false,
-  );
-  return own || terminal;
-}
-
-/** Whether a terminal is being carried by any of its three grips. */
-function terminalDragActive(): boolean {
-  return (
-    draggedTerminal() !== null ||
-    draggedPane() !== null ||
-    draggedTabSource() !== null
   );
 }
 
@@ -225,24 +184,20 @@ function carriesTerminal(types: readonly string[]): boolean {
   return TERMINAL_MIMES.some((mime) => types.includes(mime));
 }
 
-/** Whether a dragover carries something the section can take. */
-export function isWorkDrag(types: readonly string[]): boolean {
-  return (
-    types.includes(WORK_REF_MIME) ||
-    types.includes(WORK_ITEM_MIME) ||
-    carriesTerminal(types)
-  );
-}
-
 /**
- * Whether a dragover carries something a *card* can take — everything the
- * section takes except another card, which lands in a gap or nowhere.
- *
- * Beside `isWorkDrag` so the two accept-rules are read together rather than one
- * of them being spelled out inline at the target that applies it.
+ * What a dragover's MIME types say is being carried, or null for a drag the
+ * section doesn't take. `types` is all a dragover can read — the payloads
+ * themselves are in the module latches — but the *kind* decides which targets
+ * exist at all: a card being reordered can only land in a gap, everything else
+ * can land on a card too (see `resolveWorkDropTarget`).
  */
-export function isWorkCardDrag(types: readonly string[]): boolean {
-  return types.includes(WORK_REF_MIME) || carriesTerminal(types);
+export function dragCarrying(
+  types: readonly string[],
+): WorkDropPayload["kind"] | null {
+  if (types.includes(WORK_ITEM_MIME)) return "item";
+  if (types.includes(WORK_REF_MIME)) return "ref";
+  if (carriesTerminal(types)) return "terminal";
+  return null;
 }
 
 /** What a drop carries, whichever latch was set when it landed. */
@@ -283,38 +238,46 @@ export function takeWorkDragPayload(): WorkDropPayload | null {
 }
 
 /**
- * The three drop-target handlers, for a target that accepts `accepts`.
+ * The HTML5 drop handlers, mounted once on the section's list container.
  *
- * Cards and gaps differ only in what they take; sharing the handlers is what
- * keeps the `stopPropagation` (a card sits inside the section's gaps) and the
- * conditional leave-clear from being restated per target.
+ * On the section rather than on each card and gap: the target is *computed*
+ * from the cursor position (`resolveWorkDropTarget`), not read off whichever
+ * element happened to catch the event. Per-element handlers made the 4px gap
+ * strips the only way to hit a gap — a reorder over a card's body had no
+ * target at all — and meant the two drop paths (this one and the Tauri
+ * window-level one) could disagree about what was under the cursor. Now both
+ * ask the same geometry.
  */
-export function workDropHandlers(
-  self: WorkDropTarget,
-  accepts: (types: readonly string[]) => boolean,
-): {
+export function workSectionDropHandlers(): {
   onDragOver: (event: React.DragEvent) => void;
   onDragLeave: (event: React.DragEvent) => void;
   onDrop: (event: React.DragEvent) => void;
 } {
   return {
     onDragOver: (event) => {
-      if (!accepts(event.dataTransfer.types)) return;
+      const carrying = dragCarrying(event.dataTransfer.types);
+      if (!carrying) return;
+      const target = workDropTargetAt(event.clientX, event.clientY, carrying);
+      setWorkDropTarget(target);
+      if (!target) return;
       event.preventDefault();
       event.stopPropagation();
       event.dataTransfer.dropEffect = "move";
-      setWorkDropTarget(self);
     },
     onDragLeave: (event) => {
-      if (pointerLeft(event)) clearWorkDropTarget(self);
+      if (pointerLeft(event)) setWorkDropTarget(null);
     },
     onDrop: (event) => {
-      clearWorkDropTarget(self);
+      // The drop lands where the highlight said it would — the published
+      // target, not a re-resolve that could disagree with what was shown.
+      const target = dropTarget;
+      setWorkDropTarget(null);
+      forgetWorkTargets();
       const payload = takeWorkDragPayload();
-      if (!payload) return;
+      if (!target || !payload) return;
       event.preventDefault();
       event.stopPropagation();
-      void applyWorkDrop(self, payload);
+      void applyWorkDrop(target, payload);
     },
   };
 }
@@ -422,56 +385,121 @@ async function restoreRef(fromItemId: string, ref: WorkRef): Promise<void> {
   }
 }
 
-// ----- Hit testing for the Tauri drop path -----
+// ----- Drop-target geometry, shared by both drop paths -----
+
+/** The edges the geometry needs — a `DOMRect` qualifies. */
+interface Box {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+}
+
+/** The measured section, in list order. */
+export interface WorkTargetRects {
+  /** The list container — outside it there is no target at all. */
+  section: Box | null;
+  cards: { rect: Box; itemId: string }[];
+}
 
 /**
- * How long measured card rects are trusted, matching `useTerminalFileDrop`:
- * the section scrolls and its rows change height as statuses stream in, so
- * rects measured once at pickup drift away from what is on screen.
+ * The target a drag carrying `carrying` would land on at (x, y).
+ *
+ * Computed from the geometry rather than read off whichever element contains
+ * the point. The gap elements are 4px strips — as literal hit targets they
+ * made the insertion line unreachable except by threading the cursor between
+ * two rows, and left a reorder with *no* target while over a card's body,
+ * which is where the cursor spends the whole drag. Here every position in the
+ * section resolves to something:
+ *
+ * - a reorder ("item") always lands in a gap — the one whose neighboring
+ *   card midpoints bracket the cursor, the way the insertion feels;
+ * - a ref or terminal lands on the card it is over — the drag's own ghost
+ *   covers a card-height around the cursor, so anything but a thin band at
+ *   the card's vertical edges has to read as "onto this card" — and in the
+ *   nearest gap when in those bands or between cards, which keeps creating a
+ *   new item at a position reachable without making the bind hard to hit.
+ */
+export function resolveWorkDropTarget(
+  x: number,
+  y: number,
+  carrying: WorkDropPayload["kind"],
+  rects: WorkTargetRects,
+): WorkDropTarget | null {
+  const { section, cards } = rects;
+  if (!section) return null;
+  // An empty section is a near-zero-height container; give it a catch area so
+  // the first item can be dropped into it at all.
+  const pad = cards.length === 0 ? 16 : 6;
+  if (
+    x < section.left ||
+    x > section.right ||
+    y < section.top - pad ||
+    y > section.bottom + pad
+  ) {
+    return null;
+  }
+  if (carrying !== "item") {
+    const hit = cards.find(({ rect }) => y >= rect.top && y <= rect.bottom);
+    if (hit) {
+      const height = Math.max(hit.rect.bottom - hit.rect.top, 1);
+      const t = (y - hit.rect.top) / height;
+      if (t >= 0.15 && t <= 0.85) {
+        return { kind: "card", itemId: hit.itemId };
+      }
+    }
+  }
+  // The gap index is how many card midpoints sit above the cursor — above the
+  // first card's midpoint is gap 0, below the last card's is the end.
+  const index = cards.filter(
+    ({ rect }) => (rect.top + rect.bottom) / 2 <= y,
+  ).length;
+  return { kind: "gap", index };
+}
+
+/**
+ * How long measured rects are trusted, matching `useTerminalFileDrop`: the
+ * section scrolls and its rows change height as statuses stream in, so rects
+ * measured once at pickup drift away from what is on screen.
  */
 const REMEASURE_MS = 150;
 
-interface MeasuredTarget {
-  rect: DOMRect;
-  target: WorkDropTarget;
-}
-
-let measured: MeasuredTarget[] = [];
+let measured: WorkTargetRects = { section: null, cards: [] };
 let measuredAt: number | null = null;
 
 function measure(): void {
-  measured = [
-    ...document.querySelectorAll<HTMLElement>("[data-work-drop]"),
-  ].map((el) => ({
-    rect: el.getBoundingClientRect(),
-    target:
-      el.dataset.workDrop === "card"
-        ? { kind: "card" as const, itemId: el.dataset.workItemId ?? "" }
-        : { kind: "gap" as const, index: Number(el.dataset.workGap) },
-  }));
+  measured = {
+    section:
+      document
+        .querySelector<HTMLElement>("[data-work-section]")
+        ?.getBoundingClientRect() ?? null,
+    cards: [...document.querySelectorAll<HTMLElement>("[data-work-card]")].map(
+      (el) => ({
+        rect: el.getBoundingClientRect(),
+        itemId: el.dataset.workCard ?? "",
+      }),
+    ),
+  };
   measuredAt = performance.now();
 }
 
 /**
- * The drop target at a window position, or null. Re-measures on the same
+ * [`resolveWorkDropTarget`] against the live DOM. Re-measures on the same
  * throttle the terminal drop path uses, so the caller only has to ask.
  */
-export function workDropTargetAt(x: number, y: number): WorkDropTarget | null {
+export function workDropTargetAt(
+  x: number,
+  y: number,
+  carrying: WorkDropPayload["kind"],
+): WorkDropTarget | null {
   if (measuredAt === null || performance.now() - measuredAt > REMEASURE_MS) {
     measure();
   }
-  // Gaps overlap the cards they sit between, and a gap is the more specific
-  // answer — it is the thinner strip, and it is drawn on top.
-  const hits = measured.filter(
-    ({ rect }) =>
-      x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom,
-  );
-  const gap = hits.find((hit) => hit.target.kind === "gap");
-  return (gap ?? hits[0])?.target ?? null;
+  return resolveWorkDropTarget(x, y, carrying, measured);
 }
 
 /** Drop the measurement cache — called when a drag ends. */
 export function forgetWorkTargets(): void {
-  measured = [];
+  measured = { section: null, cards: [] };
   measuredAt = null;
 }

@@ -12,12 +12,13 @@ vi.mock("../../api", () => ({ getApiClient: () => backend }));
 
 import {
   applyWorkDrop,
+  dragCarrying,
   gapPosition,
-  isWorkCardDrag,
-  isWorkDrag,
+  resolveWorkDropTarget,
   terminalsInFlight,
   WORK_ITEM_MIME,
   WORK_REF_MIME,
+  type WorkTargetRects,
 } from "./work-drag";
 import {
   setDraggedPane,
@@ -43,20 +44,11 @@ describe("gapPosition", () => {
   });
 });
 
-describe("what each drop target accepts", () => {
-  it("takes a ref, a card and a terminal into the section", () => {
-    expect(isWorkDrag([WORK_REF_MIME])).toBe(true);
-    expect(isWorkDrag([WORK_ITEM_MIME])).toBe(true);
-    expect(isWorkDrag([TERMINAL_SESSION_MIME])).toBe(true);
-    expect(isWorkDrag(["text/plain"])).toBe(false);
-  });
-
-  it("takes everything but another card onto a card", () => {
-    // A card dropped on a card is a reorder with no position — it lands in a
-    // gap or nowhere.
-    expect(isWorkCardDrag([WORK_ITEM_MIME])).toBe(false);
-    expect(isWorkCardDrag([WORK_REF_MIME])).toBe(true);
-    expect(isWorkCardDrag([TERMINAL_SESSION_MIME])).toBe(true);
+describe("dragCarrying", () => {
+  it("names what a work drag's MIME types carry", () => {
+    expect(dragCarrying([WORK_ITEM_MIME])).toBe("item");
+    expect(dragCarrying([WORK_REF_MIME])).toBe("ref");
+    expect(dragCarrying(["text/plain"])).toBeNull();
   });
 
   it("takes a terminal by any of its three grips", () => {
@@ -67,9 +59,96 @@ describe("what each drop target accepts", () => {
       TERMINAL_PANE_MIME,
       TERMINAL_TAB_MIME,
     ]) {
-      expect(isWorkDrag([mime])).toBe(true);
-      expect(isWorkCardDrag([mime])).toBe(true);
+      expect(dragCarrying([mime])).toBe("terminal");
     }
+  });
+});
+
+describe("resolveWorkDropTarget", () => {
+  const box = (top: number, bottom: number) => ({
+    top,
+    bottom,
+    left: 0,
+    right: 100,
+  });
+  /** Two 20px cards with a 10px gap, inside a 100px section. */
+  const rects: WorkTargetRects = {
+    section: box(0, 100),
+    cards: [
+      { rect: box(10, 30), itemId: "a" },
+      { rect: box(40, 60), itemId: "b" },
+    ],
+  };
+
+  it("resolves a reorder to a gap wherever the cursor is", () => {
+    // Over a card's body — where the cursor spends the whole drag — the
+    // nearest gap wins, decided by the card midpoints (20 and 50).
+    expect(resolveWorkDropTarget(50, 15, "item", rects)).toEqual({
+      kind: "gap",
+      index: 0,
+    });
+    expect(resolveWorkDropTarget(50, 25, "item", rects)).toEqual({
+      kind: "gap",
+      index: 1,
+    });
+    expect(resolveWorkDropTarget(50, 90, "item", rects)).toEqual({
+      kind: "gap",
+      index: 2,
+    });
+  });
+
+  it("never offers a card to a reorder", () => {
+    expect(resolveWorkDropTarget(50, 20, "item", rects)).toEqual({
+      kind: "gap",
+      index: 1,
+    });
+  });
+
+  it("binds a ref to the card under the cursor", () => {
+    expect(resolveWorkDropTarget(50, 20, "ref", rects)).toEqual({
+      kind: "card",
+      itemId: "a",
+    });
+    expect(resolveWorkDropTarget(50, 50, "terminal", rects)).toEqual({
+      kind: "card",
+      itemId: "b",
+    });
+  });
+
+  it("inserts a ref at a card's thin edge bands and between cards", () => {
+    // Just inside the top edge of card "a" and the bottom edge of card "b".
+    expect(resolveWorkDropTarget(50, 11, "ref", rects)).toEqual({
+      kind: "gap",
+      index: 0,
+    });
+    expect(resolveWorkDropTarget(50, 59, "ref", rects)).toEqual({
+      kind: "gap",
+      index: 2,
+    });
+    // The space between the two cards.
+    expect(resolveWorkDropTarget(50, 35, "ref", rects)).toEqual({
+      kind: "gap",
+      index: 1,
+    });
+  });
+
+  it("is null outside the section", () => {
+    expect(resolveWorkDropTarget(200, 20, "item", rects)).toBeNull();
+    expect(resolveWorkDropTarget(50, 120, "item", rects)).toBeNull();
+    expect(
+      resolveWorkDropTarget(50, 20, "item", { section: null, cards: [] }),
+    ).toBeNull();
+  });
+
+  it("catches a drop near an empty section", () => {
+    // With no cards the container is near zero-height; the padded catch area
+    // is what lets the first item be dropped into it at all.
+    const empty: WorkTargetRects = { section: box(50, 50), cards: [] };
+    expect(resolveWorkDropTarget(50, 60, "ref", empty)).toEqual({
+      kind: "gap",
+      index: 0,
+    });
+    expect(resolveWorkDropTarget(50, 80, "ref", empty)).toBeNull();
   });
 });
 
