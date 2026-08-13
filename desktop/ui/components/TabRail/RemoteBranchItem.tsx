@@ -3,6 +3,9 @@ import { useReviewStore } from "../../stores";
 import type { ViewerPr } from "../../types";
 import { PrBadge } from "./PrBadge";
 import { samePrBadge } from "./pr-format";
+import { ActionContextMenu } from "./ActionMenu";
+import { refRowActions, useAddToWork } from "./work-actions";
+import { useWorkRefDrag } from "./work-row-drag";
 
 interface RemoteBranchItemProps {
   branchName: string;
@@ -45,6 +48,7 @@ export const RemoteBranchItem = memo(function RemoteBranchItem({
   onActivate,
 }: RemoteBranchItemProps) {
   // A remote branch's review identity is its (unprefixed) branch name.
+  const workDragProps = useWorkRefDrag(repoPath, branchName);
   const isActive = useReviewStore(
     (s) =>
       s.activeReviewKey?.repoPath === repoPath &&
@@ -65,36 +69,47 @@ export const RemoteBranchItem = memo(function RemoteBranchItem({
     [handleClick],
   );
 
+  const addToWork = useAddToWork(repoPath, branchName);
+  const rowActions = refRowActions({
+    ref: branchName,
+    addToWork,
+    openPr,
+    onOpen: handleClick,
+  });
+
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={handleClick}
-      onKeyDown={handleKeyDown}
-      className={`group relative w-full text-left pl-4 pr-2.5 py-1 rounded cursor-default
-                  transition-colors duration-100
-                  ${isActive ? "bg-fg/[0.04]" : "hover:bg-fg/[0.03]"}`}
-      aria-current={isActive ? "true" : undefined}
-      title={`${remoteRef} — last commit ${lastCommitDate}`}
-    >
-      {isActive && (
-        <span className="absolute left-0.5 top-1.5 bottom-1.5 w-[2px] rounded-full bg-fg/30" />
-      )}
-      <div className="flex items-center gap-1.5 min-w-0">
-        <span
-          className={`text-xs truncate flex-1 min-w-0 ${
-            isActive
-              ? "text-fg-secondary font-medium"
-              : "text-fg-faint/60 group-hover:text-fg-faint"
-          }`}
-        >
-          {branchName}
-        </span>
-        {openPr && <PrBadge pr={openPr} />}
-        <span className="text-[9px] rounded-full bg-fg/[0.06] text-fg-faint/70 px-1.5 py-px shrink-0">
-          remote
-        </span>
+    <ActionContextMenu actions={rowActions}>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={handleClick}
+        onKeyDown={handleKeyDown}
+        {...workDragProps}
+        className={`group relative w-full text-left pl-4 pr-2.5 py-1 rounded cursor-default
+                    transition-colors duration-100
+                    ${isActive ? "bg-fg/[0.04]" : "hover:bg-fg/[0.03]"}`}
+        aria-current={isActive ? "true" : undefined}
+        title={`${remoteRef} — last commit ${lastCommitDate}`}
+      >
+        {isActive && (
+          <span className="absolute left-0.5 top-1.5 bottom-1.5 w-[2px] rounded-full bg-fg/30" />
+        )}
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span
+            className={`text-xs truncate flex-1 min-w-0 ${
+              isActive
+                ? "text-fg-secondary font-medium"
+                : "text-fg-faint/60 group-hover:text-fg-faint"
+            }`}
+          >
+            {branchName}
+          </span>
+          {openPr && <PrBadge pr={openPr} />}
+          <span className="text-[9px] rounded-full bg-fg/[0.06] text-fg-faint/70 px-1.5 py-px shrink-0">
+            remote
+          </span>
+        </div>
       </div>
-    </div>
+    </ActionContextMenu>
   );
 }, arePropsEqual);

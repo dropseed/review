@@ -1,10 +1,8 @@
-import { type ReactElement, type ReactNode, useMemo } from "react";
+import { type ReactElement, type ReactNode } from "react";
 import { clsx } from "clsx";
 import { useReviewStore } from "../../stores";
 import {
   isOrphanedSession,
-  mergeVisibleTabs,
-  panelReviewKey,
   type TerminalTab,
 } from "../../stores/slices/terminalSlice";
 import {
@@ -13,7 +11,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "../ui/dropdown-menu";
-import { useTerminalFileDrop } from "../../hooks/useTerminalFileDrop";
 import { basename } from "../TabRail/terminal-status-format";
 import { PhaseDot } from "../TabRail/PhaseDot";
 import { RICH_TOOLTIP_CLASS, SimpleTooltip } from "../ui/tooltip";
@@ -26,7 +23,9 @@ import {
   type SplitDirection,
 } from "./pane-tree";
 import {
+  DROP_RING,
   TERMINAL_PANE_MIME,
+  TERMINAL_TAB_MIME,
   clearTabDropTarget,
   draggedTabSource,
   pointerLeft,
@@ -39,27 +38,25 @@ import {
 import { closeTerminalPane, closeTerminalTab } from "./close";
 import { openTerminalTab } from "./newTab";
 import { PaneTree, PaneButton } from "./PaneTree";
-import { PinIcon, WarningIcon } from "../ui/icons";
-import { DROP_RING, TERMINAL_TAB_MIME } from "../TabRail/useTerminalTabDrop";
+import { WarningIcon } from "../ui/icons";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuTrigger,
+} from "../ui/context-menu";
+import { TerminalMenuItems } from "../TabRail/ActionMenu";
 
 export function TerminalPanel(): ReactNode {
-  const repoPath = useReviewStore((s) => s.repoPath);
-  const reviewRef = useReviewStore((s) => s.reviewRef);
   const terminalSessions = useReviewStore((s) => s.terminalSessions);
   const terminalStatuses = useReviewStore((s) => s.terminalStatuses);
   const terminalExited = useReviewStore((s) => s.terminalExited);
   const terminalCheckouts = useReviewStore((s) => s.terminalCheckouts);
-  const terminalTabsByReviewKey = useReviewStore(
-    (s) => s.terminalTabsByReviewKey,
-  );
-  const activeTabIdByReviewKey = useReviewStore(
-    (s) => s.activeTabIdByReviewKey,
-  );
+  const terminalTabs = useReviewStore((s) => s.terminalTabs);
+  const activeTabId = useReviewStore((s) => s.activeTabId);
 
   const splitTerminal = useReviewStore((s) => s.splitTerminal);
   const setActiveTab = useReviewStore((s) => s.setActiveTab);
   const moveTab = useReviewStore((s) => s.moveTab);
-  const toggleTabPinned = useReviewStore((s) => s.toggleTabPinned);
   const setFocusedTerminalPane = useReviewStore(
     (s) => s.setFocusedTerminalPane,
   );
@@ -82,8 +79,6 @@ export function TerminalPanel(): ReactNode {
     (s) => s.setTerminalOverviewOpen,
   );
 
-  useTerminalFileDrop();
-
   // Tab drag-to-reorder. The in-flight tab lives in the pane-drag module
   // rather than component state, because under Tauri the drop lands on the
   // window (useTerminalFileDrop), not on these elements — the module is what
@@ -101,59 +96,38 @@ export function TerminalPanel(): ReactNode {
   // saw the pointer last (HTML5 here, window-level events under Tauri).
   const tabDropTarget = useTabDropTarget();
 
-  const reviewKey = repoPath
-    ? panelReviewKey(terminalCheckouts, repoPath, reviewRef)
-    : "";
-
-  // What the strip shows: this review's own tabs, plus every pinned tab from
-  // anywhere. Each entry carries the key that *owns* the tab, which is not the
-  // key we're viewing when the tab is a pinned visitor — every store call about
-  // a tab has to use its home key or the tab would silently change address.
-  const visibleTabs = useMemo(
-    () =>
-      reviewKey ? mergeVisibleTabs(terminalTabsByReviewKey, reviewKey) : [],
-    [reviewKey, terminalTabsByReviewKey],
-  );
-  const activeTabId =
-    activeTabIdByReviewKey[reviewKey] ?? visibleTabs[0]?.tab.id ?? null;
-
   // ⌘D / ⇧⌘D pane splits are dispatched by useKeyboardNavigation, which routes
   // the chord to whichever pane has focus.
 
-  const activeTab =
-    visibleTabs.find((v) => v.tab.id === activeTabId)?.tab ?? null;
+  const activeTab = terminalTabs.find((tab) => tab.id === activeTabId) ?? null;
 
   // Offered only for a pane that has somewhere to leave: the sole pane of a tab
   // already is its own tab, and a slot that did nothing would still read as an
   // invitation.
   const canExtractDraggedPane =
     draggedPaneId != null &&
-    visibleTabs.some(({ tab }) => {
+    terminalTabs.some((tab) => {
       const leaves = collectLeafIds(tab.root);
       return leaves.length > 1 && leaves.includes(draggedPaneId);
     });
 
-  if (!repoPath) return null;
-
   const handleNewTab = () => void openTerminalTab();
 
   const handleSplit = (
-    homeKey: string,
     tabId: string,
     targetTerminalId: string,
     direction: SplitDirection,
   ) => {
-    void splitTerminal(homeKey, tabId, targetTerminalId, direction);
+    void splitTerminal(tabId, targetTerminalId, direction);
   };
 
   /** Split the active tab's focused pane; with no tab open, start one. */
   const handleSplitActive = (direction: SplitDirection) => {
-    const active = visibleTabs.find((v) => v.tab.id === activeTabId);
-    if (!active) {
+    if (!activeTab) {
       handleNewTab();
       return;
     }
-    handleSplit(active.reviewKey, active.tab.id, active.tab.focused, direction);
+    handleSplit(activeTab.id, activeTab.focused, direction);
   };
 
   const handleClosePane = (id: string) => {
@@ -182,7 +156,7 @@ export function TerminalPanel(): ReactNode {
           className="flex max-h-[4.75rem] flex-1 flex-wrap items-center gap-0.5
                      overflow-y-auto scrollbar-thin"
         >
-          {visibleTabs.map(({ tab }, index) => {
+          {terminalTabs.map((tab, index) => {
             const { leafIds, severity, allDead, title, primaryId } = tabGlance(
               tab,
               terminalSessions,
@@ -211,187 +185,167 @@ export function TerminalPanel(): ReactNode {
                 focusedSession.cwd,
               );
             return (
-              <div
-                key={tab.id}
-                draggable
-                // Hit-tested by useTerminalFileDrop under Tauri, where the
-                // dragover/drop below never fire: which tab this is, where it
-                // sits in the strip, and which panes it already holds.
-                data-strip-tab={tab.id}
-                data-strip-index={index}
-                data-strip-leaves={leafIds.join(" ")}
-                onDragStart={(e) => {
-                  // Latched in the module rather than component state: under
-                  // Tauri the drop arrives on the window after our own dragend,
-                  // and dataTransfer is unreadable there.
-                  setDraggedTab({ tabId: tab.id, index, reviewKey });
-                  e.dataTransfer.effectAllowed = "move";
-                  // A payload is required for the drag to start at all.
-                  e.dataTransfer.setData("text/plain", tab.id);
-                  // The same drag reaches the sidebar, where dropping on a row
-                  // re-homes the tab. Its own type, because a row has to decide
-                  // during dragover — when only `types` is readable — whether
-                  // this is a drag it should take.
-                  e.dataTransfer.setData(TERMINAL_TAB_MIME, tab.id);
-                }}
-                onDragOver={(e) => {
-                  if (takesPane) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    e.dataTransfer.dropEffect = "move";
-                    setTabDropTarget({ kind: "pane-into-tab", tabId: tab.id });
-                    return;
-                  }
-                  // Only claim the drop for our own tab drags; anything else
-                  // (a file from Finder) falls through to its own handler.
-                  if (draggedTabSource() === null) return;
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = "move";
-                  setTabDropTarget({ kind: "tab-reorder", index });
-                }}
-                onDragLeave={(e) => {
-                  if (!pointerLeft(e)) return;
-                  clearTabDropTarget({ kind: "pane-into-tab", tabId: tab.id });
-                }}
-                onDrop={(e) => {
-                  const pane = e.dataTransfer.getData(TERMINAL_PANE_MIME);
-                  if (pane) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setTabDropTarget(null);
-                    movePaneToTab(pane, tab.id);
-                    // The tab it landed in is the one to be looking at, and the
-                    // strip may be showing it as a pinned visitor — so this is
-                    // said for the key being viewed, not the key that owns it.
-                    setActiveTab(reviewKey, tab.id);
-                    return;
-                  }
-                  const source = draggedTabSource();
-                  if (source === null) return;
-                  e.preventDefault();
-                  // Strip positions, not stored ones — the store maps them back
-                  // and declines a drag the strip's own sort would swallow.
-                  moveTab(source.reviewKey, source.index, index);
-                  setDraggedTab(null);
-                }}
-                onDragEnd={() => {
-                  setDraggedTab(null);
-                  setTabDropTarget(null);
-                }}
-                className={clsx(
-                  "group relative flex max-w-full shrink-0 items-center rounded-md px-2 py-1 text-xs",
-                  // Lifted off the terminal surface, not recessed into it —
-                  // the strip now sits on surface-inset itself.
-                  isActive
-                    ? "bg-surface-raised text-fg-secondary"
-                    : "text-fg-muted hover:bg-fg/[0.06]",
-                  draggedTab?.index === index && "opacity-50",
-                  takesPane &&
-                    tabDropTarget?.kind === "pane-into-tab" &&
-                    tabDropTarget.tabId === tab.id &&
-                    DROP_RING,
-                )}
-              >
-                {isDropTarget && (
-                  <span
-                    className={clsx(
-                      "pointer-events-none absolute inset-y-0.5 w-0.5 rounded-full bg-focus-ring",
-                      // Mark the edge the tab would land against.
-                      draggedTab !== null && draggedTab.index < index
-                        ? "right-0"
-                        : "left-0",
-                    )}
-                  />
-                )}
-                {/* A pinned tab wears its marker at rest — it is the only
-                    thing distinguishing a visitor from a local tab — and the
-                    marker is the control that takes it off again. */}
-                {tab.pinned && (
-                  <button
-                    type="button"
-                    onClick={() => toggleTabPinned(tab.id)}
-                    aria-label="Unpin tab"
-                    title="Unpin — show only in its own repo"
-                    aria-pressed
-                    className="mr-1 shrink-0 text-fg-muted hover:text-fg-secondary"
-                  >
-                    <PinIcon className="h-2.5 w-2.5" filled />
-                  </button>
-                )}
-                <TabHoverPeek sessionId={allDead ? null : primaryId}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveTab(reviewKey, tab.id);
-                      // Picking a tab is leaving the overview — otherwise the
-                      // click looks eaten, since the grid stays on top.
-                      if (overviewOpen) setTerminalOverviewOpen(false);
+              <ContextMenu key={tab.id}>
+                <ContextMenuTrigger asChild>
+                  <div
+                    draggable
+                    // Hit-tested by useTerminalFileDrop under Tauri, where the
+                    // dragover/drop below never fire: which tab this is, where it
+                    // sits in the strip, and which panes it already holds.
+                    data-strip-tab={tab.id}
+                    data-strip-index={index}
+                    data-strip-leaves={leafIds.join(" ")}
+                    onDragStart={(e) => {
+                      // Latched in the module rather than component state: under
+                      // Tauri the drop arrives on the window after our own dragend,
+                      // and dataTransfer is unreadable there.
+                      setDraggedTab({ tabId: tab.id, index });
+                      e.dataTransfer.effectAllowed = "move";
+                      // A payload is required for the drag to start at all.
+                      e.dataTransfer.setData("text/plain", tab.id);
+                      // The same drag reaches the sidebar, where dropping on a work
+                      // card claims the tab. Its own type, because a card has to
+                      // decide during dragover — when only `types` is readable —
+                      // whether this is a drag it should take.
+                      e.dataTransfer.setData(TERMINAL_TAB_MIME, tab.id);
                     }}
-                    title={allDead ? title : undefined}
-                    className="flex min-w-0 items-center gap-1.5"
+                    onDragOver={(e) => {
+                      if (takesPane) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.dataTransfer.dropEffect = "move";
+                        setTabDropTarget({
+                          kind: "pane-into-tab",
+                          tabId: tab.id,
+                        });
+                        return;
+                      }
+                      // Only claim the drop for our own tab drags; anything else
+                      // (a file from Finder) falls through to its own handler.
+                      if (draggedTabSource() === null) return;
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = "move";
+                      setTabDropTarget({ kind: "tab-reorder", index });
+                    }}
+                    onDragLeave={(e) => {
+                      if (!pointerLeft(e)) return;
+                      clearTabDropTarget({
+                        kind: "pane-into-tab",
+                        tabId: tab.id,
+                      });
+                    }}
+                    onDrop={(e) => {
+                      const pane = e.dataTransfer.getData(TERMINAL_PANE_MIME);
+                      if (pane) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setTabDropTarget(null);
+                        movePaneToTab(pane, tab.id);
+                        return;
+                      }
+                      const source = draggedTabSource();
+                      if (source === null) return;
+                      e.preventDefault();
+                      moveTab(source.index, index);
+                      setDraggedTab(null);
+                    }}
+                    onDragEnd={() => {
+                      setDraggedTab(null);
+                      setTabDropTarget(null);
+                    }}
+                    className={clsx(
+                      "group relative flex max-w-full shrink-0 items-center rounded-md px-2 py-1 text-xs",
+                      // Lifted off the terminal surface, not recessed into it —
+                      // the strip now sits on surface-inset itself.
+                      isActive
+                        ? "bg-surface-raised text-fg-secondary"
+                        : "text-fg-muted hover:bg-fg/[0.06]",
+                      draggedTab?.index === index && "opacity-50",
+                      takesPane &&
+                        tabDropTarget?.kind === "pane-into-tab" &&
+                        tabDropTarget.tabId === tab.id &&
+                        DROP_RING,
+                    )}
                   >
-                    <PhaseDot phase={severity ?? "idle"} dead={allDead} />
-                    <span className="max-w-[12rem] truncate">{title}</span>
-                    {orphaned && (
+                    {isDropTarget && (
                       <span
-                        title={`${basename(
-                          focusedSession?.cwd ?? "",
-                        )} no longer exists — this shell is still running in a deleted directory`}
-                        aria-label="Directory no longer exists"
-                        className="shrink-0 text-status-rejected"
+                        className={clsx(
+                          "pointer-events-none absolute inset-y-0.5 w-0.5 rounded-full bg-focus-ring",
+                          // Mark the edge the tab would land against.
+                          draggedTab !== null && draggedTab.index < index
+                            ? "right-0"
+                            : "left-0",
+                        )}
+                      />
+                    )}
+                    <TabHoverPeek sessionId={allDead ? null : primaryId}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab(tab.id);
+                          // Picking a tab is leaving the overview — otherwise the
+                          // click looks eaten, since the grid stays on top.
+                          if (overviewOpen) setTerminalOverviewOpen(false);
+                        }}
+                        title={allDead ? title : undefined}
+                        className="flex min-w-0 items-center gap-1.5"
                       >
-                        <WarningIcon className="h-3 w-3" />
-                      </span>
-                    )}
-                    {leafIds.length > 1 && (
-                      <span className="text-xxs text-fg-faint tabular-nums">
-                        {leafIds.length}
-                      </span>
-                    )}
-                  </button>
-                </TabHoverPeek>
-                {/* Out of flow, so a tab is no wider for having controls and
+                        <PhaseDot phase={severity ?? "idle"} dead={allDead} />
+                        <span className="max-w-[12rem] truncate">{title}</span>
+                        {orphaned && (
+                          <span
+                            title={`${basename(
+                              focusedSession?.cwd ?? "",
+                            )} no longer exists — this shell is still running in a deleted directory`}
+                            aria-label="Directory no longer exists"
+                            className="shrink-0 text-status-rejected"
+                          >
+                            <WarningIcon className="h-3 w-3" />
+                          </span>
+                        )}
+                        {leafIds.length > 1 && (
+                          <span className="text-xxs text-fg-faint tabular-nums">
+                            {leafIds.length}
+                          </span>
+                        )}
+                      </button>
+                    </TabHoverPeek>
+                    {/* Out of flow, so a tab is no wider for having controls and
                     doesn't jump when they appear. They fade in over the
                     trailing edge, carrying the tab's own background as a
                     gradient so a long title reads under them rather than
                     through them. */}
-                <div
-                  className={clsx(
-                    "absolute inset-y-0 right-0 flex items-center justify-end gap-0.5 rounded-r-md pr-1.5 pl-3",
-                    "bg-gradient-to-l to-transparent opacity-0 transition-opacity",
-                    // Invisible means inert: at rest this strip must not eat
-                    // clicks meant for the tab it's sitting on top of.
-                    "pointer-events-none group-hover:pointer-events-auto",
-                    "text-fg-faint group-hover:opacity-100",
-                    isActive
-                      ? "from-surface-raised via-surface-raised"
-                      : "from-surface-inset via-surface-inset",
-                  )}
-                >
-                  {/* Only offered here while unpinned — once pinned, the
-                      marker beside the title is the control. */}
-                  {!tab.pinned && (
-                    <button
-                      type="button"
-                      onClick={() => toggleTabPinned(tab.id)}
-                      aria-label="Pin tab"
-                      title="Pin — keep visible in every repo"
-                      aria-pressed={false}
-                      className="hover:text-fg-secondary"
+                    <div
+                      className={clsx(
+                        "absolute inset-y-0 right-0 flex items-center justify-end gap-0.5 rounded-r-md pr-1.5 pl-3",
+                        "bg-gradient-to-l to-transparent opacity-0 transition-opacity",
+                        // Invisible means inert: at rest this strip must not eat
+                        // clicks meant for the tab it's sitting on top of.
+                        "pointer-events-none group-hover:pointer-events-auto",
+                        "text-fg-faint group-hover:opacity-100",
+                        isActive
+                          ? "from-surface-raised via-surface-raised"
+                          : "from-surface-inset via-surface-inset",
+                      )}
                     >
-                      <PinIcon className="h-3 w-3" />
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => handleCloseTab(tab)}
-                    aria-label="Close tab"
-                    className="hover:text-fg-secondary"
-                  >
-                    ×
-                  </button>
-                </div>
-              </div>
+                      <button
+                        type="button"
+                        onClick={() => handleCloseTab(tab)}
+                        aria-label="Close tab"
+                        className="hover:text-fg-secondary"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
+                </ContextMenuTrigger>
+                {/* The same menu the sidebar rows carry — a tab is a terminal
+                    the panel happens to be showing, and every one of its panes
+                    is claimed, jumped to or killed together. */}
+                <ContextMenuContent>
+                  <TerminalMenuItems sessionIds={leafIds} />
+                </ContextMenuContent>
+              </ContextMenu>
             );
           })}
 
@@ -423,8 +377,7 @@ export function TerminalPanel(): ReactNode {
                 if (!pane) return;
                 e.preventDefault();
                 e.stopPropagation();
-                const newTabId = movePaneToNewTab(pane);
-                if (newTabId) setActiveTab(reviewKey, newTabId);
+                movePaneToNewTab(pane);
               }}
               className={clsx(
                 "flex shrink-0 items-center gap-1 rounded-md border border-dashed px-2 py-1 text-xs",
@@ -516,12 +469,12 @@ export function TerminalPanel(): ReactNode {
       {/* Tabs — all mounted, inactive ones hidden to keep xterms streaming.
           The panes own the only inner gutter, so nothing is inset here. */}
       <div className="relative flex-1 overflow-hidden">
-        {visibleTabs.length === 0 ? (
+        {terminalTabs.length === 0 ? (
           <div className="flex h-full items-center justify-center text-xs text-fg-faint">
             No terminals — use + to start one.
           </div>
         ) : (
-          visibleTabs.map(({ tab, reviewKey: homeKey }) => (
+          terminalTabs.map((tab) => (
             <div
               key={tab.id}
               className={clsx(
@@ -535,16 +488,11 @@ export function TerminalPanel(): ReactNode {
                 // Folding the last pane still showing is declined, so the tab
                 // stops offering it rather than offering a button that no-ops.
                 canFold={expandedLeafIds(tab.root).length > 1}
-                // The tab's own key, not the one we're viewing: focus and split
-                // sizes are stored where the tab lives.
-                reviewKey={homeKey}
                 tabId={tab.id}
                 focusedId={tab.focused}
                 tabActive={tab.id === activeTabId}
-                onFocus={(id) => setFocusedTerminalPane(homeKey, tab.id, id)}
-                onSplit={(id, direction) =>
-                  handleSplit(homeKey, tab.id, id, direction)
-                }
+                onFocus={(id) => setFocusedTerminalPane(tab.id, id)}
+                onSplit={(id, direction) => handleSplit(tab.id, id, direction)}
                 onClose={handleClosePane}
               />
             </div>

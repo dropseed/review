@@ -1,7 +1,7 @@
 /**
  * Shared state for the terminal's drags: a pane picked up by its grip to
  * rearrange a tab's splits (the way Ghostty does it), and a tab picked up off
- * the strip to reorder it or re-home it onto a sidebar row.
+ * the strip to reorder it or drop it onto a work card.
  *
  * The geometry is here, pure, so the edge a pointer resolves to can be tested
  * without a DOM; the tree move it feeds is `movePane` in pane-tree.
@@ -9,6 +9,10 @@
 
 import { useSyncExternalStore } from "react";
 import type { DropEdge } from "./pane-tree";
+
+/** The app's one "you can drop here" treatment, for any drop target that lights
+ *  up as a whole rather than showing where within itself the thing will land. */
+export const DROP_RING = "ring-1 ring-inset ring-focus-ring bg-fg/[0.06]";
 
 /**
  * The drag payload for a terminal pane. A type of its own rather than
@@ -138,11 +142,21 @@ export function clearPaneDropTarget(paneId: string): void {
  */
 export interface TabDragSource {
   tabId: string;
-  /** Position in the strip as rendered (`mergeVisibleTabs` order). */
+  /** Position in the strip — the coordinate space of a reorder. */
   index: number;
-  /** The review key whose strip was showing — what `moveTab` reorders. */
-  reviewKey: string;
 }
+
+/**
+ * The drag payload for a terminal tab. A type of its own rather than
+ * `text/plain`, because a target has to decide during `dragover` — before the
+ * data can be read — whether it takes the drop at all, and `types` is the only
+ * thing readable then.
+ *
+ * Beside the pane and session types rather than in the sidebar hook that first
+ * needed it: all three name a terminal in flight, and the "Working on" section
+ * takes all three.
+ */
+export const TERMINAL_TAB_MIME = "application/x-review-terminal-tab";
 
 let draggedTab: TabDragSource | null = null;
 
@@ -160,8 +174,8 @@ export function draggedTabSource(): TabDragSource | null {
 
 /**
  * The drag payload for a terminal picked up by its own sidebar row. Distinct
- * from a tab drag because a row stands for one session, which may have no tab
- * in this window at all — the drop re-homes the session rather than a tab.
+ * from a tab drag because it names a session rather than a strip position —
+ * what it carries is still that session's whole tab (see `terminalsInFlight`).
  */
 export const TERMINAL_SESSION_MIME = "application/x-review-terminal-session";
 
@@ -185,9 +199,8 @@ export function draggedTerminal(): string | null {
 }
 
 /**
- * Where the thing in flight would land, among the targets that take a whole
- * pane or tab: an existing strip tab, the extract-to-new-tab slot, a reorder
- * position in the strip, or a sidebar row to re-home a tab onto.
+ * Where the thing in flight would land, among the strip's own targets: an
+ * existing tab, the extract-to-new-tab slot, or a reorder position.
  *
  * One value rather than per-component state for the same reason as the pane
  * drop target above: the gesture arrives as HTML5 events in web mode and as
@@ -197,10 +210,7 @@ export function draggedTerminal(): string | null {
 export type TabDropTarget =
   | { kind: "pane-into-tab"; tabId: string }
   | { kind: "new-tab" }
-  | { kind: "tab-reorder"; index: number }
-  /** `rowId` distinguishes sidebar rows that share a review key (a repo row is
-   *  its head branch's row), so hovering one doesn't light the other. */
-  | { kind: "tab-home"; reviewKey: string; rowId: string };
+  | { kind: "tab-reorder"; index: number };
 
 function sameTabDropTarget(
   a: TabDropTarget | null,
@@ -215,8 +225,6 @@ function sameTabDropTarget(
       return true;
     case "tab-reorder":
       return a.index === (b as typeof a).index;
-    case "tab-home":
-      return a.rowId === (b as typeof a).rowId;
   }
 }
 

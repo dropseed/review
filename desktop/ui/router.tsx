@@ -13,11 +13,15 @@ import { TabRail } from "./components/TabRail";
 import { ReviewView } from "./components/ReviewView";
 import { NewReviewView } from "./components/NewReviewView";
 import { TooltipProvider } from "./components/ui/tooltip";
+import { TerminalDock } from "./components/Terminal/TerminalDock";
+import { TERMINAL_COMMANDS } from "./components/Terminal/commands";
+import { closeFocusedTerminal } from "./components/Terminal/close";
 import { useReviewStore } from "./stores";
-import { getSidebarTree } from "./stores/selectors/sidebar";
-import { activateSidebarRow, allSidebarRows } from "./utils/sidebar-tree";
+import { findSidebarRow } from "./stores/selectors/sidebar";
+import { activateSidebarRow } from "./utils/sidebar-tree";
 import { makeReviewKey } from "./utils/review-key";
 import { getErrorMessage } from "./utils/errors";
+import { getPlatformServices } from "./platform";
 import { prReviewTarget, type ReviewTarget, type ViewerPr } from "./types";
 import {
   useRepositoryInit,
@@ -26,7 +30,10 @@ import {
   useFileRouteSync,
   useMenuState,
   useRepoActivitySync,
+  useWorkSync,
   useTerminalCheckoutSync,
+  useTerminalEvents,
+  useTerminalFileDrop,
   useViewerPrsSync,
   usePollWhileVisible,
   type RepoStatus,
@@ -35,6 +42,7 @@ import { useReviewFreshness } from "./hooks/useReviewFreshness";
 import {
   APP_COMMANDS,
   reviewCommands,
+  workCommands,
   useRegisterCommands,
   useCommandDispatch,
 } from "./commands";
@@ -60,6 +68,8 @@ function AppShell() {
   const loadGlobalReviews = useReviewStore((s) => s.loadGlobalReviews);
   const loadLocalActivity = useReviewStore((s) => s.loadLocalActivity);
 
+  // The work list is deliberately not here: `useWorkSync` owns its load
+  // lifecycle, because it needs the completion signal to gate the migration.
   useEffect(() => {
     loadGlobalReviews();
     loadLocalActivity();
@@ -115,16 +125,38 @@ function AppShell() {
   const activateOpenPrRef = useRef(handleActivateOpenPr);
   activateOpenPrRef.current = handleActivateOpenPr;
 
+  // Cascading close (terminal pane → split → file → window). Shell-level
+  // because the terminal is: ⌘W over a shell means "close this shell" wherever
+  // that shell is on screen, and it must not reach past it to the window.
+  const handleClose = useCallback(async () => {
+    if (await closeFocusedTerminal()) return;
+    const state = useReviewStore.getState();
+    if (state.secondaryFile !== null) {
+      state.closeSplit();
+    } else if (state.selectedFile !== null) {
+      useReviewStore.setState({ selectedFile: null });
+    } else {
+      const platform = getPlatformServices();
+      await platform.window.close();
+    }
+  }, []);
+
   // The app's commands, and the shell-level actions they need. Shortcuts are
   // dispatched here rather than by the native menu, so they work identically
   // in the desktop app and in web mode (which has no native menu at all).
   useRegisterCommands(APP_COMMANDS);
   useRegisterCommands(reviewCommands);
+  useRegisterCommands(workCommands);
+  // The terminal's own commands are registered here, not by the review screen,
+  // for the same reason its panel is mounted here: ⌘` has to answer on the
+  // home screen too.
+  useRegisterCommands(TERMINAL_COMMANDS);
   useProvideCommandUi(
     useMemo(
       () => ({
         openRepo: () => handleOpenRepoRef.current(),
         newWindow: () => handleNewWindow(),
+        closeTab: () => void handleClose(),
         navigate: (to: string) => navigate(to),
         // Activate by key the way the sidebar would: find the row and use its
         // own kind's handler, so a review row resolves its stored base and a
@@ -132,10 +164,10 @@ function AppShell() {
         // row (rare — e.g. the sidebar hasn't loaded that repo yet) still
         // opens as a local branch rather than doing nothing.
         activateReviewKey: (repoPath: string, ref: string) => {
-          const state = useReviewStore.getState();
-          const key = makeReviewKey(repoPath, ref);
-          const tree = getSidebarTree(state, Date.now(), state.repoPath);
-          const row = allSidebarRows(tree).find((r) => r.reviewKey === key);
+          const row = findSidebarRow(
+            useReviewStore.getState(),
+            makeReviewKey(repoPath, ref),
+          );
           if (row) {
             activateSidebarRow(row, {
               onActivateReview: (review) =>
@@ -157,7 +189,7 @@ function AppShell() {
           activateLocalBranchRef.current(repoPath, ref, "");
         },
       }),
-      [handleNewWindow, navigate],
+      [handleClose, handleNewWindow, navigate],
     ),
   );
   useCommandDispatch();
@@ -165,7 +197,15 @@ function AppShell() {
   useMenuState();
   useReviewFreshness();
   useRepoActivitySync();
+  useWorkSync();
   useTerminalCheckoutSync();
+  useTerminalEvents();
+  // Tauri's window-level drag-and-drop, which is the *only* drop channel in the
+  // desktop app — the webview never sees an HTML5 drop. It has to be mounted at
+  // the shell, not inside the terminal panel: it also hit-tests every "Working
+  // on" drop, and the panel is closed by default, which would leave dragging a
+  // branch onto a work card doing nothing at all.
+  useTerminalFileDrop();
   useViewerPrsSync();
 
   useComparisonLoader(comparisonReady, setInitialLoading);
@@ -185,7 +225,10 @@ function AppShell() {
           onActivateOpenPr={handleActivateOpenPr}
         />
 
-        <div className="flex flex-1 flex-col overflow-hidden bg-surface">
+        {/* The terminal docks beside whatever the route is showing, not inside
+            it: tabs are global, so a shell has to survive going back to the
+            home screen — and its xterms have to survive the route change. */}
+        <TerminalDock>
           <Outlet
             context={{
               repoStatus,
@@ -200,7 +243,7 @@ function AppShell() {
               handleStartReview,
             }}
           />
-        </div>
+        </TerminalDock>
       </div>
 
       {activeOverlay === "settings" && (

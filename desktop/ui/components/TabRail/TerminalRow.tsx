@@ -1,91 +1,61 @@
 import { type ReactNode } from "react";
 import { clsx } from "clsx";
-import { useReviewStore } from "../../stores";
-import {
-  useCurrentTerminalId,
-  useSessionsByHomeKey,
-} from "../../stores/selectors/terminals";
 import { useHoverOpen } from "../../hooks/useHoverOpen";
+import { useTabGlance } from "../../stores/selectors/terminals";
 import {
   ContextMenu,
   ContextMenuContent,
-  ContextMenuItem,
   ContextMenuTrigger,
 } from "../ui/context-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
-import { closeTerminalPane } from "../Terminal/close";
-import { sessionTitle } from "../Terminal/glance";
-import { jumpToTerminal } from "../Terminal/jump";
+import { jumpToTab, jumpToTerminal } from "../Terminal/jump";
 import {
   setDraggedTerminal,
   TERMINAL_SESSION_MIME,
 } from "../Terminal/pane-drag";
 import { TerminalGlanceCard } from "../Terminal/TerminalGlanceCard";
-import { PhaseDot } from "./PhaseDot";
-
-const NO_SESSIONS: string[] = [];
+import { TerminalMenuItems } from "./ActionMenu";
+import { PaneGlyphs } from "./PaneGlyphs";
+import { activateOnKey } from "./row-chrome";
 
 /**
- * A sidebar row's terminals, as child rows beneath it.
+ * One terminal tab, as a row under the work card it is attached to.
  *
- * Each answers "which shells are here, and what are they doing" without a
- * click. Phase and title come from the pushed status stream alone — a row is
- * permanent chrome, so it must not poll. The screen peek lives in the hover
+ * A tab, not a session: panes are the panel's own layout, and a tab that has
+ * been split is still one terminal as far as the rest of the app is concerned.
+ * The row answers "which shells are here, and what are they doing" without a
+ * click — phase and title come from the pushed status stream alone, since a row
+ * is permanent chrome and must not poll. The screen peek lives in the hover
  * card, which only fetches while it's mounted.
  *
- * Order is the grouping's own (session creation order), deliberately not
- * severity — phase changes every few seconds, and rows that reshuffle under the
- * cursor are the failure the sidebar's ordering rules exist to avoid.
+ * The repos layer has no rows like this: a terminal belongs to the work item
+ * that claimed it, or to nothing, and a branch row is neither.
  */
-export function TerminalRowList({
-  reviewKey,
-}: {
-  reviewKey: string;
-}): ReactNode {
-  const sessionsByHomeKey = useSessionsByHomeKey();
-  const currentTerminalId = useCurrentTerminalId();
-  const ids = sessionsByHomeKey[reviewKey] ?? NO_SESSIONS;
-
-  if (ids.length === 0) return null;
-
-  return (
-    <div className="ml-[18px] border-l border-l-fg/[0.06]">
-      {ids.map((id) => (
-        <TerminalRow
-          key={id}
-          sessionId={id}
-          isActive={id === currentTerminalId}
-        />
-      ))}
-    </div>
-  );
-}
-
-function TerminalRow({
-  sessionId,
+export function TerminalRow({
+  tabId,
   isActive,
 }: {
-  sessionId: string;
+  tabId: string;
   isActive: boolean;
 }): ReactNode {
-  const status = useReviewStore((s) => s.terminalStatuses[sessionId]);
-  const session = useReviewStore((s) => s.terminalSessions[sessionId]);
-  const dead = useReviewStore((s) => sessionId in s.terminalExited);
-  const exitCode = useReviewStore((s) => s.terminalExited[sessionId]);
+  const glance = useTabGlance(tabId);
   const { open, setOpen, hoverProps } = useHoverOpen();
 
-  // Same membership rule as the sidebar's grouping: a session the status stream
-  // hasn't reported yet has nothing to show.
-  if (!status) return null;
+  if (!glance) return null;
+  const { allDead, exitCode, title, leafIds, primaryId, panes } = glance;
 
-  const title = sessionTitle(status, session);
-  const label = dead
+  const label = allDead
     ? `${title} — exited${exitCode != null ? ` (${exitCode})` : ""}`
     : title;
 
   const activate = () => {
     setOpen(false);
-    jumpToTerminal(sessionId);
+    jumpToTab(tabId);
+  };
+
+  const activatePane = (paneId: string) => {
+    setOpen(false);
+    jumpToTerminal(paneId);
   };
 
   return (
@@ -107,22 +77,19 @@ function TerminalRow({
               tabIndex={0}
               draggable
               onClick={activate}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  activate();
-                }
-              }}
+              onKeyDown={activateOnKey(activate)}
               onDragStart={(e) => {
                 // A card left open would hang over the sidebar for the whole
                 // drag — the row is being carried, not read.
                 setOpen(false);
                 // Latched in the module rather than component state: under
                 // Tauri the drop arrives on the window after our own dragend,
-                // and dataTransfer is unreadable there.
-                setDraggedTerminal(sessionId);
+                // and dataTransfer is unreadable there. One of the tab's
+                // sessions names it; the drop takes the whole tab either way
+                // (see `terminalsInFlight`).
+                setDraggedTerminal(primaryId);
                 e.dataTransfer.effectAllowed = "move";
-                e.dataTransfer.setData(TERMINAL_SESSION_MIME, sessionId);
+                e.dataTransfer.setData(TERMINAL_SESSION_MIME, primaryId);
                 // Some webviews won't start a drag without a text payload, and
                 // an empty one is a payload that can't be pasted into whatever
                 // the drag is released over.
@@ -138,11 +105,13 @@ function TerminalRow({
               aria-current={isActive ? "true" : undefined}
               title={label}
             >
-              <PhaseDot phase={status.phase} dead={dead} />
+              {/* One glyph, or one per pane once the tab is split — which is
+                  also what says how many shells the row stands for. */}
+              <PaneGlyphs panes={panes} onSelect={activatePane} />
               <span
                 className={clsx(
                   "min-w-0 flex-1 truncate text-[11px]",
-                  dead
+                  allDead
                     ? "text-fg-faint/50"
                     : isActive
                       ? "text-fg-secondary"
@@ -151,7 +120,7 @@ function TerminalRow({
               >
                 {title}
               </span>
-              {dead && exitCode != null && (
+              {allDead && exitCode != null && (
                 <span
                   className={clsx(
                     "shrink-0 text-xxs tabular-nums",
@@ -172,13 +141,11 @@ function TerminalRow({
           className="w-80 p-0"
           {...hoverProps}
         >
-          <TerminalGlanceCard sessionId={sessionId} />
+          <TerminalGlanceCard sessionId={primaryId} />
         </PopoverContent>
       </Popover>
       <ContextMenuContent>
-        <ContextMenuItem onSelect={() => void closeTerminalPane(sessionId)}>
-          Close terminal
-        </ContextMenuItem>
+        <TerminalMenuItems sessionIds={leafIds} />
       </ContextMenuContent>
     </ContextMenu>
   );

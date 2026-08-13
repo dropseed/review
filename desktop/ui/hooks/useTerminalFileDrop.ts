@@ -22,8 +22,22 @@ import {
 import { useReviewStore } from "../stores";
 import {
   findTabForTerminal,
-  panelReviewKey,
+  tabSessionIds,
 } from "../stores/slices/terminalSlice";
+import {
+  applyWorkDrop,
+  draggedWorkItem,
+  draggedWorkRef,
+  forgetWorkTargets,
+  sessionsOfTab,
+  setDraggedWorkItem,
+  setDraggedWorkRef,
+  setWorkDropTarget,
+  workDragPayload,
+  workDropTargetAt,
+  type WorkItemDrag,
+  type WorkRefDrag,
+} from "../components/TabRail/work-drag";
 
 /**
  * Convert a drag-drop position to CSS pixels within the webview.
@@ -88,9 +102,13 @@ interface PaneHit {
  * `drop` its HTML5 handlers are waiting for. So every in-app drop target is
  * hit-tested from this channel too: pane-onto-pane rearranging, a pane onto a
  * strip tab or the extract-to-new-tab slot, a tab onto another strip position
- * (reorder) or a sidebar row (re-home), and a sidebar terminal row onto another
- * row (re-home). A drag with neither paths nor a pane/tab/row behind it is the
- * one that has nothing to give a terminal.
+ * (reorder), and any of the three onto a work card. A drag with neither paths
+ * nor a pane/tab/row behind it is the one that has nothing to give a terminal.
+ *
+ * Mounted at the app shell, because "Working on" is one of those targets and
+ * the sidebar is always on screen. Everything here is measured from the live
+ * DOM per drag, so with the terminal panel closed the pane and strip halves
+ * simply find nothing while the work-card half keeps working.
  */
 export function useTerminalFileDrop(): void {
   useEffect(() => {
@@ -110,11 +128,11 @@ export function useTerminalFileDrop(): void {
     let measured = false;
 
     /**
-     * The strip-and-sidebar drop targets, measured separately from the panes:
-     * picking a pane up is what makes the extract slot appear (and can rewrap
-     * the strip), so these rects are only trustworthy after React has
-     * committed that render — i.e. on the first event *after* the pickup, not
-     * at the pickup itself.
+     * The strip's drop targets, measured separately from the panes: picking a
+     * pane up is what makes the extract slot appear (and can rewrap the
+     * strip), so these rects are only trustworthy after React has committed
+     * that render — i.e. on the first event *after* the pickup, not at the
+     * pickup itself.
      */
     let stripTabs: {
       rect: DOMRect;
@@ -123,7 +141,6 @@ export function useTerminalFileDrop(): void {
       leaves: string[];
     }[] = [];
     let newTabSlot: DOMRect | null = null;
-    let homeRows: { rect: DOMRect; reviewKey: string; rowId: string }[] = [];
     let stripMeasuredAt: number | null = null;
 
     const stale = (at: number | null): boolean =>
@@ -167,20 +184,12 @@ export function useTerminalFileDrop(): void {
         document
           .querySelector<HTMLElement>("[data-strip-new-tab]")
           ?.getBoundingClientRect() ?? null;
-      homeRows = [
-        ...document.querySelectorAll<HTMLElement>("[data-tab-home-key]"),
-      ].map((el) => ({
-        rect: el.getBoundingClientRect(),
-        reviewKey: el.dataset.tabHomeKey ?? "",
-        rowId: el.dataset.tabHomeRow ?? "",
-      }));
       stripMeasuredAt = performance.now();
     };
 
     const forgetStrip = () => {
       stripTabs = [];
       newTabSlot = null;
-      homeRows = [];
       stripMeasuredAt = null;
     };
 
@@ -239,6 +248,19 @@ export function useTerminalFileDrop(): void {
     let carried: string | null = null;
     let carriedTab: TabDragSource | null = null;
     let carriedTerminal: string | null = null;
+    let carriedWorkRef: WorkRefDrag | null = null;
+    let carriedWorkItem: WorkItemDrag | null = null;
+
+    /** Forget every drag this handler can be carrying. */
+    const dropCarried = () => {
+      carried = null;
+      carriedTab = null;
+      carriedTerminal = null;
+      carriedWorkRef = null;
+      carriedWorkItem = null;
+      setWorkDropTarget(null);
+      forgetWorkTargets();
+    };
 
     void import("@tauri-apps/api/webview").then(({ getCurrentWebview }) => {
       if (disposed) return;
@@ -248,17 +270,13 @@ export function useTerminalFileDrop(): void {
             setHovered(null);
             setPaneDropTarget(null);
             setTabDropTarget(null);
-            carried = null;
-            carriedTab = null;
-            carriedTerminal = null;
+            dropCarried();
             forgetPanes();
             forgetStrip();
             return;
           }
           if (payload.type === "enter") {
-            carried = null;
-            carriedTab = null;
-            carriedTerminal = null;
+            dropCarried();
             // Panes can't move mid-drag, but they can have moved since the last
             // one — a new drag measures again.
             forgetPanes();
@@ -269,6 +287,8 @@ export function useTerminalFileDrop(): void {
             carried ??= draggedPane();
             carriedTab ??= draggedTabSource();
             carriedTerminal ??= draggedTerminal();
+            carriedWorkRef ??= draggedWorkRef();
+            carriedWorkItem ??= draggedWorkItem();
             if (
               (carried || carriedTab || carriedTerminal) &&
               stale(stripMeasuredAt)
@@ -276,31 +296,25 @@ export function useTerminalFileDrop(): void {
               measureStrip();
             }
             const pt = toCssPixels(payload.position, scaled);
+            if (carriedWorkRef || carriedWorkItem) {
+              // A branch row or a work card in flight: only "Working on" takes
+              // either, so nothing else needs hit-testing.
+              setWorkDropTarget(workDropTargetAt(pt.x, pt.y));
+              return;
+            }
             if (carriedTerminal) {
-              // A sidebar terminal row in flight: only a row can take it, and
-              // it has no position in the strip to be reordered into.
-              const row = homeRows.find((r) => inRect(r.rect, pt.x, pt.y));
-              setTabDropTarget(
-                row
-                  ? {
-                      kind: "tab-home",
-                      reviewKey: row.reviewKey,
-                      rowId: row.rowId,
-                    }
-                  : null,
-              );
+              // A sidebar terminal row in flight: only a work card takes it.
+              setWorkDropTarget(workDropTargetAt(pt.x, pt.y));
+              setTabDropTarget(null);
               return;
             }
             if (carriedTab) {
-              // A tab in flight: a sidebar row would re-home it, another strip
-              // position would reorder it.
-              const row = homeRows.find((r) => inRect(r.rect, pt.x, pt.y));
-              if (row) {
-                setTabDropTarget({
-                  kind: "tab-home",
-                  reviewKey: row.reviewKey,
-                  rowId: row.rowId,
-                });
+              // A tab in flight: a work card claims it first — attaching a
+              // terminal to what it's for outranks moving it in the strip.
+              const work = workDropTargetAt(pt.x, pt.y);
+              setWorkDropTarget(work);
+              if (work) {
+                setTabDropTarget(null);
                 return;
               }
               const tabHit = stripTabs.find((t) => inRect(t.rect, pt.x, pt.y));
@@ -312,8 +326,18 @@ export function useTerminalFileDrop(): void {
               return;
             }
             if (carried) {
-              // A pane in flight: the strip's targets don't overlap the panes,
-              // so the order here is just cheap-lists-first.
+              // A pane in flight: a work card takes it the same way it takes a
+              // tab or a sidebar row — a pane is a session, and the sidebar is
+              // where a session gets claimed.
+              const work = workDropTargetAt(pt.x, pt.y);
+              setWorkDropTarget(work);
+              if (work) {
+                setPaneDropTarget(null);
+                setTabDropTarget(null);
+                return;
+              }
+              // The strip's targets don't overlap the panes, so the order below
+              // is just cheap-lists-first.
               const tabHit = stripTabs.find((t) => inRect(t.rect, pt.x, pt.y));
               if (tabHit && !tabHit.leaves.includes(carried)) {
                 setPaneDropTarget(null);
@@ -353,16 +377,46 @@ export function useTerminalFileDrop(): void {
           setPaneDropTarget(null);
           setTabDropTarget(null);
           forgetPanes();
+          // Resolved before the target is cleared, so the drop lands where the
+          // highlight said it would. Every grip that carries a terminal asks —
+          // a row, a pane, a tab — since "Working on" takes all three.
+          const workTarget =
+            carriedWorkRef ||
+            carriedWorkItem ||
+            carriedTerminal ||
+            carried ||
+            carriedTab
+              ? workDropTargetAt(pt.x, pt.y)
+              : null;
+          setWorkDropTarget(null);
+          forgetWorkTargets();
+          if (carriedWorkRef || carriedWorkItem) {
+            const payload = workDragPayload(
+              carriedWorkRef,
+              carriedWorkItem,
+              [],
+            );
+            carriedWorkRef = null;
+            carriedWorkItem = null;
+            setDraggedWorkRef(null);
+            setDraggedWorkItem(null);
+            forgetStrip();
+            if (workTarget && payload) void applyWorkDrop(workTarget, payload);
+            return;
+          }
           if (carriedTerminal) {
             const terminalId = carriedTerminal;
             carriedTerminal = null;
             setDraggedTerminal(null);
-            const row = homeRows.find((r) => inRect(r.rect, pt.x, pt.y));
             forgetStrip();
-            if (row) {
-              useReviewStore
-                .getState()
-                .setTerminalHome(terminalId, row.reviewKey);
+            if (workTarget) {
+              void applyWorkDrop(workTarget, {
+                kind: "terminal",
+                sessionIds: tabSessionIds(
+                  useReviewStore.getState().terminalTabs,
+                  terminalId,
+                ),
+              });
             }
             return;
           }
@@ -370,18 +424,19 @@ export function useTerminalFileDrop(): void {
             const source = carriedTab;
             carriedTab = null;
             setDraggedTab(null);
-            const row = homeRows.find((r) => inRect(r.rect, pt.x, pt.y));
-            const tabHit = row
-              ? null
-              : (stripTabs.find((t) => inRect(t.rect, pt.x, pt.y)) ?? null);
+            if (workTarget) {
+              forgetStrip();
+              void applyWorkDrop(workTarget, {
+                kind: "terminal",
+                sessionIds: sessionsOfTab(source.tabId),
+              });
+              return;
+            }
+            const tabHit =
+              stripTabs.find((t) => inRect(t.rect, pt.x, pt.y)) ?? null;
             forgetStrip();
-            const state = useReviewStore.getState();
-            if (row) {
-              state.setTabHome(source.tabId, row.reviewKey);
-            } else if (tabHit && tabHit.index !== source.index) {
-              // Strip positions, not stored ones — the store maps them back
-              // and declines a drag the strip's own sort would swallow.
-              state.moveTab(source.reviewKey, source.index, tabHit.index);
+            if (tabHit && tabHit.index !== source.index) {
+              useReviewStore.getState().moveTab(source.index, tabHit.index);
             }
             return;
           }
@@ -389,27 +444,27 @@ export function useTerminalFileDrop(): void {
             const source = carried;
             carried = null;
             setDraggedPane(null);
+            const state = useReviewStore.getState();
+            if (workTarget) {
+              forgetStrip();
+              // The pane's whole tab, like every other terminal drop: a pane
+              // dragged onto a card claims the tab it belongs to.
+              void applyWorkDrop(workTarget, {
+                kind: "terminal",
+                sessionIds: tabSessionIds(state.terminalTabs, source),
+              });
+              return;
+            }
             const tabHit = stripTabs.find((t) => inRect(t.rect, pt.x, pt.y));
             const ontoNewTab =
               newTabSlot !== null && inRect(newTabSlot, pt.x, pt.y);
             forgetStrip();
-            const state = useReviewStore.getState();
-            // The tab a pane lands in is the one to be looking at, and the
-            // strip may be showing it as a pinned visitor — so activation is
-            // said for the key being viewed, not the key that owns the tab.
-            const viewedKey = panelReviewKey(
-              state.terminalCheckouts,
-              state.repoPath ?? "",
-              state.reviewRef,
-            );
             if (tabHit && !tabHit.leaves.includes(source)) {
               state.movePaneToTab(source, tabHit.tabId);
-              state.setActiveTab(viewedKey, tabHit.tabId);
               return;
             }
             if (ontoNewTab) {
-              const newTabId = state.movePaneToNewTab(source);
-              if (newTabId) state.setActiveTab(viewedKey, newTabId);
+              state.movePaneToNewTab(source);
               return;
             }
             const target = dropTargetAt(hit, source);
@@ -433,16 +488,9 @@ export function useTerminalFileDrop(): void {
           // user can't see reads as the drop having gone nowhere. Focusing is
           // what unfolds a pane, so this is the same one call.
           const store = useReviewStore.getState();
-          const found = findTabForTerminal(
-            store.terminalTabsByReviewKey,
-            terminalId,
-          );
-          if (found && !expandedLeafIds(found.tab.root).includes(terminalId)) {
-            store.setFocusedTerminalPane(
-              found.reviewKey,
-              found.tab.id,
-              terminalId,
-            );
+          const tab = findTabForTerminal(store.terminalTabs, terminalId);
+          if (tab && !expandedLeafIds(tab.root).includes(terminalId)) {
+            store.setFocusedTerminalPane(tab.id, terminalId);
           }
 
           const text = payload.paths.map(quoteShellPath).join(" ") + " ";

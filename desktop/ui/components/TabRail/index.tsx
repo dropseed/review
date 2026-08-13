@@ -1,6 +1,5 @@
 import {
   type ReactNode,
-  Fragment,
   memo,
   useCallback,
   useEffect,
@@ -10,7 +9,6 @@ import {
 } from "react";
 import { useNavigate } from "react-router-dom";
 import { useReviewStore } from "../../stores";
-import { getApiClient } from "../../api";
 import { useAllHunks } from "../../stores/selectors/hunks";
 import { useSidebarResize } from "../../hooks/useSidebarResize";
 import { useAutoUpdater } from "../../hooks/useAutoUpdater";
@@ -23,7 +21,6 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
-  DropdownMenuItem,
 } from "../ui/dropdown-menu";
 import { SidebarResizeHandle } from "../ui/sidebar-resize-handle";
 import { Spinner } from "../ui/spinner";
@@ -32,7 +29,7 @@ import { AgentUsageIndicator } from "../AgentUsageIndicator";
 import { LocalBranchItem } from "./LocalBranchItem";
 import { SidebarRail } from "./SidebarRail";
 import { makeReviewKey } from "../../stores/slices/groupingSlice";
-import { splitRoutePrefix } from "../../utils/repo-identity";
+import { repoDisplayName } from "../../utils/repo-identity";
 
 const GITHUB_REPO_URL = "https://github.com/dropseed/review";
 
@@ -91,25 +88,41 @@ function FooterVersionInfo({
 }
 
 import {
+  groupReposByOrg,
+  prNeedsAttention,
+  visibleRows,
+  type OrgGroup,
+  type OrgRepo,
   type RepoNode,
   type SidebarRow,
-  isRepoExpanded,
 } from "../../utils/sidebar-tree";
+import { useWorkCoveredKeys } from "../../stores/selectors/work";
 import { useSidebarTree } from "../../hooks/useSidebarTree";
 import { RemoteBranchItem } from "./RemoteBranchItem";
 import { RowStatus } from "./RowStatus";
 import {
+  activateOnKey,
   ROW_ACTIONS,
   ROW_LABEL_HOVER_FADE,
   ROW_MODIFIED_BADGE,
   ROW_STATUS,
 } from "./row-chrome";
-import { useTerminalTabDrop } from "./useTerminalTabDrop";
-import { TerminalRowList } from "./TerminalRowList";
 import { OpenPrItem } from "./OpenPrItem";
-import { ElsewherePrs } from "./ElsewherePrs";
+import { ElsewherePrRow, SnapshotNote } from "./ElsewherePrRow";
+import { WorkingOnSection } from "./WorkingOnSection";
+import { UnclaimedTerminals } from "./UnclaimedTerminals";
+import { requestAddWorkItem } from "./work-add";
+import { ActionContextMenu, DropdownActionItems } from "./ActionMenu";
+import {
+  externalActions,
+  fetchRepoOrigins,
+  orgActions,
+  repoRowActions,
+  useAddToWork,
+} from "./work-actions";
+import { useWorkRefDrag } from "./work-row-drag";
 
-interface SidebarListProps {
+interface ReposProps {
   onActivateReview: (review: GlobalReviewSummary) => void;
   onActivateLocalBranch: (
     repoPath: string,
@@ -119,11 +132,27 @@ interface SidebarListProps {
   onActivateOpenPr: (pr: ViewerPr) => void;
 }
 
-function SidebarList({
+/** Stands in for "no snapshot": a shared identity, so the grouping memo hits. */
+const NO_PRS: ViewerPr[] = [];
+
+/**
+ * Every repo the sidebar knows, under its org.
+ *
+ * A browse surface, deliberately quiet. What is live and what needs you are
+ * answered above it — by the user's own "Working on" queue and the unclaimed
+ * terminals — so nothing here is promoted or hidden for being busy or idle. A
+ * repo sits where its name puts it, and it is still there tomorrow.
+ *
+ * The orgs are the structure, so there is no section label: a word above the
+ * headers could only be a vaguer name for what they already say. Repos this
+ * machine doesn't have sit among the ones it does, under the same org, holding
+ * their open PRs instead of a checkout.
+ */
+function Repos({
   onActivateReview,
   onActivateLocalBranch,
   onActivateOpenPr,
-}: SidebarListProps): ReactNode {
+}: ReposProps): ReactNode {
   const tree = useSidebarTree();
   const navigate = useNavigate();
   const navigateRef = useRef(navigate);
@@ -140,6 +169,26 @@ function SidebarList({
   const reviewState = useReviewStore((s) => s.reviewState);
   const hunks = useAllHunks();
   const activeReviewKey = useReviewStore((s) => s.activeReviewKey);
+  const snapshot = useReviewStore((s) => s.viewerPrs);
+
+  // `available: false` means `gh` is gone or logged out, and the backend serves
+  // the *last cached* PRs alongside it. Those must not raise repo rows: an
+  // uncloned repo appears only because a PR in it did, so a stale cache would
+  // put whole repos in the list with nothing on screen saying they are stale.
+  //
+  // Attention-only for the same reason the band is terminals-only: a quiet
+  // open PR in a repo this machine doesn't have is safe on GitHub and asks
+  // nothing of you — a row for it is inventory, not signal. It comes back the
+  // moment a review is requested or CI fails.
+  const groups = useMemo(
+    () =>
+      groupReposByOrg(
+        tree,
+        repoMetadata,
+        snapshot?.available ? snapshot.prs.filter(prNeedsAttention) : NO_PRS,
+      ),
+    [tree, repoMetadata, snapshot],
+  );
 
   const liveProgress = useMemo(
     () => (reviewState ? computeReviewProgress(hunks, reviewState) : null),
@@ -210,34 +259,24 @@ function SidebarList({
       );
     }
 
-    return (
-      <Fragment key={row.reviewKey}>
-        {entry.kind === "review" ? (
-          <TabRailItem
-            {...reviewItemPropsFor(entry.review)}
-            openPr={row.openPr}
-          />
-        ) : (
-          <LocalBranchItem
-            branch={entry.branch}
-            repoPath={row.repoPath}
-            defaultBranch={entry.repo.defaultBranch}
-            itemKind={entry.kind}
-            checkoutPath={row.checkoutPath}
-            openPr={row.openPr}
-            onActivate={onActivateLocalBranch}
-          />
-        )}
-        <TerminalRowList reviewKey={row.reviewKey} />
-      </Fragment>
+    return entry.kind === "review" ? (
+      <TabRailItem
+        key={row.reviewKey}
+        {...reviewItemPropsFor(entry.review)}
+        openPr={row.openPr}
+      />
+    ) : (
+      <LocalBranchItem
+        key={row.reviewKey}
+        branch={entry.branch}
+        repoPath={row.repoPath}
+        defaultBranch={entry.repo.defaultBranch}
+        itemKind={entry.kind}
+        checkoutPath={row.checkoutPath}
+        openPr={row.openPr}
+        onActivate={onActivateLocalBranch}
+      />
     );
-  }
-
-  const isEmpty =
-    tree.length === 0 && !globalReviewsLoading && !localActivityLoading;
-
-  if (isEmpty) {
-    return null;
   }
 
   const isLoading =
@@ -245,63 +284,55 @@ function SidebarList({
     globalReviews.length === 0 &&
     localActivity.length === 0;
 
-  if (isLoading) {
-    return (
-      <div role="tablist" className="pb-1">
-        <div className="space-y-2 px-2 py-2">
+  return (
+    <div className="pb-1 pt-1">
+      {isLoading ? (
+        <div className="space-y-1 px-2 py-1">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="animate-pulse space-y-1">
-              <div className="h-2.5 w-16 rounded bg-fg/[0.06]" />
-              <div className="h-8 rounded bg-fg/[0.04]" />
-            </div>
+            <div key={i} className="h-5 animate-pulse rounded bg-fg/[0.04]" />
           ))}
         </div>
-      </div>
-    );
-  }
-
-  const active = tree.filter((node) => node.isActive);
-  const quiet = tree.filter((node) => !node.isActive);
-
-  return (
-    <div role="tablist" className="pb-1 pt-0.5">
-      {active.map((node) => (
-        <RepoNodeView
-          key={node.repoPath}
-          node={node}
-          renderRow={renderRow}
-          onActivateLocalBranch={onActivateLocalBranch}
-        />
-      ))}
-
-      {active.length === 0 && (
-        <p className="px-2.5 py-1 text-[11px] leading-snug text-fg-faint/60">
-          Nothing in flight — changes and recent branches show up here.
-        </p>
+      ) : (
+        <div role="tablist">
+          {groups.map((group) => (
+            <OrgGroupView
+              key={group.org}
+              group={group}
+              allOrgs={groups.map((g) => g.org)}
+              renderRow={renderRow}
+              onActivateLocalBranch={onActivateLocalBranch}
+            />
+          ))}
+          {groups.length === 0 && !localActivityLoading && (
+            <p className="px-2.5 py-1 text-[11px] leading-snug text-fg-faint/60">
+              No repositories yet.
+            </p>
+          )}
+        </div>
       )}
 
-      {quiet.length > 0 && (
-        <QuietRepos
-          nodes={quiet}
-          renderRow={renderRow}
-          onActivateLocalBranch={onActivateLocalBranch}
-        />
-      )}
+      <SnapshotNote />
     </div>
   );
 }
 
 /**
- * Repos with nothing live, behind one line. They stay reachable — this is the
- * whole browse tree — without the quiet majority pushing today's work off
- * screen.
+ * One org, and the repos under it.
+ *
+ * Expanded by default, unlike a repo: the header is the list's structure rather
+ * than a thing you open, and an app that starts with every repo hidden behind a
+ * chevron has no list at all. Collapsing one is how you put an org away for the
+ * day, which is why that — and not the expansion — is what persists.
  */
-function QuietRepos({
-  nodes,
+function OrgGroupView({
+  group,
+  allOrgs,
   renderRow,
   onActivateLocalBranch,
 }: {
-  nodes: RepoNode[];
+  group: OrgGroup;
+  /** Every org on screen — what "collapse the others" is about. */
+  allOrgs: string[];
   renderRow: (row: SidebarRow) => ReactNode;
   onActivateLocalBranch: (
     repoPath: string,
@@ -309,35 +340,150 @@ function QuietRepos({
     defaultBranch: string,
   ) => void;
 }): ReactNode {
-  const showInactiveRepos = useReviewStore((s) => s.showInactiveRepos);
-  const toggleInactiveRepos = useReviewStore((s) => s.toggleInactiveRepos);
+  const collapsed = useReviewStore((s) => s.collapsedOrgs[group.org] === true);
+  const setOrgCollapsed = useReviewStore((s) => s.setOrgCollapsed);
+  const checkReviewsFreshness = useReviewStore((s) => s.checkReviewsFreshness);
+  const toggle = () => {
+    setOrgCollapsed(group.org, !collapsed);
+    if (collapsed) {
+      // A collapsed org's reviews are outside the recurring freshness scope;
+      // check them once when the user opens it. (This used to hang off the
+      // per-repo disclosure, which no longer exists.)
+      const keys = group.repos.flatMap((repo) =>
+        repo.node ? repo.node.rows.map((row) => row.reviewKey) : [],
+      );
+      checkReviewsFreshness(keys).catch(() => {});
+    }
+  };
 
   return (
-    <div className="mt-1.5 border-t border-t-edge/40 pt-1">
-      <button
-        type="button"
-        onClick={toggleInactiveRepos}
-        aria-expanded={showInactiveRepos}
-        className="flex items-center gap-1 w-full text-left px-2.5 py-1 rounded-sm
-                   text-[10px] text-fg-faint/70 hover:text-fg-muted
-                   hover:bg-fg/[0.03] transition-colors duration-100"
+    <div className="pt-0.5">
+      {/* No disclosure glyph: the whole header is the toggle, and the
+          indentation below already says what a chevron would. */}
+      <ActionContextMenu
+        actions={orgActions({
+          org: group.org,
+          allOrgs,
+          repoPaths: group.repos
+            .map((repo) => repo.node?.repoPath)
+            .filter((path): path is string => path != null),
+        })}
       >
-        <span className="text-[8px] w-2 shrink-0">
-          {showInactiveRepos ? "▾" : "▸"}
-        </span>
-        <span className="tabular-nums">
-          {nodes.length} quiet {nodes.length === 1 ? "repo" : "repos"}
-        </span>
-      </button>
-      {showInactiveRepos &&
-        nodes.map((node) => (
-          <RepoNodeView
-            key={node.repoPath}
-            node={node}
-            renderRow={renderRow}
-            onActivateLocalBranch={onActivateLocalBranch}
-          />
-        ))}
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={toggle}
+          onKeyDown={activateOnKey(toggle)}
+          aria-expanded={!collapsed}
+          className="flex w-full cursor-default items-center gap-1.5 rounded-sm px-2.5 py-1
+                     transition-colors duration-100 hover:bg-fg/[0.03]"
+          title={group.org}
+        >
+          {/* The org's avatar, once for the whole group — every repo row used
+              to carry a copy of it to say which org it was in. */}
+          {group.avatarUrl ? (
+            <img
+              src={group.avatarUrl}
+              alt=""
+              className="h-3.5 w-3.5 shrink-0 rounded-sm opacity-70"
+            />
+          ) : (
+            <span className="h-3.5 w-3.5 shrink-0 rounded-sm bg-fg/[0.10]" />
+          )}
+          <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-fg-muted">
+            {group.org}
+          </span>
+          {/* Collapsed, the header still owes a hint of what it's hiding: how
+              many repos, and whether any of them are dirty. Expanded, the rows
+              themselves say it. */}
+          {collapsed && (
+            <span className="flex shrink-0 items-center gap-1.5">
+              {group.repos.some(
+                (repo) =>
+                  repo.node &&
+                  ((repo.node.head?.entry.kind === "working-tree" &&
+                    repo.node.head.entry.branch.hasWorkingTreeChanges) ||
+                    repo.node.rows.some((row) => row.facts.includes("dirty"))),
+              ) && <span className={ROW_MODIFIED_BADGE}>M</span>}
+              <span className="text-[10px] tabular-nums text-fg-faint/50">
+                {group.repos.length}
+              </span>
+            </span>
+          )}
+        </div>
+      </ActionContextMenu>
+      {!collapsed && (
+        // Indented so a repo's name starts where the org's label does — the
+        // avatar column above is what the repos hang under.
+        <div className="ml-5">
+          {group.repos.map((repo) =>
+            repo.node ? (
+              <RepoNodeView
+                key={repo.key}
+                node={repo.node}
+                renderRow={renderRow}
+                onActivateLocalBranch={onActivateLocalBranch}
+              />
+            ) : (
+              <UnclonedRepoView key={repo.key} repo={repo} />
+            ),
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A repo this machine doesn't have, known only through your open PRs in it.
+ *
+ * It reads as a repo row because that is what it is — the org's work doesn't
+ * stop being the org's work for being uncloned — but it is dimmed and carries
+ * no status cluster, because everything a status cluster reports is about a
+ * checkout there isn't one of. Expanding it lists the PRs; clicking one opens
+ * GitHub, which is the only place they exist.
+ */
+function UnclonedRepoView({ repo }: { repo: OrgRepo }): ReactNode {
+  // Keyed by `owner/repo` in the same record repo paths use — a path always
+  // starts with "/", so the two can't collide.
+  const expanded = useReviewStore((s) => s.expandedRepos[repo.key] === true);
+  const setRepoExpanded = useReviewStore((s) => s.setRepoExpanded);
+  const toggle = () => setRepoExpanded(repo.key, !expanded);
+
+  // Its own page on the forge, taken from a PR in it — the only thing here
+  // that knows the repo's URL, since nothing about it is on disk.
+  const repoUrl = repo.prs[0]?.repoUrl ?? null;
+
+  return (
+    <div>
+      <ActionContextMenu
+        actions={repoUrl ? externalActions("unclonedRepo", repoUrl) : []}
+      >
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={toggle}
+          onKeyDown={activateOnKey(toggle)}
+          aria-expanded={expanded}
+          className="group flex w-full cursor-default items-center gap-1.5 rounded-sm px-2.5 py-1
+                     transition-colors duration-100 hover:bg-fg/[0.04]"
+          title={`${repo.key} — not cloned here`}
+        >
+          <span className="min-w-0 flex-1 truncate text-[11px] text-fg-faint/50">
+            {repo.name}
+          </span>
+          <span className="shrink-0 text-[10px] tabular-nums text-fg-faint/50">
+            {repo.prs.length}
+          </span>
+        </div>
+      </ActionContextMenu>
+      {expanded && (
+        <div className="ml-[18px] border-l border-l-fg/[0.06]">
+          {repo.prs.map((pr) => (
+            <ElsewherePrRow key={pr.url} pr={pr} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -365,25 +511,17 @@ function FetchButton({
   lastFetchedAt: number | null;
 }): ReactNode {
   const [fetching, setFetching] = useState(false);
-  const loadLocalActivity = useReviewStore((s) => s.loadLocalActivity);
   const handleFetch = useCallback(
     async (e: React.MouseEvent) => {
       e.stopPropagation();
       if (fetching) return;
       setFetching(true);
-      try {
-        await getApiClient().fetchOrigin(repoPath);
-        // A no-op fetch (everything up to date) only updates FETCH_HEAD,
-        // which the watcher ignores — refresh activity ourselves so the
-        // "last fetched" stamp ticks regardless.
-        await loadLocalActivity();
-      } catch (err) {
-        console.error("[fetchOrigin] failed", err);
-      } finally {
-        setFetching(false);
-      }
+      // The menu's "Fetch from origin" runs the same call — the button only
+      // adds the spinner.
+      await fetchRepoOrigins([repoPath]);
+      setFetching(false);
     },
-    [fetching, repoPath, loadLocalActivity],
+    [fetching, repoPath],
   );
 
   const title = lastFetchedAt
@@ -412,8 +550,19 @@ function FetchButton({
  * The repo's row *is* its repo-root checkout — clicking it opens that review.
  * That identity is the point of the tree: there is no separate "repo root"
  * entry to disagree with the branch that happens to be checked out in it.
- * Linked worktrees, PRs and reviews hang beneath, live ones first, with the
- * quiet remainder one `⋯ more` away.
+ *
+ * Beneath it hangs one flat list with no fold: every row under a repo is there
+ * because something is true about it that you haven't dealt with — files
+ * checked out, changes uncommitted, commits unpushed, a PR open — and none of
+ * those belong behind a `⋯ more`. What the fold used to hold was rows kept for
+ * being *recent*, and those are no longer rows at all; ⌘K is where you reach a
+ * branch the repo has nothing to say about.
+ *
+ * No per-repo disclosure either: most repos show nothing here, and the ones
+ * that do are showing you the short list of what is actually open.
+ *
+ * No avatar of its own: the org header above it carries the identity now, and
+ * repeating it on every row underneath said nothing the header hadn't.
  */
 function RepoNodeView({
   node,
@@ -428,13 +577,11 @@ function RepoNodeView({
     defaultBranch: string,
   ) => void;
 }): ReactNode {
-  const collapsedRepos = useReviewStore((s) => s.collapsedRepos);
-  const setRepoCollapsed = useReviewStore((s) => s.setRepoCollapsed);
-  const restOpen = useReviewStore(
-    (s) => s.expandedRepoRest[node.repoPath] === true,
-  );
-  const toggleRepoRest = useReviewStore((s) => s.toggleRepoRest);
-  const checkReviewsFreshness = useReviewStore((s) => s.checkReviewsFreshness);
+  // Rows the user has claimed in "Working on" are reported by the card up
+  // there — including the facts that would have put them here — so the tree
+  // stays quiet about them rather than saying it twice.
+  const covered = useWorkCoveredKeys();
+  const rows = useMemo(() => visibleRows(node, covered), [node, covered]);
   const unregisterRepo = useReviewStore((s) => s.unregisterRepo);
   const removeRecentRepository = useReviewStore(
     (s) => s.removeRecentRepository,
@@ -442,17 +589,12 @@ function RepoNodeView({
   const meta = useReviewStore((s) => s.repoMetadata[node.repoPath]);
 
   const [menuOpen, setMenuOpen] = useState(false);
-  // The repo row is its head branch's row, so a tab dropped on it is homed
-  // there — not on some repo-wide bucket the sidebar has no row for.
-  const { dropClass, dropProps } = useTerminalTabDrop(
-    node.repoPath,
-    node.head?.ref ?? "",
-  );
+  // The repo row is its head branch's row, so what it carries into "Working
+  // on" is that branch — the same ref clicking it opens.
+  const workDragProps = useWorkRefDrag(node.repoPath, node.head?.ref ?? "");
+  const addToWork = useAddToWork(node.repoPath, node.head?.ref ?? "");
 
-  const expanded = isRepoExpanded(collapsedRepos, node);
-  const displayName = meta?.routePrefix
-    ? splitRoutePrefix(meta.routePrefix).repo || node.repoName
-    : node.repoName;
+  const displayName = repoDisplayName(meta?.routePrefix, node.repoName);
 
   const head = node.head;
   // The head row is always a branch row — it's the repo's current HEAD.
@@ -481,46 +623,36 @@ function RepoNodeView({
     removeRecentRepository(node.repoPath);
   };
 
+  const repoActions = repoRowActions({
+    repoPath: node.repoPath,
+    // Nothing checked out means no ref to add — the row's other verbs still
+    // apply to the repo itself.
+    addToWork: head ? addToWork : null,
+    browseUrl: meta?.browseUrl ?? null,
+    onRemove: handleRemove,
+  });
+
   const handleActivate = () => {
     if (!head || !node.defaultBranch) {
-      // Nothing checked out to open — fall back to expanding, so the row still
-      // does something useful.
-      setRepoCollapsed(node.repoPath, expanded);
+      // Nothing checked out to open — the rows below are already visible, so
+      // there is nothing else for the click to do.
       return;
     }
     onActivateLocalBranch(node.repoPath, head.ref, node.defaultBranch);
   };
 
-  const handleToggle = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setRepoCollapsed(node.repoPath, expanded);
-    if (!expanded) {
-      // A quiet repo's reviews are outside the recurring freshness scope;
-      // check them once when the user opens it.
-      checkReviewsFreshness(
-        [...node.live, ...node.rest].map((row) => row.reviewKey),
-      ).catch(() => {});
-    }
-  };
-
   return (
-    <div className="mt-1.5 first:mt-0">
+    <div>
       <div
         role="button"
         tabIndex={0}
         onClick={handleActivate}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            handleActivate();
-          }
-        }}
+        onKeyDown={activateOnKey(handleActivate)}
         onContextMenu={handleContextMenu}
-        {...dropProps}
+        {...workDragProps}
         className={`group relative flex items-center gap-1.5 w-full text-left px-2.5 py-1
                     transition-colors duration-100 rounded-sm cursor-default
-                    ${headIsActive ? "bg-fg/[0.04]" : "hover:bg-fg/[0.04]"}
-                    ${dropClass}`}
+                    ${headIsActive ? "bg-fg/[0.04]" : "hover:bg-fg/[0.04]"}`}
         aria-current={headIsActive ? "true" : undefined}
         title={
           headBranch
@@ -530,30 +662,6 @@ function RepoNodeView({
       >
         {headIsActive && (
           <span className="absolute left-0.5 top-1.5 bottom-1.5 w-[2px] rounded-full bg-fg/30" />
-        )}
-        {/* Disclosure on the left, so every row in the tree ends with its
-            status cluster at the same x — nothing on the right edge is a
-            per-row-type exception. */}
-        <button
-          type="button"
-          onClick={handleToggle}
-          className="flex items-center justify-center w-3 h-4 shrink-0 rounded
-                     text-fg-faint/70 hover:text-fg-secondary
-                     transition-colors duration-100"
-          aria-label={expanded ? "Collapse repository" : "Expand repository"}
-        >
-          <span className="text-[9px]">{expanded ? "▾" : "▸"}</span>
-        </button>
-        {/* The org's avatar rides on the repo row: repos sort by activity, so
-            two orgs interleave freely and the row has to say which it is. */}
-        {meta?.avatarUrl ? (
-          <img
-            src={meta.avatarUrl}
-            alt=""
-            className="h-3.5 w-3.5 rounded-sm shrink-0 opacity-70"
-          />
-        ) : (
-          <span className="h-3.5 w-3.5 rounded-sm shrink-0 bg-fg/[0.10]" />
         )}
         <span className="text-[11px] text-fg-muted truncate shrink-0">
           {displayName}
@@ -620,43 +728,15 @@ function RepoNodeView({
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={handleRemove}>
-                  Remove from sidebar
-                </DropdownMenuItem>
+                <DropdownActionItems actions={repoActions} />
               </DropdownMenuContent>
             </DropdownMenu>
           </span>
         </span>
       </div>
-      {/* The repo row *is* the head row, so head's terminals hang off it here
-          rather than off any of the rows below — and stay visible when the repo
-          is collapsed, since the row they belong to still is. */}
-      {head && <TerminalRowList reviewKey={head.reviewKey} />}
-      {expanded && (node.live.length > 0 || node.rest.length > 0) && (
-        // Indented to sit under the repo row's avatar, so a child row's label
-        // starts where its parent's identity does rather than left of it.
+      {rows.length > 0 && (
         <div className="ml-[18px] border-l border-l-fg/[0.06]">
-          {node.live.map(renderRow)}
-          {node.rest.length > 0 && (
-            <>
-              <button
-                type="button"
-                onClick={() => toggleRepoRest(node.repoPath)}
-                aria-expanded={restOpen}
-                className="flex items-center gap-1 w-full text-left px-2.5 py-1 rounded
-                           text-[10px] text-fg-faint/60 hover:text-fg-muted
-                           hover:bg-fg/[0.03] transition-colors duration-100"
-              >
-                <span className="text-[8px] w-2 shrink-0">
-                  {restOpen ? "▾" : "▸"}
-                </span>
-                <span className="tabular-nums">
-                  {restOpen ? "less" : `${node.rest.length} more`}
-                </span>
-              </button>
-              {restOpen && node.rest.map(renderRow)}
-            </>
-          )}
+          {rows.map(renderRow)}
         </div>
       )}
     </div>
@@ -664,32 +744,24 @@ function RepoNodeView({
 }
 
 /**
- * Top header bar: "Reviews" label + new-review button + sidebar toggle.
+ * Top header bar: add-work-item button and the sidebar toggle, right-aligned.
  *
- * No sort control: repos sit in a fixed alphabetical order now, so a sort
- * dropdown would only reorder rows *within* a repo — not worth a permanent
- * button, and its funnel glyph read as a filter besides.
+ * No title. The sidebar names its own layers now — "Working on", "Unclaimed
+ * terminals", and the org headers — and a word above all three could only be a
+ * less accurate one. What's left is the two controls, sitting where the window
+ * chrome is rather than under a label of their own.
  */
-function SidebarHeader({
-  onToggle,
-  onNewReview,
-}: {
-  onToggle: () => void;
-  onNewReview: () => void;
-}): ReactNode {
+function SidebarHeader({ onToggle }: { onToggle: () => void }): ReactNode {
   return (
-    <div className="shrink-0 px-2 py-2 flex items-center gap-1">
-      <span className="pl-1 text-[10px] font-semibold uppercase tracking-wider text-fg-faint">
-        Reviews
-      </span>
-      <span className="flex-1" />
+    <div className="shrink-0 px-2 py-2 flex items-center justify-end gap-1">
       <button
         type="button"
-        onClick={onNewReview}
+        onClick={requestAddWorkItem}
         className="flex items-center justify-center w-6 h-6 rounded
                    text-fg-muted hover:text-fg-secondary hover:bg-surface-raised
                    transition-colors"
-        aria-label="New review"
+        aria-label="Add work item"
+        title="Add work item"
       >
         <svg
           className="h-3 w-3"
@@ -740,8 +812,6 @@ export const TabRail = memo(function TabRail({
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const { updateAvailable, installing, installUpdate } = useAutoUpdater();
 
-  const navigate = useNavigate();
-
   const { sidebarWidth, isResizing, handleResizeStart } = useSidebarResize({
     sidebarPosition: "left",
     initialWidth: 14,
@@ -756,10 +826,6 @@ export const TabRail = memo(function TabRail({
       .catch(() => {});
   }, []);
 
-  const handleAddReview = useCallback(() => {
-    navigate("/new");
-  }, [navigate]);
-
   function handleOpenRelease(): void {
     getPlatformServices().opener.openUrl(
       `${GITHUB_REPO_URL}/releases/tag/v${appVersion}`,
@@ -772,14 +838,7 @@ export const TabRail = memo(function TabRail({
           vanishing — the way back lives on the sidebar's own edge instead of
           floating over whichever view is mounted. The nav below stays mounted
           at zero width so expanding is a width animation, not a remount. */}
-      {collapsed && (
-        <SidebarRail
-          onExpand={toggleTabRail}
-          onActivateReview={onActivateReview}
-          onActivateLocalBranch={onActivateLocalBranch}
-          onActivateOpenPr={onActivateOpenPr}
-        />
-      )}
+      {collapsed && <SidebarRail onExpand={toggleTabRail} />}
 
       {/* select-none for the whole sidebar: rows are things you click and drag,
           not text you select — a double-click while triaging shouldn't leave a
@@ -799,21 +858,16 @@ export const TabRail = memo(function TabRail({
           className="flex flex-col h-full min-w-0"
           style={{ width: `${sidebarWidth}rem` }}
         >
-          <SidebarHeader
-            onToggle={toggleTabRail}
-            onNewReview={handleAddReview}
-          />
+          <SidebarHeader onToggle={toggleTabRail} />
 
           <div className="flex-1 overflow-y-auto scrollbar-thin">
-            <SidebarList
+            <WorkingOnSection />
+            <UnclaimedTerminals />
+            <Repos
               onActivateReview={onActivateReview}
               onActivateLocalBranch={onActivateLocalBranch}
               onActivateOpenPr={onActivateOpenPr}
             />
-            {/* Outside the list, not inside it: the list renders nothing when
-                the tree is empty, and an empty sidebar is exactly when a
-                failed GitHub fetch most needs saying. */}
-            <ElsewherePrs />
           </div>
 
           <AgentUsageIndicator />

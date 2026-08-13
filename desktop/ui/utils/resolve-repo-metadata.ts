@@ -1,6 +1,6 @@
 import type { ApiClient } from "../api";
 import type { RepoMetadata } from "../stores/slices/tabRailSlice";
-import { resolveRepoIdentity } from "./repo-identity";
+import { orgAvatarUrl, resolveRepoIdentity } from "./repo-identity";
 
 /**
  * Resolve metadata (route prefix, default branch, avatar URL) for repos
@@ -21,21 +21,12 @@ export async function resolveNewRepoMetadata(
         resolveRepoIdentity(repoPath),
         client.getDefaultBranch(repoPath).catch(() => "main"),
       ]);
-      let avatarUrl: string | null = null;
-      if (identity.browseUrl) {
-        try {
-          const url = new URL(identity.browseUrl);
-          const org = url.pathname.split("/")[1];
-          if (org) avatarUrl = `${url.origin}/${org}.png?size=64`;
-        } catch {
-          // Invalid URL
-        }
-      }
       return {
         repoPath,
         routePrefix: identity.routePrefix,
         defaultBranch,
-        avatarUrl,
+        avatarUrl: orgAvatarUrl(identity.browseUrl),
+        browseUrl: identity.browseUrl,
       };
     }),
   );
@@ -43,8 +34,8 @@ export async function resolveNewRepoMetadata(
   const merged = { ...existingMetadata };
   for (const result of results) {
     if (result.status === "fulfilled") {
-      const { repoPath, routePrefix, defaultBranch, avatarUrl } = result.value;
-      merged[repoPath] = { routePrefix, defaultBranch, avatarUrl };
+      const { repoPath, ...metadata } = result.value;
+      merged[repoPath] = metadata;
     }
   }
   return merged;

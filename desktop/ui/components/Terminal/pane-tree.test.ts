@@ -25,12 +25,7 @@ describe("makeTab / leaf", () => {
       id: "tab1",
       root: { type: "leaf", terminalId: "t1" },
       focused: "t1",
-      pinned: false,
     });
-  });
-
-  it("carries the pinned flag through", () => {
-    expect(makeTab("tab1", "t1", true).pinned).toBe(true);
   });
 });
 

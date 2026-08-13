@@ -27,6 +27,48 @@ export function splitRoutePrefix(routePrefix: string): {
 }
 
 /**
+ * The org an unresolvable repo belongs to — the trailing group in the sidebar,
+ * and the org half `splitRoutePrefix` invents for a `local/dirname` prefix.
+ */
+export const LOCAL_ORG = "local";
+
+/**
+ * The org's avatar, from any URL on its forge: `https://host/org.png?size=64`.
+ *
+ * Derived from a URL rather than fetched, so a repo row and a PR in a repo that
+ * was never cloned here land on the same image for the same org — a PR carries
+ * its repo's browse URL and nothing else.
+ */
+export function orgAvatarUrl(
+  browseUrl: string | null | undefined,
+): string | null {
+  if (!browseUrl) return null;
+  try {
+    const url = new URL(browseUrl);
+    const org = url.pathname.split("/")[1];
+    return org ? `${url.origin}/${org}.png?size=64` : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The name to show for a repo: the `owner/repo` remote's repo half when the
+ * metadata has resolved, else whatever git listing named it.
+ *
+ * One rule, so the repo row and a work card can't call the same repo two
+ * things — they used to derive this separately from the same two inputs.
+ */
+export function repoDisplayName(
+  routePrefix: string | undefined,
+  fallback: string,
+): string {
+  return routePrefix
+    ? splitRoutePrefix(routePrefix).repo || fallback
+    : fallback;
+}
+
+/**
  * Resolve the route prefix, display name, and browse URL for a repo.
  * Uses the git remote to get "owner/repo", falls back to "local/dirname".
  */

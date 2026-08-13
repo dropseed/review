@@ -203,15 +203,15 @@ const defaults = {
   // key stays on disk untouched — inert, and still there if the control ever
   // returns.
 
-  // Explicit expand/collapse overrides per repo path. Absent = the repo's
-  // default (expanded while it has live rows).
-  collapsedRepos: {} as Record<string, boolean>,
-  // Repos whose `⋯ more` (branches/reviews that aren't live) is open.
-  expandedRepoRest: {} as Record<string, boolean>,
-  // Whether repos with nothing live are listed at all.
-  showInactiveRepos: false,
-  // Sidebar rows the user hid, keyed `${repoPath}:${ref}`.
-  sidebarDismissed: [] as string[],
+  // Repos the user has opened in the repos list. Absent = collapsed, which
+  // is every repo's default: the list is a browse surface, and what needs you
+  // is answered above it. The old `collapsedRepos` key stays on disk, inert.
+  // Keyed by repo path, or by `owner/repo` for a repo that isn't cloned here.
+  expandedRepos: {} as Record<string, boolean>,
+  // Org headers the user has closed. Stored the other way round from
+  // `expandedRepos` because the default is the other way round: an org is the
+  // structure of the list rather than a thing to open, so it starts expanded.
+  collapsedOrgs: {} as Record<string, boolean>,
   fileSortOrder: "name" as FileSortOrder,
   guideSideNavCollapsed: false,
   guideSideNavWidth: 240,
@@ -283,20 +283,11 @@ export interface PreferencesSlice {
   // Files panel (right sidebar)
   filesPanelCollapsed: boolean;
 
-  // Sidebar tree: explicit collapse overrides per repo path. A repo with no
-  // entry follows its default (expanded while it has live rows), so a repo
-  // going quiet re-collapses on its own.
-  collapsedRepos: Record<string, boolean>;
+  // Repos list: the repos the user has expanded. Absent = collapsed.
+  expandedRepos: Record<string, boolean>;
 
-  // Repos whose `⋯ more` list (rows that aren't live) is open.
-  expandedRepoRest: Record<string, boolean>;
-
-  // Whether repos with nothing live are listed below the active ones.
-  showInactiveRepos: boolean;
-
-  // Sidebar rows the user hid, keyed `${repoPath}:${ref}`. A dismissed row
-  // never shows, whatever the derived liveness rules say.
-  sidebarDismissed: string[];
+  // Org headers the user has closed. Absent = expanded.
+  collapsedOrgs: Record<string, boolean>;
 
   // File sort order (shared across browse + changes tabs)
   fileSortOrder: FileSortOrder;
@@ -377,13 +368,9 @@ export interface PreferencesSlice {
   setFilesPanelCollapsed: (collapsed: boolean) => void;
   toggleFilesPanel: () => void;
 
-  // Sidebar tree actions
-  setRepoCollapsed: (repoPath: string, collapsed: boolean) => void;
-  toggleRepoRest: (repoPath: string) => void;
-  toggleInactiveRepos: () => void;
-
-  // Sidebar row actions (key = `${repoPath}:${ref}`)
-  toggleSidebarRowDismissed: (key: string) => void;
+  // Repos list actions
+  setRepoExpanded: (repoPath: string, expanded: boolean) => void;
+  setOrgCollapsed: (org: string, collapsed: boolean) => void;
 
   // File sort order actions
   setFileSortOrder: (order: FileSortOrder) => void;
@@ -691,39 +678,29 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       get().setFilesPanelCollapsed(!get().filesPanelCollapsed);
     },
 
-    setRepoCollapsed: (repoPath, collapsed) => {
-      // Only explicit overrides are stored, so a repo whose default flips
-      // (its last live row went quiet) follows the default again rather than
-      // being frozen open by a click from weeks ago.
-      const current = get().collapsedRepos;
-      if (current[repoPath] === collapsed) return;
-      const next = { ...current, [repoPath]: collapsed };
-      set({ collapsedRepos: next });
-      storage.set("collapsedRepos", next);
-    },
-
-    toggleRepoRest: (repoPath) => {
-      const current = get().expandedRepoRest;
+    setRepoExpanded: (repoPath, expanded) => {
+      // Collapsed is the default, so a collapsed repo drops its entry rather
+      // than storing `false` — the record stays the size of what the user
+      // actually opened.
+      const current = get().expandedRepos;
+      if (!!current[repoPath] === expanded) return;
       const next = { ...current };
-      if (current[repoPath]) delete next[repoPath];
-      else next[repoPath] = true;
-      set({ expandedRepoRest: next });
-      storage.set("expandedRepoRest", next);
+      if (expanded) next[repoPath] = true;
+      else delete next[repoPath];
+      set({ expandedRepos: next });
+      storage.set("expandedRepos", next);
     },
 
-    toggleInactiveRepos: () => {
-      const next = !get().showInactiveRepos;
-      set({ showInactiveRepos: next });
-      storage.set("showInactiveRepos", next);
-    },
-
-    toggleSidebarRowDismissed: (key) => {
-      const current = get().sidebarDismissed;
-      const dismissed = current.includes(key)
-        ? current.filter((k) => k !== key)
-        : [...current, key];
-      set({ sidebarDismissed: dismissed });
-      storage.set("sidebarDismissed", dismissed);
+    setOrgCollapsed: (org, collapsed) => {
+      // Expanded is the default, so an expanded org drops its entry — the
+      // record stays the size of what the user actually closed.
+      const current = get().collapsedOrgs;
+      if (!!current[org] === collapsed) return;
+      const next = { ...current };
+      if (collapsed) next[org] = true;
+      else delete next[org];
+      set({ collapsedOrgs: next });
+      storage.set("collapsedOrgs", next);
     },
 
     setFileSortOrder: (order) => {

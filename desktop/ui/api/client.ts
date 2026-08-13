@@ -43,6 +43,8 @@ import type {
   RepoLocalActivity,
   ReviewFreshnessInput,
   ReviewFreshnessResult,
+  WorkItem,
+  WorkRef,
   WorktreeInfo,
   TerminalSessionInfo,
   TerminalStatus,
@@ -425,6 +427,44 @@ export interface ApiClient {
 
   /** Unregister a repo from the central index */
   unregisterRepo(repoPath: string): Promise<void>;
+
+  // ----- Work items -----
+  //
+  // Every mutation returns the full list rather than a delta: list order is
+  // priority order, so a reorder or a removal changes entries the caller never
+  // named, and the canonical list is the only answer that can't drift. The
+  // caller reconciles against it instead of replaying its own optimistic edit,
+  // which keeps it correct when a `review work` command or another window wrote
+  // in between. Both transports and the two Rust backends follow this; they
+  // don't restate it.
+
+  /** List work items in priority order */
+  listWorkItems(): Promise<WorkItem[]>;
+
+  /** Create a work item, optionally pre-bound to refs */
+  addWorkItem(title: string, refs: WorkRef[]): Promise<WorkItem[]>;
+
+  /** Delete a work item */
+  removeWorkItem(id: string): Promise<WorkItem[]>;
+
+  /** Move a work item to a 0-based position in the priority order */
+  moveWorkItem(id: string, position: number): Promise<WorkItem[]>;
+
+  /** Bind a review (repo + ref) to a work item */
+  bindWorkItem(id: string, repoPath: string, ref: string): Promise<WorkItem[]>;
+
+  /** Unbind a review (repo + ref) from a work item */
+  unbindWorkItem(
+    id: string,
+    repoPath: string,
+    ref: string,
+  ): Promise<WorkItem[]>;
+
+  /** Rename a work item */
+  renameWorkItem(id: string, title: string): Promise<WorkItem[]>;
+
+  /** Subscribe to external changes to ~/.review/work.json (returns unsubscribe fn) */
+  onWorkChanged(callback: () => void): () => void;
 
   // ----- File watcher -----
 

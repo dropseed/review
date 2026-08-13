@@ -1,11 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
+  allSidebarRows,
   buildSidebarTree,
-  flattenSidebarTree,
   groupPrsElsewhere,
-  isRepoExpanded,
-  COMMIT_BY_USER_WINDOW_MS,
-  REVIEW_ACTIVE_WINDOW_MS,
+  groupReposByOrg,
+  visibleRows,
   type RepoNode,
   type SidebarRow,
 } from "./sidebar-tree";
@@ -27,6 +26,7 @@ function branch(overrides: Partial<LocalBranchInfo> = {}): LocalBranchInfo {
     name: "feature",
     isCurrent: false,
     commitsAhead: 1,
+    unpushedCommits: 0,
     hasWorkingTreeChanges: false,
     lastCommitDate: iso(30 * 86_400_000), // 30d ago — outside all windows
     lastCommitMessage: "wip",
@@ -108,9 +108,6 @@ function build(
   activity: RepoLocalActivity[],
   opts: {
     reviews?: GlobalReviewSummary[];
-    dismissed?: string[];
-    openRepoPath?: string | null;
-    terminalKeys?: string[];
     viewerPrs?: ViewerPr[];
   } = {},
 ): RepoNode[] {
@@ -119,16 +116,19 @@ function build(
     activity,
     reviews,
     byKey(reviews),
-    opts.dismissed ?? [],
-    NOW,
-    opts.openRepoPath ?? null,
-    opts.terminalKeys ?? [],
     opts.viewerPrs ?? [],
   );
 }
 
 function refs(rows: SidebarRow[]): string[] {
   return rows.map((r) => r.ref);
+}
+
+const NOTHING_CLAIMED: ReadonlySet<string> = new Set();
+
+/** The refs a repo actually draws, with nothing claimed in "Working on". */
+function shown(node: RepoNode, claimed = NOTHING_CLAIMED): string[] {
+  return refs(visibleRows(node, claimed));
 }
 
 describe("the repo row is the repo-root checkout", () => {
@@ -138,26 +138,23 @@ describe("the repo row is the repo-root checkout", () => {
     ]);
     expect(node.head?.ref).toBe("master");
     expect(node.head?.checkoutPath).toBe("/r");
-    expect(node.head?.presence).toBe("checkout");
     // It's the repo's own row, so it must not also appear beneath it.
-    expect(refs(node.live)).not.toContain("master");
+    expect(refs(node.rows)).not.toContain("master");
   });
 
-  it("is quiet when the checkout is all it has", () => {
-    // Stale tip, no changes, no review. Having HEAD somewhere isn't news —
-    // every repo does, forever, so it can't be what makes one active.
+  it("holds no fact when the checkout is all it has", () => {
+    // Clean, pushed, no PR. Having HEAD somewhere isn't news — every repo does,
+    // forever — so the repo row shows because it is the repo, not because a
+    // rule fired on it.
     const [node] = build([
       repo("/r", [branch({ name: "master", isCurrent: true })]),
     ]);
-    expect(node.head?.live).toBe(false);
-    expect(node.head?.reasons).toEqual([]);
-    expect(node.isActive).toBe(false);
-    // It still has a checkout — liveness changed, not where the files are.
+    expect(node.head?.facts).toEqual([]);
+    // It still has a checkout: where the files are is a different question.
     expect(node.head?.checkoutPath).toBe("/r");
-    expect(node.head?.presence).toBe("checkout");
   });
 
-  it("wakes the repo up when the checkout has uncommitted changes", () => {
+  it("reports the head row's own facts", () => {
     const [node] = build([
       repo("/r", [
         branch({
@@ -167,31 +164,19 @@ describe("the repo row is the repo-root checkout", () => {
         }),
       ]),
     ]);
-    expect(node.head?.reasons).toEqual(["uncommitted"]);
-    expect(node.isActive).toBe(true);
+    expect(node.head?.facts).toEqual(["dirty"]);
   });
 
-  it("wakes the repo up for a worktree, which someone made on purpose", () => {
+  it("gives a linked worktree its own path", () => {
     const [node] = build([
       repo("/r", [
         branch({ name: "master", isCurrent: true }),
         branch({ name: "feat", worktreePath: "/wt/feat" }),
       ]),
     ]);
-    expect(node.live[0].reasons).toEqual(["checkout"]);
-    expect(node.isActive).toBe(true);
-  });
-
-  it("gives a linked worktree its own path and keeps it live", () => {
-    const [node] = build([
-      repo("/r", [
-        branch({ name: "master", isCurrent: true }),
-        branch({ name: "feat", worktreePath: "/wt/feat" }),
-      ]),
-    ]);
-    expect(node.live).toHaveLength(1);
-    expect(node.live[0].checkoutPath).toBe("/wt/feat");
-    expect(node.live[0].presence).toBe("checkout");
+    expect(node.rows).toHaveLength(1);
+    expect(node.rows[0].checkoutPath).toBe("/wt/feat");
+    expect(node.rows[0].facts).toEqual(["materialized"]);
   });
 
   it("leaves a branch with no checkout without one", () => {
@@ -201,233 +186,205 @@ describe("the repo row is the repo-root checkout", () => {
         branch({ name: "old" }),
       ]),
     ]);
-    expect(node.rest[0].ref).toBe("old");
-    expect(node.rest[0].checkoutPath).toBeNull();
-    expect(node.rest[0].presence).toBe("ref");
+    expect(node.rows[0].ref).toBe("old");
+    expect(node.rows[0].checkoutPath).toBeNull();
   });
 
   it("carries a review's own worktree as its checkout", () => {
     const reviews = [review("/r", "abc123", 0, { worktreePath: "/wt/abc" })];
     const [node] = build([repo("/r", [])], { reviews });
-    expect(node.live[0].checkoutPath).toBe("/wt/abc");
+    expect(node.rows[0].checkoutPath).toBe("/wt/abc");
+    expect(node.rows[0].facts).toEqual(["materialized"]);
   });
 });
 
-describe("liveness rules", () => {
-  it("includes a branch with uncommitted changes", () => {
+describe("row facts", () => {
+  it("counts a linked worktree, which someone made on purpose", () => {
+    const [node] = build([
+      repo("/r", [
+        branch({ name: "master", isCurrent: true }),
+        branch({ name: "feat", worktreePath: "/wt/feat" }),
+      ]),
+    ]);
+    expect(shown(node)).toContain("feat");
+  });
+
+  it("counts uncommitted changes", () => {
     const [node] = build([
       repo("/r", [
         branch({ name: "master", isCurrent: true }),
         branch({ name: "dirty", hasWorkingTreeChanges: true }),
       ]),
     ]);
-    expect(refs(node.live)).toContain("dirty");
+    expect(shown(node)).toContain("dirty");
   });
 
-  it("includes a branch with a shell running in it, and wakes its repo", () => {
-    // Stale on every time-based rule — a running terminal is the only reason.
-    const [node] = build(
-      [
-        repo("/r", [
-          branch({ name: "master", isCurrent: true }),
-          branch({ name: "agent-work" }),
-        ]),
-      ],
-      { terminalKeys: ["/r:agent-work"] },
-    );
-    expect(refs(node.live)).toContain("agent-work");
-    expect(node.live[0].reasons).toContain("terminal");
-    expect(node.isActive).toBe(true);
-    expect(node.hasActiveTerminal).toBe(true);
+  it("counts commits that exist nowhere but here", () => {
+    const [node] = build([
+      repo("/r", [
+        branch({ name: "master", isCurrent: true }),
+        branch({ name: "unpushed", commitsAhead: 3, unpushedCommits: 3 }),
+      ]),
+    ]);
+    expect(shown(node)).toContain("unpushed");
+    expect(node.rows[0].facts).toEqual(["unpushed"]);
   });
 
-  it("counts a shell in the repo-root checkout, not just a child row", () => {
-    const [node] = build(
-      [repo("/r", [branch({ name: "master", isCurrent: true })])],
-      {
-        terminalKeys: ["/r:master"],
-      },
-    );
-    expect(node.head?.reasons).toContain("terminal");
-    expect(node.hasActiveTerminal).toBe(true);
+  it("says nothing about a branch that is ahead but fully pushed", () => {
+    // Ahead of the default branch is not the question — someone else can read
+    // those commits. `unpushedCommits` is counted against the upstream, so
+    // pushing a branch is what retires its row.
+    const [node] = build([
+      repo("/r", [
+        branch({ name: "master", isCurrent: true }),
+        branch({ name: "published", commitsAhead: 9, unpushedCommits: 0 }),
+      ]),
+    ]);
+    expect(node.rows[0].facts).toEqual([]);
+    expect(shown(node)).not.toContain("published");
   });
 
-  it("does not let a running terminal reorder rows", () => {
-    // Ranking is presence then activity; "a shell is open here" is neither, so
-    // the row lands where it always would — a phase that flips every few
-    // seconds must never move rows under the cursor.
-    const rowsFor = (terminalKeys: string[]) =>
-      refs(
-        build(
-          [
-            repo("/r", [
-              branch({ name: "master", isCurrent: true }),
-              branch({ name: "a", hasWorkingTreeChanges: true }),
-              branch({ name: "b", hasWorkingTreeChanges: true }),
-            ]),
-          ],
-          { terminalKeys },
-        )[0].live,
-      );
-    expect(rowsFor(["/r:b"])).toEqual(rowsFor([]));
-  });
-
-  it("includes a branch whose review was touched inside the window", () => {
-    const reviews = [review("/r", "feat", REVIEW_ACTIVE_WINDOW_MS - 1000)];
-    const [node] = build(
-      [
-        repo("/r", [
-          branch({ name: "master", isCurrent: true }),
-          branch({ name: "feat" }),
-        ]),
-      ],
-      { reviews },
-    );
-    expect(refs(node.live)).toContain("feat");
-  });
-
-  it("drops a branch whose review fell outside the window", () => {
-    const reviews = [review("/r", "feat", REVIEW_ACTIVE_WINDOW_MS + 1000)];
-    const [node] = build(
-      [
-        repo("/r", [
-          branch({ name: "master", isCurrent: true }),
-          branch({ name: "feat" }),
-        ]),
-      ],
-      { reviews },
-    );
-    expect(refs(node.live)).not.toContain("feat");
-    expect(refs(node.rest)).toContain("feat");
-  });
-
-  it("includes a branch the user committed to recently", () => {
+  it("ignores how recently anyone committed, on either side", () => {
+    // Both of these used to be rules. Recency answers "was something happening
+    // here", which drifts on its own and needs a dismiss to argue with.
     const [node] = build([
       repo("/r", [
         branch({ name: "master", isCurrent: true }),
         branch({
           name: "mine",
           lastCommitByUser: true,
-          lastCommitDate: iso(COMMIT_BY_USER_WINDOW_MS - 1000),
+          lastCommitDate: iso(0),
         }),
-      ]),
-    ]);
-    expect(refs(node.live)).toContain("mine");
-  });
-
-  it("ignores a recent commit by someone else", () => {
-    const [node] = build([
-      repo("/r", [
-        branch({ name: "master", isCurrent: true }),
         branch({
           name: "theirs",
           lastCommitByUser: false,
-          lastCommitDate: iso(1000),
+          lastCommitDate: iso(0),
         }),
       ]),
     ]);
-    expect(refs(node.rest)).toContain("theirs");
+    expect(shown(node)).toEqual([]);
   });
 
-  it("keeps the repo this window has open live, however quiet it is", () => {
-    // Clean default branch, nobody's own commit for a month, no review: the
-    // exact repo you get from `review .` on a fresh clone. Every other rule
-    // says quiet, and quiet repos are hidden — including, without this, the
-    // one on screen.
-    const activity = [
-      repo("/r", [branch({ name: "master", isCurrent: true })]),
-    ];
-
-    const [open] = build(activity, { openRepoPath: "/r" });
-    expect(open.head?.reasons).toContain("open-repo");
-    expect(open.head?.live).toBe(true);
-    expect(open.isActive).toBe(true);
-    // The repro: with `showInactiveRepos` off, an inactive repo is dropped
-    // from the list the sidebar walks, not just demoted.
-    expect(refs(flattenSidebarTree([open], {}, {}, false))).toEqual(["master"]);
-  });
-
-  it("leaves that same repo quiet when it isn't the one open", () => {
-    const activity = [
-      repo("/r", [branch({ name: "master", isCurrent: true })]),
-    ];
-
-    const [other] = build(activity, { openRepoPath: "/somewhere-else" });
-    expect(other.head?.reasons).toEqual([]);
-    expect(other.isActive).toBe(false);
-    expect(flattenSidebarTree([other], {}, {}, false)).toEqual([]);
-  });
-
-  it("keeps an open repo active even with no checkout and a dismissed head", () => {
-    // A repo known only through reviews has no head row to carry the reason,
-    // and a dismissed head row would refuse it — neither may hide the repo
-    // the window is displaying.
-    const [bare] = build([repo("/r", [])], { openRepoPath: "/r" });
-    expect(bare.head).toBeNull();
-    expect(bare.isActive).toBe(true);
-
-    const [dismissed] = build(
-      [repo("/r", [branch({ name: "master", isCurrent: true })])],
-      { dismissed: ["/r:master"], openRepoPath: "/r" },
-    );
-    expect(dismissed.head?.live).toBe(false);
-    expect(dismissed.isActive).toBe(true);
-  });
-
-  it("dismisses a row out of the live list", () => {
-    const activity = [
-      repo("/r", [
-        branch({ name: "master", isCurrent: true }),
-        branch({ name: "dirty", hasWorkingTreeChanges: true }),
-      ]),
-    ];
-    const [node] = build(activity, { dismissed: ["/r:dirty"] });
-    expect(refs(node.live)).not.toContain("dirty");
-    expect(refs(node.rest)).toContain("dirty");
-  });
-});
-
-describe("row ranking", () => {
-  it("ranks equal-presence rows by recency, with size no longer a factor", () => {
-    // Ordering takes no sort-order input any more. The menu that set one is
-    // gone, so a persisted "size" would have kept reordering rows with nothing
-    // left to change it back: presence, then recency, then key — full stop.
-    const reviews = [
-      review("/r", "huge", 5000, { totalHunks: 900 }),
-      review("/r", "tiny", 1000, { totalHunks: 1 }),
-    ];
-    const [node] = build([repo("/r", [])], { reviews });
-    expect(refs(node.live)).toEqual(["tiny", "huge"]);
-  });
-
-  it("ranks checkouts above reviews above bare refs", () => {
-    const reviews = [review("/r", "reviewed", 1000)];
+  it("ignores how recently a review was touched", () => {
+    const reviews = [review("/r", "feat", 0)];
     const [node] = build(
       [
         repo("/r", [
           branch({ name: "master", isCurrent: true }),
-          // Bare ref, but freshest — presence still outranks recency.
-          branch({
-            name: "bare",
-            lastCommitByUser: true,
-            lastCommitDate: iso(0),
-          }),
-          branch({ name: "reviewed" }),
-          branch({
-            name: "wt",
-            worktreePath: "/wt",
-            lastCommitDate: iso(20 * 86_400_000),
-          }),
+          branch({ name: "feat" }),
         ]),
       ],
       { reviews },
     );
-    expect(refs(node.live)).toEqual(["wt", "reviewed", "bare"]);
+    // Findable, but not drawn: having reviewed something is a record of the
+    // past, not a fact about the repo now.
+    expect(refs(node.rows)).toContain("feat");
+    expect(shown(node)).not.toContain("feat");
+  });
+
+  it("lists a repo nothing has happened in, quiet head row and all", () => {
+    // Clean default branch, everything pushed, no review: the exact repo you
+    // get from `review .` on a fresh clone. It is listed anyway — the layer is
+    // a browse surface, so nothing is hidden for being idle.
+    const [node] = build([
+      repo("/r", [branch({ name: "master", isCurrent: true })]),
+    ]);
+    expect(node.head?.ref).toBe("master");
+    expect(shown(node)).toEqual([]);
+  });
+
+  it("lists a repo known only through reviews, with no head row", () => {
+    const [node] = build([repo("/r", [])]);
+    expect(node.head).toBeNull();
+    expect(node.repoPath).toBe("/r");
+  });
+});
+
+describe("what the sidebar draws", () => {
+  const busy = () =>
+    build([
+      repo("/r", [
+        branch({ name: "master", isCurrent: true }),
+        branch({ name: "dirty", hasWorkingTreeChanges: true }),
+        branch({ name: "quiet" }),
+      ]),
+    ])[0];
+
+  it("draws a row with a fact and skips one without", () => {
+    expect(shown(busy())).toEqual(["dirty"]);
+  });
+
+  it("skips a row the user has claimed in Working on", () => {
+    // The card up there already reports the branch, its PR and its uncommitted
+    // changes; the row underneath would be the same news a second time.
+    expect(shown(busy(), new Set(["/r:dirty"]))).toEqual([]);
+  });
+
+  it("keeps a claimed row in the tree for the palette to find", () => {
+    const node = busy();
+    expect(refs(node.rows)).toContain("dirty");
+  });
+
+  it("never filters the repo row, claimed or not", () => {
+    // The head row isn't in `rows` at all: a repo you have claimed is still a
+    // repo you can open, and the row is how you open it.
+    const node = busy();
+    expect(node.head?.ref).toBe("master");
+    expect(refs(node.rows)).not.toContain("master");
+  });
+});
+
+describe("row ordering", () => {
+  it("puts rows with files on disk first, then sorts by name", () => {
+    const [node] = build([
+      repo("/r", [
+        branch({ name: "master", isCurrent: true }),
+        branch({ name: "zebra", worktreePath: "/wt/zebra" }),
+        branch({ name: "apple", hasWorkingTreeChanges: true }),
+        branch({ name: "beta", unpushedCommits: 1 }),
+        branch({ name: "alpha", worktreePath: "/wt/alpha" }),
+      ]),
+    ]);
+    expect(shown(node)).toEqual(["alpha", "zebra", "apple", "beta"]);
+  });
+
+  it("keeps the same order when only timestamps move", () => {
+    // No ordering here reads a clock, so this is the whole guarantee: the row
+    // you are reaching for is where it was.
+    const order = (commitMsAgo: number) =>
+      shown(
+        build([
+          repo("/r", [
+            branch({ name: "master", isCurrent: true }),
+            branch({
+              name: "zulu",
+              hasWorkingTreeChanges: true,
+              lastCommitDate: iso(commitMsAgo),
+            }),
+            branch({ name: "alpha", hasWorkingTreeChanges: true }),
+          ]),
+        ])[0],
+      );
+
+    expect(order(10 * 86_400_000)).toEqual(order(1000));
+    expect(order(1000)).toEqual(["alpha", "zulu"]);
+  });
+
+  it("does not rank a row by how much of it there is to review", () => {
+    const reviews = [
+      review("/r", "huge", 5000, {
+        totalHunks: 900,
+        worktreePath: "/wt/huge",
+      }),
+      review("/r", "tiny", 1000, { totalHunks: 1, worktreePath: "/wt/tiny" }),
+    ];
+    const [node] = build([repo("/r", [])], { reviews });
+    expect(shown(node)).toEqual(["huge", "tiny"]);
   });
 });
 
 describe("repo ordering", () => {
-  it("puts repos with live rows above quiet ones", () => {
+  it("is alphabetical, with nothing about activity ranking a repo", () => {
     const nodes = build([
       // Quiet: stale branches only, nothing anyone touched.
       repo("/a-quiet", [branch({ name: "old" })]),
@@ -439,11 +396,10 @@ describe("repo ordering", () => {
         }),
       ]),
     ]);
-    expect(nodes.map((n) => n.repoPath)).toEqual(["/z-busy", "/a-quiet"]);
-    expect(nodes[1].isActive).toBe(false);
+    expect(nodes.map((n) => n.repoPath)).toEqual(["/a-quiet", "/z-busy"]);
   });
 
-  it("orders repos alphabetically, not by recency, within each half", () => {
+  it("does not let recency pull a repo up", () => {
     const nodes = build([
       repo("/zulu", [
         branch({
@@ -466,38 +422,10 @@ describe("repo ordering", () => {
     ]);
     expect(nodes.map((n) => n.repoPath)).toEqual([
       "/alpha",
-      "/zulu",
       "/quiet-a",
       "/quiet-z",
+      "/zulu",
     ]);
-  });
-
-  it("puts repos with a shell running in them above the other active ones", () => {
-    const nodes = build(
-      [
-        repo("/a-busy", [
-          branch({
-            name: "master",
-            isCurrent: true,
-            hasWorkingTreeChanges: true,
-          }),
-        ]),
-        repo("/z-quiet", [branch({ name: "old" })]),
-        // Alphabetically last, and live for no reason but the shell.
-        repo("/z-terminal", [
-          branch({ name: "master", isCurrent: true }),
-          branch({ name: "agent-work" }),
-        ]),
-      ],
-      { terminalKeys: ["/z-terminal:agent-work"] },
-    );
-    expect(nodes.map((n) => n.repoPath)).toEqual([
-      "/z-terminal",
-      "/a-busy",
-      "/z-quiet",
-    ]);
-    expect(nodes[0].hasActiveTerminal).toBe(true);
-    expect(nodes[1].hasActiveTerminal).toBe(false);
   });
 
   it("keeps the same order when only activity timestamps move", () => {
@@ -551,10 +479,29 @@ describe("remote-recent rows", () => {
       ],
       { reviews },
     );
-    const all = [...node.live, ...node.rest].map((r) => r.ref);
+    const all = refs(node.rows);
     expect(all.filter((r) => r === "master")).toHaveLength(0); // head only
     expect(all.filter((r) => r === "reviewed-ref")).toHaveLength(1);
-    expect(refs(node.rest)).toContain("fresh");
+    expect(all).toContain("fresh");
+  });
+
+  it("is findable but never drawn", () => {
+    // A branch on the remote is pushed by definition, has no checkout and
+    // nothing uncommitted, so no fact can hold. It is built for ⌘K, which is
+    // the one thing you'd want from a branch someone else pushed.
+    const [node] = build([
+      repo("/r", [branch({ name: "master", isCurrent: true })], {
+        recentRemoteBranches: [
+          {
+            remoteRef: "origin/theirs",
+            branchName: "theirs",
+            lastCommitDate: iso(0),
+          },
+        ],
+      }),
+    ]);
+    expect(refs(node.rows)).toEqual(["theirs"]);
+    expect(shown(node)).toEqual([]);
   });
 });
 
@@ -569,10 +516,11 @@ describe("open pull requests", () => {
       viewerPrs: [pr],
     });
 
-    const row = [...node.live, ...node.rest].find((r) => r.ref === "feature");
+    const row = node.rows.find((r) => r.ref === "feature");
     expect(row?.openPr).toBe(pr);
     // Badging an existing row must not also synthesize one for the same PR.
-    expect([...node.live, ...node.rest]).toHaveLength(1);
+    expect(node.rows).toHaveLength(1);
+    expect(shown(node)).toEqual(["feature"]);
   });
 
   it("badges a PR-keyed review whose ref isn't the branch name", () => {
@@ -593,10 +541,9 @@ describe("open pull requests", () => {
       viewerPrs: [viewerPr({ number: 7, headRefName: "feature" })],
     });
 
-    const rows = [...node.live, ...node.rest];
-    expect(rows).toHaveLength(1);
-    expect(rows[0].ref).toBe("pr-7-head");
-    expect(rows[0].openPr?.number).toBe(7);
+    expect(node.rows).toHaveLength(1);
+    expect(node.rows[0].ref).toBe("pr-7-head");
+    expect(node.rows[0].openPr?.number).toBe(7);
   });
 
   it("gives a PR nothing local represents a row of its own", () => {
@@ -604,7 +551,7 @@ describe("open pull requests", () => {
       viewerPrs: [viewerPr({ headRefName: "unseen" })],
     });
 
-    const [row] = node.live;
+    const [row] = node.rows;
     expect(row.ref).toBe("unseen");
     expect(row.entry.kind).toBe("open-pr");
     // Keyed by PR number, so two PRs on one branch stay two rows.
@@ -612,138 +559,69 @@ describe("open pull requests", () => {
     // Nothing exists on disk for it — no checkout, and no review record until
     // the row is activated.
     expect(row.checkoutPath).toBeNull();
-    expect(row.presence).toBe("ref");
-    expect(row.reasons).toEqual(["open-pr"]);
+    expect(row.facts).toEqual(["open-pr"]);
+    expect(shown(node)).toEqual(["unseen"]);
   });
 
-  it("wakes a repo whose only news is an open PR", () => {
+  it("shows a PR nobody has touched in months", () => {
+    // Staleness used to park a PR behind a fold on the theory that an old PR
+    // isn't today's work. An open PR is an open PR: it is a fact about the
+    // world, and closing or merging it is what takes the row away.
+    const [node] = build(withMaster([branch({ name: "feature" })]), {
+      viewerPrs: [viewerPr({ updatedAt: iso(200 * 86_400_000) })],
+    });
+    expect(shown(node)).toContain("feature");
+  });
+
+  // A draft is the one open PR with no dismissal: you can't close it, you
+  // aren't finished with it, and marking it ready is how it comes back. So it
+  // badges but never earns the row.
+  it("does not give a draft a row of its own", () => {
     const [node] = build(withMaster(), {
-      viewerPrs: [viewerPr({ headRefName: "unseen" })],
-    });
-    expect(node.isActive).toBe(true);
-  });
-
-  it("leaves a draft parked", () => {
-    // The reason this rule exists: someone with dozens of open drafts would
-    // otherwise have a live zone made entirely of work they aren't doing.
-    const [node] = build(withMaster([branch({ name: "feature" })]), {
-      viewerPrs: [viewerPr({ isDraft: true })],
+      viewerPrs: [viewerPr({ isDraft: true, headRefName: "unseen" })],
     });
 
-    const row = [...node.live, ...node.rest].find((r) => r.ref === "feature");
-    expect(row?.openPr).toBeDefined();
-    expect(row?.reasons).not.toContain("open-pr");
-    expect(refs(node.live)).not.toContain("feature");
+    // Still in the tree — ⌘K finds it, and it is where the PR would be drawn
+    // from the moment it stops being a draft.
+    const [row] = node.rows;
+    expect(row.entry.kind).toBe("open-pr");
+    expect(row.openPr?.isDraft).toBe(true);
+    expect(row.facts).toEqual([]);
+    expect(shown(node)).toEqual([]);
   });
 
-  it("wakes a draft that has changes requested", () => {
+  it("lets a draft badge a row that shows for its own reasons", () => {
+    const [node] = build(
+      withMaster([branch({ name: "feature", hasWorkingTreeChanges: true })]),
+      { viewerPrs: [viewerPr({ isDraft: true })] },
+    );
+
+    const row = node.rows.find((r) => r.ref === "feature");
+    expect(row?.openPr?.number).toBe(7);
+    // The dirty checkout is what draws it; the draft adds a badge, not a line.
+    expect(row?.facts).toEqual(["dirty"]);
+    expect(shown(node)).toEqual(["feature"]);
+  });
+
+  it("keeps drawing a non-draft PR on a branch row", () => {
     const [node] = build(withMaster([branch({ name: "feature" })]), {
+      viewerPrs: [viewerPr({ isDraft: false })],
+    });
+
+    const row = node.rows.find((r) => r.ref === "feature");
+    expect(row?.facts).toContain("open-pr");
+    expect(shown(node)).toEqual(["feature"]);
+  });
+
+  it("keeps PRs with no local repo out of the tree entirely", () => {
+    const nodes = build(withMaster(), {
       viewerPrs: [
-        viewerPr({ isDraft: true, reviewDecision: "CHANGES_REQUESTED" }),
+        viewerPr({ repoPath: null, repoNameWithOwner: "other/repo" }),
       ],
     });
-    expect(refs(node.live)).toContain("feature");
-  });
-
-  it("wakes a draft whose CI is failing", () => {
-    const [node] = build(withMaster([branch({ name: "feature" })]), {
-      viewerPrs: [viewerPr({ isDraft: true, checksState: "FAILURE" })],
-    });
-    expect(refs(node.live)).toContain("feature");
-  });
-
-  it("keeps a recently updated PR live", () => {
-    const [node] = build(withMaster([branch({ name: "feature" })]), {
-      viewerPrs: [
-        viewerPr({ updatedAt: iso(COMMIT_BY_USER_WINDOW_MS - 1000) }),
-      ],
-    });
-    expect(refs(node.live)).toContain("feature");
-  });
-
-  it("parks a PR nobody has touched in a week, badge and all", () => {
-    const [node] = build(withMaster([branch({ name: "feature" })]), {
-      viewerPrs: [
-        viewerPr({ updatedAt: iso(COMMIT_BY_USER_WINDOW_MS + 1000) }),
-      ],
-    });
-
-    expect(refs(node.live)).not.toContain("feature");
-    expect(refs(node.rest)).toContain("feature");
-    // Old work is still work: the row and its badge stay, it just stops
-    // claiming to be today's.
-    const row = node.rest.find((r) => r.ref === "feature");
-    expect(row?.openPr).toBeDefined();
-    expect(row?.reasons).not.toContain("open-pr");
-  });
-
-  it("parks a PR that would have survived the review window", () => {
-    // The case that made this window shorter, taken from the real snapshot: a
-    // repo's worth of batch-opened PRs, all 12 days untouched. Under the
-    // 14-day review window every one of them stayed live with two days to
-    // spare. A PR's own `updatedAt` is author activity, so it answers to the
-    // author's window, not the reviewer's.
-    const twelveDays = 12 * 86_400_000;
-    expect(twelveDays).toBeGreaterThan(COMMIT_BY_USER_WINDOW_MS);
-    expect(twelveDays).toBeLessThan(REVIEW_ACTIVE_WINDOW_MS);
-
-    const [node] = build(withMaster([branch({ name: "feature" })]), {
-      viewerPrs: [viewerPr({ updatedAt: iso(twelveDays) })],
-    });
-    expect(refs(node.live)).not.toContain("feature");
-    expect(refs(node.rest)).toContain("feature");
-  });
-
-  it("keeps a stale PR live when it's blocked", () => {
-    // Age is the argument *for* surfacing this one: a PR that has been waiting
-    // on you for months is worse than one that started waiting yesterday.
-    const stale = { updatedAt: iso(COMMIT_BY_USER_WINDOW_MS * 20) };
-    for (const blocked of [
-      { reviewDecision: "CHANGES_REQUESTED" },
-      { checksState: "FAILURE" },
-      { checksState: "ERROR" },
-      { isDraft: true, checksState: "FAILURE" },
-    ]) {
-      const [node] = build(withMaster([branch({ name: "feature" })]), {
-        viewerPrs: [viewerPr({ ...stale, ...blocked })],
-      });
-      expect(refs(node.live)).toContain("feature");
-    }
-  });
-
-  it("parks a stale PR that only synthesized its own row", () => {
-    // The window applies to rows the tree invents too, or an abandoned PR in a
-    // repo with no local branch would still barge into the live zone.
-    const [node] = build(withMaster(), {
-      viewerPrs: [
-        viewerPr({
-          headRefName: "unseen",
-          updatedAt: iso(COMMIT_BY_USER_WINDOW_MS + 1000),
-        }),
-      ],
-    });
-    expect(refs(node.live)).not.toContain("unseen");
-    expect(refs(node.rest)).toContain("unseen");
-  });
-
-  it("still loses to a dismissal", () => {
-    // Dismissing is the user overruling every derived reason; a PR arriving
-    // afterwards must not quietly undo that.
-    const [node] = build(withMaster([branch({ name: "feature" })]), {
-      dismissed: ["/r:feature"],
-      viewerPrs: [viewerPr()],
-    });
-    expect(refs(node.live)).not.toContain("feature");
-    expect(refs(node.rest)).toContain("feature");
-  });
-
-  it("dismisses a synthesized row by its PR key", () => {
-    const [node] = build(withMaster(), {
-      dismissed: ["/r:pr/7"],
-      viewerPrs: [viewerPr({ number: 7, headRefName: "unseen" })],
-    });
-    expect(refs(node.live)).not.toContain("unseen");
-    expect(refs(node.rest)).toContain("unseen");
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0].repoPath).toBe("/r");
+    expect(nodes[0].rows).toHaveLength(0);
   });
 
   it("badges the PR-keyed review rather than the branch it came from", () => {
@@ -764,10 +642,9 @@ describe("open pull requests", () => {
       viewerPrs: [viewerPr({ number: 7, headRefName: "feature" })],
     });
 
-    const rows = [...node.live, ...node.rest];
-    expect(rows.filter((r) => r.openPr != null).map((r) => r.ref)).toEqual([
-      "pr-7-head",
-    ]);
+    expect(node.rows.filter((r) => r.openPr != null).map((r) => r.ref)).toEqual(
+      ["pr-7-head"],
+    );
   });
 
   it("gives the row to the newest of two PRs on one branch, and the other its own row", () => {
@@ -779,14 +656,13 @@ describe("open pull requests", () => {
       viewerPrs: [older, newer],
     });
 
-    const rows = [...node.live, ...node.rest];
-    const branchRow = rows.find((r) => r.reviewKey === "/r:feature");
+    const branchRow = node.rows.find((r) => r.reviewKey === "/r:feature");
     expect(branchRow?.openPr?.number).toBe(9);
 
-    const ownRow = rows.find((r) => r.reviewKey === "/r:pr/5");
+    const ownRow = node.rows.find((r) => r.reviewKey === "/r:pr/5");
     expect(ownRow?.entry.kind).toBe("open-pr");
     expect(ownRow?.ref).toBe("feature");
-    expect(rows).toHaveLength(2);
+    expect(node.rows).toHaveLength(2);
   });
 
   it("keeps two branchless PRs on one head branch apart", () => {
@@ -797,19 +673,10 @@ describe("open pull requests", () => {
       ],
     });
 
-    const rows = [...node.live, ...node.rest];
-    expect(rows.map((r) => r.reviewKey).sort()).toEqual(["/r:pr/5", "/r:pr/9"]);
-  });
-
-  it("keeps PRs with no local repo out of the tree entirely", () => {
-    const nodes = build(withMaster(), {
-      viewerPrs: [
-        viewerPr({ repoPath: null, repoNameWithOwner: "other/repo" }),
-      ],
-    });
-    expect(nodes).toHaveLength(1);
-    expect(nodes[0].repoPath).toBe("/r");
-    expect([...nodes[0].live, ...nodes[0].rest]).toHaveLength(0);
+    expect(node.rows.map((r) => r.reviewKey).sort()).toEqual([
+      "/r:pr/5",
+      "/r:pr/9",
+    ]);
   });
 });
 
@@ -842,7 +709,96 @@ describe("the elsewhere bucket", () => {
   });
 });
 
-describe("expansion and flattening", () => {
+describe("the org grouping", () => {
+  const meta = (routePrefix: string, avatarUrl: string | null = null) => ({
+    routePrefix,
+    avatarUrl,
+  });
+
+  it("files repos under the org half of their route prefix", () => {
+    const nodes = build([
+      repo("/one", [branch({ name: "main", isCurrent: true })]),
+      repo("/two", [branch({ name: "main", isCurrent: true })]),
+    ]);
+    const groups = groupReposByOrg(
+      nodes,
+      { "/one": meta("acme/alpha"), "/two": meta("other/beta") },
+      [],
+    );
+
+    expect(groups.map((g) => g.org)).toEqual(["acme", "other"]);
+    expect(groups[0].repos.map((r) => r.name)).toEqual(["alpha"]);
+  });
+
+  it("puts repos with no resolvable remote in one trailing local group", () => {
+    // Two ways to have no org: metadata that resolved to `local/dirname`, and
+    // metadata that hasn't come back at all. Both are the same row to a user.
+    const nodes = build([
+      repo("/zeta", [branch({ name: "main", isCurrent: true })]),
+      repo("/unresolved", [branch({ name: "main", isCurrent: true })]),
+      repo("/acme", [branch({ name: "main", isCurrent: true })]),
+    ]);
+    const groups = groupReposByOrg(
+      nodes,
+      { "/zeta": meta("local/zeta"), "/acme": meta("acme/thing") },
+      [],
+    );
+
+    expect(groups.map((g) => g.org)).toEqual(["acme", "local"]);
+    expect(groups[1].repos.map((r) => r.name)).toEqual(["unresolved", "zeta"]);
+  });
+
+  it("folds a repo that isn't cloned here in among the cloned ones", () => {
+    const nodes = build([
+      repo("/z", [branch({ name: "main", isCurrent: true })]),
+    ]);
+    const groups = groupReposByOrg(nodes, { "/z": meta("acme/zebra") }, [
+      viewerPr({
+        number: 3,
+        repoPath: null,
+        repoNameWithOwner: "acme/ant",
+        repoUrl: "https://github.com/acme/ant",
+      }),
+    ]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].repos.map((r) => r.name)).toEqual(["ant", "zebra"]);
+    // The uncloned one carries PRs instead of a node — there is no checkout
+    // under it for the tree to promise.
+    expect(groups[0].repos[0]).toMatchObject({ key: "acme/ant", node: null });
+    expect(groups[0].repos[0].prs.map((p) => p.number)).toEqual([3]);
+    expect(groups[0].repos[1].prs).toEqual([]);
+  });
+
+  it("takes the org's avatar from whichever of its repos resolved one", () => {
+    const nodes = build([
+      repo("/a", [branch({ name: "main", isCurrent: true })]),
+      repo("/b", [branch({ name: "main", isCurrent: true })]),
+    ]);
+    const groups = groupReposByOrg(
+      nodes,
+      {
+        "/a": meta("acme/a"),
+        "/b": meta("acme/b", "https://github.com/acme.png?size=64"),
+      },
+      [],
+    );
+    expect(groups[0].avatarUrl).toBe("https://github.com/acme.png?size=64");
+  });
+
+  it("derives an org's avatar from a PR when nothing there is cloned", () => {
+    const groups = groupReposByOrg([], {}, [
+      viewerPr({
+        repoPath: null,
+        repoNameWithOwner: "acme/ant",
+        repoUrl: "https://github.com/acme/ant",
+      }),
+    ]);
+    expect(groups[0].avatarUrl).toBe("https://github.com/acme.png?size=64");
+  });
+});
+
+describe("the flat row list", () => {
   const nodes = () =>
     build([
       repo("/busy", [
@@ -853,30 +809,16 @@ describe("expansion and flattening", () => {
       repo("/quiet", [branch({ name: "old" })]),
     ]);
 
-  it("expands active repos and collapses quiet ones by default", () => {
-    const [busy, quiet] = nodes();
-    expect(isRepoExpanded({}, busy)).toBe(true);
-    expect(isRepoExpanded({}, quiet)).toBe(false);
-  });
-
-  it("honors an explicit override in both directions", () => {
-    const [busy, quiet] = nodes();
-    expect(isRepoExpanded({ "/busy": true }, busy)).toBe(false);
-    expect(isRepoExpanded({ "/quiet": false }, quiet)).toBe(true);
-  });
-
-  it("walks head → live → rest, skipping quiet repos until asked", () => {
-    expect(refs(flattenSidebarTree(nodes(), {}, {}, false))).toEqual([
+  it("walks head then every row, drawn or not", () => {
+    // Nothing here is about what is on screen: the callers are lookups —
+    // a work card resolving a bound ref, `activateReviewKey`, the palette —
+    // and `old` is exactly the row that has no fact to its name and so needs a
+    // search box to reach.
+    expect(refs(allSidebarRows(nodes()))).toEqual([
       "master",
       "wt",
-    ]);
-    expect(
-      refs(flattenSidebarTree(nodes(), {}, { "/busy": true }, false)),
-    ).toEqual(["master", "wt", "old"]);
-    // A quiet repo contributes its head row only — its children stay collapsed.
-    expect(refs(flattenSidebarTree(nodes(), {}, {}, true))).toEqual([
-      "master",
-      "wt",
+      "old",
+      "old",
     ]);
   });
 });

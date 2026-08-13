@@ -9,7 +9,7 @@
 
 ## Zustand Store
 
-Single combined store in `stores/index.ts` via `useReviewStore` hook. State is split into 18 slices in `stores/slices/` — see `stores/types.ts` for the authoritative list. The ones you will touch most:
+Single combined store in `stores/index.ts` via `useReviewStore` hook. State is split into 19 slices in `stores/slices/` — see `stores/types.ts` for the authoritative list. The ones you will touch most:
 
 | Slice              | Purpose                                                      |
 | ------------------ | ------------------------------------------------------------ |
@@ -19,8 +19,9 @@ Single combined store in `stores/index.ts` via `useReviewStore` hook. State is s
 | `filesSlice`       | File tree, file content, hunks per file                      |
 | `gitSlice`         | Repo path, branches, comparison, git status                  |
 | `preferencesSlice` | Font size, theme, sidebar width (persisted via Tauri Store)  |
-| `terminalSlice`    | Terminal panel, tabs, panes                                  |
+| `terminalSlice`    | Terminal panel, tabs, panes; terminal↔work-item attachment   |
 | `tabRailSlice`     | Multi-tab/multi-review navigation                            |
+| `workSlice`        | Work items ("Working on" queue): load + optimistic reorder   |
 
 Derived views over hunk state live in `stores/selectors/`. Note the split: `hunkData.ts` holds the plain functions and `hunks.ts` the hooks. Slices must import from `hunkData` — importing the hook module pulls in the assembled store, which imports the slices.
 

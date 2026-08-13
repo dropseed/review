@@ -650,6 +650,22 @@ export interface ReviewSummary {
   worktreePath?: string; // Path to review-managed worktree, if created
 }
 
+// A ref bound to a work item: the review identity (repo + ref), the same pair
+// `makeReviewKey` builds a key from.
+export interface WorkRef {
+  repoPath: string;
+  ref: string;
+}
+
+// One thing the user is working on. Stored in ~/.review/work.json; array order
+// is priority order, so the list is never re-sorted on read.
+export interface WorkItem {
+  id: string;
+  title: string;
+  refs: WorkRef[];
+  createdAt: string;
+}
+
 // Information about a git worktree
 export interface WorktreeInfo {
   path: string;
@@ -857,6 +873,12 @@ export interface LocalBranchInfo {
   name: string;
   isCurrent: boolean;
   commitsAhead: number;
+  /**
+   * Commits on this branch that exist nowhere but here — `@{upstream}..branch`,
+   * or every commit it has over the default branch when it has no upstream to
+   * have published to. One of the sidebar's row facts: see `sidebar-tree.ts`.
+   */
+  unpushedCommits: number;
   hasWorkingTreeChanges: boolean;
   lastCommitDate: string;
   lastCommitMessage: string;

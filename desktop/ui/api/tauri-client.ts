@@ -51,6 +51,8 @@ import type {
   SymbolDefinition,
   LspServerStatus,
   TrustCategory,
+  WorkItem,
+  WorkRef,
   WorktreeInfo,
   TerminalSessionInfo,
   TerminalStatus,
@@ -63,6 +65,7 @@ import type {
 const EVENT_REVIEW_STATE_CHANGED = "review-state-changed";
 const EVENT_GIT_CHANGED = "git-changed";
 const EVENT_REPO_ACTIVITY_CHANGED = "repo-activity-changed";
+const EVENT_WORK_CHANGED = "work-changed";
 
 export class TauriClient implements ApiClient {
   // ----- Git operations -----
@@ -559,6 +562,44 @@ export class TauriClient implements ApiClient {
     await invoke("unregister_repo", { repoPath });
   }
 
+  // ----- Work items -----
+
+  async listWorkItems(): Promise<WorkItem[]> {
+    return invoke<WorkItem[]>("work_list");
+  }
+
+  async addWorkItem(title: string, refs: WorkRef[]): Promise<WorkItem[]> {
+    return invoke<WorkItem[]>("work_add", { title, refs });
+  }
+
+  async removeWorkItem(id: string): Promise<WorkItem[]> {
+    return invoke<WorkItem[]>("work_remove", { id });
+  }
+
+  async moveWorkItem(id: string, position: number): Promise<WorkItem[]> {
+    return invoke<WorkItem[]>("work_move", { id, position });
+  }
+
+  async bindWorkItem(
+    id: string,
+    repoPath: string,
+    ref: string,
+  ): Promise<WorkItem[]> {
+    return invoke<WorkItem[]>("work_bind", { id, repoPath, ref });
+  }
+
+  async unbindWorkItem(
+    id: string,
+    repoPath: string,
+    ref: string,
+  ): Promise<WorkItem[]> {
+    return invoke<WorkItem[]>("work_unbind", { id, repoPath, ref });
+  }
+
+  async renameWorkItem(id: string, title: string): Promise<WorkItem[]> {
+    return invoke<WorkItem[]>("work_rename", { id, title });
+  }
+
   // ----- File watcher -----
 
   async startFileWatcher(repoPath: string): Promise<void> {
@@ -617,6 +658,10 @@ export class TauriClient implements ApiClient {
       EVENT_REPO_ACTIVITY_CHANGED,
       callback,
     );
+  }
+
+  onWorkChanged(callback: () => void): () => void {
+    return this.listenForEvent(EVENT_WORK_CHANGED, () => callback());
   }
 
   // ----- Window/App -----

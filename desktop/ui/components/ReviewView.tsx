@@ -10,10 +10,7 @@ import {
 } from "react";
 import { useReviewStore } from "../stores";
 import { useProvideCommandUi } from "../commands/host";
-import { useRegisterCommands } from "../commands";
-import { TERMINAL_COMMANDS } from "./Terminal/commands";
 import { getMissingRefs } from "../stores/slices/groupingSlice";
-import { getPlatformServices } from "../platform";
 import { getApiClient } from "../api";
 import type { ReviewTarget } from "../types";
 import {
@@ -25,30 +22,14 @@ import {
   useLspClient,
   useDeepLinkFocus,
   useScopeReconciliation,
-  useTerminalEvents,
   useReviewTier,
 } from "../hooks";
 import { useAsyncAction } from "../hooks/useAsyncAction";
 import { FilesPanelDock } from "./FilesPanel/FilesPanelDock";
 import { ContentArea } from "./ContentArea";
-import { ResizeHandle } from "./ContentArea/ResizeHandle";
-import { DiffRail } from "./ContentArea/DiffRail";
-import { TerminalPanel } from "./Terminal/TerminalPanel";
-import { TerminalRail } from "./Terminal/TerminalRail";
-import { closeFocusedTerminal } from "./Terminal/close";
 import { WarningIcon } from "./ui/icons";
 import { ActivityBar } from "./ActivityBar";
 import { CompareRefDeletedNotice } from "./CompareRefDeletedNotice";
-import {
-  TERMINAL_MAX_CONTENT_FRACTION,
-  clampPanelWidthPx,
-  rafThrottle,
-  toggleToCanonical,
-} from "../utils/resize";
-import {
-  TERMINAL_PANEL_WIDTH_MAX,
-  TERMINAL_PANEL_WIDTH_MIN,
-} from "../stores/slices/terminalSlice";
 
 const DebugModal = lazy(() =>
   import("./modals/DebugModal").then((m) => ({ default: m.DebugModal })),
@@ -183,23 +164,6 @@ export function ReviewView({
     }
   }, [isRefreshing]);
 
-  // Close handler: cascading close (terminal pane -> split -> file -> window)
-  const handleClose = useCallback(async () => {
-    // A terminal pane goes first when focus is inside one: ⌘W there means
-    // "close this shell", the same as it would in any terminal app, and it
-    // must not reach past it to the window.
-    if (await closeFocusedTerminal()) return;
-    const state = useReviewStore.getState();
-    if (state.secondaryFile !== null) {
-      state.closeSplit();
-    } else if (state.selectedFile !== null) {
-      useReviewStore.setState({ selectedFile: null });
-    } else {
-      const platform = getPlatformServices();
-      await platform.window.close();
-    }
-  }, []);
-
   // New tab handler: open a new tab with the current repo
   const handleNewTab = useCallback(async () => {
     const apiClient = getApiClient();
@@ -223,17 +187,16 @@ export function ReviewView({
   );
 
   useKeyboardNavigation();
-  useRegisterCommands(TERMINAL_COMMANDS);
-  // Deliberately not `newWindow` — AppShell already provides it, and the same
-  // handler registered twice makes which one wins depend on effect-run order.
+  // Deliberately not `newWindow` or `closeTab` — AppShell already provides
+  // those, and the same handler registered twice makes which one wins depend on
+  // effect-run order.
   useProvideCommandUi(
     useMemo(
       () => ({
-        closeTab: () => void handleClose(),
         newTab: () => void handleNewTab(),
         refresh: () => void handleRefresh(),
       }),
-      [handleClose, handleNewTab, handleRefresh],
+      [handleNewTab, handleRefresh],
     ),
   );
   useMouseNavigation();
@@ -246,88 +209,10 @@ export function ReviewView({
   useFileWatcher(comparisonReady);
   useLspClient();
   useScopeReconciliation();
-  useTerminalEvents();
   useReviewTier();
 
-  // Terminal panel: left vertical pane inside the content region, sized via the
-  // horizontal ResizeHandle and persisted in the store.
-  const terminalPanelMode = useReviewStore((s) => s.terminalPanelMode);
-  const terminalsSupported = useReviewStore((s) => s.terminalsSupported);
-  const terminalPanelWidth = useReviewStore((s) => s.terminalPanelWidth);
-  const setTerminalPanelWidth = useReviewStore((s) => s.setTerminalPanelWidth);
-  const terminalDockSide = useReviewStore((s) => s.terminalDockSide);
-  const contentRowRef = useRef<HTMLDivElement | null>(null);
-  const panelMode = terminalsSupported ? terminalPanelMode : "closed";
-  const showTerminalPanel = panelMode !== "closed";
-
-  // ResizeHandle reports a fraction of the content row from its left edge. The
-  // width is always the terminal pane's own width, measured from whichever side
-  // it's docked on — so a right dock measures from the right edge (1 - fraction).
-  const handleTerminalResize = useCallback(
-    (fraction: number) => {
-      const rowWidth = contentRowRef.current?.clientWidth ?? 0;
-      if (rowWidth === 0) return;
-      const sideFraction =
-        terminalDockSide === "right" ? 1 - fraction : fraction;
-      setTerminalPanelWidth(Math.round(sideFraction * rowWidth));
-    },
-    [setTerminalPanelWidth, terminalDockSide],
-  );
-
-  // The panel's stored width is px, and a width picked on an ultrawide is most
-  // of a laptop screen. Rather than rewrite the stored width — which would lose
-  // it the moment you unplugged — the row is measured and the panel is capped
-  // at a share of it, so it comes back at full size on the display it was
-  // sized for.
-  const [contentRowWidth, setContentRowWidth] = useState(0);
-  useEffect(() => {
-    const row = contentRowRef.current;
-    if (!row) return;
-    const update = rafThrottle(setContentRowWidth);
-    const observer = new ResizeObserver((entries) => {
-      update(entries[0].contentRect.width);
-    });
-    observer.observe(row);
-    setContentRowWidth(row.clientWidth);
-    return () => {
-      observer.disconnect();
-      update.cancel();
-    };
-  }, []);
-  const appliedTerminalWidth = clampPanelWidthPx(
-    terminalPanelWidth,
-    contentRowWidth,
-    TERMINAL_MAX_CONTENT_FRACTION,
-  );
-
-  // Double-click on the divider splits the content region evenly between the
-  // terminal and the diff, and double-clicking again gives the panel its old
-  // width back.
-  const rememberedTerminalWidth = useRef<number | null>(null);
-  const handleTerminalReset = useCallback(() => {
-    const rowWidth = contentRowRef.current?.clientWidth ?? 0;
-    if (rowWidth === 0) return;
-    // Held inside the panel's own bounds so "even" is a width the panel can
-    // actually take — otherwise the toggle would never register as reached.
-    const even = Math.max(
-      TERMINAL_PANEL_WIDTH_MIN,
-      Math.min(TERMINAL_PANEL_WIDTH_MAX, Math.round(rowWidth / 2)),
-    );
-    const { next, remember } = toggleToCanonical(
-      useReviewStore.getState().terminalPanelWidth,
-      even,
-      rememberedTerminalWidth.current,
-      even,
-      1,
-    );
-    rememberedTerminalWidth.current = remember;
-    setTerminalPanelWidth(Math.round(next));
-  }, [setTerminalPanelWidth]);
-
-  // Cmd+` and Cmd+Shift+Enter are the `view.toggleTerminal` and
-  // `view.maximizeTerminal` commands. A second window listener here would not
-  // replace the dispatcher's — preventDefault does not stop a sibling listener
-  // on the same target — so both would fire and the toggle would cancel itself.
+  // The terminal is not here: it docks beside this whole screen from the app
+  // shell (see TerminalDock), so a shell outlives the review it was started in.
 
   // Celebration on 100% reviewed — suppressed when the compared branch is gone
   // so confetti can't fire over the bogus all-deleted diff behind the notice.
@@ -402,111 +287,28 @@ export function ReviewView({
           </>
         )}
 
-        {/* Content region — a resizable terminal pane docked left or right of
-            the diff; docking side is persisted and swappable. The deleted-ref
-            notice replaces the diff when the compared branch no longer exists. */}
-        <main
-          ref={contentRowRef}
-          className="relative flex flex-1 flex-row overflow-hidden bg-surface"
-        >
+        {/* Content region. The deleted-ref notice replaces the diff when the
+            compared branch no longer exists. */}
+        <main className="relative flex flex-1 flex-row overflow-hidden bg-surface">
           {/* Activity island — floats over the top of the content region */}
           {comparison && !compareRefMissing && <ActivityBar />}
-          {(() => {
-            // Closed still occupies the dock edge — as a narrow rail, not
-            // nothing, so there's a way back besides remembering ⌘`.
-            const railed = terminalsSupported && panelMode === "closed";
-            const docked = showTerminalPanel || railed;
-            const dockLeft = docked && terminalDockSide === "left";
-            const dockRight = docked && terminalDockSide === "right";
-            const maximized = panelMode === "maximized";
-            const terminalPane = railed ? (
-              <div className="w-12 shrink-0 overflow-hidden p-2">
-                <TerminalRail />
-              </div>
-            ) : (
-              <div
-                className={`overflow-hidden p-2 ${
-                  maximized
-                    ? `min-w-0 flex-1 ${
-                        terminalDockSide === "left" ? "pr-0" : "pl-0"
-                      }`
-                    : "shrink-0"
-                }`}
-                style={maximized ? undefined : { width: appliedTerminalWidth }}
-              >
-                <TerminalPanel />
-              </div>
-            );
-            // Maximized: the terminal takes the content region, and the diff
-            // collapses to its own rail on the far edge — the same rule in
-            // reverse, so neither pane can ever vanish without a trace.
-            if (maximized) {
-              const diffRail = (
-                <div className="w-12 shrink-0 overflow-hidden p-2">
-                  <DiffRail />
-                </div>
-              );
-              return terminalDockSide === "left" ? (
-                <>
-                  {terminalPane}
-                  {diffRail}
-                </>
+          {/* The diff sits in a rounded, raised card — the same one a terminal
+              pane uses. Its padding is the gutter the terminal dock leaves for
+              it, which is why it is unconditional: this screen doesn't know
+              whether a terminal is beside it, or on which side. */}
+          <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden p-2">
+            <div className="panel-card relative flex min-h-0 flex-1 flex-col overflow-hidden bg-surface">
+              {compareRefMissing ? (
+                <CompareRefDeletedNotice
+                  repoPath={repoPath!}
+                  comparison={comparison!}
+                  missingRefs={missingRefs}
+                />
               ) : (
-                <>
-                  {diffRail}
-                  {terminalPane}
-                </>
-              );
-            }
-
-            // The rail is fixed-width — nothing to drag.
-            const terminalResize = railed ? null : (
-              <ResizeHandle
-                orientation="horizontal"
-                onResize={handleTerminalResize}
-                onReset={handleTerminalReset}
-              />
-            );
-            // The diff sits in the same rounded, raised card as a terminal
-            // pane. The padding on the side facing the terminal is dropped so
-            // the two cards share one gutter instead of stacking two.
-            const diffPane = (
-              <div
-                className={`relative flex min-w-0 flex-1 flex-col overflow-hidden p-2 ${
-                  dockLeft ? "pl-0" : ""
-                } ${dockRight ? "pr-0" : ""}`}
-              >
-                <div className="panel-card relative flex min-h-0 flex-1 flex-col overflow-hidden bg-surface">
-                  {compareRefMissing ? (
-                    <CompareRefDeletedNotice
-                      repoPath={repoPath!}
-                      comparison={comparison!}
-                      missingRefs={missingRefs}
-                    />
-                  ) : (
-                    <ContentArea />
-                  )}
-                </div>
-              </div>
-            );
-            return (
-              <>
-                {dockLeft && (
-                  <>
-                    {terminalPane}
-                    {terminalResize}
-                  </>
-                )}
-                {diffPane}
-                {dockRight && (
-                  <>
-                    {terminalResize}
-                    {terminalPane}
-                  </>
-                )}
-              </>
-            );
-          })()}
+                <ContentArea />
+              )}
+            </div>
+          </div>
         </main>
       </div>
 

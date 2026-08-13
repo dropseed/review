@@ -1,5 +1,4 @@
 import { useReviewStore } from "../../stores";
-import { panelReviewKey } from "../../stores/slices/terminalSlice";
 
 /**
  * Open a terminal in a new tab, in the directory this review is about: its own
@@ -15,26 +14,24 @@ import { panelReviewKey } from "../../stores/slices/terminalSlice";
  */
 export async function openTerminalTab(): Promise<string | null> {
   const store = useReviewStore.getState();
-  const { repoPath, reviewRef, reviewTier, terminalCheckouts } = store;
+  const { repoPath, reviewRef, reviewTier } = store;
   if (!repoPath) return null;
-
-  const reviewKey = panelReviewKey(terminalCheckouts, repoPath, reviewRef);
 
   const worktree =
     reviewTier?.tier === "materialized" ? reviewTier.worktreePath : null;
   if (worktree) {
-    return store.startTerminal(reviewKey, repoPath, worktree, 80, 24);
+    return store.startTerminal(repoPath, worktree, 80, 24);
   }
 
   // No review open (or a repo-level view) — the repo root is the only
   // directory there is.
   if (!reviewRef) {
-    return store.startTerminal(reviewKey, repoPath, repoPath, 80, 24);
+    return store.startTerminal(repoPath, repoPath, 80, 24);
   }
 
   // This review has no checkout yet. Materializing asks first, so a declined
   // prompt simply starts no terminal.
   const worktreePath = await store.ensureMaterialized("run a terminal in it");
   if (!worktreePath) return null;
-  return store.startTerminal(reviewKey, repoPath, worktreePath, 80, 24);
+  return store.startTerminal(repoPath, worktreePath, 80, 24);
 }

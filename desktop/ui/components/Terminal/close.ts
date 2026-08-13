@@ -23,19 +23,18 @@ export function focusedTerminalId(): string | null {
   return pane?.dataset.terminalId ?? null;
 }
 
-/** The tab holding the focused pane, with the review key that owns it. */
+/** The tab holding the focused pane. */
 export function focusedTerminalTab(): {
   terminalId: string;
   tab: TerminalTab;
-  reviewKey: string;
 } | null {
   const terminalId = focusedTerminalId();
   if (!terminalId) return null;
-  const found = findTabForTerminal(
-    useReviewStore.getState().terminalTabsByReviewKey,
+  const tab = findTabForTerminal(
+    useReviewStore.getState().terminalTabs,
     terminalId,
   );
-  return found ? { terminalId, ...found } : null;
+  return tab ? { terminalId, tab } : null;
 }
 
 /**
@@ -105,12 +104,19 @@ export async function closeTerminalPane(id: string): Promise<boolean> {
   return true;
 }
 
-/** Close every pane in a tab, asking once for all of them. */
-export async function closeTerminalTab(tab: TerminalTab): Promise<boolean> {
-  const ids = collectLeafIds(tab.root);
+/**
+ * Close a set of panes, asking once for all of them — what a menu verb aimed
+ * at a noun holding several terminals runs.
+ */
+export async function closeTerminals(ids: string[]): Promise<boolean> {
   if (!(await confirmKill(ids))) return false;
   for (const id of ids) teardown(id);
   return true;
+}
+
+/** Close every pane in a tab, asking once for all of them. */
+export async function closeTerminalTab(tab: TerminalTab): Promise<boolean> {
+  return closeTerminals(collectLeafIds(tab.root));
 }
 
 /**

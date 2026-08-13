@@ -1,43 +1,25 @@
-import { type ReactNode } from "react";
+import { type ReactNode, useMemo } from "react";
+import { clsx } from "clsx";
 import { useReviewStore } from "../../stores";
-import { useLiveSessionsByReviewKey } from "../../stores/selectors/terminals";
-import { useSidebarTree } from "../../hooks/useSidebarTree";
-import { terminalSeverity } from "../../stores/slices/terminalSlice";
-import { makeReviewKey } from "../../utils/review-key";
+import { useWorkItems } from "../../stores/selectors/work";
 import {
-  activateSidebarRow,
-  terminalSidebarRows,
-  type SidebarRow,
-} from "../../utils/sidebar-tree";
-import { Rail, RailButton, RailSeparator, RailTab } from "../ui/rail";
+  usePhasesByItemId,
+  useTabGlance,
+  useUnattachedTabIds,
+} from "../../stores/selectors/terminals";
+import { activateWorkItem } from "../../commands/workCommands";
+import { makeReviewKey } from "../../utils/review-key";
+import { Rail, RailButton, RailSeparator, railTooltipSide } from "../ui/rail";
 import { SidebarPanelIcon } from "../ui/icons";
+import { SimpleTooltip, RICH_TOOLTIP_CLASS } from "../ui/tooltip";
 import { AgentUsageRail } from "../AgentUsageIndicator";
-import { PhaseDot } from "./PhaseDot";
-import { basename, phaseSummary } from "./terminal-status-format";
-import { primaryStatus } from "../Terminal/glance";
+import { jumpToTab } from "../Terminal/jump";
 import { TerminalGlanceCard } from "../Terminal/TerminalGlanceCard";
-import type {
-  GlobalReviewSummary,
-  TerminalStatus,
-  ViewerPr,
-} from "../../types";
-
-interface SidebarRailProps {
-  onExpand: () => void;
-  onActivateReview: (review: GlobalReviewSummary) => void;
-  onActivateLocalBranch: (
-    repoPath: string,
-    branch: string,
-    defaultBranch: string,
-  ) => void;
-  /**
-   * Threaded through for completeness rather than reachability: the rail shows
-   * only rows with a shell running in them, and a PR with nothing checked out
-   * can't host one. Passing it keeps `activateSidebarRow` exhaustive, so a new
-   * row kind is a compile error here rather than a silent dead click.
-   */
-  onActivateOpenPr: (pr: ViewerPr) => void;
-}
+import { PhaseDot } from "./PhaseDot";
+import { phaseTextClass } from "./terminal-status-format";
+import { useWorkContext } from "./work-context";
+import { describeWorkItem, type WorkContext } from "./work-status";
+import type { TerminalPhase, WorkItem } from "../../types";
 
 /**
  * The sidebar's collapsed state — the same rule the terminal panel follows:
@@ -45,67 +27,17 @@ interface SidebarRailProps {
  * drop the sidebar to zero width and float a lone toggle over the content,
  * which read as a stray button in dead space.
  *
- * What it carries is what survives losing the labels: every row with a shell
- * running in it. They're jump targets — collapsed is meant to still be a way to
- * move between the things you're working on, not just a button that undoes
- * itself.
+ * What it carries is what survives losing the labels: the work items, as the
+ * numbers they already answer to (⌘1–9 and the number on each card), and below
+ * them every terminal tab no item has claimed. Between the two, nothing that
+ * is running is more than one click away — which is what collapsed has to keep
+ * being, or it is just a button that undoes itself.
  */
-export function SidebarRail({
-  onExpand,
-  onActivateReview,
-  onActivateLocalBranch,
-  onActivateOpenPr,
-}: SidebarRailProps): ReactNode {
-  const tree = useSidebarTree();
-  const terminalStatuses = useReviewStore((s) => s.terminalStatuses);
-  const activeReviewKey = useReviewStore((s) => s.activeReviewKey);
-  const liveSessions = useLiveSessionsByReviewKey();
-
-  // "Has a shell running in it" is already a liveness reason the tree
-  // computed — asking it again here would be a second copy of the rule.
-  const busyRows = terminalSidebarRows(tree);
-
-  const activeKey = activeReviewKey
-    ? makeReviewKey(activeReviewKey.repoPath, activeReviewKey.ref)
-    : null;
-
-  const activate = (row: SidebarRow): void =>
-    activateSidebarRow(row, {
-      onActivateReview,
-      onActivateLocalBranch,
-      onActivateOpenPr,
-    });
-
-  const renderRow = (row: SidebarRow): ReactNode => {
-    const ids = liveSessions[row.reviewKey] ?? [];
-    const statuses = ids
-      .map((id) => terminalStatuses[id])
-      .filter((s): s is TerminalStatus => s != null);
-    const phase = terminalSeverity(statuses);
-    const label = phase
-      ? `${basename(row.repoPath)} — ${row.ref} · ${ids.length} terminal${
-          ids.length === 1 ? "" : "s"
-        }, ${phaseSummary(phase, statuses)}`
-      : `${basename(row.repoPath)} — ${row.ref}`;
-    // The row's loudest shell, peeked on hover — the collapsed sidebar's way
-    // of answering "what is that dot about" without expanding anything.
-    const primary = primaryStatus(statuses);
-
-    return (
-      <RailTab
-        key={row.reviewKey}
-        text={row.ref}
-        label={label}
-        edge="left"
-        active={row.reviewKey === activeKey}
-        onClick={() => activate(row)}
-        marker={phase ? <PhaseDot phase={phase} /> : undefined}
-        rich={
-          primary ? <TerminalGlanceCard sessionId={primary.id} /> : undefined
-        }
-      />
-    );
-  };
+export function SidebarRail({ onExpand }: { onExpand: () => void }): ReactNode {
+  const items = useWorkItems();
+  const unattached = useUnattachedTabIds();
+  const ctx = useWorkContext();
+  const phasesByItem = usePhasesByItemId();
 
   return (
     <Rail className="w-9 shrink-0 border-r border-edge bg-surface">
@@ -113,10 +45,26 @@ export function SidebarRail({
         <SidebarPanelIcon className="h-3.5 w-3.5" />
       </RailButton>
 
-      {busyRows.length > 0 && <RailSeparator />}
+      {items.length > 0 && <RailSeparator />}
 
       <div className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto scrollbar-thin">
-        {busyRows.map(renderRow)}
+        {items.map((item, index) => (
+          <WorkRailTab
+            key={item.id}
+            item={item}
+            index={index}
+            ctx={ctx}
+            phase={phasesByItem[item.id] ?? null}
+          />
+        ))}
+
+        {items.length > 0 && unattached.length > 0 && (
+          <RailSeparator className="my-0.5" />
+        )}
+
+        {unattached.map((tabId) => (
+          <TerminalRailDot key={tabId} tabId={tabId} />
+        ))}
       </div>
 
       {/* Where the usage rows sit when the sidebar is open — kept at the foot
@@ -124,5 +72,85 @@ export function SidebarRail({
           the kind of thing you want without expanding anything. */}
       <AgentUsageRail edge="left" />
     </Rail>
+  );
+}
+
+/**
+ * One work item, as its position number.
+ *
+ * The number is the item's whole identity here, and it is the same number the
+ * card shows and ⌘N presses — a rotated title would be a second name for a
+ * thing that already has a short one. Colour is the loudest phase among the
+ * item's own terminals, so the strip still says which of them wants a human.
+ */
+function WorkRailTab({
+  item,
+  index,
+  ctx,
+  phase,
+}: {
+  item: WorkItem;
+  index: number;
+  ctx: WorkContext;
+  phase: TerminalPhase | null;
+}): ReactNode {
+  const activeReviewKey = useReviewStore((s) => s.activeReviewKey);
+
+  const status = useMemo(() => describeWorkItem(item, ctx), [item, ctx]);
+
+  const activeKey = activeReviewKey
+    ? makeReviewKey(activeReviewKey.repoPath, activeReviewKey.ref)
+    : null;
+  const active = status.refs.some((ref) => ref.reviewKey === activeKey);
+
+  const label = status.subtitle
+    ? `${index + 1}. ${status.title} — ${status.subtitle}`
+    : `${index + 1}. ${status.title}`;
+
+  return (
+    <SimpleTooltip content={label} side={railTooltipSide("left")}>
+      <button
+        type="button"
+        onClick={() => activateWorkItem(item)}
+        aria-label={label}
+        aria-current={active ? "true" : undefined}
+        className={clsx(
+          "flex h-6 w-6 shrink-0 items-center justify-center rounded",
+          "text-[11px] tabular-nums transition-colors duration-100",
+          active ? "bg-surface-raised" : "hover:bg-fg/[0.08]",
+          phase ? phaseTextClass(phase) : "text-fg-muted",
+        )}
+      >
+        {index + 1}
+      </button>
+    </SimpleTooltip>
+  );
+}
+
+/**
+ * A terminal tab no work item has claimed. It gets a glyph rather than a number
+ * because it has no position to stand for — it is reachable, not ranked.
+ */
+function TerminalRailDot({ tabId }: { tabId: string }): ReactNode {
+  const glance = useTabGlance(tabId);
+  if (!glance) return null;
+  const { severity, allDead, title, primaryId } = glance;
+
+  return (
+    <SimpleTooltip
+      content={<TerminalGlanceCard sessionId={primaryId} />}
+      side={railTooltipSide("left")}
+      contentClassName={RICH_TOOLTIP_CLASS}
+    >
+      <button
+        type="button"
+        onClick={() => jumpToTab(tabId)}
+        aria-label={title}
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded
+                   transition-colors duration-100 hover:bg-fg/[0.08]"
+      >
+        <PhaseDot phase={severity ?? "idle"} dead={allDead} />
+      </button>
+    </SimpleTooltip>
   );
 }

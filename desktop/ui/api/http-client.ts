@@ -48,6 +48,8 @@ import type {
   SymbolDefinition,
   LspServerStatus,
   TrustCategory,
+  WorkItem,
+  WorkRef,
   WorktreeInfo,
   TerminalSessionInfo,
   TerminalStatus,
@@ -70,6 +72,7 @@ export class HttpClient implements ApiClient {
   private repoActivityCallbacks: ((
     payload: RepoActivityChangedPayload,
   ) => void)[] = [];
+  private workChangedCallbacks: (() => void)[] = [];
 
   // ----- Terminal transport (one WebSocket per session) -----
 
@@ -689,6 +692,44 @@ export class HttpClient implements ApiClient {
     await this.post("/api/activity/unregister", { repoPath });
   }
 
+  // ----- Work items -----
+
+  async listWorkItems(): Promise<WorkItem[]> {
+    return this.post("/api/work/list");
+  }
+
+  async addWorkItem(title: string, refs: WorkRef[]): Promise<WorkItem[]> {
+    return this.post("/api/work/add", { title, refs });
+  }
+
+  async removeWorkItem(id: string): Promise<WorkItem[]> {
+    return this.post("/api/work/remove", { id });
+  }
+
+  async moveWorkItem(id: string, position: number): Promise<WorkItem[]> {
+    return this.post("/api/work/move", { id, position });
+  }
+
+  async bindWorkItem(
+    id: string,
+    repoPath: string,
+    ref: string,
+  ): Promise<WorkItem[]> {
+    return this.post("/api/work/bind", { id, repoPath, ref });
+  }
+
+  async unbindWorkItem(
+    id: string,
+    repoPath: string,
+    ref: string,
+  ): Promise<WorkItem[]> {
+    return this.post("/api/work/unbind", { id, repoPath, ref });
+  }
+
+  async renameWorkItem(id: string, title: string): Promise<WorkItem[]> {
+    return this.post("/api/work/rename", { id, title });
+  }
+
   // ----- File watcher -----
 
   async startFileWatcher(repoPath: string): Promise<void> {
@@ -718,6 +759,9 @@ export class HttpClient implements ApiClient {
         payload = { repoPath, changedPaths: [], gitStateChanged: false };
       }
       this.gitChangedCallbacks.forEach((cb) => cb(payload));
+    });
+    this.eventSource.addEventListener("work-changed", () => {
+      this.workChangedCallbacks.forEach((cb) => cb());
     });
     this.eventSource.addEventListener("repo-activity-changed", (e) => {
       const data = (e as MessageEvent).data;
@@ -766,6 +810,21 @@ export class HttpClient implements ApiClient {
     this.repoActivityCallbacks.push(callback);
     return () => {
       this.repoActivityCallbacks = this.repoActivityCallbacks.filter(
+        (cb) => cb !== callback,
+      );
+    };
+  }
+
+  /**
+   * Work-item changes. This stream only exists while a repo watcher is running
+   * and is scoped to that repo, but `work.json` is global and the CLI can edit
+   * it with no repo open at all — `useWorkSync` carries the focus/visibility
+   * backstop that covers what the stream misses, for both transports.
+   */
+  onWorkChanged(callback: () => void): () => void {
+    this.workChangedCallbacks.push(callback);
+    return () => {
+      this.workChangedCallbacks = this.workChangedCallbacks.filter(
         (cb) => cb !== callback,
       );
     };

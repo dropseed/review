@@ -1,13 +1,16 @@
 import { useEffect } from "react";
 import { getApiClient } from "../api";
 import { useReviewStore } from "../stores";
-import { makeReviewKey } from "../utils/review-key";
 import { installTerminalWindowFocus } from "../components/Terminal/window-focus";
 
 /**
- * Mounted once in ReviewView. Probes terminal support, hydrates panel prefs,
- * loads any pre-existing sessions for the repo, and keeps the store's status
- * map fresh via the global status roll-up. Modeled on useFileWatcher.
+ * Mounted once at the app shell — beside the panel it feeds, and for the same
+ * reason: a status stream that unsubscribed when you left the review would
+ * leave the tab strip showing phases from whenever you last had one open.
+ *
+ * Probes terminal support, hydrates panel prefs, loads any pre-existing
+ * sessions, and keeps the store's status map fresh via the global status
+ * roll-up. Modeled on useFileWatcher.
  */
 export function useTerminalEvents(): void {
   const repoPath = useReviewStore((s) => s.repoPath);
@@ -34,15 +37,15 @@ export function useTerminalEvents(): void {
       });
   }, [repoPath]);
 
-  // Load existing sessions for this repo/review and subscribe to the global
-  // status roll-up. Gated on the support flag the probe above set, so we don't
-  // re-probe availability here.
+  // Load the existing sessions and subscribe to the global status roll-up.
+  // Gated on the support flag the probe above set, so we don't re-probe
+  // availability here — and on nothing else: the daemon is global, so a shell
+  // you started is still yours on the home screen, and waiting for a repo
+  // would leave the dock empty until you opened one.
   useEffect(() => {
-    if (!repoPath || !terminalsSupported) return;
+    if (!terminalsSupported) return;
     const client = getApiClient();
     let cancelled = false;
-
-    const reviewKey = makeReviewKey(repoPath, reviewRef ?? "");
 
     // Attention notifications are NOT decided here: per-session subscriptions
     // receive the same status first and write the store through
@@ -53,28 +56,19 @@ export function useTerminalEvents(): void {
       useReviewStore.getState().applyTerminalStatus(status);
     });
 
-    // No repo filter: sidebar rows for *every* repo show terminal badges, so
-    // the session map has to cover all of them. `terminalList()` already
-    // returns everything in one call — asking per repo was N round trips and N
-    // store writes for the same data.
+    // No repo filter: the strip is one list of every terminal there is, and
+    // the sidebar lists them all too. `terminalList()` already returns
+    // everything in one call — asking per repo was N round trips and N store
+    // writes for the same data.
     client
       .terminalList()
       .then((sessions) => {
         if (cancelled) return;
         const store = useReviewStore.getState();
-        // Sessions in this repo are placed in the bucket their checkout owns;
-        // sessions from elsewhere only need to reach the flat maps that badges
-        // read. `reviewKey` is just the fallback for a repo whose checkout
-        // listing hasn't loaded yet.
-        store.ingestTerminalList(
-          sessions.filter((s) => s.repoPath === repoPath),
-          repoPath,
-          reviewKey,
-        );
+        store.ingestTerminalList(sessions);
         for (const session of sessions) {
           store.ensureTerminalSubscription(session.id);
         }
-        store.mergeTerminalSessions(sessions);
       })
       .catch((err) => {
         console.error("[terminal] Failed to load sessions:", err);

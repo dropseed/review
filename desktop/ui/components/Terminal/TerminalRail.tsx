@@ -1,10 +1,6 @@
-import { type ReactNode, useMemo } from "react";
+import { type ReactNode } from "react";
 import { useReviewStore } from "../../stores";
-import {
-  mergeVisibleTabs,
-  panelReviewKey,
-  type TerminalTab,
-} from "../../stores/slices/terminalSlice";
+import type { TerminalTab } from "../../stores/slices/terminalSlice";
 import {
   Rail,
   RailButton,
@@ -22,46 +18,22 @@ import { TerminalGlanceCard } from "./TerminalGlanceCard";
  * behind — the only way back was ⌘`, which you had to already know. This keeps
  * a sliver of the panel on its dock edge instead: a restore control, and every
  * tab turned on its side, so a shell that needs you is still nameable while the
- * diff has the full width. Hovering a tab peeks at its screen — the panel being
- * collapsed doesn't mean flying blind.
+ * diff has the full width. It shows the same one list the open panel does, so
+ * collapsing never hides a terminal. Hovering a tab peeks at its screen — the
+ * panel being collapsed doesn't mean flying blind.
  */
 export function TerminalRail(): ReactNode {
-  const repoPath = useReviewStore((s) => s.repoPath);
-  const reviewRef = useReviewStore((s) => s.reviewRef);
   const terminalSessions = useReviewStore((s) => s.terminalSessions);
   const terminalStatuses = useReviewStore((s) => s.terminalStatuses);
   const terminalExited = useReviewStore((s) => s.terminalExited);
-  const terminalCheckouts = useReviewStore((s) => s.terminalCheckouts);
-  const terminalTabsByReviewKey = useReviewStore(
-    (s) => s.terminalTabsByReviewKey,
-  );
-  const activeTabIdByReviewKey = useReviewStore(
-    (s) => s.activeTabIdByReviewKey,
-  );
+  const tabs = useReviewStore((s) => s.terminalTabs);
+  const activeTabId = useReviewStore((s) => s.activeTabId);
   const terminalDockSide = useReviewStore((s) => s.terminalDockSide);
   const toggleTerminalPanel = useReviewStore((s) => s.toggleTerminalPanel);
   const setActiveTab = useReviewStore((s) => s.setActiveTab);
 
-  const reviewKey = repoPath
-    ? panelReviewKey(terminalCheckouts, repoPath, reviewRef)
-    : "";
-
-  // The same set the open panel would show, so collapsing it doesn't quietly
-  // hide the pinned terminals you kept in view.
-  const tabs = useMemo<TerminalTab[]>(
-    () =>
-      reviewKey
-        ? mergeVisibleTabs(terminalTabsByReviewKey, reviewKey).map((v) => v.tab)
-        : [],
-    [reviewKey, terminalTabsByReviewKey],
-  );
-
-  if (!repoPath) return null;
-
-  const activeTabId = activeTabIdByReviewKey[reviewKey] ?? tabs[0]?.id ?? null;
-
   const showTab = (tab: TerminalTab) => {
-    setActiveTab(reviewKey, tab.id);
+    setActiveTab(tab.id);
     toggleTerminalPanel();
   };
 

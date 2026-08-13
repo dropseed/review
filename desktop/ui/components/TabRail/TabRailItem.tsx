@@ -4,15 +4,21 @@ import type { GlobalReviewSummary, ViewerPr } from "../../types";
 import { useReviewStore } from "../../stores";
 import { PullRequestIcon, WarningIcon } from "../ui/icons";
 import { ChangeBaseMenu } from "./ChangeBaseMenu";
-import { SidebarHideMenuItem } from "./SidebarHideMenuItem";
+import { ButtonActionItems } from "./ActionMenu";
+import { refRowActions, useAddToWork } from "./work-actions";
+import { useWorkRefDrag } from "./work-row-drag";
 import { CheckoutMenuItem } from "./CheckoutMenuItem";
 import { RowStatus } from "./RowStatus";
 import { PrPreviewCard } from "./PrPreviewCard";
 import { SimpleTooltip } from "../ui/tooltip";
-import { ROW_ACTIONS, ROW_LABEL_HOVER_FADE, ROW_STATUS } from "./row-chrome";
+import {
+  activateOnKey,
+  ROW_ACTIONS,
+  ROW_LABEL_HOVER_FADE,
+  ROW_STATUS,
+} from "./row-chrome";
 import { PrBadge } from "./PrBadge";
 import { samePrBadge } from "./pr-format";
-import { useTerminalTabDrop } from "./useTerminalTabDrop";
 
 /**
  * Label a review by its identity (ref) for display. Listing is git-free, so
@@ -89,10 +95,7 @@ export const TabRailItem = memo(function TabRailItem({
   const [showChangeBase, setShowChangeBase] = useState(false);
   const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
   const contextMenuRef = useRef<HTMLDivElement>(null);
-  const { dropClass, dropProps } = useTerminalTabDrop(
-    review.repoPath,
-    review.ref,
-  );
+  const workDragProps = useWorkRefDrag(review.repoPath, review.ref);
 
   const pr = review.githubPr;
   const isPr = pr != null;
@@ -101,6 +104,14 @@ export const TabRailItem = memo(function TabRailItem({
   // colours *that* one rather than adding a second identical shape to the
   // status cluster. Only a review that isn't itself PR-keyed gets the badge.
   const statusPr = isPr ? undefined : openPr;
+
+  const addToWork = useAddToWork(review.repoPath, review.ref);
+  const rowActions = refRowActions({
+    ref: review.ref,
+    addToWork,
+    openPr,
+    onOpen: () => onActivate(review),
+  });
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -149,18 +160,12 @@ export const TabRailItem = memo(function TabRailItem({
       role="button"
       tabIndex={0}
       onClick={() => onActivate(review)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onActivate(review);
-        }
-      }}
+      onKeyDown={activateOnKey(() => onActivate(review))}
       onContextMenu={handleContextMenu}
-      {...dropProps}
+      {...workDragProps}
       className={`group relative w-full text-left px-2.5 py-1 rounded cursor-default
                     transition-colors duration-100
-                    ${isActive ? "bg-fg/[0.05]" : "hover:bg-fg/[0.03]"}
-                    ${dropClass}`}
+                    ${isActive ? "bg-fg/[0.05]" : "hover:bg-fg/[0.03]"}`}
       aria-current={isActive ? "true" : undefined}
       title={titleText}
     >
@@ -294,9 +299,8 @@ export const TabRailItem = memo(function TabRailItem({
                   checkoutPath={review.worktreePath}
                   onDone={() => setShowContextMenu(false)}
                 />
-                <SidebarHideMenuItem
-                  repoPath={review.repoPath}
-                  reviewRef={review.ref}
+                <ButtonActionItems
+                  actions={rowActions}
                   onDone={() => setShowContextMenu(false)}
                 />
               </>

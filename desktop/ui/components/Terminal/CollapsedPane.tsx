@@ -4,6 +4,12 @@ import { useReviewStore } from "../../stores";
 import { PhaseDot } from "../TabRail/PhaseDot";
 import { phaseSummary } from "../TabRail/terminal-status-format";
 import { RICH_TOOLTIP_CLASS, SimpleTooltip } from "../ui/tooltip";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuTrigger,
+} from "../ui/context-menu";
+import { TerminalMenuItems } from "../TabRail/ActionMenu";
 import { sessionTitle } from "./glance";
 import type { SplitDirection } from "./pane-tree";
 import { TerminalGlanceCard } from "./TerminalGlanceCard";
@@ -48,74 +54,87 @@ export function CollapsedPane({
   return (
     // The gutter a pane has, kept so folding one doesn't move the seam between
     // it and its neighbour.
-    <div
-      // A folded pane is still a session, and still the thing occupying this
-      // strip of the panel — so it answers to the same hit test an open pane
-      // does, and a file dropped here reaches its shell (see
-      // useTerminalFileDrop, which unfolds it first).
-      data-terminal-id={id}
-      className="group/bar relative flex h-full w-full p-1.5"
-    >
-      <SimpleTooltip
-        content={
-          dead ? `${title} — exited` : <TerminalGlanceCard sessionId={id} />
-        }
-        side={vertical ? "right" : "top"}
-        contentClassName={dead ? undefined : RICH_TOOLTIP_CLASS}
-      >
-        <button
-          type="button"
-          onClick={onExpand}
-          aria-label={`Show ${title} — ${state}`}
-          aria-expanded={false}
-          className={clsx(
-            "flex items-center gap-1.5 rounded bg-fg/[0.04]",
-            "text-fg-muted transition-colors",
-            "hover:bg-fg/[0.08] hover:text-fg-secondary",
-            // The bar's own thickness — the one size in a split that isn't a
-            // fraction, which is why its flex child doesn't grow.
-            vertical ? "h-full w-5 flex-col py-1" : "h-5 w-full flex-row px-1",
-            // Room kept for the close control at the far end, so the title
-            // truncates short of it rather than running underneath.
-            vertical ? "pb-5" : "pr-5",
-          )}
+    //
+    // Right-click opens the terminal's menu here, unlike an open pane: a folded
+    // one draws no terminal at all, so this is a title bar rather than a
+    // surface the shell is reading the mouse from.
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div
+          // A folded pane is still a session, and still the thing occupying
+          // this strip of the panel — so it answers to the same hit test an
+          // open pane does, and a file dropped here reaches its shell (see
+          // useTerminalFileDrop, which unfolds it first).
+          data-terminal-id={id}
+          className="group/bar relative flex h-full w-full p-1.5"
         >
-          <PhaseDot phase={phase} dead={dead} />
-          <span
-            className={clsx(
-              "truncate text-[11px] leading-none",
-              // Bottom-to-top, the way a tab turned on its side reads — and
-              // what the collapsed rails already look like.
-              vertical
-                ? "min-h-0 [writing-mode:vertical-rl] rotate-180"
-                : "min-w-0",
-            )}
+          <SimpleTooltip
+            content={
+              dead ? `${title} — exited` : <TerminalGlanceCard sessionId={id} />
+            }
+            side={vertical ? "right" : "top"}
+            contentClassName={dead ? undefined : RICH_TOOLTIP_CLASS}
           >
-            {title}
-          </span>
-        </button>
-      </SimpleTooltip>
+            <button
+              type="button"
+              onClick={onExpand}
+              aria-label={`Show ${title} — ${state}`}
+              aria-expanded={false}
+              className={clsx(
+                "flex items-center gap-1.5 rounded bg-fg/[0.04]",
+                "text-fg-muted transition-colors",
+                "hover:bg-fg/[0.08] hover:text-fg-secondary",
+                // The bar's own thickness — the one size in a split that isn't a
+                // fraction, which is why its flex child doesn't grow.
+                vertical
+                  ? "h-full w-5 flex-col py-1"
+                  : "h-5 w-full flex-row px-1",
+                // Room kept for the close control at the far end, so the title
+                // truncates short of it rather than running underneath.
+                vertical ? "pb-5" : "pr-5",
+              )}
+            >
+              <PhaseDot phase={phase} dead={dead} />
+              <span
+                className={clsx(
+                  "truncate text-[11px] leading-none",
+                  // Bottom-to-top, the way a tab turned on its side reads — and
+                  // what the collapsed rails already look like.
+                  vertical
+                    ? "min-h-0 [writing-mode:vertical-rl] rotate-180"
+                    : "min-w-0",
+                )}
+              >
+                {title}
+              </span>
+            </button>
+          </SimpleTooltip>
 
-      {/* A folded pane you've finished with shouldn't have to be unfolded just
+          {/* A folded pane you've finished with shouldn't have to be unfolded just
           to be closed. A sibling of the bar rather than a child: the bar is
           itself a button, and one can't be nested inside another. */}
-      <button
-        type="button"
-        onClick={onClose}
-        aria-label={`Close ${title}`}
-        title={`Close ${title}`}
-        className={clsx(
-          "absolute flex h-4 w-4 items-center justify-center rounded",
-          "text-sm leading-none text-fg-faint opacity-0 transition-opacity",
-          "hover:bg-fg/[0.08] hover:text-fg-secondary",
-          "group-hover/bar:opacity-100 focus-visible:opacity-100",
-          vertical
-            ? "bottom-2 left-1/2 -translate-x-1/2"
-            : "right-2 top-1/2 -translate-y-1/2",
-        )}
-      >
-        ×
-      </button>
-    </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={`Close ${title}`}
+            title={`Close ${title}`}
+            className={clsx(
+              "absolute flex h-4 w-4 items-center justify-center rounded",
+              "text-sm leading-none text-fg-faint opacity-0 transition-opacity",
+              "hover:bg-fg/[0.08] hover:text-fg-secondary",
+              "group-hover/bar:opacity-100 focus-visible:opacity-100",
+              vertical
+                ? "bottom-2 left-1/2 -translate-x-1/2"
+                : "right-2 top-1/2 -translate-y-1/2",
+            )}
+          >
+            ×
+          </button>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <TerminalMenuItems sessionIds={[id]} />
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }

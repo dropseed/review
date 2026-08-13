@@ -1,10 +1,10 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { memo, useCallback } from "react";
 import { useReviewStore } from "../../stores";
 import type { ViewerPr } from "../../types";
-import { openPrRowRef } from "../../utils/sidebar-tree";
 import { RowStatus } from "./RowStatus";
-import { SidebarHideMenuItem } from "./SidebarHideMenuItem";
+import { ActionContextMenu } from "./ActionMenu";
+import { refRowActions, useAddToWork } from "./work-actions";
+import { useWorkRefDrag } from "./work-row-drag";
 import { ROW_STATUS } from "./row-chrome";
 
 interface OpenPrItemProps {
@@ -37,32 +37,14 @@ export const OpenPrItem = memo(function OpenPrItem({
 
   const handleClick = useCallback(() => onActivate(pr), [onActivate, pr]);
 
-  // Context menu, for the one control this row needs: hide. A blocked PR is
-  // live at any age by design, so without a way to park it a PR you have
-  // decided not to act on sits at the top of the sidebar forever.
-  const [showContextMenu, setShowContextMenu] = useState(false);
-  const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
-  const contextMenuRef = useRef<HTMLDivElement>(null);
-
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    setContextMenuPos({ x: e.clientX, y: e.clientY });
-    setShowContextMenu(true);
-  }, []);
-
-  useEffect(() => {
-    if (!showContextMenu) return;
-    const handleOutsideClick = (e: MouseEvent) => {
-      if (
-        contextMenuRef.current &&
-        !contextMenuRef.current.contains(e.target as Node)
-      ) {
-        setShowContextMenu(false);
-      }
-    };
-    document.addEventListener("mousedown", handleOutsideClick);
-    return () => document.removeEventListener("mousedown", handleOutsideClick);
-  }, [showContextMenu]);
+  const workDragProps = useWorkRefDrag(repoPath, pr.headRefName);
+  const addToWork = useAddToWork(repoPath, pr.headRefName);
+  const actions = refRowActions({
+    ref: pr.headRefName,
+    addToWork,
+    openPr: pr,
+    onOpen: handleClick,
+  });
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -75,13 +57,13 @@ export const OpenPrItem = memo(function OpenPrItem({
   );
 
   return (
-    <>
+    <ActionContextMenu actions={actions}>
       <div
         role="button"
         tabIndex={0}
         onClick={handleClick}
         onKeyDown={handleKeyDown}
-        onContextMenu={handleContextMenu}
+        {...workDragProps}
         className={`group relative w-full text-left px-2.5 py-1 rounded cursor-default
                   transition-colors duration-100
                   ${isActive ? "bg-fg/[0.04]" : "hover:bg-fg/[0.03]"}`}
@@ -106,24 +88,6 @@ export const OpenPrItem = memo(function OpenPrItem({
           </span>
         </div>
       </div>
-
-      {showContextMenu &&
-        createPortal(
-          <div
-            ref={contextMenuRef}
-            className="fixed z-50 min-w-[160px] rounded-lg border border-edge-default bg-surface-raised/90 backdrop-blur-xl py-1 shadow-xl"
-            style={{ left: contextMenuPos.x, top: contextMenuPos.y }}
-          >
-            {/* Hidden by PR number, the key the tree gives this row — hiding it
-                by head branch would take every PR on that branch with it. */}
-            <SidebarHideMenuItem
-              repoPath={repoPath}
-              reviewRef={openPrRowRef(pr)}
-              onDone={() => setShowContextMenu(false)}
-            />
-          </div>,
-          document.body,
-        )}
-    </>
+    </ActionContextMenu>
   );
 });

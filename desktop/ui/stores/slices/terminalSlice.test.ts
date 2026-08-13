@@ -5,12 +5,10 @@ import {
   applyTerminalExit,
   addTerminalToState,
   removeTerminalFromState,
-  ingestTerminalList,
+  mergeSessionList,
   selectSessionsByHomeKey,
-  selectLiveSessionsByReviewKey,
   sessionCheckout,
   terminalSeverity,
-  activeFallback,
   addTabForTerminal,
   splitTabForTerminal,
   movePaneInTab,
@@ -24,16 +22,18 @@ import {
   buildCheckoutIndex,
   sessionReviewKey,
   isOrphanedSession,
-  rehomeTabs,
-  mergeVisibleTabs,
-  reorderVisibleTabs,
-  resolveActiveTabIds,
+  resolveActiveTabId,
   createTerminalSlice,
   TERMINAL_PANEL_WIDTH_DEFAULT,
   sessionHomeKey,
   reachableKey,
-  moveTabToKey,
-  moveTerminalsToKey,
+  migrateTabAttachments,
+  mostRecentTabId,
+  selectTabsByItemId,
+  selectUnattachedTabIds,
+  tabSessionIds,
+  itemHome,
+  terminalDockPresent,
 } from "./terminalSlice";
 import {
   collectLeafIds,
@@ -85,6 +85,7 @@ function branch(
     name,
     isCurrent: false,
     commitsAhead: 0,
+    unpushedCommits: 0,
     hasWorkingTreeChanges: false,
     lastCommitDate: "",
     lastCommitMessage: "",
@@ -100,8 +101,6 @@ interface TestState {
   terminalSessions: Record<string, TerminalSessionInfo>;
   terminalStatuses: Record<string, TerminalStatus>;
   terminalExited: Record<string, number | null>;
-  terminalIdsByReviewKey: Record<string, string[]>;
-  activeTerminalIdByReviewKey: Record<string, string | null>;
   freshTerminalIds: string[];
 }
 
@@ -110,8 +109,6 @@ function emptyState(): TestState {
     terminalSessions: {},
     terminalStatuses: {},
     terminalExited: {},
-    terminalIdsByReviewKey: {},
-    activeTerminalIdByReviewKey: {},
     freshTerminalIds: [],
   };
 }
@@ -147,36 +144,14 @@ describe("terminalSlice reducers", () => {
     ).toBe(false);
   });
 
-  it("addTerminalToState groups by review key and makes the new one active", () => {
+  it("addTerminalToState records the session, its status and its freshness", () => {
     let state = { ...emptyState() };
-    state = {
-      ...state,
-      ...addTerminalToState(state, session("a", "/r"), "k1"),
-    };
-    state = {
-      ...state,
-      ...addTerminalToState(state, session("b", "/r"), "k1"),
-    };
+    state = { ...state, ...addTerminalToState(state, session("a", "/r")) };
+    state = { ...state, ...addTerminalToState(state, session("b", "/r")) };
 
-    expect(state.terminalIdsByReviewKey["k1"]).toEqual(["a", "b"]);
-    expect(state.activeTerminalIdByReviewKey["k1"]).toBe("b");
     expect(state.terminalSessions["a"].repoPath).toBe("/r");
     expect(state.terminalStatuses["b"]).toBeDefined();
     expect(state.freshTerminalIds).toEqual(["a", "b"]);
-  });
-
-  it("keeps separate buckets per review key", () => {
-    let state = { ...emptyState() };
-    state = {
-      ...state,
-      ...addTerminalToState(state, session("a", "/r"), "k1"),
-    };
-    state = {
-      ...state,
-      ...addTerminalToState(state, session("b", "/r"), "k2"),
-    };
-    expect(state.terminalIdsByReviewKey["k1"]).toEqual(["a"]);
-    expect(state.terminalIdsByReviewKey["k2"]).toEqual(["b"]);
   });
 
   it("applyTerminalExit records the exit code and idles the status", () => {
@@ -191,110 +166,36 @@ describe("terminalSlice reducers", () => {
     expect(state.terminalStatuses["a"].lastExitCode).toBe(1);
   });
 
-  it("removeTerminalFromState falls the active id back to a survivor", () => {
+  it("removeTerminalFromState drops the session from every map", () => {
     let state = { ...emptyState() };
-    state = {
-      ...state,
-      ...addTerminalToState(state, session("a", "/r"), "k1"),
-    };
-    state = {
-      ...state,
-      ...addTerminalToState(state, session("b", "/r"), "k1"),
-    };
-    // active is "b"; removing it falls back to "a"
+    state = { ...state, ...addTerminalToState(state, session("a", "/r")) };
+    state = { ...state, ...addTerminalToState(state, session("b", "/r")) };
     state = { ...state, ...removeTerminalFromState(state, "b") };
-    expect(state.terminalIdsByReviewKey["k1"]).toEqual(["a"]);
-    expect(state.activeTerminalIdByReviewKey["k1"]).toBe("a");
     expect(state.terminalSessions["b"]).toBeUndefined();
+    expect(state.terminalStatuses["b"]).toBeUndefined();
+    expect(state.freshTerminalIds).toEqual(["a"]);
+    expect(state.terminalSessions["a"]).toBeDefined();
   });
 
-  it("removeTerminalFromState nulls the active id when the bucket empties", () => {
+  it("mergeSessionList keeps a live status over the list's snapshot", () => {
     let state = { ...emptyState() };
     state = {
       ...state,
-      ...addTerminalToState(state, session("a", "/r"), "k1"),
+      ...applyTerminalStatus(state, status("a", "needs_attention")),
     };
-    state = { ...state, ...removeTerminalFromState(state, "a") };
-    expect(state.terminalIdsByReviewKey["k1"]).toEqual([]);
-    expect(state.activeTerminalIdByReviewKey["k1"]).toBeNull();
+    const next = mergeSessionList(state, [session("a", "/r")]);
+    // The list carries an idle status; the pushed one we already hold is newer.
+    expect(next.terminalStatuses!["a"].phase).toBe("needs_attention");
+    expect(next.terminalSessions!["a"]).toBeDefined();
   });
 
-  it("ingestTerminalList rebuilds the bucket and session maps", () => {
-    const state = emptyState();
-    const next = ingestTerminalList(
-      state,
-      [session("a", "/r"), session("b", "/r")],
-      "/r",
-      () => "k1",
-    );
-    expect(next.terminalIdsByReviewKey!["k1"]).toEqual(["a", "b"]);
-    expect(Object.keys(next.terminalSessions!)).toEqual(["a", "b"]);
-    expect(next.activeTerminalIdByReviewKey!["k1"]).toBe("a");
-  });
-
-  it("ingestTerminalList preserves a still-present active id", () => {
+  it("mergeSessionList leaves sessions the list doesn't mention alone", () => {
+    // A session started in this window since the list was fetched still has a
+    // title, a phase and a row.
     let state = { ...emptyState() };
-    state = {
-      ...state,
-      ...addTerminalToState(state, session("a", "/r"), "k1"),
-    };
-    state = {
-      ...state,
-      ...addTerminalToState(state, session("b", "/r"), "k1"),
-    };
-    // active is "b"; re-ingesting both should keep "b" active, not reset to "a"
-    const next = ingestTerminalList(
-      state,
-      [session("a", "/r"), session("b", "/r")],
-      "/r",
-      () => "k1",
-    );
-    expect(next.activeTerminalIdByReviewKey!["k1"]).toBe("b");
-  });
-
-  it("ingestTerminalList prunes sessions the list dropped from the bucket", () => {
-    let state = { ...emptyState() };
-    state = {
-      ...state,
-      ...addTerminalToState(state, session("a", "/r"), "k1"),
-    };
-    state = {
-      ...state,
-      ...addTerminalToState(state, session("b", "/r"), "k1"),
-    };
-    const next = ingestTerminalList(
-      state,
-      [session("a", "/r")],
-      "/r",
-      () => "k1",
-    );
-    expect(next.terminalIdsByReviewKey!["k1"]).toEqual(["a"]);
-  });
-
-  it("ingestTerminalList re-places a session whose bucket changed", () => {
-    let state = { ...emptyState() };
-    state = {
-      ...state,
-      ...addTerminalToState(state, session("a", "/r"), "stale"),
-    };
-    const next = ingestTerminalList(
-      state,
-      [session("a", "/r")],
-      "/r",
-      () => "owner",
-    );
-    expect(next.terminalIdsByReviewKey!["stale"]).toEqual([]);
-    expect(next.terminalIdsByReviewKey!["owner"]).toEqual(["a"]);
-  });
-
-  it("ingestTerminalList leaves another repo's sessions in place", () => {
-    let state = { ...emptyState() };
-    state = {
-      ...state,
-      ...addTerminalToState(state, session("other", "/elsewhere"), "k2"),
-    };
-    const next = ingestTerminalList(state, [], "/r", () => "k1");
-    expect(next.terminalIdsByReviewKey!["k2"]).toEqual(["other"]);
+    state = { ...state, ...addTerminalToState(state, session("new", "/r")) };
+    const next = mergeSessionList(state, [session("old", "/r")]);
+    expect(Object.keys(next.terminalSessions!).sort()).toEqual(["new", "old"]);
   });
 });
 
@@ -315,21 +216,17 @@ describe("selectSessionsByHomeKey", () => {
     },
   ]);
 
-  function grouped(
-    state: TestState,
-    homes: Record<string, string> = {},
-  ): Record<string, string[]> {
+  function grouped(state: TestState): Record<string, string[]> {
     return selectSessionsByHomeKey({
       terminalSessions: state.terminalSessions,
       terminalCheckouts: INDEX,
-      terminalHomes: homes,
     });
   }
 
   function withSessions(...sessions: TerminalSessionInfo[]): TestState {
     let state = { ...emptyState() };
     for (const s of sessions) {
-      state = { ...state, ...addTerminalToState(state, s, "k1") };
+      state = { ...state, ...addTerminalToState(state, s) };
     }
     return state;
   }
@@ -356,20 +253,6 @@ describe("selectSessionsByHomeKey", () => {
     expect(grouped(state)["/r:idle"]).toBeUndefined();
   });
 
-  it("counts a homed session on the row it was dropped on, not its directory", () => {
-    const state = withSessions(
-      session("a", "/r", { cwd: "/r/.worktrees/feature" }),
-    );
-    // The shell stays in the worktree; the badge has to follow the tab or the
-    // two disagree about where the terminal is.
-    expect(grouped(state, { a: "/r:main" })).toEqual({ "/r:main": ["a"] });
-  });
-
-  it("shows a homed session on a row with no checkout of its own", () => {
-    const state = withSessions(session("a", "/r", { cwd: "/r" }));
-    expect(grouped(state, { a: "/r:idle" })["/r:idle"]).toEqual(["a"]);
-  });
-
   it("keeps each repo's sessions under its own keys", () => {
     const state = withSessions(
       session("a", "/r", { cwd: "/r" }),
@@ -378,24 +261,10 @@ describe("selectSessionsByHomeKey", () => {
     expect(grouped(state)["/r:main"]).toEqual(["a"]);
     expect(grouped(state)["/other:"]).toEqual(["b"]);
   });
-
-  it("keeps an exited session on its row, unlike the live-only grouping", () => {
-    const state = withSessions(session("a", "/r", { cwd: "/r" }));
-    expect(grouped(state)["/r:main"]).toEqual(["a"]);
-    expect(
-      selectLiveSessionsByReviewKey({
-        terminalSessions: state.terminalSessions,
-        terminalExited: { a: 0 },
-        terminalCheckouts: INDEX,
-        terminalHomes: {},
-      }),
-    ).toEqual({});
-  });
 });
 
 describe("sessionHomeKey", () => {
   // Built rather than hand-written, so the shape can't drift from the builder.
-  // A second repo, because homes can be dragged across projects.
   const index = buildCheckoutIndex([
     {
       repoPath: "/r",
@@ -416,87 +285,108 @@ describe("sessionHomeKey", () => {
     },
   ]);
 
-  it("prefers a stored home over the session's directory", () => {
+  it("places a session by the checkout its directory falls in", () => {
     expect(
-      sessionHomeKey(
-        index,
-        { a: "/r:main" },
-        session("a", "/r", { cwd: "/wt/feature" }),
-        "",
-      ),
-    ).toBe("/r:main");
-  });
-
-  it("falls back to the cwd's checkout for a session it has never seen", () => {
-    expect(
-      sessionHomeKey(index, {}, session("a", "/r", { cwd: "/wt/feature" }), ""),
+      sessionHomeKey(index, session("a", "/r", { cwd: "/wt/feature" }), ""),
     ).toBe("/r:feature");
   });
 
-  it("rescues a stored home whose row is gone to the repo root", () => {
+  it("adopts a session whose checkout is gone into the repo root", () => {
     expect(
-      sessionHomeKey(index, { a: "/r:deleted" }, session("a", "/r"), ""),
+      sessionHomeKey(index, session("a", "/r", { cwd: "/gone" }), ""),
     ).toBe("/r:main");
   });
 
-  it("leaves a home alone for a repo nothing is known about", () => {
+  it("leaves a key alone for a repo nothing is known about", () => {
     // An empty index is not evidence the row went away.
     expect(reachableKey({}, "/other", "/other:branch")).toBe("/other:branch");
   });
-
-  it("keeps a home dropped on another repo's row", () => {
-    expect(
-      sessionHomeKey(index, { a: "/other:dev" }, session("a", "/r"), ""),
-    ).toBe("/other:dev");
-  });
-
-  it("rescues a cross-repo home whose row is gone to the session's own root", () => {
-    expect(
-      sessionHomeKey(index, { a: "/other:deleted" }, session("a", "/r"), ""),
-    ).toBe("/r:main");
-  });
 });
 
-describe("moveTabToKey / moveTerminalsToKey", () => {
-  it("moves the tab and makes it the target's active tab", () => {
-    const state = {
-      terminalTabsByReviewKey: {
-        A: [makeTab("tabA", "a"), makeTab("tabB", "b")],
-        B: [],
-      },
-      activeTabIdByReviewKey: { A: "tabA", B: null },
-    };
-    const next = moveTabToKey(state, "tabA", "B");
-    expect(next.terminalTabsByReviewKey!.A.map((t) => t.id)).toEqual(["tabB"]);
-    expect(next.terminalTabsByReviewKey!.B.map((t) => t.id)).toEqual(["tabA"]);
-    expect(next.activeTabIdByReviewKey!.B).toBe("tabA");
-    // The bucket it left re-picks rather than pointing at a tab it lost.
-    expect(next.activeTabIdByReviewKey!.A).toBe("tabB");
+describe("work item attachments", () => {
+  const items = [
+    {
+      id: "one",
+      title: "",
+      refs: [{ repoPath: "/r", ref: "feature" }],
+      createdAt: "",
+    },
+    { id: "two", title: "A note", refs: [], createdAt: "" },
+  ];
+
+  it("converts a legacy review-key attachment onto the item that bound that ref", () => {
+    // The row a terminal was dragged onto, and the item that has since taken
+    // that ref, are the same work — so the attachment carries over.
+    expect(migrateTabAttachments({ a: "/r:feature" }, [], items)).toEqual({
+      a: "item:one",
+    });
   });
 
-  it("does nothing for a tab already in the target bucket", () => {
-    const state = {
-      terminalTabsByReviewKey: { A: [makeTab("tabA", "a")] },
-      activeTabIdByReviewKey: { A: "tabA" },
-    };
-    expect(moveTabToKey(state, "tabA", "A")).toEqual({});
+  it("drops a legacy attachment no item claims", () => {
+    // Unattached is a state the band can show; an attachment pointing at
+    // nothing is not.
+    expect(migrateTabAttachments({ a: "/r:other" }, [], items)).toEqual({});
   });
 
-  it("moves the sessions between flat buckets too", () => {
-    let state = { ...emptyState() };
-    state = {
-      ...state,
-      ...addTerminalToState(state, session("a", "/r"), "A"),
+  it("keeps attachments to items that still exist, drops the rest", () => {
+    expect(
+      migrateTabAttachments({ a: "item:two", b: "item:gone" }, [], items),
+    ).toEqual({ a: "item:two" });
+  });
+
+  it("is idempotent, so it can run whenever the item list changes", () => {
+    const once = migrateTabAttachments({ a: "/r:feature" }, [], items);
+    expect(migrateTabAttachments(once, [], items)).toEqual(once);
+  });
+
+  it("gives a tab whose panes disagree its first answer, under every key", () => {
+    // Only reachable from the session-keyed map older installs wrote, where
+    // each pane carried an attachment of its own.
+    const tab = {
+      ...makeTab("a", "a"),
+      root: splitLeaf(leaf("a"), "a", "b", "row"),
     };
-    state = {
-      ...state,
-      ...addTerminalToState(state, session("b", "/r"), "A"),
+    expect(
+      migrateTabAttachments({ b: "item:two", a: "item:one" }, [tab], items),
+    ).toEqual({ a: "item:one", b: "item:one" });
+  });
+
+  it("clears every key of a tab whose attachment no item claims", () => {
+    const tab = {
+      ...makeTab("a", "a"),
+      root: splitLeaf(leaf("a"), "a", "b", "row"),
     };
-    const next = moveTerminalsToKey(state, ["a"], "B");
-    expect(next.terminalIdsByReviewKey!.A).toEqual(["b"]);
-    expect(next.terminalIdsByReviewKey!.B).toEqual(["a"]);
-    expect(next.activeTerminalIdByReviewKey!.A).toBe("b");
-    expect(next.activeTerminalIdByReviewKey!.B).toBe("a");
+    expect(
+      migrateTabAttachments({ a: "item:gone", b: "item:gone" }, [tab], items),
+    ).toEqual({});
+  });
+
+  it("groups tabs by the item holding them", () => {
+    const state = {
+      terminalTabs: [
+        makeTab("t1", "a"),
+        makeTab("t2", "b"),
+        makeTab("t3", "c"),
+      ],
+      terminalAttachments: { t1: itemHome("one"), t2: itemHome("one") },
+    };
+    expect(selectTabsByItemId(state)).toEqual({ one: ["t1", "t2"] });
+    // t3 has no attachment at all, and one naming a removed item counts as
+    // none — otherwise its terminal would be attached to nothing and shown
+    // nowhere.
+    expect(selectUnattachedTabIds(state, new Set(["one"]))).toEqual(["t3"]);
+    expect(selectUnattachedTabIds(state, new Set())).toEqual([
+      "t1",
+      "t2",
+      "t3",
+    ]);
+  });
+
+  it("mostRecentTabId picks the last activated, or the first never activated", () => {
+    expect(mostRecentTabId(["a", "b"], { a: 1, b: 2 })).toBe("b");
+    expect(mostRecentTabId(["a", "b"], { b: 2 })).toBe("b");
+    expect(mostRecentTabId(["a", "b"], {})).toBe("a");
+    expect(mostRecentTabId([], {})).toBeNull();
   });
 });
 
@@ -543,46 +433,48 @@ describe("terminalSeverity", () => {
   });
 });
 
-describe("activeFallback", () => {
-  it("keeps the current id when still present", () => {
-    expect(activeFallback(["a", "b"], "b")).toBe("b");
+describe("resolveActiveTabId", () => {
+  it("keeps the current tab when it is still there", () => {
+    expect(resolveActiveTabId([makeTab("a", "a")], "a")).toBe("a");
   });
-  it("falls back to the first id when current is gone", () => {
-    expect(activeFallback(["a", "b"], "z")).toBe("a");
+  it("re-picks the first when the remembered tab is gone", () => {
+    expect(resolveActiveTabId([makeTab("b", "b")], "a")).toBe("b");
   });
-  it("returns null for an empty list", () => {
-    expect(activeFallback([], "a")).toBeNull();
+  it("nulls when there are no tabs left", () => {
+    expect(resolveActiveTabId([], "a")).toBeNull();
   });
 });
 
 interface TabTestState {
-  terminalTabsByReviewKey: Record<string, TerminalTab[]>;
-  activeTabIdByReviewKey: Record<string, string | null>;
+  terminalTabs: TerminalTab[];
+  activeTabId: string | null;
 }
 
 function emptyTabState(): TabTestState {
-  return { terminalTabsByReviewKey: {}, activeTabIdByReviewKey: {} };
+  return { terminalTabs: [], activeTabId: null };
 }
 
 describe("tab reducers", () => {
   it("addTabForTerminal appends a single-leaf tab and makes it active", () => {
     let state = { ...emptyTabState() };
-    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
-    state = { ...state, ...addTabForTerminal(state, "b", "k1", "tabB") };
-    const tabs = state.terminalTabsByReviewKey["k1"];
-    expect(tabs.map((t) => t.id)).toEqual(["tabA", "tabB"]);
-    expect(tabs[0].root).toEqual({ type: "leaf", terminalId: "a" });
-    expect(state.activeTabIdByReviewKey["k1"]).toBe("tabB");
+    state = { ...state, ...addTabForTerminal(state, "a", "tabA") };
+    state = { ...state, ...addTabForTerminal(state, "b", "tabB") };
+    expect(state.terminalTabs.map((t) => t.id)).toEqual(["tabA", "tabB"]);
+    expect(state.terminalTabs[0].root).toEqual({
+      type: "leaf",
+      terminalId: "a",
+    });
+    expect(state.activeTabId).toBe("tabB");
   });
 
   it("splitTabForTerminal splits the target leaf and focuses the new one", () => {
     let state = { ...emptyTabState() };
-    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
+    state = { ...state, ...addTabForTerminal(state, "a", "tabA") };
     state = {
       ...state,
       ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
     };
-    const tab = state.terminalTabsByReviewKey["k1"][0];
+    const tab = state.terminalTabs[0];
     expect(tab.root).toEqual({
       type: "split",
       direction: "row",
@@ -595,54 +487,63 @@ describe("tab reducers", () => {
     expect(tab.focused).toBe("b");
   });
 
+  it("tabSessionIds answers with the whole tab, or the terminal itself", () => {
+    let state = { ...emptyTabState() };
+    state = { ...state, ...addTabForTerminal(state, "a", "tabA") };
+    state = {
+      ...state,
+      ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
+    };
+    expect(tabSessionIds(state.terminalTabs, "b")).toEqual(["a", "b"]);
+    expect(tabSessionIds(state.terminalTabs, "zz")).toEqual(["zz"]);
+  });
+
   it("removeTerminalFromTabs collapses a split and re-picks focus", () => {
     let state = { ...emptyTabState() };
-    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
+    state = { ...state, ...addTabForTerminal(state, "a", "tabA") };
     state = {
       ...state,
       ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
     };
     // focused is "b"; removing it collapses to leaf "a" and re-focuses "a"
     state = { ...state, ...removeTerminalFromTabs(state, "b") };
-    const tab = state.terminalTabsByReviewKey["k1"][0];
+    const tab = state.terminalTabs[0];
     expect(tab.root).toEqual({ type: "leaf", terminalId: "a" });
     expect(tab.focused).toBe("a");
   });
 
   it("removeTerminalFromTabs drops the tab and re-picks active when last pane closes", () => {
     let state = { ...emptyTabState() };
-    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
-    state = { ...state, ...addTabForTerminal(state, "b", "k1", "tabB") };
+    state = { ...state, ...addTabForTerminal(state, "a", "tabA") };
+    state = { ...state, ...addTabForTerminal(state, "b", "tabB") };
     // active is tabB; closing its only pane drops the tab, active → tabA
     state = { ...state, ...removeTerminalFromTabs(state, "b") };
-    expect(state.terminalTabsByReviewKey["k1"].map((t) => t.id)).toEqual([
-      "tabA",
-    ]);
-    expect(state.activeTabIdByReviewKey["k1"]).toBe("tabA");
+    expect(state.terminalTabs.map((t) => t.id)).toEqual(["tabA"]);
+    expect(state.activeTabId).toBe("tabA");
   });
 
   it("setFocusedInTab updates the focused leaf", () => {
     let state = { ...emptyTabState() };
-    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
+    state = { ...state, ...addTabForTerminal(state, "a", "tabA") };
     state = {
       ...state,
       ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
     };
-    state = { ...state, ...setFocusedInTab(state, "k1", "tabA", "a") };
-    expect(state.terminalTabsByReviewKey["k1"][0].focused).toBe("a");
+    state = { ...state, ...setFocusedInTab(state, "tabA", "a") };
+    expect(state.terminalTabs[0].focused).toBe("a");
   });
 
   it("movePaneInTab rearranges the tab's panes and focuses the moved one", () => {
     let state = { ...emptyTabState() };
-    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
+    state = { ...state, ...addTabForTerminal(state, "a", "tabA") };
     state = {
       ...state,
       ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
     };
-    state = { ...state, ...setFocusedInTab(state, "k1", "tabA", "b") };
+    state = { ...state, ...setFocusedInTab(state, "tabA", "b") };
     // Drop "b" against the top of "a": the row becomes a column, b first.
     state = { ...state, ...movePaneInTab(state, "tabA", "b", "a", "top") };
-    const tab = state.terminalTabsByReviewKey["k1"][0];
+    const tab = state.terminalTabs[0];
     expect(tab.root).toEqual({
       type: "split",
       direction: "column",
@@ -655,30 +556,9 @@ describe("tab reducers", () => {
     expect(tab.focused).toBe("b");
   });
 
-  it("movePaneInTab finds a pinned tab in the bucket that owns it", () => {
-    let state = { ...emptyTabState() };
-    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA", true) };
-    state = {
-      ...state,
-      ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
-    };
-    // Dragged from a strip showing it as a visitor — the store is told only the
-    // tab id, and has to write back into k1.
-    state = { ...state, ...movePaneInTab(state, "tabA", "b", "a", "left") };
-    expect(state.terminalTabsByReviewKey["k1"][0].root).toEqual({
-      type: "split",
-      direction: "row",
-      children: [
-        { type: "leaf", terminalId: "b" },
-        { type: "leaf", terminalId: "a" },
-      ],
-      sizes: [0.5, 0.5],
-    });
-  });
-
   it("movePaneInTab writes nothing for an unknown tab or a drop that changes nothing", () => {
     let state = { ...emptyTabState() };
-    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
+    state = { ...state, ...addTabForTerminal(state, "a", "tabA") };
     state = {
       ...state,
       ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
@@ -690,53 +570,34 @@ describe("tab reducers", () => {
 
   it("movePaneToTabTree moves a pane into another tab and shows it there", () => {
     let state = { ...emptyTabState() };
-    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
+    state = { ...state, ...addTabForTerminal(state, "a", "tabA") };
     state = {
       ...state,
       ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
     };
-    state = { ...state, ...addTabForTerminal(state, "c", "k1", "tabB") };
+    state = { ...state, ...addTabForTerminal(state, "c", "tabB") };
     state = { ...state, ...movePaneToTabTree(state, "b", "tabB") };
 
-    const [tabA, tabB] = state.terminalTabsByReviewKey["k1"];
+    const [tabA, tabB] = state.terminalTabs;
     expect(tabA.root).toEqual({ type: "leaf", terminalId: "a" });
     expect(tabA.focused).toBe("a");
     expect(collectLeafIds(tabB.root)).toEqual(["c", "b"]);
     expect(tabB.focused).toBe("b");
-    expect(state.activeTabIdByReviewKey["k1"]).toBe("tabB");
+    expect(state.activeTabId).toBe("tabB");
   });
 
   it("movePaneToTabTree drops the tab a single pane left behind", () => {
     let state = { ...emptyTabState() };
-    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
-    state = { ...state, ...addTabForTerminal(state, "b", "k1", "tabB") };
+    state = { ...state, ...addTabForTerminal(state, "a", "tabA") };
+    state = { ...state, ...addTabForTerminal(state, "b", "tabB") };
     state = { ...state, ...movePaneToTabTree(state, "a", "tabB") };
-    const tabs = state.terminalTabsByReviewKey["k1"];
-    expect(tabs.map((t) => t.id)).toEqual(["tabB"]);
-    expect(collectLeafIds(tabs[0].root)).toEqual(["b", "a"]);
-  });
-
-  it("movePaneToTabTree moves a pane into a tab in another bucket", () => {
-    let state = { ...emptyTabState() };
-    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
-    state = {
-      ...state,
-      ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
-    };
-    state = { ...state, ...addTabForTerminal(state, "c", "k2", "tabB") };
-    state = { ...state, ...movePaneToTabTree(state, "b", "tabB") };
-    expect(collectLeafIds(state.terminalTabsByReviewKey["k1"][0].root)).toEqual(
-      ["a"],
-    );
-    expect(collectLeafIds(state.terminalTabsByReviewKey["k2"][0].root)).toEqual(
-      ["c", "b"],
-    );
-    expect(state.activeTabIdByReviewKey["k2"]).toBe("tabB");
+    expect(state.terminalTabs.map((t) => t.id)).toEqual(["tabB"]);
+    expect(collectLeafIds(state.terminalTabs[0].root)).toEqual(["b", "a"]);
   });
 
   it("movePaneToTabTree writes nothing for an unknown tab or the pane's own", () => {
     let state = { ...emptyTabState() };
-    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
+    state = { ...state, ...addTabForTerminal(state, "a", "tabA") };
     state = {
       ...state,
       ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
@@ -748,51 +609,46 @@ describe("tab reducers", () => {
 
   it("extractPaneToTab pulls a pane into its own tab beside the old one", () => {
     let state = { ...emptyTabState() };
-    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
+    state = { ...state, ...addTabForTerminal(state, "a", "tabA") };
     state = {
       ...state,
       ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
     };
-    state = { ...state, ...addTabForTerminal(state, "c", "k1", "tabB") };
+    state = { ...state, ...addTabForTerminal(state, "c", "tabB") };
     state = { ...state, ...extractPaneToTab(state, "b", "tabNew") };
 
-    const tabs = state.terminalTabsByReviewKey["k1"];
-    expect(tabs.map((t) => t.id)).toEqual(["tabA", "tabNew", "tabB"]);
-    expect(tabs[0].root).toEqual({ type: "leaf", terminalId: "a" });
-    expect(tabs[1].root).toEqual({ type: "leaf", terminalId: "b" });
-    expect(state.activeTabIdByReviewKey["k1"]).toBe("tabNew");
-  });
-
-  it("extractPaneToTab carries the old tab's pinning onto the new one", () => {
-    let state = { ...emptyTabState() };
-    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA", true) };
-    state = {
-      ...state,
-      ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
-    };
-    state = { ...state, ...extractPaneToTab(state, "b", "tabNew") };
-    expect(state.terminalTabsByReviewKey["k1"][1].pinned).toBe(true);
+    expect(state.terminalTabs.map((t) => t.id)).toEqual([
+      "tabA",
+      "tabNew",
+      "tabB",
+    ]);
+    expect(state.terminalTabs[0].root).toEqual({
+      type: "leaf",
+      terminalId: "a",
+    });
+    expect(state.terminalTabs[1].root).toEqual({
+      type: "leaf",
+      terminalId: "b",
+    });
+    expect(state.activeTabId).toBe("tabNew");
   });
 
   it("extractPaneToTab declines a pane that is already its tab's only one", () => {
     let state = { ...emptyTabState() };
-    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
+    state = { ...state, ...addTabForTerminal(state, "a", "tabA") };
     expect(extractPaneToTab(state, "a", "tabNew")).toEqual({});
     expect(extractPaneToTab(state, "zz", "tabNew")).toEqual({});
   });
 
   it("resizeSplitInTab sets the root split's sizes", () => {
     let state = { ...emptyTabState() };
-    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
+    state = { ...state, ...addTabForTerminal(state, "a", "tabA") };
     state = {
       ...state,
       ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
     };
-    state = {
-      ...state,
-      ...resizeSplitInTab(state, "k1", "tabA", [], [0.7, 0.3]),
-    };
-    const root = state.terminalTabsByReviewKey["k1"][0].root;
+    state = { ...state, ...resizeSplitInTab(state, "tabA", [], [0.7, 0.3]) };
+    const root = state.terminalTabs[0].root;
     if (root.type !== "split") throw new Error("expected split");
     expect(root.sizes).toEqual([0.7, 0.3]);
   });
@@ -800,34 +656,25 @@ describe("tab reducers", () => {
   /** A tab with panes "a" and "b" side by side, focused on "b". */
   function splitTab() {
     let state = { ...emptyTabState() };
-    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
-    return {
-      ...state,
-      ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
-    };
+    state = { ...state, ...addTabForTerminal(state, "a", "tabA") };
+    return { ...state, ...splitTabForTerminal(state, "tabA", "a", "b", "row") };
   }
 
   it("setPaneCollapsedInTab folds a pane and hands focus to one still showing", () => {
     let state = splitTab();
-    expect(state.terminalTabsByReviewKey["k1"][0].focused).toBe("b");
-    state = {
-      ...state,
-      ...setPaneCollapsedInTab(state, "k1", "tabA", "b", true),
-    };
-    const tab = state.terminalTabsByReviewKey["k1"][0];
+    expect(state.terminalTabs[0].focused).toBe("b");
+    state = { ...state, ...setPaneCollapsedInTab(state, "tabA", "b", true) };
+    const tab = state.terminalTabs[0];
     expect(expandedLeafIds(tab.root)).toEqual(["a"]);
     expect(tab.focused).toBe("a");
   });
 
   it("setPaneCollapsedInTab declines to fold the last pane showing", () => {
     let state = splitTab();
-    state = {
-      ...state,
-      ...setPaneCollapsedInTab(state, "k1", "tabA", "b", true),
-    };
-    expect(setPaneCollapsedInTab(state, "k1", "tabA", "a", true)).toEqual({});
-    expect(setPaneCollapsedInTab(state, "k1", "tabA", "zz", true)).toEqual({});
-    expect(setPaneCollapsedInTab(state, "k1", "nope", "a", true)).toEqual({});
+    state = { ...state, ...setPaneCollapsedInTab(state, "tabA", "b", true) };
+    expect(setPaneCollapsedInTab(state, "tabA", "a", true)).toEqual({});
+    expect(setPaneCollapsedInTab(state, "tabA", "zz", true)).toEqual({});
+    expect(setPaneCollapsedInTab(state, "nope", "a", true)).toEqual({});
   });
 
   it("re-picks focus onto a pane still showing when one closes", () => {
@@ -835,7 +682,7 @@ describe("tab reducers", () => {
     // "b" must not hand focus back to the folded "a" — the tab would draw only
     // "c", dimmed, with the keyboard pointed at a title bar.
     let state = { ...emptyTabState() };
-    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
+    state = { ...state, ...addTabForTerminal(state, "a", "tabA") };
     state = {
       ...state,
       ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
@@ -844,51 +691,36 @@ describe("tab reducers", () => {
       ...state,
       ...splitTabForTerminal(state, "tabA", "b", "c", "row"),
     };
-    state = { ...state, ...setFocusedInTab(state, "k1", "tabA", "a") };
-    state = {
-      ...state,
-      ...setPaneCollapsedInTab(state, "k1", "tabA", "a", true),
-    };
-    const focusedAfterFold = state.terminalTabsByReviewKey["k1"][0].focused;
+    state = { ...state, ...setFocusedInTab(state, "tabA", "a") };
+    state = { ...state, ...setPaneCollapsedInTab(state, "tabA", "a", true) };
+    const focusedAfterFold = state.terminalTabs[0].focused;
     state = { ...state, ...removeTerminalFromTabs(state, focusedAfterFold) };
 
-    const tab = state.terminalTabsByReviewKey["k1"][0];
+    const tab = state.terminalTabs[0];
     expect(expandedLeafIds(tab.root)).toContain(tab.focused);
   });
 
   it("setFocusedInTab unfolds the pane it focuses", () => {
     let state = splitTab();
-    state = {
-      ...state,
-      ...setPaneCollapsedInTab(state, "k1", "tabA", "b", true),
-    };
-    state = { ...state, ...setFocusedInTab(state, "k1", "tabA", "b") };
-    const tab = state.terminalTabsByReviewKey["k1"][0];
+    state = { ...state, ...setPaneCollapsedInTab(state, "tabA", "b", true) };
+    state = { ...state, ...setFocusedInTab(state, "tabA", "b") };
+    const tab = state.terminalTabs[0];
     expect(tab.focused).toBe("b");
     expect(expandedLeafIds(tab.root)).toEqual(["a", "b"]);
   });
 
   it("folding leaves the split's sizes intact so unfolding restores them", () => {
     let state = splitTab();
-    state = {
-      ...state,
-      ...resizeSplitInTab(state, "k1", "tabA", [], [0.7, 0.3]),
-    };
-    state = {
-      ...state,
-      ...setPaneCollapsedInTab(state, "k1", "tabA", "b", true),
-    };
-    state = {
-      ...state,
-      ...setPaneCollapsedInTab(state, "k1", "tabA", "b", false),
-    };
-    const root = state.terminalTabsByReviewKey["k1"][0].root;
+    state = { ...state, ...resizeSplitInTab(state, "tabA", [], [0.7, 0.3]) };
+    state = { ...state, ...setPaneCollapsedInTab(state, "tabA", "b", true) };
+    state = { ...state, ...setPaneCollapsedInTab(state, "tabA", "b", false) };
+    const root = state.terminalTabs[0].root;
     if (root.type !== "split") throw new Error("expected split");
     expect(root.sizes).toEqual([0.7, 0.3]);
   });
 });
 
-describe("panel preferences (dock side + width persistence)", () => {
+describe("slice actions", () => {
   // Minimal harness: drive the real slice actions with an in-memory store and a
   // stub storage that records writes, so we can assert persistence.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -917,401 +749,236 @@ describe("panel preferences (dock side + width persistence)", () => {
     return { get, set, writes, reads };
   }
 
+  const startingClient = (started: TerminalSessionInfo) => ({
+    terminalStart: async () => started,
+    onTerminalStatus: () => () => {},
+    onTerminalExit: () => () => {},
+    terminalWrite: async () => {},
+  });
+
   it("defaults dock side to left and width to the default", () => {
     const { get } = makeSlice();
     expect(get().terminalDockSide).toBe("left");
     expect(get().terminalPanelWidth).toBe(TERMINAL_PANEL_WIDTH_DEFAULT);
   });
 
-  it("toggleTabPinned flips the flag and persists the tab's terminal ids", () => {
-    const { get, set, writes } = makeSlice();
-    set({ terminalTabsByReviewKey: { home: [makeTab("tabA", "a")] } });
-
-    get().toggleTabPinned("tabA");
-    expect(get().terminalTabsByReviewKey.home[0].pinned).toBe(true);
-    // Persisted by session id, which is what survives a reload.
-    expect(writes.terminalPinnedIds).toEqual(["a"]);
-
-    get().toggleTabPinned("tabA");
-    expect(get().terminalTabsByReviewKey.home[0].pinned).toBe(false);
-    expect(writes.terminalPinnedIds).toEqual([]);
-  });
-
-  it("unpinning a visiting tab re-points the viewing key at a tab it can see", () => {
-    const { get, set } = makeSlice();
-    set({
-      terminalTabsByReviewKey: {
-        A: [{ ...makeTab("tabA", "a"), pinned: true }],
-        B: [makeTab("tabB", "b")],
-      },
-      // Viewing B and looking at A's pinned tab, which visits every key.
-      activeTabIdByReviewKey: { A: "tabA", B: "tabA" },
-      terminalPinnedIds: ["a"],
-    });
-
-    get().toggleTabPinned("tabA");
-
-    // B can no longer see tabA, so leaving it aimed there would render no
-    // active tab at all — a blank panel with every tab body hidden.
-    expect(get().activeTabIdByReviewKey.B).toBe("tabB");
-    expect(get().activeTabIdByReviewKey.A).toBe("tabA");
-  });
-
-  it("unpinning nulls a viewing key that has no tabs of its own", () => {
-    const { get, set } = makeSlice();
-    set({
-      terminalTabsByReviewKey: {
-        A: [{ ...makeTab("tabA", "a"), pinned: true }],
-        B: [],
-      },
-      activeTabIdByReviewKey: { B: "tabA" },
-      terminalPinnedIds: ["a"],
-    });
-    get().toggleTabPinned("tabA");
-    expect(get().activeTabIdByReviewKey.B).toBeNull();
-  });
-
-  it("killTerminal prunes the closed session from the persisted pinned ids", async () => {
-    const { get, set, writes } = makeSlice({
-      terminalKill: async () => undefined,
-    });
-    set({
-      terminalTabsByReviewKey: { k1: [{ ...makeTab("a", "a"), pinned: true }] },
-      terminalPinnedIds: ["a", "b"],
-    });
-
-    await get().killTerminal("a");
-
-    // The session is gone for good — its pin must not outlive it in the store.
-    expect(get().terminalPinnedIds).toEqual(["b"]);
-    expect(writes.terminalPinnedIds).toEqual(["b"]);
-  });
-
-  it("removeTerminal prunes the dead session from the persisted pinned ids", () => {
-    const { get, set, writes } = makeSlice();
-    set({
-      terminalTabsByReviewKey: { k1: [{ ...makeTab("a", "a"), pinned: true }] },
-      terminalPinnedIds: ["a"],
-    });
-
-    get().removeTerminal("a");
-
-    expect(get().terminalPinnedIds).toEqual([]);
-    expect(writes.terminalPinnedIds).toEqual([]);
-  });
-
-  it("teardown of an unpinned session doesn't rewrite the pinned ids", () => {
-    const { get, set, writes } = makeSlice();
-    set({
-      terminalTabsByReviewKey: { k1: [makeTab("a", "a")] },
-      terminalPinnedIds: ["b"],
-    });
-    get().removeTerminal("a");
-    expect(get().terminalPinnedIds).toEqual(["b"]);
-    expect(writes.terminalPinnedIds).toBeUndefined();
-  });
-
-  it("pinning leaves the tab in its home bucket", () => {
-    const { get, set } = makeSlice();
-    set({ terminalTabsByReviewKey: { home: [makeTab("tabA", "a")] } });
-    get().toggleTabPinned("tabA");
-    expect(Object.keys(get().terminalTabsByReviewKey)).toEqual(["home"]);
-  });
-
-  it("hydrateTerminalPrefs restores the persisted pinned ids", async () => {
-    const { get, reads } = makeSlice();
-    reads.terminalPinnedIds = ["a"];
-    await get().hydrateTerminalPrefs();
-    expect(get().terminalPinnedIds).toEqual(["a"]);
-  });
-
-  it("setTerminalCheckouts adopts a tab whose worktree disappeared", () => {
-    const { get, set } = makeSlice();
-    const cwd = "/home/.review/worktrees/r/feature";
-    set({
-      terminalSessions: { a: session("a", "/r", { cwd }) },
-      terminalTabsByReviewKey: { "/r:feature": [makeTab("tabA", "a")] },
-    });
-    // Listing no longer has the feature worktree.
-    get().setTerminalCheckouts(
-      [
-        {
-          repoPath: "/r",
-          repoName: "r",
-          defaultBranch: "main",
-          branches: [branch("main", { isCurrent: true })],
-          recentRemoteBranches: [],
-        },
-      ],
-      [],
-    );
-    expect(
-      get().terminalTabsByReviewKey["/r:main"].map((t: TerminalTab) => t.id),
-    ).toEqual(["tabA"]);
-    expect(get().terminalTabsByReviewKey["/r:feature"]).toEqual([]);
-  });
-
-  /** The listing for a repo whose main working tree is on `current`. */
-  function activityOn(current: string, others: string[] = []) {
-    return [
-      {
-        repoPath: "/r",
-        repoName: "r",
-        defaultBranch: "main",
-        branches: [
-          branch(current, { isCurrent: true }),
-          ...others.map((name) => branch(name)),
-        ],
-        recentRemoteBranches: [],
-      },
-    ];
-  }
-
-  it("startTerminal records where the session started", async () => {
-    const started = session("a", "/r", { cwd: "/r" });
-    const { get } = makeSlice({
-      terminalStart: async () => started,
-      onTerminalStatus: () => () => {},
-      onTerminalExit: () => () => {},
-      terminalWrite: async () => {},
-    });
-    get().setTerminalCheckouts(activityOn("main"), []);
-
-    await get().startTerminal("/r:main", "/r", "/r", 80, 24);
-
-    expect(get().terminalHomes.a).toBe("/r:main");
-  });
-
-  it("a checkout in the main working tree leaves its terminals where they are", () => {
-    const { get, set } = makeSlice();
-    set({
-      terminalSessions: { a: session("a", "/r", { cwd: "/r" }) },
-      terminalTabsByReviewKey: { "/r:main": [makeTab("tabA", "a")] },
-      terminalHomes: { a: "/r:main" },
-    });
-
-    // `git checkout feature` in the repo root: the row owning that directory
-    // is now feature's. The shell is genuinely on feature now, but it was
-    // opened as a main terminal and nobody asked for it to move.
-    get().setTerminalCheckouts(activityOn("feature", ["main"]), []);
-
-    expect(
-      get().terminalTabsByReviewKey["/r:main"].map((t: TerminalTab) => t.id),
-    ).toEqual(["tabA"]);
-    expect(get().terminalTabsByReviewKey["/r:feature"] ?? []).toEqual([]);
-  });
-
-  it("shows a tab whose row is gone at the repo root, without forgetting its home", () => {
-    const { get, set } = makeSlice();
-    set({
-      terminalSessions: {
-        a: session("a", "/r", { cwd: "/wt/feature" }),
-      },
-      terminalTabsByReviewKey: { "/r:feature": [makeTab("tabA", "a")] },
-      terminalHomes: { a: "/r:feature" },
-    });
-
-    // The feature row is gone — a bucket no view reads, so the tab would
-    // vanish while its shell kept running.
-    get().setTerminalCheckouts(activityOn("main"), []);
-    expect(
-      get().terminalTabsByReviewKey["/r:main"].map((t: TerminalTab) => t.id),
-    ).toEqual(["tabA"]);
-    // Rendered elsewhere, not re-homed: the stored answer is still feature.
-    expect(get().terminalHomes.a).toBe("/r:feature");
-
-    // ...so it goes home when the row comes back.
-    get().setTerminalCheckouts(activityOn("main", ["feature"]), []);
-    expect(
-      get().terminalTabsByReviewKey["/r:feature"].map((t: TerminalTab) => t.id),
-    ).toEqual(["tabA"]);
-  });
-
-  it("setTabHome moves the tab, its sessions, and the persisted home", () => {
-    const { get, set, writes } = makeSlice();
-    set({
-      terminalSessions: { a: session("a", "/r", { cwd: "/r" }) },
-      terminalTabsByReviewKey: { "/r:main": [makeTab("tabA", "a")] },
-      terminalIdsByReviewKey: { "/r:main": ["a"] },
-      activeTerminalIdByReviewKey: { "/r:main": "a" },
-      activeTabIdByReviewKey: { "/r:main": "tabA" },
-      terminalHomes: { a: "/r:main" },
-    });
-
-    get().setTabHome("tabA", "/r:feature");
-
-    expect(get().terminalHomes.a).toBe("/r:feature");
-    expect(writes.terminalHomes).toEqual({ a: "/r:feature" });
-    expect(
-      get().terminalTabsByReviewKey["/r:feature"].map((t: TerminalTab) => t.id),
-    ).toEqual(["tabA"]);
-    expect(get().terminalTabsByReviewKey["/r:main"]).toEqual([]);
-    expect(get().terminalIdsByReviewKey["/r:feature"]).toEqual(["a"]);
-    expect(get().terminalIdsByReviewKey["/r:main"]).toEqual([]);
-    // The row you dropped it on shows it when you get there.
-    expect(get().activeTabIdByReviewKey["/r:feature"]).toBe("tabA");
-  });
-
-  it("setTerminalHome takes the dragged row's whole tab with it", () => {
-    const { get, set, writes } = makeSlice();
-    set({
-      terminalSessions: {
-        a: session("a", "/r", { cwd: "/r" }),
-        b: session("b", "/r", { cwd: "/r" }),
-      },
-      terminalTabsByReviewKey: {
-        "/r:main": [
-          {
-            ...makeTab("tabA", "a"),
-            root: splitLeaf(leaf("a"), "a", "b", "row"),
-          },
-        ],
-      },
-      terminalIdsByReviewKey: { "/r:main": ["a", "b"] },
-      terminalHomes: { a: "/r:main", b: "/r:main" },
-    });
-
-    get().setTerminalHome("a", "/r:feature");
-
-    // Panes in a tab can't live in different buckets, so dragging one row moves
-    // the tab — the same move dragging the tab itself would make.
-    expect(
-      get().terminalTabsByReviewKey["/r:feature"].map((t: TerminalTab) => t.id),
-    ).toEqual(["tabA"]);
-    expect(get().terminalHomes).toEqual({ a: "/r:feature", b: "/r:feature" });
-    expect(writes.terminalHomes).toEqual({ a: "/r:feature", b: "/r:feature" });
-  });
-
-  it("setTerminalHome re-homes a session this window has no tab for", () => {
-    const { get, set, writes } = makeSlice();
-    // Another repo's session, merged in so its sidebar row can be drawn.
-    set({
-      terminalSessions: { a: session("a", "/other", { cwd: "/other" }) },
-      terminalIdsByReviewKey: {},
-      terminalTabsByReviewKey: {},
-    });
-
-    get().setTerminalHome("a", "/r:feature");
-
-    expect(get().terminalHomes.a).toBe("/r:feature");
-    expect(writes.terminalHomes).toEqual({ a: "/r:feature" });
-    expect(get().terminalIdsByReviewKey["/r:feature"]).toEqual(["a"]);
-  });
-
-  it("adoptTerminalTab moves a stranded tab onto the row that was clicked", () => {
-    const { get, set, writes } = makeSlice();
-    set({
-      terminalSessions: { a: session("a", "/r", { cwd: "/wt/feature" }) },
-      terminalTabsByReviewKey: { "/r:feature": [makeTab("tabA", "a")] },
-      terminalIdsByReviewKey: { "/r:feature": ["a"] },
-      terminalHomes: { a: "/r:feature" },
-    });
-
-    // The feature row is gone, so the sidebar draws this under the repo root.
-    get().adoptTerminalTab("a", "/r:main");
-
-    expect(
-      get().terminalTabsByReviewKey["/r:main"].map((t: TerminalTab) => t.id),
-    ).toEqual(["tabA"]);
-    expect(get().activeTabIdByReviewKey["/r:main"]).toBe("tabA");
-    expect(get().terminalIdsByReviewKey["/r:main"]).toEqual(["a"]);
-    // A rescue, not the user saying where it belongs — so it still goes home
-    // if the row comes back.
-    expect(get().terminalHomes.a).toBe("/r:feature");
-    expect(writes.terminalHomes).toBeUndefined();
-  });
-
-  it("adoptTerminalTab gives a session with no tab here one to be shown in", () => {
-    const { get, set } = makeSlice();
-    set({
-      terminalSessions: { a: session("a", "/r", { cwd: "/r" }) },
-      terminalTabsByReviewKey: {},
-      terminalIdsByReviewKey: {},
-      freshTerminalIds: [],
-    });
-
-    get().adoptTerminalTab("a", "/r:main");
-
-    // Tab id = session id, the same one a reattach derives, so the next ingest
-    // keeps this tab rather than adding a second one for the same shell.
-    expect(
-      get().terminalTabsByReviewKey["/r:main"].map((t: TerminalTab) => t.id),
-    ).toEqual(["a"]);
-    expect(get().activeTabIdByReviewKey["/r:main"]).toBe("a");
-    // Not a new session: it has scrollback worth replaying when its pane mounts.
-    expect(get().freshTerminalIds).toEqual([]);
-  });
-
-  it("adoptTerminalTab leaves a pinned tab in its own bucket", () => {
-    const { get, set } = makeSlice();
-    set({
-      terminalSessions: { a: session("a", "/r", { cwd: "/r" }) },
-      terminalTabsByReviewKey: {
-        "/r:feature": [{ ...makeTab("tabA", "a"), pinned: true }],
-      },
-    });
-
-    get().adoptTerminalTab("a", "/r:main");
-
-    // A pinned tab is in every strip already; moving it would relocate a tab
-    // the user can see either way.
-    expect(
-      get().terminalTabsByReviewKey["/r:feature"].map((t: TerminalTab) => t.id),
-    ).toEqual(["tabA"]);
-    expect(get().terminalTabsByReviewKey["/r:main"]).toBeUndefined();
-  });
-
-  it("a re-homed tab survives the next checkout listing", () => {
-    const { get, set } = makeSlice();
-    set({
-      terminalSessions: {
-        a: session("a", "/r", { cwd: "/wt/feature" }),
-      },
-      terminalTabsByReviewKey: { "/r:feature": [makeTab("tabA", "a")] },
-      terminalHomes: { a: "/r:feature" },
-    });
-
-    get().setTabHome("tabA", "/r:main");
-    get().setTerminalCheckouts(
-      [
-        {
-          repoPath: "/r",
-          repoName: "r",
-          defaultBranch: "main",
-          branches: [
-            branch("main", { isCurrent: true }),
-            branch("feature", { worktreePath: "/wt/feature" }),
-          ],
-          recentRemoteBranches: [],
-        },
-      ],
-      [],
+  it("startTerminal opens a tab attached to nothing", async () => {
+    const { get } = makeSlice(
+      startingClient(session("a", "/r", { cwd: "/r" })),
     );
 
-    // Its cwd still says feature; the drag says main, and the drag wins.
-    expect(
-      get().terminalTabsByReviewKey["/r:main"].map((t: TerminalTab) => t.id),
-    ).toEqual(["tabA"]);
+    await get().startTerminal("/r", "/r", 80, 24);
+
+    expect(get().terminalTabs).toHaveLength(1);
+    expect(get().activeTabId).toBe(get().terminalTabs[0].id);
+    // A new shell is one more live thing until the user says what it's for —
+    // the "Unclaimed terminals" band is where it shows up meanwhile.
+    expect(get().terminalAttachments).toEqual({});
   });
 
-  it("removeTerminal prunes the dead session's persisted home", () => {
+  it("attachTerminalToItem records the tab and every session in it", () => {
     const { get, set, writes } = makeSlice();
     set({
-      terminalTabsByReviewKey: { "/r:main": [makeTab("a", "a")] },
-      terminalHomes: { a: "/r:main", b: "/r:other" },
+      terminalTabs: [
+        {
+          ...makeTab("tabA", "a"),
+          root: splitLeaf(leaf("a"), "a", "b", "row"),
+        },
+      ],
+    });
+
+    get().attachTerminalToItem("b", "one");
+
+    // Keyed by tab, and written under each session too: a reload rebuilds one
+    // tab per session, taking the session's id as the tab id, and each of those
+    // fragments has to find the attachment its old tab had.
+    expect(get().terminalAttachments).toEqual({
+      tabA: "item:one",
+      a: "item:one",
+      b: "item:one",
+    });
+    expect(writes.terminalAttachments).toEqual(get().terminalAttachments);
+
+    get().detachTerminal("a");
+    expect(get().terminalAttachments).toEqual({});
+  });
+
+  it("selectItemTab shows the item's most recently used tab", () => {
+    const { get, set } = makeSlice();
+    set({
+      terminalTabs: [
+        makeTab("t1", "a"),
+        makeTab("t2", "b"),
+        makeTab("t3", "c"),
+      ],
+      terminalAttachments: { t1: itemHome("one"), t2: itemHome("one") },
+    });
+
+    get().setActiveTab("t1");
+    get().setActiveTab("t2");
+    get().setActiveTab("t3");
+
+    get().selectItemTab("one");
+    expect(get().activeTabId).toBe("t2");
+    // The other item's tab is still in the strip — selecting never hides one.
+    expect(get().terminalTabs.map((t: TerminalTab) => t.id)).toEqual([
+      "t1",
+      "t2",
+      "t3",
+    ]);
+  });
+
+  it("selectItemTab leaves the strip alone for an item with no terminals", () => {
+    const { get, set } = makeSlice();
+    set({ terminalTabs: [makeTab("t1", "a")], activeTabId: "t1" });
+    get().selectItemTab("nobody");
+    expect(get().activeTabId).toBe("t1");
+  });
+
+  it("movePaneToTab hands the pane the attachment of the tab it joined", async () => {
+    const { get, set } = makeSlice();
+    set({
+      terminalTabs: [makeTab("tabA", "a"), makeTab("tabB", "b")],
+      terminalAttachments: { tabB: itemHome("one"), b: itemHome("one") },
+    });
+
+    get().movePaneToTab("a", "tabB");
+
+    expect(get().terminalAttachments).toEqual({
+      tabB: "item:one",
+      a: "item:one",
+      b: "item:one",
+    });
+    expect(get().activeTabId).toBe("tabB");
+  });
+
+  it("movePaneToTab drops an attachment the pane arrived with", () => {
+    const { get, set } = makeSlice();
+    set({
+      terminalTabs: [makeTab("tabA", "a"), makeTab("tabB", "b")],
+      terminalAttachments: { tabA: itemHome("one"), a: itemHome("one") },
+    });
+
+    // tabB is unclaimed, and a pane belongs to the tab it is in. tabA was that
+    // pane's only one, so the move emptied it — and a key naming a tab no
+    // window will ever have again would sit in storage forever.
+    get().movePaneToTab("a", "tabB");
+
+    expect(get().terminalAttachments).toEqual({});
+  });
+
+  it("movePaneToNewTab carries the old tab's attachment onto the new one", () => {
+    const { get, set } = makeSlice();
+    set({
+      terminalTabs: [
+        {
+          ...makeTab("tabA", "a"),
+          root: splitLeaf(leaf("a"), "a", "b", "row"),
+        },
+      ],
+      terminalAttachments: {
+        tabA: itemHome("one"),
+        a: itemHome("one"),
+        b: itemHome("one"),
+      },
+    });
+
+    const newTabId = get().movePaneToNewTab("b");
+
+    expect(newTabId).not.toBeNull();
+    expect(get().terminalAttachments[newTabId!]).toBe("item:one");
+    expect(get().activeTabId).toBe(newTabId);
+  });
+
+  it("splitTerminal gives the new pane its tab's attachment", async () => {
+    const { get, set } = makeSlice(
+      startingClient(session("b", "/r", { cwd: "/r" })),
+    );
+    set({
+      terminalSessions: { a: session("a", "/r", { cwd: "/r" }) },
+      terminalTabs: [makeTab("tabA", "a")],
+      terminalAttachments: { tabA: itemHome("one"), a: itemHome("one") },
+    });
+
+    await get().splitTerminal("tabA", "a", "row");
+
+    expect(collectLeafIds(get().terminalTabs[0].root)).toEqual(["a", "b"]);
+    expect(get().terminalAttachments.b).toBe("item:one");
+  });
+
+  it("removeTerminal prunes the dead session's attachment, tab key included", () => {
+    const { get, set, writes } = makeSlice();
+    set({
+      terminalTabs: [makeTab("tabA", "a")],
+      terminalAttachments: {
+        tabA: "item:one",
+        a: "item:one",
+        b: "item:two",
+      },
     });
 
     get().removeTerminal("a");
 
-    expect(get().terminalHomes).toEqual({ b: "/r:other" });
-    expect(writes.terminalHomes).toEqual({ b: "/r:other" });
+    // The tab is gone with its last pane, and its id is window-local — an
+    // entry under it would outlive every window that could ever read it.
+    expect(get().terminalAttachments).toEqual({ b: "item:two" });
+    expect(writes.terminalAttachments).toEqual({ b: "item:two" });
   });
 
-  it("hydrateTerminalPrefs restores the persisted homes", async () => {
+  it("removeTerminal keeps the tab's attachment while other panes remain", () => {
+    const { get, set } = makeSlice();
+    set({
+      terminalTabs: [
+        {
+          ...makeTab("tabA", "a"),
+          root: splitLeaf(leaf("a"), "a", "b", "row"),
+        },
+      ],
+      terminalAttachments: {
+        tabA: "item:one",
+        a: "item:one",
+        b: "item:one",
+      },
+    });
+
+    get().removeTerminal("a");
+
+    expect(get().terminalAttachments).toEqual({
+      tabA: "item:one",
+      b: "item:one",
+    });
+  });
+
+  it("migrateTerminalAttachments writes only when something changed", () => {
+    const { get, set, writes } = makeSlice();
+    set({
+      terminalTabs: [makeTab("t1", "a")],
+      terminalAttachments: { t1: itemHome("one"), a: itemHome("one") },
+    });
+    const items = [{ id: "one", title: "", refs: [], createdAt: "" }];
+
+    get().migrateTerminalAttachments(items);
+    expect(writes.terminalAttachments).toBeUndefined();
+
+    get().migrateTerminalAttachments([]);
+    expect(get().terminalAttachments).toEqual({});
+    expect(writes.terminalAttachments).toEqual({});
+  });
+
+  it("hydrateTerminalPrefs restores the persisted attachments", async () => {
     const { get, reads } = makeSlice();
-    reads.terminalHomes = { a: "/r:feature" };
+    reads.terminalAttachments = { a: "item:one" };
     await get().hydrateTerminalPrefs();
-    expect(get().terminalHomes).toEqual({ a: "/r:feature" });
+    expect(get().terminalAttachments).toEqual({ a: "item:one" });
+  });
+
+  it("hydrateTerminalPrefs reads the pre-tab session-keyed attachments", async () => {
+    // A tab rebuilt from a session takes that session's id, so the old map is
+    // already a valid attachments map.
+    const { get, reads } = makeSlice();
+    reads.terminalHomes = { a: "item:one" };
+    await get().hydrateTerminalPrefs();
+    expect(get().terminalAttachments).toEqual({ a: "item:one" });
   });
 
   it("toggleTerminalDockSide flips the side and persists it", () => {
@@ -1349,74 +1016,44 @@ describe("panel preferences (dock side + width persistence)", () => {
     expect(get().terminalPanelMode).toBe("split");
   });
 
-  it("moveTab reorders a review's tabs and no-ops on an unchanged order", () => {
-    const { get, set } = makeSlice();
-    let state = { ...emptyTabState() };
-    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
-    state = { ...state, ...addTabForTerminal(state, "b", "k1", "tabB") };
-    state = { ...state, ...addTabForTerminal(state, "c", "k1", "tabC") };
-    set({ terminalTabsByReviewKey: state.terminalTabsByReviewKey });
-
-    const before = get().terminalTabsByReviewKey;
-    get().moveTab("k1", 2, 0);
-    expect(
-      get().terminalTabsByReviewKey["k1"].map((t: TerminalTab) => t.id),
-    ).toEqual(["tabC", "tabA", "tabB"]);
-
-    // A drag that ends where it started leaves the map object untouched.
-    const after = get().terminalTabsByReviewKey;
-    expect(after).not.toBe(before);
-    get().moveTab("k1", 1, 1);
-    expect(get().terminalTabsByReviewKey).toBe(after);
-  });
-
-  it("moveTab refuses a drag across the pinned boundary instead of scrambling", () => {
-    const { get, set } = makeSlice();
-    // Renders as [B, A, C] — pinned first — so dragging A onto B is a move the
-    // strip's own sort would immediately undo.
-    set({
-      terminalTabsByReviewKey: {
-        k1: [
-          makeTab("tabA", "a"),
-          { ...makeTab("tabB", "b"), pinned: true },
-          makeTab("tabC", "c"),
-        ],
-      },
-    });
-    const before = get().terminalTabsByReviewKey;
-
-    get().moveTab("k1", 1, 0);
-
-    // Nothing appeared to move, so nothing may have been written — the old
-    // mapping quietly reordered the bucket to [B, A, C], visible only later
-    // when B was unpinned.
-    expect(get().terminalTabsByReviewKey).toBe(before);
-  });
-
-  it("moveTab moves a tab past a pinned neighbour without moving the neighbour", () => {
+  it("moveTab reorders the strip and no-ops on an unchanged order", () => {
     const { get, set } = makeSlice();
     set({
-      terminalTabsByReviewKey: {
-        k1: [
-          makeTab("tabA", "a"),
-          { ...makeTab("tabB", "b"), pinned: true },
-          makeTab("tabC", "c"),
-        ],
-      },
+      terminalTabs: [
+        makeTab("tabA", "a"),
+        makeTab("tabB", "b"),
+        makeTab("tabC", "c"),
+      ],
     });
 
-    // Strip is [B, A, C]; drag A onto C.
-    get().moveTab("k1", 1, 2);
+    get().moveTab(2, 0);
+    expect(get().terminalTabs.map((t: TerminalTab) => t.id)).toEqual([
+      "tabC",
+      "tabA",
+      "tabB",
+    ]);
 
-    // A and C swap the slots they held; B keeps its own.
-    expect(
-      get().terminalTabsByReviewKey["k1"].map((t: TerminalTab) => t.id),
-    ).toEqual(["tabC", "tabB", "tabA"]);
-    expect(
-      mergeVisibleTabs(get().terminalTabsByReviewKey, "k1").map(
-        (v) => v.tab.id,
-      ),
-    ).toEqual(["tabB", "tabC", "tabA"]);
+    // A drag that ends where it started leaves the array untouched.
+    const after = get().terminalTabs;
+    get().moveTab(1, 1);
+    expect(get().terminalTabs).toBe(after);
+  });
+
+  it("setTerminalCheckouts publishes the index", () => {
+    const { get } = makeSlice();
+    get().setTerminalCheckouts(
+      [
+        {
+          repoPath: "/r",
+          repoName: "r",
+          defaultBranch: "main",
+          branches: [branch("main", { isCurrent: true })],
+          recentRemoteBranches: [],
+        },
+      ],
+      [],
+    );
+    expect(get().terminalCheckouts["/r"].rootKey).toBe("/r:main");
   });
 
   it("hiding a maximized panel reopens as a split, not over the diff", () => {
@@ -1431,127 +1068,128 @@ describe("panel preferences (dock side + width persistence)", () => {
     get().toggleTerminalPanel();
     expect(get().terminalPanelMode).toBe("split");
   });
+
+  it("ingestTerminalList takes every repo's sessions into the one strip", () => {
+    const { get } = makeSlice();
+    get().ingestTerminalList([session("a", "/r"), session("z", "/other")]);
+    expect(get().terminalTabs.map((t: TerminalTab) => t.id)).toEqual([
+      "a",
+      "z",
+    ]);
+    expect(Object.keys(get().terminalSessions).sort()).toEqual(["a", "z"]);
+  });
+
+  // The daemon's list never carries exited sessions, but the app keeps them —
+  // an exited pane stays on screen showing its exit code until the user closes
+  // it. Sessions and panes therefore have to leave together.
+  it("ingestTerminalList keeps an exited session's tab across a refresh", () => {
+    const { get } = makeSlice();
+    get().ingestTerminalList([session("a", "/r"), session("b", "/r")]);
+    get().applyTerminalExit({ id: "b", exitCode: 1 });
+
+    get().ingestTerminalList([session("a", "/r")]);
+
+    expect(get().terminalTabs.map((t: TerminalTab) => t.id)).toEqual([
+      "a",
+      "b",
+    ]);
+    expect(get().terminalSessions["b"]).toBeDefined();
+    expect(get().terminalExited["b"]).toBe(1);
+  });
+
+  // A restarted daemon answers the first list with nothing. Wiping the strip
+  // while keeping the sessions left the overview drawing cards that jumped
+  // nowhere and the needs-you hotkey pointing at no tab.
+  it("ingestTerminalList survives a daemon restart answering with []", () => {
+    const { get } = makeSlice();
+    get().ingestTerminalList([session("a", "/r"), session("b", "/r")]);
+
+    get().ingestTerminalList([]);
+
+    expect(get().terminalTabs.map((t: TerminalTab) => t.id)).toEqual([
+      "a",
+      "b",
+    ]);
+    expect(get().activeTabId).toBe("a");
+  });
+
+  // The invariant both of the above rest on, stated directly: nothing outside
+  // an explicit close removes a session, and a close removes its pane too.
+  it("every session the store holds is reachable from some tab", () => {
+    const { get } = makeSlice();
+    get().ingestTerminalList([session("a", "/r"), session("b", "/r")]);
+    get().applyTerminalExit({ id: "b", exitCode: 0 });
+    get().ingestTerminalList([]);
+
+    const placed = new Set(
+      get().terminalTabs.flatMap((t: TerminalTab) => collectLeafIds(t.root)),
+    );
+    for (const id of Object.keys(get().terminalSessions)) {
+      expect(placed.has(id)).toBe(true);
+    }
+
+    get().removeTerminal("b");
+    expect(get().terminalSessions["b"]).toBeUndefined();
+    expect(get().terminalTabs.map((t: TerminalTab) => t.id)).toEqual(["a"]);
+  });
 });
 
 describe("ingestTabs", () => {
-  /** `known` map for the sessions a case declares. */
-  function knownOf(
-    sessions: TerminalSessionInfo[],
-  ): Record<string, TerminalSessionInfo> {
-    return Object.fromEntries(sessions.map((s) => [s.id, s]));
-  }
-
-  const unpinned = () => false;
-
   it("creates a single-leaf tab for each un-placed session (deterministic id)", () => {
-    const sessions = [session("a", "/r"), session("b", "/r")];
-    const next = ingestTabs(
-      emptyTabState(),
-      sessions,
-      knownOf(sessions),
-      "/r",
-      () => "k1",
-      unpinned,
-    );
-    const tabs = next.terminalTabsByReviewKey!["k1"];
-    expect(tabs.map((t) => t.id)).toEqual(["a", "b"]);
-    expect(tabs.map((t) => collectLeafIds(t.root))).toEqual([["a"], ["b"]]);
-    expect(next.activeTabIdByReviewKey!["k1"]).toBe("a");
+    const next = ingestTabs(emptyTabState(), [
+      session("a", "/r"),
+      session("b", "/r"),
+    ]);
+    expect(next.terminalTabs!.map((t) => t.id)).toEqual(["a", "b"]);
+    expect(next.terminalTabs!.map((t) => collectLeafIds(t.root))).toEqual([
+      ["a"],
+      ["b"],
+    ]);
+    expect(next.activeTabId).toBe("a");
   });
 
   it("does not duplicate a session already placed in a tab", () => {
     let state = { ...emptyTabState() };
-    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
+    state = { ...state, ...addTabForTerminal(state, "a", "tabA") };
     state = {
       ...state,
       ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
     };
     // both "a" and "b" already live in tabA; ingesting them adds no new tabs
-    const sessions = [session("a", "/r"), session("b", "/r")];
-    const next = ingestTabs(
-      state,
-      sessions,
-      knownOf(sessions),
-      "/r",
-      () => "k1",
-      unpinned,
-    );
-    expect(next.terminalTabsByReviewKey!["k1"].map((t) => t.id)).toEqual([
-      "tabA",
-    ]);
+    const next = ingestTabs(state, [session("a", "/r"), session("b", "/r")]);
+    expect(next.terminalTabs!.map((t) => t.id)).toEqual(["tabA"]);
   });
 
-  it("prunes leaves whose session vanished from the list", () => {
+  it("prunes panes whose session is not in the set it is given", () => {
     let state = { ...emptyTabState() };
-    state = { ...state, ...addTabForTerminal(state, "a", "k1", "tabA") };
+    state = { ...state, ...addTabForTerminal(state, "a", "tabA") };
     state = {
       ...state,
       ...splitTabForTerminal(state, "tabA", "a", "b", "row"),
     };
-    // "b" is gone from the authoritative list → collapse tabA to leaf "a"
-    const gone = [session("a", "/r"), session("b", "/r")];
-    const next = ingestTabs(
-      state,
-      [session("a", "/r")],
-      knownOf(gone),
-      "/r",
-      () => "k1",
-      unpinned,
-    );
-    const tabs = next.terminalTabsByReviewKey!["k1"];
-    expect(tabs).toHaveLength(1);
-    expect(tabs[0].root).toEqual({ type: "leaf", terminalId: "a" });
+    // "b" is not a known session → collapse tabA to leaf "a"
+    const next = ingestTabs(state, [session("a", "/r")]);
+    expect(next.terminalTabs).toHaveLength(1);
+    expect(next.terminalTabs![0].root).toEqual({
+      type: "leaf",
+      terminalId: "a",
+    });
   });
 
-  it("re-homes a restored tab to the bucket its cwd belongs to", () => {
+  it("keeps a still-present active tab", () => {
     let state = { ...emptyTabState() };
-    // Created while a different row was selected — the bug this fixes.
-    state = { ...state, ...addTabForTerminal(state, "a", "selected", "tabA") };
-    const sessions = [
-      session("a", "/r", { cwd: "/home/.review/worktrees/r/feature" }),
-    ];
-    const next = ingestTabs(
-      state,
-      sessions,
-      knownOf(sessions),
-      "/r",
-      () => "owner",
-      unpinned,
-    );
-    expect(next.terminalTabsByReviewKey!["selected"]).toEqual([]);
-    expect(next.terminalTabsByReviewKey!["owner"].map((t) => t.id)).toEqual([
-      "tabA",
-    ]);
+    state = { ...state, ...addTabForTerminal(state, "a", "tabA") };
+    state = { ...state, ...addTabForTerminal(state, "b", "tabB") };
+    const next = ingestTabs(state, [session("a", "/r"), session("b", "/r")]);
+    expect(next.activeTabId).toBe("tabB");
   });
 
-  it("restores a tab's pinned flag from the persisted terminal ids", () => {
-    const sessions = [session("a", "/r")];
-    const next = ingestTabs(
-      emptyTabState(),
-      sessions,
-      knownOf(sessions),
-      "/r",
-      () => "k1",
-      (id) => id === "a",
-    );
-    expect(next.terminalTabsByReviewKey!["k1"][0].pinned).toBe(true);
-  });
-
-  it("leaves another repo's tabs untouched", () => {
+  // Note the caller never passes an empty set for a live strip — see
+  // `ingestTerminalList`, which reconciles against the merged sessions.
+  it("drops every tab when it is given no sessions at all", () => {
     let state = { ...emptyTabState() };
-    state = { ...state, ...addTabForTerminal(state, "z", "k2", "tabZ") };
-    const other = [session("z", "/elsewhere")];
-    const next = ingestTabs(
-      state,
-      [],
-      knownOf(other),
-      "/r",
-      () => "k1",
-      unpinned,
-    );
-    expect(next.terminalTabsByReviewKey!["k2"].map((t) => t.id)).toEqual([
-      "tabZ",
-    ]);
+    state = { ...state, ...addTabForTerminal(state, "z", "tabZ") };
+    expect(ingestTabs(state, []).terminalTabs).toEqual([]);
   });
 });
 
@@ -1612,7 +1250,7 @@ describe("checkout attribution", () => {
     expect(sessionReviewKey(index, "/r", "/r/src", "x")).toBe("/r:main");
   });
 
-  it("sessionReviewKey adopts an orphan into the repo's root bucket", () => {
+  it("sessionReviewKey adopts an orphan into the repo's root row", () => {
     const index = buildCheckoutIndex(activity);
     // The worktree was removed; the shell is still running in a gone directory.
     expect(
@@ -1622,8 +1260,8 @@ describe("checkout attribution", () => {
 
   it("anchors a detached HEAD on a row that exists, not on an unreachable key", () => {
     // Detached HEAD: git names no branch as checked out, so nothing owns the
-    // repo root. `/r:` is a bucket no routed view ever reads, so anything
-    // adopted into it would disappear while its PTY kept running.
+    // repo root. `/r:` is a key no view reads, so anything attributed there
+    // would be listed under a row that isn't drawn.
     const detached = buildCheckoutIndex([
       {
         repoPath: "/r",
@@ -1675,7 +1313,7 @@ describe("checkout attribution", () => {
   });
 
   it("keeps the placeholder key for a repo with no checkouts at all", () => {
-    // No rows to be reachable from either — the repo-level view reads this key.
+    // No rows to be reachable from either.
     const index = buildCheckoutIndex([
       {
         repoPath: "/r",
@@ -1701,130 +1339,45 @@ describe("checkout attribution", () => {
     // Unknown repo: an empty index is not evidence of anything.
     expect(isOrphanedSession({}, "/r", "/r/gone")).toBe(false);
   });
+});
 
-  it("rehomeTabs moves an orphaned tab to the root bucket", () => {
-    let state = { ...emptyTabState() };
-    state = {
-      ...state,
-      ...addTabForTerminal(state, "a", "/r:feature", "tabA"),
-    };
-    const sessions = {
-      a: session("a", "/r", { cwd: "/home/.review/worktrees/r/feature" }),
-    };
-    // The feature worktree is gone from the listing.
-    const index = buildCheckoutIndex([
-      {
+describe("terminalDockPresent", () => {
+  const tab: TerminalTab = { id: "t1", root: leaf("a"), focused: "a" };
+
+  it("keeps the dock wherever a tab is, review or no review", () => {
+    expect(
+      terminalDockPresent({
+        terminalsSupported: true,
+        terminalTabs: [tab],
+        repoPath: null,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps it for a repo with no tabs yet — that is what the + is for", () => {
+    expect(
+      terminalDockPresent({
+        terminalsSupported: true,
+        terminalTabs: [],
         repoPath: "/r",
-        repoName: "r",
-        defaultBranch: "main",
-        branches: [branch("main", { isCurrent: true })],
-        recentRemoteBranches: [],
-      },
-    ]);
-    const next = rehomeTabs(state, sessions, (s) =>
-      sessionReviewKey(index, s.repoPath, s.cwd, ""),
-    );
-    expect(next.terminalTabsByReviewKey!["/r:feature"]).toEqual([]);
-    expect(next.terminalTabsByReviewKey!["/r:main"].map((t) => t.id)).toEqual([
-      "tabA",
-    ]);
-    expect(next.activeTabIdByReviewKey!["/r:main"]).toBe("tabA");
+      }),
+    ).toBe(true);
   });
 
-  it("rehomeTabs is a no-op when nothing moved", () => {
-    let state = { ...emptyTabState() };
-    state = { ...state, ...addTabForTerminal(state, "a", "/r:main", "tabA") };
-    const sessions = { a: session("a", "/r", { cwd: "/r" }) };
-    expect(rehomeTabs(state, sessions, () => "/r:main")).toEqual({});
-  });
-});
-
-describe("mergeVisibleTabs", () => {
-  function pinnedTab(id: string, terminalId: string): TerminalTab {
-    return { ...makeTab(id, terminalId), pinned: true };
-  }
-
-  it("shows the current key's tabs plus every pinned tab, pinned first", () => {
-    const tabsByKey = {
-      k1: [makeTab("own", "a")],
-      k2: [pinnedTab("far", "b"), makeTab("hidden", "c")],
-    };
-    expect(mergeVisibleTabs(tabsByKey, "k1")).toEqual([
-      { tab: tabsByKey.k2[0], reviewKey: "k2" },
-      { tab: tabsByKey.k1[0], reviewKey: "k1" },
-    ]);
-  });
-
-  it("does not show a pinned tab twice in its own bucket", () => {
-    const tabsByKey = { k1: [pinnedTab("own", "a")] };
-    const visible = mergeVisibleTabs(tabsByKey, "k1");
-    expect(visible.map((v) => v.tab.id)).toEqual(["own"]);
-    expect(visible[0].reviewKey).toBe("k1");
-  });
-
-  it("keeps a pinned tab's home key so unpinning is lossless", () => {
-    const tabsByKey = { home: [pinnedTab("t", "a")] };
-    expect(mergeVisibleTabs(tabsByKey, "elsewhere")[0].reviewKey).toBe("home");
-  });
-});
-
-describe("reorderVisibleTabs", () => {
-  const pin = (tab: TerminalTab): TerminalTab => ({ ...tab, pinned: true });
-
-  it("rejects a drag between tabs living in different buckets", () => {
-    const tabsByKey = {
-      k1: [makeTab("own", "a")],
-      k2: [pin(makeTab("far", "b"))],
-    };
-    // Strip for k1 is [far, own]; the two have no shared order to write.
-    expect(reorderVisibleTabs(tabsByKey, "k1", 1, 0)).toEqual({});
-  });
-
-  it("rejects a drag that skips past a tab on the other side of the boundary", () => {
-    const tabsByKey = {
-      k1: [makeTab("a", "a"), pin(makeTab("b", "b")), makeTab("c", "c")],
-    };
-    // Strip [b, a, c]: dragging c to the front passes over pinned b.
-    expect(reorderVisibleTabs(tabsByKey, "k1", 2, 0)).toEqual({});
-  });
-
-  it("is a no-op for a drag that ends where it started", () => {
-    const tabsByKey = { k1: [makeTab("a", "a"), makeTab("b", "b")] };
-    expect(reorderVisibleTabs(tabsByKey, "k1", 1, 1)).toEqual({});
-  });
-
-  it("reorders a pinned visitor within its own bucket", () => {
-    const tabsByKey = {
-      home: [pin(makeTab("p1", "a")), pin(makeTab("p2", "b"))],
-      viewing: [makeTab("local", "c")],
-    };
-    // Strip for "viewing" is [p1, p2, local]; both pinned tabs are home's.
-    const next = reorderVisibleTabs(tabsByKey, "viewing", 0, 1);
-    expect(next.terminalTabsByReviewKey!.home.map((t) => t.id)).toEqual([
-      "p2",
-      "p1",
-    ]);
-    // The bucket being viewed is untouched.
-    expect(next.terminalTabsByReviewKey!.viewing).toBe(tabsByKey.viewing);
-  });
-});
-
-describe("resolveActiveTabIds", () => {
-  it("keeps a key pointed at a pinned tab that lives elsewhere", () => {
-    const tabsByKey = {
-      home: [{ ...makeTab("t", "a"), pinned: true }],
-      other: [],
-    };
-    const next = resolveActiveTabIds(tabsByKey, { other: "t" });
-    expect(next.other).toBe("t");
-  });
-
-  it("re-picks when the remembered tab is gone", () => {
-    const next = resolveActiveTabIds({ k1: [makeTab("b", "b")] }, { k1: "a" });
-    expect(next.k1).toBe("b");
-  });
-
-  it("nulls a key whose bucket emptied", () => {
-    expect(resolveActiveTabIds({ k1: [] }, { k1: "a" }).k1).toBeNull();
+  it("shows nothing with neither, or with no backend to run a shell", () => {
+    expect(
+      terminalDockPresent({
+        terminalsSupported: true,
+        terminalTabs: [],
+        repoPath: null,
+      }),
+    ).toBe(false);
+    expect(
+      terminalDockPresent({
+        terminalsSupported: false,
+        terminalTabs: [tab],
+        repoPath: "/r",
+      }),
+    ).toBe(false);
   });
 });

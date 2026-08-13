@@ -2,60 +2,29 @@ import { vi, describe, it, expect, afterEach } from "vitest";
 
 vi.mock("../../api", () => ({ getApiClient: () => ({}) }));
 
-const { error } = vi.hoisted(() => ({ error: vi.fn() }));
-vi.mock("sonner", () => ({ toast: { error } }));
-
 import { useReviewStore } from "../../stores";
-import { buildCheckoutIndex } from "../../stores/slices/terminalSlice";
 import { terminalSession } from "../../test/fixtures";
-import { jumpToTerminal } from "./jump";
-import { makeTab } from "./pane-tree";
+import { jumpToTab, jumpToTerminal } from "./jump";
+import { leaf, makeTab, splitLeaf } from "./pane-tree";
 
 const REPO = "/r";
 
-/** A repo whose only row is `main`, checked out at the repo root. */
-function checkoutsWithMainOnly() {
-  return buildCheckoutIndex(
-    [
-      {
-        repoPath: REPO,
-        repoName: "r",
-        defaultBranch: "main",
-        branches: [
-          {
-            name: "main",
-            isCurrent: true,
-            commitsAhead: 0,
-            hasWorkingTreeChanges: false,
-            lastCommitDate: "",
-            lastCommitMessage: "",
-            lastCommitByUser: false,
-            worktreePath: null,
-            lastModifiedAt: null,
-            workingTreeStats: null,
-          },
-        ],
-        recentRemoteBranches: [],
-      },
-    ],
-    [],
-  );
-}
-
-/** Viewing `main`, with one session whose own worktree row is gone. */
-function seedOrphan(tabs: Record<string, ReturnType<typeof makeTab>[]>): void {
-  const session = terminalSession("a", { repoPath: REPO, cwd: "/wt/feature" });
+/** Two sessions in one split tab, plus one in another repo's own tab. */
+function seed(): void {
+  const a = terminalSession("a", { repoPath: REPO, cwd: REPO });
+  const b = terminalSession("b", { repoPath: REPO, cwd: REPO });
+  const z = terminalSession("z", { repoPath: "/other", cwd: "/other" });
   useReviewStore.setState({
     repoPath: REPO,
     reviewRef: "main",
     terminalPanelMode: "split",
-    terminalSessions: { a: session },
-    terminalStatuses: { a: session.status },
-    terminalHomes: { a: `${REPO}:feature` },
-    terminalCheckouts: checkoutsWithMainOnly(),
-    terminalTabsByReviewKey: tabs,
-    activeTabIdByReviewKey: {},
-    terminalIdsByReviewKey: {},
+    terminalSessions: { a, b, z },
+    terminalStatuses: { a: a.status, b: b.status, z: z.status },
+    terminalTabs: [
+      { ...makeTab("tabA", "a"), root: splitLeaf(leaf("a"), "a", "b", "row") },
+      makeTab("tabZ", "z"),
+    ],
+    activeTabId: "tabA",
   });
 }
 
@@ -63,63 +32,70 @@ afterEach(() => {
   useReviewStore.setState({
     repoPath: null,
     reviewRef: null,
+    terminalPanelMode: "closed",
+    terminalOverviewOpen: false,
     terminalSessions: {},
     terminalStatuses: {},
-    terminalHomes: {},
-    terminalCheckouts: {},
-    terminalTabsByReviewKey: {},
-    activeTabIdByReviewKey: {},
-    terminalIdsByReviewKey: {},
+    terminalTabs: [],
+    activeTabId: null,
   });
   vi.clearAllMocks();
 });
 
-describe("jumping to a terminal whose row is gone", () => {
-  it("moves its stranded tab into the strip the sidebar draws it in", () => {
-    // The tab still sits in the deleted worktree's bucket, which no view reads.
-    seedOrphan({ [`${REPO}:feature`]: [makeTab("tabA", "a")] });
+describe("jumping to a terminal", () => {
+  it("activates its tab and focuses the pane within it", () => {
+    seed();
+    useReviewStore.setState({ activeTabId: "tabZ" });
 
-    jumpToTerminal("a");
-
-    const state = useReviewStore.getState();
-    expect(
-      state.terminalTabsByReviewKey[`${REPO}:main`].map((t) => t.id),
-    ).toEqual(["tabA"]);
-    expect(state.activeTabIdByReviewKey[`${REPO}:main`]).toBe("tabA");
-    expect(error).not.toHaveBeenCalled();
-  });
-
-  it("gives it a tab when this window has none for it", () => {
-    seedOrphan({});
-
-    jumpToTerminal("a");
+    jumpToTerminal("b");
 
     const state = useReviewStore.getState();
-    expect(
-      state.terminalTabsByReviewKey[`${REPO}:main`].map((t) => t.id),
-    ).toEqual(["a"]);
-    expect(state.activeTabIdByReviewKey[`${REPO}:main`]).toBe("a");
+    expect(state.activeTabId).toBe("tabA");
+    expect(state.terminalTabs[0].focused).toBe("b");
   });
 
-  it("says so when the session's row can't be resolved at all", () => {
-    // Another repo, nothing known about its checkouts — the home key is the
-    // `repoPath:""` placeholder, which names no row to switch to.
-    const session = terminalSession("a", {
-      repoPath: "/other",
-      cwd: "/other",
-    });
+  it("shows another repo's terminal without changing what is being reviewed", () => {
+    // One strip holds every tab, so there is no review to switch to first.
+    seed();
+
+    jumpToTerminal("z");
+
+    const state = useReviewStore.getState();
+    expect(state.activeTabId).toBe("tabZ");
+    expect(state.repoPath).toBe(REPO);
+    expect(state.reviewRef).toBe("main");
+  });
+
+  it("opens the panel and leaves the overview", () => {
+    seed();
     useReviewStore.setState({
-      repoPath: REPO,
-      reviewRef: "main",
-      terminalPanelMode: "split",
-      terminalSessions: { a: session },
-      terminalStatuses: { a: session.status },
-      terminalCheckouts: checkoutsWithMainOnly(),
+      terminalPanelMode: "closed",
+      terminalOverviewOpen: true,
     });
 
     jumpToTerminal("a");
 
-    // Silence here is the dead click this whole path exists to avoid.
-    expect(error).toHaveBeenCalled();
+    const state = useReviewStore.getState();
+    expect(state.terminalPanelMode).toBe("split");
+    expect(state.terminalOverviewOpen).toBe(false);
+  });
+
+  it("jumpToTab lands on the tab's own focused pane", () => {
+    seed();
+    // The pane the user was last in, which is what the sidebar row stands for.
+    jumpToTerminal("b");
+    useReviewStore.setState({ activeTabId: "tabZ" });
+
+    jumpToTab("tabA");
+
+    const state = useReviewStore.getState();
+    expect(state.activeTabId).toBe("tabA");
+    expect(state.terminalTabs[0].focused).toBe("b");
+  });
+
+  it("does nothing for a tab that isn't there", () => {
+    seed();
+    jumpToTab("gone");
+    expect(useReviewStore.getState().activeTabId).toBe("tabA");
   });
 });

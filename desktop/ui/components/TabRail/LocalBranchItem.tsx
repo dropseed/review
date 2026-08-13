@@ -9,10 +9,11 @@ import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { getApiClient } from "../../api";
 import { getPlatformServices } from "../../platform";
 import { ChangeBaseMenu } from "./ChangeBaseMenu";
-import { SidebarHideMenuItem } from "./SidebarHideMenuItem";
+import { ButtonActionItems } from "./ActionMenu";
+import { refRowActions, useAddToWork } from "./work-actions";
+import { useWorkRefDrag } from "./work-row-drag";
 import { RowStatus } from "./RowStatus";
 import { samePrBadge } from "./pr-format";
-import { useTerminalTabDrop } from "./useTerminalTabDrop";
 import {
   ROW_ACTIONS,
   ROW_LABEL_HOVER_FADE,
@@ -69,7 +70,7 @@ export const LocalBranchItem = memo(function LocalBranchItem({
 }: LocalBranchItemProps) {
   // The review's identity is the branch name.
   const reviewRef = branch.name;
-  const { dropClass, dropProps } = useTerminalTabDrop(repoPath, reviewRef);
+  const workDragProps = useWorkRefDrag(repoPath, reviewRef);
 
   const isActive = useReviewStore(
     (s) =>
@@ -117,6 +118,14 @@ export const LocalBranchItem = memo(function LocalBranchItem({
   const handleClick = useCallback(() => {
     onActivate(repoPath, branch.name, defaultBranch);
   }, [onActivate, repoPath, branch.name, defaultBranch]);
+
+  const addToWork = useAddToWork(repoPath, reviewRef);
+  const rowActions = refRowActions({
+    ref: reviewRef,
+    addToWork,
+    openPr,
+    onOpen: handleClick,
+  });
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -196,11 +205,10 @@ export const LocalBranchItem = memo(function LocalBranchItem({
         onClick={handleClick}
         onKeyDown={handleKeyDown}
         onContextMenu={handleContextMenu}
-        {...dropProps}
+        {...workDragProps}
         className={`group relative w-full text-left py-1 rounded cursor-default
                     transition-colors duration-100 px-2.5
-                    ${isActive ? "bg-fg/[0.04]" : "hover:bg-fg/[0.03]"}
-                    ${dropClass}`}
+                    ${isActive ? "bg-fg/[0.04]" : "hover:bg-fg/[0.03]"}`}
         aria-current={isActive ? "true" : undefined}
         title={`${branch.name}${branch.worktreePath ? ` (worktree: ${branch.worktreePath})` : ""} — ${branch.commitsAhead} commit${branch.commitsAhead !== 1 ? "s" : ""} ahead of ${defaultBranch}`}
       >
@@ -297,9 +305,8 @@ export const LocalBranchItem = memo(function LocalBranchItem({
                   </span>
                 </button>
                 <div className="my-1 border-t border-edge/30" />
-                <SidebarHideMenuItem
-                  repoPath={repoPath}
-                  reviewRef={reviewRef}
+                <ButtonActionItems
+                  actions={rowActions}
                   onDone={() => setShowContextMenu(false)}
                 />
               </>

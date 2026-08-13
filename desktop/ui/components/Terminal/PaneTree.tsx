@@ -1,4 +1,10 @@
-import { type DragEvent, type ReactNode, Fragment, useRef } from "react";
+import {
+  type DragEvent,
+  type ReactNode,
+  Fragment,
+  useRef,
+  useState,
+} from "react";
 import { clsx } from "clsx";
 import { useReviewStore } from "../../stores";
 import {
@@ -20,6 +26,12 @@ import {
 } from "./pane-drag";
 import { TerminalPane } from "./TerminalPane";
 import { SplitDivider } from "./SplitDivider";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
+import { TerminalDropdownItems } from "../TabRail/ActionMenu";
 
 /** Smallest fraction a pane can be dragged to, so a pane never vanishes. */
 const MIN_PANE_FRACTION = 0.1;
@@ -39,7 +51,6 @@ interface PaneTreeProps {
    * that does nothing is worse than no button.
    */
   canFold: boolean;
-  reviewKey: string;
   tabId: string;
   /** terminalId of the tab's focused leaf. */
   focusedId: string;
@@ -74,7 +85,6 @@ export function PaneTree({
   path,
   parentDirection = null,
   canFold,
-  reviewKey,
   tabId,
   focusedId,
   tabActive,
@@ -110,9 +120,7 @@ export function PaneTree({
         onFocus={onFocus}
         onSplit={onSplit}
         onClose={onClose}
-        onCollapse={() =>
-          setPaneCollapsed(reviewKey, tabId, node.terminalId, true)
-        }
+        onCollapse={() => setPaneCollapsed(tabId, node.terminalId, true)}
       />
     );
   }
@@ -165,7 +173,7 @@ export function PaneTree({
     const next = [...sizes];
     next[left] = first;
     next[right] = pairTotal - first;
-    resizeSplit(reviewKey, tabId, path, next);
+    resizeSplit(tabId, path, next);
   };
 
   return (
@@ -206,7 +214,6 @@ export function PaneTree({
                 path={[...path, i]}
                 parentDirection={direction}
                 canFold={canFold}
-                reviewKey={reviewKey}
                 tabId={tabId}
                 focusedId={focusedId}
                 tabActive={tabActive}
@@ -258,6 +265,7 @@ function PaneLeaf({
   // strip already reads, and a second copy of "this pane is in flight" is one
   // that can be left behind set when a drop unmounts this pane's grip.
   const lifted = usePaneDragActive() === id;
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // The pane's box can't move while a drag is in flight, so it is measured once
   // per drag instead of per `dragover`. The handler itself dirties layout (the
@@ -348,11 +356,17 @@ function PaneLeaf({
         />
       )}
 
-      {/* Hover affordances — move / split / close. */}
+      {/* Hover affordances — menu / move / split / close. This cluster is
+              the pane's only chrome, so it is also where its menu hangs: the
+              surface below belongs to the shell, right-click included. */}
       <div
-        className="absolute right-1.5 top-1.5 z-10 flex items-center gap-0.5
-                   rounded-md bg-surface-raised/90 p-0.5 opacity-0
-                   transition-opacity group-hover/pane:opacity-100"
+        className={clsx(
+          `absolute right-1.5 top-1.5 z-10 flex items-center gap-0.5
+               rounded-md bg-surface-raised/90 p-0.5 transition-opacity`,
+          // An open menu pins the cluster: it fades on pointer-out
+          // otherwise, taking the trigger of the menu you are reading.
+          menuOpen ? "opacity-100" : "opacity-0 group-hover/pane:opacity-100",
+        )}
       >
         {/* The only pane in the tab has nowhere to be moved to. A div rather
             than a button: this is a drag handle, and `draggable` on a button
@@ -397,6 +411,31 @@ function PaneLeaf({
         <PaneButton label="Close pane" onClick={() => onClose(id)}>
           <span className="text-sm leading-none">×</span>
         </PaneButton>
+        {/* The same menu a sidebar row and a strip tab carry, opened by a
+                button rather than by right-click: this pane's surface is a
+                live terminal, and a shell with mouse reporting on is sent the
+                right button itself. */}
+        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label="Terminal options"
+              title="Terminal options"
+              className={PANE_CONTROL_CLASS}
+            >
+              <MoreIcon />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="end"
+            // Radix restores focus to the trigger when the menu closes,
+            // and the trigger is about to fade out — let the terminal keep
+            // the keyboard.
+            onCloseAutoFocus={(e) => e.preventDefault()}
+          >
+            <TerminalDropdownItems sessionIds={[id]} />
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   );
@@ -437,6 +476,22 @@ export function PaneButton({
     >
       {children}
     </button>
+  );
+}
+
+/** The pane's menu button — the same three dots every overflow control uses. */
+function MoreIcon(): ReactNode {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-3.5 w-3.5"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="5" r="2" />
+      <circle cx="12" cy="12" r="2" />
+      <circle cx="12" cy="19" r="2" />
+    </svg>
   );
 }
 

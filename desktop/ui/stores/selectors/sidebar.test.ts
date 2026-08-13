@@ -18,6 +18,7 @@ function repo(): RepoLocalActivity {
         name: "master",
         isCurrent: true,
         commitsAhead: 0,
+        unpushedCommits: 0,
         hasWorkingTreeChanges: false,
         lastCommitDate: new Date(NOW).toISOString(),
         lastCommitMessage: "wip",
@@ -55,12 +56,7 @@ function state(viewerPrs: ViewerPrSnapshot | null): SidebarTreeState {
     localActivity: [repo()],
     globalReviews: [],
     globalReviewsByKey: {},
-    sidebarDismissed: [],
     viewerPrs,
-    terminalSessions: {},
-    terminalExited: {},
-    terminalCheckouts: {},
-    terminalHomes: {},
   };
 }
 
@@ -77,7 +73,7 @@ function snapshot(overrides: Partial<ViewerPrSnapshot> = {}): ViewerPrSnapshot {
 
 describe("getSidebarTree and an unavailable GitHub", () => {
   it("badges the head row while gh is working", () => {
-    const [node] = getSidebarTree(state(snapshot()), NOW, null);
+    const [node] = getSidebarTree(state(snapshot()));
     expect(node.head?.openPr?.number).toBe(7);
   });
 
@@ -89,8 +85,6 @@ describe("getSidebarTree and an unavailable GitHub", () => {
     // would be stale forever with nothing on screen admitting it.
     const [node] = getSidebarTree(
       state(snapshot({ available: false, error: "gh not authenticated" })),
-      NOW,
-      null,
     );
     expect(node.head?.openPr).toBeUndefined();
   });
@@ -101,8 +95,6 @@ describe("getSidebarTree and an unavailable GitHub", () => {
     // them with a visible warning.
     const [node] = getSidebarTree(
       state(snapshot({ error: "query timed out" })),
-      NOW,
-      null,
     );
     expect(node.head?.openPr?.number).toBe(7);
   });

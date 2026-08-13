@@ -11,11 +11,11 @@ import { leaf, splitLeaf, type TerminalTab } from "./pane-tree";
  * silent: the entry appeared, greyed, and nothing said why.
  */
 
-function tab(id: string, panes: string[], pinned = false): TerminalTab {
+function tab(id: string, panes: string[]): TerminalTab {
   let root = leaf(panes[0]);
   for (const next of panes.slice(1))
     root = splitLeaf(root, panes[0], next, "row");
-  return { id, root, focused: panes[0], pinned };
+  return { id, root, focused: panes[0] };
 }
 
 /** The slice fields these commands read, with everything else left out. */
@@ -27,8 +27,8 @@ function context(store: Record<string, unknown>): CommandContext {
       terminalPanelMode: "split",
       terminalsSupported: true,
       terminalCheckouts: {},
-      terminalTabsByReviewKey: {},
-      activeTabIdByReviewKey: {},
+      terminalTabs: [],
+      activeTabId: null,
       ...store,
     },
     keys: {},
@@ -47,30 +47,22 @@ const enabled = (id: string, store: Record<string, unknown>): boolean => {
 };
 
 describe("fold/unfold commands", () => {
-  const twoPanes = { "/repo:main": [tab("tabA", ["a", "b"])] };
+  const twoPanes = [tab("tabA", ["a", "b"])];
 
   it("offers folding for the tab on screen", () => {
-    const store = {
-      terminalTabsByReviewKey: twoPanes,
-      activeTabIdByReviewKey: { "/repo:main": "tabA" },
-    };
+    const store = { terminalTabs: twoPanes, activeTabId: "tabA" };
     expect(enabled("view.collapseTerminalPane", store)).toBe(true);
     // Nothing folded yet, so there is nothing to unfold.
     expect(enabled("view.expandTerminalPanes", store)).toBe(false);
   });
 
-  it("offers folding on a pinned tab visiting from another repo", () => {
-    // A key that owns no tabs of its own never gets an active-tab entry, so the
-    // panel falls back to the first visible tab. The commands have to agree, or
-    // they sit greyed out over a tab with two panes plainly on screen.
+  it("offers nothing while no tab is active", () => {
     expect(
       enabled("view.collapseTerminalPane", {
-        terminalTabsByReviewKey: {
-          "/other:branch": [tab("tabA", ["a", "b"], true)],
-        },
-        activeTabIdByReviewKey: {},
+        terminalTabs: twoPanes,
+        activeTabId: null,
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("stops offering folding once one pane is left showing", () => {
@@ -81,10 +73,7 @@ describe("fold/unfold commands", () => {
       sizes: [0.5, 0.5],
       children: [leaf("a"), { type: "leaf", terminalId: "b", collapsed: true }],
     };
-    const store = {
-      terminalTabsByReviewKey: { "/repo:main": [folded] },
-      activeTabIdByReviewKey: { "/repo:main": "tabA" },
-    };
+    const store = { terminalTabs: [folded], activeTabId: "tabA" };
     expect(enabled("view.collapseTerminalPane", store)).toBe(false);
     expect(enabled("view.expandTerminalPanes", store)).toBe(true);
   });
@@ -92,8 +81,8 @@ describe("fold/unfold commands", () => {
   it("offers neither with the panel closed", () => {
     const store = {
       terminalPanelMode: "closed",
-      terminalTabsByReviewKey: twoPanes,
-      activeTabIdByReviewKey: { "/repo:main": "tabA" },
+      terminalTabs: twoPanes,
+      activeTabId: "tabA",
     };
     expect(enabled("view.collapseTerminalPane", store)).toBe(false);
     expect(enabled("view.expandTerminalPanes", store)).toBe(false);

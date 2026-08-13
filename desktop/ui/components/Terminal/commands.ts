@@ -5,8 +5,8 @@ import { focusNextNeedsYou } from "./jump";
 import { hasNeedsYou } from "./glance";
 import { collectLeafIds, expandedLeafIds, type TerminalTab } from "./pane-tree";
 import {
-  mergeVisibleTabs,
-  panelReviewKey,
+  findTab,
+  terminalDockPresent,
 } from "../../stores/slices/terminalSlice";
 
 /**
@@ -27,6 +27,17 @@ function supported(ctx: CommandContext): boolean {
 }
 
 /**
+ * Whether there is a panel for these to act on.
+ *
+ * The panel is docked at the app shell, so this asks the dock's own rule rather
+ * than "is a review open" — ⌘` answers on the home screen too, for the same
+ * shells, in the same place.
+ */
+function docked(ctx: CommandContext): boolean {
+  return terminalDockPresent(ctx.store);
+}
+
+/**
  * The tab the panel is showing, resolved from the store rather than from what
  * has DOM focus.
  *
@@ -36,38 +47,22 @@ function supported(ctx: CommandContext): boolean {
  * `isEnabled` included, which would grey the entry out in the only list it
  * appears in. The tab's own `focused` leaf is the same pane anyway.
  */
-function activeTerminalTab(
-  store: CommandContext["store"],
-): { tab: TerminalTab; reviewKey: string } | null {
-  if (!store.repoPath || store.terminalPanelMode === "closed") return null;
-  const key = panelReviewKey(
-    store.terminalCheckouts,
-    store.repoPath,
-    store.reviewRef,
-  );
-  // Resolved exactly the way TerminalPanel resolves what it draws, fallback
-  // included: a key that owns no tabs of its own never gets an entry in
-  // `activeTabIdByReviewKey`, so a repo showing only a pinned visitor would
-  // otherwise leave these commands greyed out over a tab plainly on screen.
-  // `mergeVisibleTabs` also answers with the key that *owns* each tab, which is
-  // the one its layout is stored under.
-  const visible = mergeVisibleTabs(store.terminalTabsByReviewKey, key);
-  const activeId = store.activeTabIdByReviewKey[key] ?? visible[0]?.tab.id;
-  return visible.find((v) => v.tab.id === activeId) ?? null;
+function activeTerminalTab(store: CommandContext["store"]): TerminalTab | null {
+  if (store.terminalPanelMode === "closed" || !store.activeTabId) return null;
+  return findTab(store.terminalTabs, store.activeTabId);
 }
 
 /** How many panes the active tab is drawing — folding needs at least two. */
 function foldablePanes(store: CommandContext["store"]): number {
   const active = activeTerminalTab(store);
-  return active ? expandedLeafIds(active.tab.root).length : 0;
+  return active ? expandedLeafIds(active.root).length : 0;
 }
 
 /**
  * Split whatever has focus.
  *
- * The terminal tab is resolved from the focused pane rather than from the
- * review being viewed: a pinned tab shows in every repo, so "the tab on
- * screen" and "the tab in this review's bucket" are not the same question.
+ * The tab is resolved from the focused pane rather than from the active tab:
+ * with two panes on screen the one you are typing in is the one to split.
  */
 function split(ctx: CommandContext, orientation: "horizontal" | "vertical") {
   const { store } = ctx;
@@ -75,7 +70,6 @@ function split(ctx: CommandContext, orientation: "horizontal" | "vertical") {
     const focused = focusedTerminalTab();
     if (focused) {
       void store.splitTerminal(
-        focused.reviewKey,
         focused.tab.id,
         focused.terminalId,
         orientation === "horizontal" ? "row" : "column",
@@ -87,8 +81,14 @@ function split(ctx: CommandContext, orientation: "horizontal" | "vertical") {
   if (store.secondaryFile === null) store.openEmptySplit();
 }
 
+/** Something to split: the terminal you're typing in, or an open repo's diff. */
+function splittable(ctx: CommandContext): boolean {
+  return ctx.keys.terminalFocused === true || hasRepo(ctx);
+}
+
 /**
- * Commands the terminal owns, registered while a review is open.
+ * Commands the terminal owns, registered by the app shell — the panel is docked
+ * there, so these answer on every route rather than only inside a review.
  *
  * ⌘ combinations are not forwarded to the PTY, so these work wherever focus
  * is — which is why they opt into both `allowInTerminal` and `allowInInput`.
@@ -103,7 +103,7 @@ export const TERMINAL_COMMANDS: readonly Command[] = [
     allowInTerminal: true,
     allowInInput: true,
     isVisible: supported,
-    isEnabled: hasRepo,
+    isEnabled: docked,
     run: ({ store }) => store.toggleTerminalPanel(),
   },
   {
@@ -118,7 +118,7 @@ export const TERMINAL_COMMANDS: readonly Command[] = [
     allowInTerminal: true,
     allowInInput: true,
     isVisible: supported,
-    isEnabled: hasRepo,
+    isEnabled: docked,
     run: ({ store }) => store.toggleTerminalPanelMaximized(),
   },
   {
@@ -132,7 +132,7 @@ export const TERMINAL_COMMANDS: readonly Command[] = [
     allowInTerminal: true,
     allowInInput: true,
     isVisible: supported,
-    isEnabled: hasRepo,
+    isEnabled: docked,
     run: ({ store }) => store.toggleTerminalOverview(),
   },
   {
@@ -146,7 +146,7 @@ export const TERMINAL_COMMANDS: readonly Command[] = [
     allowInTerminal: true,
     allowInInput: true,
     isVisible: supported,
-    isEnabled: (ctx) => hasRepo(ctx) && hasNeedsYou(ctx.store),
+    isEnabled: (ctx) => docked(ctx) && hasNeedsYou(ctx.store),
     run: () => focusNextNeedsYou(),
   },
   {
@@ -162,14 +162,7 @@ export const TERMINAL_COMMANDS: readonly Command[] = [
     isEnabled: (ctx) => foldablePanes(ctx.store) > 1,
     run: ({ store }) => {
       const active = activeTerminalTab(store);
-      if (active) {
-        store.setPaneCollapsed(
-          active.reviewKey,
-          active.tab.id,
-          active.tab.focused,
-          true,
-        );
-      }
+      if (active) store.setPaneCollapsed(active.id, active.focused, true);
     },
   },
   {
@@ -184,7 +177,7 @@ export const TERMINAL_COMMANDS: readonly Command[] = [
       const active = activeTerminalTab(ctx.store);
       return (
         !!active &&
-        foldablePanes(ctx.store) < collectLeafIds(active.tab.root).length
+        foldablePanes(ctx.store) < collectLeafIds(active.root).length
       );
     },
     // The way back for a tab folded down from the keyboard: the bars are
@@ -192,11 +185,9 @@ export const TERMINAL_COMMANDS: readonly Command[] = [
     run: ({ store }) => {
       const active = activeTerminalTab(store);
       if (!active) return;
-      const showing = new Set(expandedLeafIds(active.tab.root));
-      for (const id of collectLeafIds(active.tab.root)) {
-        if (!showing.has(id)) {
-          store.setPaneCollapsed(active.reviewKey, active.tab.id, id, false);
-        }
+      const showing = new Set(expandedLeafIds(active.root));
+      for (const id of collectLeafIds(active.root)) {
+        if (!showing.has(id)) store.setPaneCollapsed(active.id, id, false);
       }
     },
   },
@@ -206,8 +197,10 @@ export const TERMINAL_COMMANDS: readonly Command[] = [
     category: "View",
     shortcut: { code: "KeyD", mod: true },
     // "Split what I'm looking at": a focused terminal splits itself, anything
-    // else splits the diff.
+    // else splits the diff. Which is also the enablement rule — off a terminal
+    // and with no repo open there is nothing on screen to split.
     allowInTerminal: true,
+    isEnabled: splittable,
     run: (ctx) => split(ctx, "horizontal"),
   },
   {
@@ -216,6 +209,7 @@ export const TERMINAL_COMMANDS: readonly Command[] = [
     category: "View",
     shortcut: { code: "KeyD", mod: true, shift: true },
     allowInTerminal: true,
+    isEnabled: splittable,
     run: (ctx) => split(ctx, "vertical"),
   },
 ];

@@ -1,6 +1,9 @@
-import { selectLiveSessionsByReviewKey } from "../slices/terminalSlice";
-import { buildSidebarTree, type RepoNode } from "../../utils/sidebar-tree";
-import type { TerminalSlice } from "../slices/terminalSlice";
+import {
+  allSidebarRows,
+  buildSidebarTree,
+  type RepoNode,
+  type SidebarRow,
+} from "../../utils/sidebar-tree";
 import type {
   GlobalReviewSummary,
   RepoLocalActivity,
@@ -9,14 +12,10 @@ import type {
 } from "../../types";
 
 /** Everything `buildSidebarTree` needs that lives in the store. */
-export interface SidebarTreeState extends Pick<
-  TerminalSlice,
-  "terminalSessions" | "terminalExited" | "terminalCheckouts" | "terminalHomes"
-> {
+export interface SidebarTreeState {
   localActivity: RepoLocalActivity[];
   globalReviews: GlobalReviewSummary[];
   globalReviewsByKey: Record<string, GlobalReviewSummary>;
-  sidebarDismissed: string[];
   viewerPrs: ViewerPrSnapshot | null;
 }
 
@@ -32,39 +31,22 @@ interface CacheEntry {
   output: RepoNode[];
 }
 
-/**
- * One entry per `openRepoPath`, so a caller that asks about a different repo
- * than the window is showing — the freshness check does — can't evict the
- * entry every render path depends on.
- */
-const cache = new Map<string, CacheEntry>();
+let cache: CacheEntry | null = null;
 
 /**
  * The sidebar tree, built from store state.
  *
  * The one place `buildSidebarTree` is called from, so every consumer walks the
- * same tree: the sidebar, the collapsed rail, ⌘1–9's positional jump, and the
- * freshness check. Two of those used to call the builder themselves and so
- * couldn't see inputs the others had — a row could be live in the rendered
- * list and absent from the list ⌘3 counted through.
+ * same tree: the repos layer, work cards resolving their bound refs, the
+ * palette's list of reviews, and the freshness check. Two of those used to call
+ * the builder themselves and so couldn't see inputs the others had.
  *
  * Cached on input identity (the pattern in `selectors/hunks.ts`) so multiple
- * subscribers share one build per state change rather than one per render.
- * Terminal membership is keyed on the *keys themselves* rather than the
- * grouping's identity: the checkout index is rebuilt from scratch on every git
- * refresh, and rebuilding the tree because an identical answer arrived in a
- * new object is the kind of work that's invisible until it isn't.
+ * subscribers share one build per state change rather than one per render. The
+ * tree reads no clock, so identity is the whole story: it is rebuilt when git,
+ * review state or the PR snapshot changes, and at no other time.
  */
-export function getSidebarTree(
-  state: SidebarTreeState,
-  now: number,
-  openRepoPath: string | null,
-): RepoNode[] {
-  // Bucketed to the minute: the liveness windows are 7 and 14 days, so finer
-  // granularity buys nothing and costs everything — an exact `Date.now()` from
-  // any one caller would miss the cache and hand every subscriber a new tree.
-  const minute = Math.floor(now / 60_000);
-  const terminalKeys = Object.keys(selectLiveSessionsByReviewKey(state)).sort();
+export function getSidebarTree(state: SidebarTreeState): RepoNode[] {
   // `available: false` means `gh` is gone or logged out, and the backend hands
   // back the *last cached* PRs alongside it rather than an empty list. Those
   // have to be dropped here, at the one place the tree reads them: the sidebar
@@ -76,20 +58,15 @@ export function getSidebarTree(
     snapshot == null || !snapshot.available ? NO_PRS : snapshot.prs;
 
   // Everything the build reads, in one list: adding an input to the tree means
-  // one edit here rather than three matching ones. Compared by identity, so
-  // terminal membership joins as a string — see above for why.
+  // one edit here rather than three matching ones. Compared by identity.
   const deps: readonly unknown[] = [
     state.localActivity,
     state.globalReviews,
     state.globalReviewsByKey,
-    state.sidebarDismissed,
-    minute,
-    terminalKeys.join("\n"),
     viewerPrs,
   ];
 
-  const cacheKey = openRepoPath ?? "";
-  const hit = cache.get(cacheKey);
+  const hit = cache;
   if (hit && deps.every((dep, i) => dep === hit.deps[i])) {
     return hit.output;
   }
@@ -98,13 +75,36 @@ export function getSidebarTree(
     state.localActivity,
     state.globalReviews,
     state.globalReviewsByKey,
-    state.sidebarDismissed,
-    minute * 60_000,
-    openRepoPath,
-    terminalKeys,
     viewerPrs,
   );
 
-  cache.set(cacheKey, { deps, output });
+  cache = { deps, output };
   return output;
+}
+
+let rowsCache: { tree: RepoNode[]; rows: Map<string, SidebarRow> } | null =
+  null;
+
+/**
+ * The tree's rows indexed by review key.
+ *
+ * `getSidebarTree` is cached but `allSidebarRows` is not, and every caller that
+ * wanted a row wanted it by key — so the flatten and the index are cached here
+ * together, on the tree's own identity. Work cards, `activateReviewKey` and
+ * `activateWorkItem` all read this one map, which is also what keeps them from
+ * each answering "does this ref have a row" their own way.
+ */
+export function sidebarRowsByKey(tree: RepoNode[]): Map<string, SidebarRow> {
+  if (rowsCache?.tree === tree) return rowsCache.rows;
+  const rows = new Map(allSidebarRows(tree).map((row) => [row.reviewKey, row]));
+  rowsCache = { tree, rows };
+  return rows;
+}
+
+/** The row a review key names, or null when nothing represents it. */
+export function findSidebarRow(
+  state: SidebarTreeState,
+  reviewKey: string,
+): SidebarRow | null {
+  return sidebarRowsByKey(getSidebarTree(state)).get(reviewKey) ?? null;
 }

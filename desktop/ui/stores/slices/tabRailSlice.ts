@@ -9,6 +9,7 @@ import type { SliceCreatorWithClient } from "../types";
 import { resolveNewRepoMetadata } from "../../utils/resolve-repo-metadata";
 import { jsonEqual } from "../../utils/equality";
 import { getSidebarTree } from "../selectors/sidebar";
+import { rowHasFacts } from "../../utils/sidebar-tree";
 import { makeReviewKey } from "./groupingSlice";
 import { findFirstUnreviewedHunkId } from "./navigationSlice";
 import { forgetEnsuredReview } from "./reviewSlice";
@@ -27,6 +28,8 @@ export interface RepoMetadata {
   routePrefix: string;
   defaultBranch: string;
   avatarUrl: string | null;
+  /** The repo's page on its forge, or null when it has no resolvable remote. */
+  browseUrl: string | null;
 }
 
 export interface GlobalReviewsSlice {
@@ -269,13 +272,16 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
     },
 
     checkReviewsFreshness: async (scopeKeys?: string[]) => {
-      // Live rows (plus the active review) — the default scope.
+      // Rows with something true about them, plus the active review — the
+      // default scope. Deliberately not `visibleRows`: a row claimed by a work
+      // item is hidden from the tree precisely because its card reports on it,
+      // and that card wants a fresh answer more than any row does.
       const deriveLiveScope = (): Set<string> => {
         const { globalReviewsByKey, activeReviewKey } = get();
-        const tree = getSidebarTree(get(), Date.now(), null);
+        const tree = getSidebarTree(get());
         const keys = new Set<string>();
         for (const node of tree) {
-          for (const row of [node.head, ...node.live]) {
+          for (const row of [node.head, ...node.rows.filter(rowHasFacts)]) {
             if (row && row.reviewKey in globalReviewsByKey) {
               keys.add(row.reviewKey);
             }

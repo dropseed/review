@@ -9,8 +9,8 @@ import type { FilesPanelTab } from "./types";
  * One table because two things render it: the open panel's tab strip and the
  * collapsed rail. The other two rails derive their contents from the same
  * source their panel does — `SidebarRail` from `useSidebarTree`, `TerminalRail`
- * from `mergeVisibleTabs` — and this is how the files panel does it, rather
- * than the rail keeping a second copy that happens to agree.
+ * from `terminalTabs` — and this is how the files panel does it, rather than
+ * the rail keeping a second copy that happens to agree.
  */
 export interface FilesPanelTabSpec {
   id: FilesPanelTab;
