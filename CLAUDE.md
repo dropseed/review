@@ -31,6 +31,25 @@ scripts/pre-commit       # Check only: prettier --check + cargo fmt --check
 scripts/build            # Build production app (outputs to target/release/)
 ```
 
+### Isolated dev instance (`$REVIEW_HOME`)
+
+Everything — state, `work.json`, the daemon socket, the CLI↔app open-request
+signal file, dev logs — resolves through the review home (`~/.review`, or
+`$REVIEW_HOME`). To run a dev build fully separate from an installed released
+app (its own daemon, terminals, and queue; the released app's sessions
+untouched):
+
+```bash
+REVIEW_HOME=~/.review-dev scripts/dev          # isolated desktop dev app
+review --home ~/.review-dev terminal list      # CLI against that instance
+```
+
+Without isolation, note that the desktop app restarts a daemon whose identity
+(version + binary fingerprint) doesn't match its own — killing all live
+terminal sessions — so a dev desktop build and the released app fight over the
+default home's daemon. Thin clients (the CLI, the web-mode server) attach
+without respawning and coexist with anything.
+
 ## Architecture
 
 ```mermaid
@@ -144,6 +163,14 @@ The `review` binary (built with `--features cli`, source in `core/src/cli/`) is 
 
 The **guide** is an agent-authored grouping of a comparison's hunks into a themed walkthrough. The desktop app renders it but no longer generates it — agents compose it via `review guide add` (each add lands live through the file watcher); `guide show` reconciles the stored groups against the current diff and reports any unplaced hunks as `ungrouped`.
 
+**Work queue** — the sidebar's user-ordered "Working on" list. Global (cross-repo), stored at `~/.review/work.json`; array order is the priority order. A work item stores intent only — title, position, zero-or-more repo+branch bindings — everything live (terminals, PRs, review state) is derived. Agents may read priorities and add/bind items, but the ordering belongs to the user; only the user removes items in the UI (removal is their acknowledgment moment).
+
+- `review work [list] [--json]` — numbered list; `--json` is global to the subcommand
+- `review work add "title" [--ref BRANCH [--repo PATH]]` — a bare title is a note; adds always append
+- `review work move <id> <position>` (1-based) · `review work rename <id> "title"` · `review work remove <id>`
+- `review work bind|unbind <id> BRANCH [--repo PATH]` — a ref can be bound to at most one item; conflicts name the holder
+- `<id>` accepts unique prefixes
+
 **Git index** — stage individual hunks (the thing `git add` can't do non-interactively):
 
 - `review changes [--staged|--unstaged|--file GLOB|--label PATTERN|--hunk ID] [--json] [--diff]`
@@ -157,10 +184,7 @@ The **guide** is an agent-authored grouping of a comparison's hunks into a theme
 - `review terminal wait <id> [--until <phase|exit>] [--match REGEX] [--timeout SECS]` — block until a status transition, new output matching the regex, or exit; built client-side on the stream connection
 - `review terminal resize <id> --cols N --rows M` · `review terminal kill <id>...`
 
-**Skills**: `review skill install` writes the bundled skills into `~/.claude/skills/` and `$CODEX_HOME/skills/` (defaulting to `~/.codex/skills/`). Canonical sources live in `core/resources/skills/*/SKILL.md`, `include_str!`-embedded into the binary so the shipped CLI carries them:
-
-- `review-guide` — reviewer-side: help a human work through a large diff.
-- `review-terminals` — agent-side: drive the app's daemon-backed terminal sessions (`review terminal ...`).
+**Skills**: one bundled skill, `review-app`, covering all three surfaces an agent touches — reviewing a diff (hunks, trust, guide, comments), driving the app's terminals, and reading/feeding the work queue. The canonical source is `core/resources/skills/review-app/SKILL.md`, `include_str!`-embedded into the binary so the shipped CLI carries it. `review skill install` writes it into `~/.claude/skills/` and `$CODEX_HOME/skills/` (defaulting to `~/.codex/skills/`), and deletes the superseded `review-guide` / `review-terminals` skills it previously installed.
 
 Source layout: `mod.rs` (Cli, Commands enum, dispatch, comparison resolution shared with `review start`, `review use`); `common.rs` (`EffectiveStatus`, `mutate_review` retry, hunk-target parsing, spec-resolution precedence, `sync_classification`); `staging.rs`; `review_state.rs`; `comments.rs` (line-level comments / annotations + batch `comments submit`); `guide.rs` (guide grouping); `skill.rs`; `terminal.rs` (daemon-backed terminal control). Mutations use optimistic version-conflict retry against `~/.review/.../*.json`.
 
