@@ -392,13 +392,13 @@ export function TerminalPanel(): ReactNode {
           )}
         </div>
 
-        {/* New terminal: the button splits, the caret offers the rest. */}
+        {/* New terminal: the button opens a tab, the caret offers the rest. */}
         <div className="ml-1 flex shrink-0 items-center rounded text-fg-muted hover:bg-fg/[0.06]">
           <button
             type="button"
-            aria-label={activeTab ? "Split terminal" : "New terminal"}
-            title={activeTab ? "Split terminal (⌘D)" : "New terminal"}
-            onClick={() => handleSplitActive("row")}
+            aria-label="New terminal tab"
+            title="New terminal tab (⌘T)"
+            onClick={handleNewTab}
             className="rounded-l py-1 pl-2 pr-1 text-sm hover:text-fg-secondary"
           >
             +
