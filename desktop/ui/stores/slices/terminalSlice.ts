@@ -77,6 +77,16 @@ export interface TerminalSlice {
 
   /** Which surface holds the content region's focus (persisted). */
   contentFocus: ContentFocus;
+  /**
+   * Whether the stage is showing every terminal in the app side by side
+   * instead of one workspace's.
+   *
+   * Deliberately not persisted, unlike every other flag here: this is a look
+   * taken across the work and then put down, not a layout the window should
+   * come back wearing. Launching into it would hide the code half of a
+   * workspace nobody asked to leave.
+   */
+  terminalOverview: boolean;
   /** Panel width in px (persisted) — the vertical pane's own width. */
   terminalPanelWidth: number;
   /** Which side of the content region the panel docks on (persisted). */
@@ -194,6 +204,10 @@ export interface TerminalSlice {
   resizeSplit: (tabId: string, path: number[], sizes: number[]) => void;
   /** Give a surface the content region, or neither ("split"). Persisted. */
   setContentFocus: (focus: ContentFocus) => void;
+  /** Show every terminal at once, or put the stage back. */
+  setTerminalOverview: (on: boolean) => void;
+  /** [`setTerminalOverview`] as the one gesture that drives it. */
+  toggleTerminalOverview: () => void;
   /** ⌘`: focus code ↔ split — the terminal in and out of view. */
   toggleTerminalPanel: () => void;
   /** ⇧⌘↵: focus terminal ↔ split — full width from wherever it starts. */
@@ -1056,6 +1070,7 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
     freshTerminalIds: [],
     terminalCheckouts: {},
     contentFocus: "code",
+    terminalOverview: false,
     terminalPanelWidth: TERMINAL_PANEL_WIDTH_DEFAULT,
     terminalDockSide: TERMINAL_DOCK_SIDE_DEFAULT,
     terminalsSupported: false,
@@ -1255,6 +1270,12 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
       set(resizeSplitInTab(get(), tabId, path, sizes)),
 
     setContentFocus: (focus) => setFocus(focus),
+
+    // Straight to the store and nowhere near `storage`: see `terminalOverview`.
+    setTerminalOverview: (on) => set({ terminalOverview: on }),
+
+    toggleTerminalOverview: () =>
+      set({ terminalOverview: !get().terminalOverview }),
 
     toggleTerminalPanel: () => {
       // From terminal focus this lands on "code", not "split" — hiding the

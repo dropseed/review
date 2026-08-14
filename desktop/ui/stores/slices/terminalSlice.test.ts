@@ -82,6 +82,7 @@ function branch(
     isCurrent: false,
     commitsAhead: 0,
     unpushedCommits: 0,
+    behindUpstream: 0,
     hasWorkingTreeChanges: false,
     lastCommitDate: "",
     lastCommitMessage: "",
@@ -888,6 +889,26 @@ describe("slice actions", () => {
     get().toggleTerminalDockSide();
     expect(get().terminalDockSide).toBe("left");
     expect(writes.terminalDockSide).toBe("left");
+  });
+
+  it("terminalOverview starts off and toggles both ways", () => {
+    const { get } = makeSlice();
+    expect(get().terminalOverview).toBe(false);
+    get().toggleTerminalOverview();
+    expect(get().terminalOverview).toBe(true);
+    get().toggleTerminalOverview();
+    expect(get().terminalOverview).toBe(false);
+    get().setTerminalOverview(true);
+    expect(get().terminalOverview).toBe(true);
+  });
+
+  it("terminalOverview is never persisted", () => {
+    const { get, writes } = makeSlice();
+    get().toggleTerminalOverview();
+    get().setTerminalOverview(false);
+    // A look across the work, not a layout: a window that relaunched into the
+    // overview would be hiding a workspace nobody asked to leave.
+    expect(writes).toEqual({});
   });
 
   it("setTerminalDockSide sets and persists the given side", () => {

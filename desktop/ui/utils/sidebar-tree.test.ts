@@ -25,6 +25,7 @@ function branch(overrides: Partial<LocalBranchInfo> = {}): LocalBranchInfo {
     isCurrent: false,
     commitsAhead: 1,
     unpushedCommits: 0,
+    behindUpstream: 0,
     hasWorkingTreeChanges: false,
     lastCommitDate: iso(30 * 86_400_000), // 30d ago — outside all windows
     lastCommitMessage: "wip",

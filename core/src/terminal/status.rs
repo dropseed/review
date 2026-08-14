@@ -20,12 +20,18 @@
 //! through every pause where it is in fact waiting on the user.
 //!
 //! Both agents already broadcast the answer in the OSC 0 title, animating a
-//! braille spinner frame into it while they work and dropping it when they hand
-//! control back (`⠂ Fix the parser` → `✳ Fix the parser` for Claude Code,
-//! `⠼ review` → `review` for Codex). The first spinner frame promotes the title
-//! to `agent_phase`, an authority that outranks both `base_phase` sources; any
+//! spinner frame into it while they work and dropping it when they hand control
+//! back (`◑ Fix the parser` → `Fix the parser` for Claude Code, `⠼ review` →
+//! `review` for Codex). The first spinner frame promotes the title to
+//! `agent_phase`, an authority that outranks both `base_phase` sources; any
 //! OSC 133 mark demotes it again, because only the shell emits those, so one
 //! arriving means the agent has exited.
+//!
+//! A session whose foreground command is a known agent claims that authority
+//! from its *first* title, spinner or not. Otherwise the freshly launched agent
+//! that has not been asked anything yet — the one titled plainly, at its prompt,
+//! waiting — would read `Working` off the OSC 133 `C` that started it until the
+//! first task made it spin.
 //!
 //! The leading marker is stripped from the surfaced `title`, so the label stays
 //! put at the task summary instead of flickering through spinner frames — which
@@ -183,17 +189,28 @@ impl Sink {
     }
 
     /// Fold in what a title says about an agent's activity. The first spinner
-    /// frame makes the title the phase authority for this session; from then on
-    /// a title without one means the agent handed control back to the user.
+    /// frame — or the first title at all, while a known agent is what's
+    /// running — makes the title the phase authority for this session; from
+    /// then on a title without a spinner means the agent handed control back to
+    /// the user.
     ///
-    /// A title that never carries a spinner never claims the authority, so a
-    /// shell that retitles itself per command (`cargo build`) is left alone.
+    /// A title that never carries a spinner, from a command we don't recognize
+    /// as an agent, never claims the authority — so a shell that retitles itself
+    /// per command (`cargo build`) is left alone.
     fn note_title_activity(&mut self, working: bool) {
         if working {
             self.set_agent_phase(Some(Phase::Working));
-        } else if self.agent_phase.is_some() {
+        } else if self.agent_phase.is_some() || self.running_agent() {
             self.set_agent_phase(Some(Phase::WaitingForInput));
         }
+    }
+
+    /// Whether the foreground command is an agent whose title is its own status
+    /// display, rather than a program the shell happens to be running.
+    fn running_agent(&self) -> bool {
+        self.running_command
+            .as_deref()
+            .is_some_and(is_agent_command)
     }
 
     fn set_cwd_osc7(&mut self, value: Option<&&[u8]>) {
@@ -347,24 +364,46 @@ fn non_empty(text: String) -> Option<String> {
     (!text.is_empty()).then_some(text)
 }
 
-/// Claude Code's ready marker — the glyph its title carries in place of a
-/// spinner frame while it waits on the user.
+/// Claude Code's ready marker — the glyph older versions carried in place of a
+/// spinner frame while waiting on the user. Current ones simply drop the marker.
 const READY_MARKER: char = '✳';
 
 /// Split a title into whether it leads with a spinner frame, and the title with
 /// that leading activity marker removed.
 ///
-/// A spinner frame is any glyph from the Braille Patterns block: it is what both
-/// Claude Code and Codex animate, and no static title starts with one. The
-/// marker is stripped so the surfaced label is the part that means something —
-/// and so it stops changing ten times a second while an agent works.
+/// A spinner frame is any glyph from the Braille Patterns block (Codex, and
+/// Claude Code up to 2.0) or the four quartered circles `◐◑◒◓` (Claude Code
+/// since) — what these agents animate, and what no static title starts with.
+/// The marker is stripped so the surfaced label is the part that means something
+/// — and so it stops changing ten times a second while an agent works.
 fn split_activity(title: &str) -> (bool, &str) {
     let mut chars = title.chars();
     match chars.next() {
-        Some('\u{2800}'..='\u{28FF}') => (true, chars.as_str().trim_start()),
+        Some('\u{2800}'..='\u{28FF}' | '\u{25D0}'..='\u{25D3}') => {
+            (true, chars.as_str().trim_start())
+        }
         Some(READY_MARKER) => (false, chars.as_str().trim_start()),
         _ => (false, title),
     }
+}
+
+/// Commands that drive their own OSC 0 title as a status display, so a title
+/// from one is a statement about the *agent's* phase rather than about a
+/// program the shell is running.
+const AGENT_COMMANDS: [&str; 2] = ["claude", "codex"];
+
+/// Whether a poller-reported foreground command is one of those.
+///
+/// Every token is checked, not just the first, because an agent is so often
+/// reached through something else: `npx claude`, `env FOO=1 codex`,
+/// `pnpm dlx claude`. Matching only the program name left every one of those on
+/// the bug this exists to fix. Each token is reduced to its own basename, so
+/// `/opt/homebrew/bin/claude --resume` counts too.
+fn is_agent_command(command: &str) -> bool {
+    command.split_whitespace().any(|token| {
+        let name = token.rsplit('/').next().unwrap_or(token);
+        AGENT_COMMANDS.contains(&name)
+    })
 }
 
 /// Parse an OSC 7 `file://<host><path>` value into its (percent-decoded) path.
@@ -633,6 +672,79 @@ mod tests {
         assert_eq!(waiting.phase, Phase::WaitingForInput);
         // Both markers strip to the same label, so it never flickered.
         assert_eq!(waiting.title.as_deref(), Some("Fix the parser"));
+    }
+
+    #[test]
+    fn claude_codes_quartered_circle_spinner_is_a_spinner() {
+        let mut s = scanner();
+        feed(&mut s, b"\x1b]133;C\x07");
+
+        // Claude Code animates ◐◑◒◓ rather than braille as of 2.1; read as a
+        // static title, every one of these sessions was Working until it exited.
+        let working =
+            feed(&mut s, "\x1b]0;◑ Fix the parser\x07".as_bytes()).expect("spinner changed status");
+        assert_eq!(working.phase, Phase::Working);
+        assert_eq!(working.title.as_deref(), Some("Fix the parser"));
+
+        // Later frames strip to the same label, so the working agent doesn't
+        // push a status frame per animation tick.
+        assert!(!s.feed("\x1b]0;◒ Fix the parser\x07".as_bytes()));
+
+        // Handing control back drops the marker entirely — there is no ready
+        // glyph any more.
+        let waiting =
+            feed(&mut s, b"\x1b]0;Fix the parser\x07").expect("bare title changed status");
+        assert_eq!(waiting.phase, Phase::WaitingForInput);
+        assert_eq!(waiting.title.as_deref(), Some("Fix the parser"));
+    }
+
+    #[test]
+    fn a_running_agents_first_title_claims_the_phase_without_a_spinner() {
+        let mut s = scanner();
+        feed(&mut s, b"\x1b]133;C\x07");
+        s.on_poll(false, Some("claude".to_owned()));
+
+        // A freshly launched agent sitting at its own prompt titles itself
+        // plainly and has never spun. The 133 `C` that started it is the last
+        // mark the shell will emit, so without this it reads Working while it
+        // waits.
+        let waiting = feed(&mut s, b"\x1b]0;Claude Code\x07").expect("title changed status");
+        assert_eq!(waiting.phase, Phase::WaitingForInput);
+    }
+
+    #[test]
+    fn a_path_qualified_agent_with_arguments_is_still_an_agent() {
+        let mut s = scanner();
+        feed(&mut s, b"\x1b]133;C\x07");
+        s.on_poll(false, Some("/opt/homebrew/bin/claude --resume".to_owned()));
+
+        let waiting = feed(&mut s, b"\x1b]0;Claude Code\x07").expect("title changed status");
+        assert_eq!(waiting.phase, Phase::WaitingForInput);
+    }
+
+    /// An agent is usually reached through something else, and a launcher in
+    /// front of it must not put the session back on the bug this fixes.
+    #[test]
+    fn an_agent_behind_a_launcher_is_still_an_agent() {
+        for command in ["npx claude", "env FOO=1 codex", "pnpm dlx claude --resume"] {
+            let mut s = scanner();
+            feed(&mut s, b"\x1b]133;C\x07");
+            s.on_poll(false, Some((*command).to_owned()));
+
+            let waiting = feed(&mut s, b"\x1b]0;Claude Code\x07")
+                .unwrap_or_else(|| panic!("{command} should claim the title authority"));
+            assert_eq!(waiting.phase, Phase::WaitingForInput, "{command}");
+        }
+    }
+
+    #[test]
+    fn an_ordinary_command_titling_itself_is_not_an_agent() {
+        let mut s = scanner();
+        feed(&mut s, b"\x1b]133;C\x07");
+        s.on_poll(false, Some("cargo build".to_owned()));
+
+        let titled = feed(&mut s, b"\x1b]0;cargo build\x07").expect("title changed status");
+        assert_eq!(titled.phase, Phase::Working);
     }
 
     #[test]

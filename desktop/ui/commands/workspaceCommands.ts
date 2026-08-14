@@ -6,8 +6,12 @@ import { getCommandUi } from "./host";
 import type { Attachment, Workspace } from "../types";
 import type { Command } from "./types";
 
-/** Only the first nine get a positional shortcut; the rest are typed for. */
-const SHORTCUT_LIMIT = 9;
+/**
+ * Only the first nine get a positional shortcut; the rest are typed for. The
+ * queue reads it too — the cards that reveal a digit under ⌘ have to be exactly
+ * the cards a digit would reach.
+ */
+export const SHORTCUT_LIMIT = 9;
 
 /**
  * Open one comparison — a repo tab, the menu's "Open", a ⌘K branch row.
@@ -75,6 +79,12 @@ export function focusWorkspace(
   target?: ReviewTarget,
 ): void {
   const store = useReviewStore.getState();
+  // Naming a workspace is asking to be shown it, so it also ends the
+  // terminals-only overview. That row spans every workspace at once — left up,
+  // a card click, a ⌘K row and ⌘1–9 would each appear to do nothing. Guarded
+  // because this is the app's most-used gesture and the flag is almost always
+  // already false: an unconditional `set` notifies every subscriber in the app.
+  if (store.terminalOverview) store.setTerminalOverview(false);
   store.setFocusedWorkspace(workspace.id);
   // Looking at it *is* the acknowledgement — there is no dismiss button for an
   // attention accent, because a second gesture to say "yes, I saw that" is a
@@ -128,6 +138,12 @@ export function workspaceCommands(): Command[] {
       index < SHORTCUT_LIMIT
         ? { code: `Digit${index + 1}`, mod: true }
         : undefined,
+    // Switching workspaces is the app's most-used gesture and it must not
+    // depend on where the caret is. ⌘ combinations are never forwarded to a
+    // PTY, and no text field wants ⌘3 either, so these answer from inside a
+    // shell and inside a search box exactly as they do from the sidebar.
+    allowInInput: true,
+    allowInTerminal: true,
     run: () => focusWorkspace(item),
   }));
 

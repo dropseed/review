@@ -1,9 +1,24 @@
 import { vi, describe, it, expect, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 
-const { detachWorkspace, attachWorkspace } = vi.hoisted(() => ({
+const { detachWorkspace, attachWorkspace, terminalStart } = vi.hoisted(() => ({
   detachWorkspace: vi.fn().mockResolvedValue([]),
   attachWorkspace: vi.fn().mockResolvedValue([]),
+  terminalStart: vi.fn().mockImplementation(({ terminalId, repoPath, cwd }) =>
+    Promise.resolve({
+      session: {
+        id: terminalId,
+        repoPath,
+        workspaceId: "w",
+        cwd,
+        title: null,
+        cols: 80,
+        rows: 24,
+        status: { id: terminalId, phase: "idle", enteredStateAt: 0 },
+      },
+      workspace: { id: "w", title: "the work", created: false },
+    }),
+  ),
 }));
 
 vi.mock("../../api", () => ({
@@ -11,6 +26,10 @@ vi.mock("../../api", () => ({
     listWorkspaces: vi.fn().mockResolvedValue([]),
     detachWorkspace,
     attachWorkspace,
+    terminalStart,
+    onTerminalStatus: () => () => {},
+    onTerminalOutput: () => () => {},
+    onTerminalExit: () => () => {},
   }),
 }));
 
@@ -24,7 +43,7 @@ vi.mock("../../commands/host", () => ({
 
 import { CodeHalfHeader } from "./CodeHalfHeader";
 import { TooltipProvider } from "../ui/tooltip";
-import { openRepoIn } from "./repo-choices";
+import { openRepoIn, type RepoChoice } from "./repo-choices";
 import { useReviewStore } from "../../stores";
 import { attachment, workspace } from "../../test/fixtures";
 import type { LocalBranchInfo } from "../../types";
@@ -32,12 +51,22 @@ import type { LocalBranchInfo } from "../../types";
 const A = "/repo-a";
 const B = "/repo-b";
 
+function choice(path: string, name: string, refName: string): RepoChoice {
+  return {
+    path,
+    name,
+    refName,
+    worktreePath: null,
+  };
+}
+
 function branch(name: string): LocalBranchInfo {
   return {
     name,
     isCurrent: true,
     commitsAhead: 0,
     unpushedCommits: 0,
+    behindUpstream: 0,
     hasWorkingTreeChanges: false,
     lastCommitDate: new Date().toISOString(),
     lastCommitMessage: "x",
@@ -89,6 +118,8 @@ afterEach(() => {
     activeReviewKey: null,
     localActivity: [],
     terminalsSupported: false,
+    terminalTabs: [],
+    terminalSessions: {},
     repoPath: null,
     contentFocus: "split",
   });
@@ -173,7 +204,7 @@ describe("the code half's Focus toggle", () => {
     seed();
     render(<CodeHalfHeader />);
 
-    expect(screen.queryByLabelText("Focus")).toBeNull();
+    expect(screen.queryByLabelText("Full view")).toBeNull();
   });
 
   it("gives the code half the stage once there are two", () => {
@@ -185,7 +216,7 @@ describe("the code half's Focus toggle", () => {
       </TooltipProvider>,
     );
 
-    fireEvent.click(screen.getByLabelText("Focus"));
+    fireEvent.click(screen.getByLabelText("Full view"));
     expect(useReviewStore.getState().contentFocus).toBe("code");
   });
 });
@@ -194,7 +225,7 @@ describe("picking a repo", () => {
   it("opens a repo the workspace isn't showing yet", async () => {
     const focused = seed([attachment(A, "main")]);
 
-    await openRepoIn(focused, { path: B, name: "repo-b", refName: "dev" });
+    await openRepoIn(focused, choice(B, "repo-b", "dev"));
 
     expect(attachWorkspace).toHaveBeenCalledWith("w", B, "dev");
     expect(activateReviewKey).toHaveBeenCalledWith(B, "dev");
@@ -208,9 +239,52 @@ describe("picking a repo", () => {
   it("just activates the tab of a repo already open", async () => {
     const focused = seed();
 
-    await openRepoIn(focused, { path: B, name: "repo-b", refName: "dev" });
+    await openRepoIn(focused, choice(B, "repo-b", "dev"));
 
     expect(attachWorkspace).not.toHaveBeenCalled();
     expect(activateReviewKey).toHaveBeenCalledWith(B, "dev");
+  });
+
+  /**
+   * The pick already named the directory; asking for the shell separately was
+   * the same answer typed twice.
+   */
+  it("starts a shell in a workspace that isn't running one", async () => {
+    const focused = seed([attachment(A, "main")]);
+
+    await openRepoIn(focused, choice(B, "repo-b", "dev"));
+
+    expect(terminalStart).toHaveBeenCalledWith(
+      expect.objectContaining({ repoPath: B, workspaceId: "w" }),
+    );
+  });
+
+  /**
+   * A second repo opened alongside work in progress is one you wanted to read.
+   * A shell nobody asked for would take the stage away from the one running.
+   */
+  it("stays quiet when the workspace already has a terminal", async () => {
+    const focused = seed([attachment(A, "main")]);
+    useReviewStore.setState({
+      terminalTabs: [
+        { id: "tab", root: { type: "leaf", terminalId: "t0" }, focused: "t0" },
+      ],
+      terminalSessions: {
+        t0: {
+          id: "t0",
+          repoPath: A,
+          workspaceId: "w",
+          cwd: A,
+          title: null,
+          cols: 80,
+          rows: 24,
+          status: { id: "t0", phase: "idle", enteredStateAt: 0 },
+        },
+      } as never,
+    });
+
+    await openRepoIn(focused, choice(B, "repo-b", "dev"));
+
+    expect(terminalStart).not.toHaveBeenCalled();
   });
 });

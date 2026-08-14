@@ -29,6 +29,7 @@ function branch(
     isCurrent: false,
     commitsAhead: 0,
     unpushedCommits: 0,
+    behindUpstream: 0,
     hasWorkingTreeChanges: false,
     lastCommitDate: new Date(NOW).toISOString(),
     lastCommitMessage: "x",
@@ -86,6 +87,7 @@ function context(
     rows: new Map(allSidebarRows(tree).map((row) => [row.reviewKey, row])),
     repoNames: new Map([[REPO, "repo"]]),
     knownRepos: new Set([REPO]),
+    heads: new Map(),
     reviews,
     shipped: new Map(),
   };
@@ -149,11 +151,16 @@ describe("describeWorkspace", () => {
     expect(status.phrase).toContain("#12 changes requested");
   });
 
-  it("says uncommitted changes, and stops at two clauses", () => {
+  it("sizes the working tree, and stops at two clauses", () => {
     const status = describeWorkspace(
       item(),
       context(
-        [branch("feature", { hasWorkingTreeChanges: true })],
+        [
+          branch("feature", {
+            hasWorkingTreeChanges: true,
+            workingTreeStats: { fileCount: 3, additions: 48, deletions: 12 },
+          }),
+        ],
         [pr({ checksState: "FAILURE" })],
         {
           [makeReviewKey(REPO, "feature")]: {
@@ -173,8 +180,57 @@ describe("describeWorkspace", () => {
         },
       ),
     );
-    expect(status.hasChanges).toBe(true);
-    expect(status.phrase).toBe("#12 CI failing · uncommitted changes");
+    // Two clauses, so the review progress the same context supplies is left
+    // out — and the changes one is structured, since the card colours it.
+    expect(status.phrase).toBe("#12 CI failing · 3 files +48 −12");
+    // Every clause carries its own words; the stat rides *alongside* them, so
+    // the card can colour the numbers without rewriting the sentence.
+    expect(status.clauses).toEqual([
+      { text: "#12 CI failing" },
+      {
+        text: "3 files +48 −12",
+        stat: { fileCount: 3, additions: 48, deletions: 12 },
+      },
+    ]);
+  });
+
+  /**
+   * Stats are the checked-out branch's alone, so a workspace can have changes
+   * with nothing having counted them. The adjective is still true.
+   */
+  it("says uncommitted changes when nothing measured them", () => {
+    const status = describeWorkspace(
+      item(),
+      context([branch("feature", { hasWorkingTreeChanges: true })]),
+    );
+    expect(status.phrase).toBe("uncommitted changes");
+  });
+
+  /** One line for the card, so several repos' working trees are one sum. */
+  it("sums the working trees of every repo that has one", () => {
+    const status = describeWorkspace(
+      item({
+        attachments: [attachment(REPO, "feature"), attachment(REPO, "other")],
+      }),
+      context([
+        branch("feature", {
+          hasWorkingTreeChanges: true,
+          workingTreeStats: { fileCount: 3, additions: 48, deletions: 12 },
+        }),
+        branch("other", {
+          hasWorkingTreeChanges: true,
+          workingTreeStats: { fileCount: 1, additions: 2, deletions: 30 },
+        }),
+      ]),
+    );
+    expect(status.phrase).toBe("4 files +50 −42");
+  });
+
+  /** A clean workspace is never asked how big its changes are. */
+  it("says nothing about a working tree with nothing in it", () => {
+    const status = describeWorkspace(item(), context([branch("feature")]));
+    expect(status.phrase).toBe("");
+    expect(status.clauses).toEqual([]);
   });
 
   it("falls back to review progress when nothing is waiting on you", () => {

@@ -10,6 +10,7 @@ import { useReviewStore } from "../../stores";
 import { ResizeHandle } from "../ContentArea/ResizeHandle";
 import { DiffRail } from "../ContentArea/DiffRail";
 import { TerminalPanel } from "./TerminalPanel";
+import { TerminalOverview } from "./TerminalOverview";
 import { TerminalRail } from "./TerminalRail";
 import {
   TERMINAL_MAX_CONTENT_FRACTION,
@@ -38,6 +39,7 @@ import { useTerminalDockPresent } from "../../stores/selectors/terminals";
  */
 export function TerminalDock({ children }: { children: ReactNode }): ReactNode {
   const contentFocus = useReviewStore((s) => s.contentFocus);
+  const terminalOverview = useReviewStore((s) => s.terminalOverview);
   const terminalPanelWidth = useReviewStore((s) => s.terminalPanelWidth);
   const setTerminalPanelWidth = useReviewStore((s) => s.setTerminalPanelWidth);
   const terminalDockSide = useReviewStore((s) => s.terminalDockSide);
@@ -169,12 +171,32 @@ export function TerminalDock({ children }: { children: ReactNode }): ReactNode {
     <div
       className={clsx(
         "flex min-w-0 flex-1 flex-col overflow-hidden",
-        terminalFocused && "hidden",
+        (terminalFocused || terminalOverview) && "hidden",
       )}
     >
       {children}
     </div>
   );
+
+  // The overview takes the whole row and the panel does not render at all —
+  // not a third dock state but a replacement for both halves. A terminal's
+  // xterm element can only be parented in one place, and the overview mounts
+  // the same panes the panel would, so the panel has to let go of them first;
+  // toggling back re-parents each one home (see registry.ts, TerminalPane).
+  // The content still renders, hidden, for the reason `contentRail` does.
+  if (terminalOverview) {
+    return (
+      <div
+        ref={contentRowRef}
+        className="relative flex flex-1 flex-row overflow-hidden bg-surface"
+      >
+        <div className="min-w-0 flex-1 overflow-hidden p-2">
+          <TerminalOverview />
+        </div>
+        {content}
+      </div>
+    );
+  }
 
   return (
     <div

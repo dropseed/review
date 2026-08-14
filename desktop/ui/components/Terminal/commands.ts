@@ -164,6 +164,27 @@ export const TERMINAL_COMMANDS: readonly Command[] = [
     run: ({ store }) => store.toggleTerminalFocus(),
   },
   {
+    id: "view.terminalOverview",
+    title: "All Terminals",
+    category: "View",
+    keywords: [
+      "overview",
+      "everything",
+      "grid",
+      "side by side",
+      "shell",
+      "agents",
+      "watch",
+    ],
+    // No chord. The row is a look you take deliberately, not something to land
+    // on mid-keystroke — and every ⌘ combination this app could spare is worth
+    // more to an action you repeat.
+    allowInTerminal: true,
+    allowInInput: true,
+    isVisible: supported,
+    run: ({ store }) => store.toggleTerminalOverview(),
+  },
+  {
     id: "go.terminalNeedsYou",
     title: "Next Terminal Needing You",
     category: "Go",

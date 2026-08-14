@@ -70,10 +70,18 @@ export function getWorkspaceContext(state: {
     if (!shipped.has(key)) shipped.set(key, pr);
   }
 
+  // Built off the same tree the rows come from, so "the ref this repo is on"
+  // has one answer here and in ⌘K.
+  const heads = new Map<string, string>();
+  for (const node of tree) {
+    if (node.head) heads.set(node.repoPath, node.head.ref);
+  }
+
   const ctx: WorkspaceContext = {
     rows: sidebarRowsByKey(tree),
     repoNames,
     knownRepos,
+    heads,
     reviews: state.globalReviewsByKey,
     shipped,
   };

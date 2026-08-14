@@ -53,6 +53,7 @@ const EMPTY_CONTEXT: WorkspaceContext = {
   rows: new Map(),
   repoNames: new Map(),
   knownRepos: new Set(),
+  heads: new Map(),
   reviews: {},
   shipped: new Map(),
 };
@@ -163,15 +164,20 @@ function surfaceSource(path: string): string {
 }
 
 /**
- * Every surface that shows a terminal renders one of the two shared item lists,
- * which is what makes their menus the same menu rather than several that happen
- * to agree — the grep is how that stays true. Both lists come from
- * `useTerminalActions`; they differ only in whether the menu is opened by
- * right-click or by a button.
+ * Every surface that *offers a menu* over a terminal renders one of the two
+ * shared item lists, which is what makes their menus the same menu rather than
+ * several that happen to agree — the grep is how that stays true. Both lists
+ * come from `useTerminalActions`; they differ only in whether the menu is
+ * opened by right-click or by a button.
+ *
+ * An open pane is not on this list, and deliberately: it offers no menu at all
+ * now. Its whole surface is a live shell, so it can carry neither a right-click
+ * trigger (see below) nor — once the hover cluster was cut back to the one
+ * gesture with no keyboard equivalent — a button. The pane's verbs are its
+ * tab's, which is the noun the strip already names them under.
  */
 const TERMINAL_SURFACES = [
   "components/Terminal/TerminalPanel.tsx",
-  "components/Terminal/PaneTree.tsx",
   "components/Terminal/CollapsedPane.tsx",
 ];
 
@@ -187,10 +193,9 @@ describe("the terminal menu is one menu", () => {
   /**
    * The live terminal surface is the shell's, right button included: a TUI
    * with mouse reporting on is *sent* that press, and intercepting it would
-   * break vim, tmux and anything else that reads the mouse. So the open pane's
-   * menu hangs off a button in its hover chrome, and `PaneTree` must hold no
-   * right-click trigger at all. A folded pane is a different noun — it draws no
-   * terminal — and keeps its context menu in `CollapsedPane`.
+   * break vim, tmux and anything else that reads the mouse — so `PaneTree` must
+   * hold no right-click trigger at all. A folded pane is a different noun — it
+   * draws no terminal — and keeps its context menu in `CollapsedPane`.
    */
   it("keeps right-click off the pane's terminal surface", () => {
     expect(surfaceSource("components/Terminal/PaneTree.tsx")).not.toMatch(

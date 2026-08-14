@@ -619,6 +619,19 @@ export interface Guide {
   state?: GuideGenerated;
 }
 
+/**
+ * Progress counted against a diff rather than against the decision map —
+ * mirrors core's `MeasuredProgress`. See `ReviewState::measure`.
+ */
+export interface MeasuredProgress {
+  totalHunks: number;
+  trustedHunks: number;
+  approvedHunks: number;
+  rejectedHunks: number;
+  reviewedHunks: number;
+  savedForLaterHunks: number;
+}
+
 export interface ReviewState {
   schemaVersion?: number; // On-disk format version (migrated forward on read)
   // The review's identity: the ref being reviewed (branch/SHA/tag/stash).
@@ -635,6 +648,16 @@ export interface ReviewState {
   version: number; // Version counter for optimistic concurrency control
   guide?: Guide; // Guide config + AI-generated state (grouping)
   totalDiffHunks: number; // Total diff hunks (including unclassified) for accurate progress
+  /**
+   * Progress as the backend last counted it against a complete diff, on save.
+   *
+   * Read-only from here — counting it needs the diff *and* the decisions, and
+   * doing that in two languages is what produced two answers that disagreed.
+   * `computeReviewProgress` is still what the open review renders from; this is
+   * what every *other* review's card reads, since the sidebar summarizes them
+   * all without loading a diff for any.
+   */
+  progress?: MeasuredProgress;
   githubPr?: GitHubPrRef; // Optional GitHub PR reference
   worktreePath?: string; // Path to review-managed worktree, if created
 }
@@ -936,6 +959,14 @@ export interface LocalBranchInfo {
    * have published to. One of the sidebar's row facts: see `sidebar-tree.ts`.
    */
   unpushedCommits: number;
+  /**
+   * Commits its upstream has that it doesn't — zero when it has no upstream.
+   *
+   * Read on the *base* branch rather than the one under review: a comparison is
+   * based on the local default branch, so a stale one silently folds everything
+   * that landed on trunk since into the branch's own diff.
+   */
+  behindUpstream: number;
   hasWorkingTreeChanges: boolean;
   lastCommitDate: string;
   lastCommitMessage: string;

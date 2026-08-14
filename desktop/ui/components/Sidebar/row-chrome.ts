@@ -43,12 +43,6 @@ export const ROW_LABEL_HOVER_FADE =
   "group-hover:[mask-image:linear-gradient(to_right,#000_calc(100%_-_1.5rem),transparent)]";
 
 /**
- * The "M" working-tree-changes hint. A status note about the row, not a peer of
- * its name — deliberately below the `text-xs` label rather than level with it.
- */
-export const ROW_MODIFIED_BADGE = "text-xxs text-status-modified/80";
-
-/**
  * The keyboard half of a row's click.
  *
  * Every row in this sidebar is a `div role="button"` — `draggable` on a real

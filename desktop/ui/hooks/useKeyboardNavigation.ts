@@ -31,11 +31,21 @@ export function useKeyboardNavigation() {
 
       const state = useReviewStore.getState();
 
-      // Escape: dismiss overlay views in priority order (search > working-tree
-      // rolling diff > split view). SearchView handles Escape itself as well,
-      // because this handler bails on text entry and its query box is focused
-      // on open — but clicking into the results moves focus to the body, and
-      // that is this one's to catch.
+      // Escape: dismiss overlay views in priority order (terminal overview >
+      // search > working-tree rolling diff > split view). SearchView handles
+      // Escape itself as well, because this handler bails on text entry and its
+      // query box is focused on open — but clicking into the results moves
+      // focus to the body, and that is this one's to catch.
+      //
+      // The overview goes first because it covers the others: whatever is open
+      // behind it is not what the key was pressed at. It is also the one that
+      // cannot be dismissed from inside a terminal, since xterm's textarea is
+      // text entry and Escape there belongs to the shell.
+      if (event.key === "Escape" && state.terminalOverview) {
+        event.preventDefault();
+        state.setTerminalOverview(false);
+        return;
+      }
       if (event.key === "Escape" && state.searchViewOpen) {
         event.preventDefault();
         state.closeSearchView();

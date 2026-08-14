@@ -93,8 +93,25 @@ export function getTabsByWorkspaceId(
   const deps = [state.terminalTabs, state.terminalSessions];
   if (hits(tabsCache, deps)) return tabsCache!.out;
   const out = selectTabsByWorkspaceId(state);
+
+  // Per-workspace identity, the same rule the roll-up below keeps and for the
+  // same reason: `terminalTabs` is replaced by things that have nothing to do
+  // with which tabs exist — focusing a pane, folding one, and `resizeSplit`,
+  // which fires rafThrottled for the whole of a divider drag. Handing every
+  // card a fresh array on each of those re-rendered the entire queue at 60fps
+  // for a gesture happening in the terminal panel.
+  const previous = tabsCache?.out ?? {};
+  for (const [workspaceId, tabIds] of Object.entries(out)) {
+    const before = previous[workspaceId];
+    if (before && sameIds(before, tabIds)) out[workspaceId] = before;
+  }
+
   tabsCache = { deps, out };
   return out;
+}
+
+function sameIds(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((id, i) => id === b[i]);
 }
 
 /** Every workspace's terminal state, in one pass over the tabs. */
@@ -254,28 +271,87 @@ export interface TabRowGlance extends TabGlance {
  * rule was pasted into every row that listed one.
  */
 export function useTabGlance(tabId: string): TabRowGlance | null {
-  const terminalTabs = useReviewStore((s) => s.terminalTabs);
-  const sessions = useReviewStore((s) => s.terminalSessions);
-  const statuses = useReviewStore((s) => s.terminalStatuses);
-  const exited = useReviewStore((s) => s.terminalExited);
+  return useReviewStore((s) => getTabGlances(s)[tabId] ?? null);
+}
 
-  return useMemo(() => {
-    const tab = findTab(terminalTabs, tabId);
-    if (!tab) return null;
-    const glance = tabGlance(tab, sessions, statuses, exited);
-    if (glance.statuses.length === 0) return null;
-    return {
+let glanceCache: {
+  deps: readonly unknown[];
+  out: Record<string, TabRowGlance>;
+} | null = null;
+
+/**
+ * Every tab's glance, built in one pass and cached like its siblings above.
+ *
+ * This used to be four whole-map subscriptions plus a per-consumer `useMemo`,
+ * which meant one agent's status tick re-rendered *every* terminal row in the
+ * window and re-walked every tab's pane tree — the opposite of what the rows
+ * were built to do. Sharing one build, and keeping the identity of each tab
+ * whose fields didn't move, is what makes zustand's own equality check bail for
+ * the rows that didn't change.
+ */
+function getTabGlances(state: TerminalState): Record<string, TabRowGlance> {
+  const deps = [
+    state.terminalTabs,
+    state.terminalSessions,
+    state.terminalStatuses,
+    state.terminalExited,
+  ];
+  if (hits(glanceCache, deps)) return glanceCache!.out;
+
+  const previous = glanceCache?.out ?? {};
+  const out: Record<string, TabRowGlance> = {};
+  for (const tab of state.terminalTabs) {
+    const glance = tabGlance(
+      tab,
+      state.terminalSessions,
+      state.terminalStatuses,
+      state.terminalExited,
+    );
+    // The membership rule: a tab whose panes the status stream hasn't reported
+    // on has no phase, no title and no place in a list.
+    if (glance.statuses.length === 0) continue;
+    const next: TabRowGlance = {
       ...glance,
-      session: sessions[tab.focused],
-      exitCode: exited[tab.focused],
+      session: state.terminalSessions[tab.focused],
+      exitCode: state.terminalExited[tab.focused],
       panes: glance.leafIds.map((id) => ({
         id,
-        phase: statuses[id]?.phase ?? "idle",
-        dead: id in exited,
-        title: sessionTitle(statuses[id], sessions[id]),
+        phase: state.terminalStatuses[id]?.phase ?? "idle",
+        dead: id in state.terminalExited,
+        title: sessionTitle(
+          state.terminalStatuses[id],
+          state.terminalSessions[id],
+        ),
       })),
     };
-  }, [terminalTabs, tabId, sessions, statuses, exited]);
+    const before = previous[tab.id];
+    out[tab.id] = before && sameGlance(before, next) ? before : next;
+  }
+
+  glanceCache = { deps, out };
+  return out;
+}
+
+/** What a row actually draws — deeper equality would cost more than it saves. */
+function sameGlance(a: TabRowGlance, b: TabRowGlance): boolean {
+  return (
+    a.title === b.title &&
+    a.severity === b.severity &&
+    a.allDead === b.allDead &&
+    a.exitCode === b.exitCode &&
+    a.session === b.session &&
+    a.leafIds.length === b.leafIds.length &&
+    a.panes.length === b.panes.length &&
+    a.panes.every((pane, i) => {
+      const other = b.panes[i];
+      return (
+        pane.id === other.id &&
+        pane.phase === other.phase &&
+        pane.dead === other.dead &&
+        pane.title === other.title
+      );
+    })
+  );
 }
 
 /**

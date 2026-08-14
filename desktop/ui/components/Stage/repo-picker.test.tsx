@@ -1,6 +1,6 @@
 import { vi, describe, it, expect, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
-import type { RepoChoice } from "./repo-choices";
+import { repoChoiceKey, type RepoChoice } from "./repo-choices";
 
 const { choices } = vi.hoisted(() => ({ choices: { current: [] as never[] } }));
 
@@ -18,7 +18,27 @@ function seed(next: RepoChoice[]): void {
 }
 
 function repo(path: string, name: string, refName: string | null): RepoChoice {
-  return { path, name, refName };
+  return {
+    path,
+    name,
+    refName,
+    worktreePath: null,
+  };
+}
+
+/** The same repo, as the row one of its checked-out branches contributes. */
+function worktree(
+  path: string,
+  name: string,
+  refName: string,
+  worktreePath: string,
+): RepoChoice {
+  return {
+    path,
+    name,
+    refName,
+    worktreePath,
+  };
 }
 
 /** The rows, as `basename` + whatever second column they chose to show. */
@@ -52,11 +72,11 @@ describe("finding a repo", () => {
   });
 
   /**
-   * The branch is the useful second column only while the name already
-   * identifies the repo. Two rows sharing a name have to be told apart by
-   * where they are.
+   * Two rows sharing a name also have to say where they are. The branch stays:
+   * a repo now contributes a row per worktree, and those differ by ref alone —
+   * trading it for the path would leave two identical-looking rows.
    */
-  it("shows paths instead of branches when two rows share a name", () => {
+  it("adds paths when two rows share a name", () => {
     seed([
       repo("/Users/dave/Developer/github/django", "django", "main"),
       repo("/Users/dave/Developer/forks/django", "django", "fix-thing"),
@@ -65,10 +85,58 @@ describe("finding a repo", () => {
     render(<RepoPicker attached={new Set()} onPick={() => {}} />);
 
     expect(rows()).toEqual([
-      "django~/Developer/github/django",
-      "django~/Developer/forks/django",
+      "djangomain~/Developer/github/django",
+      "djangofix-thing~/Developer/forks/django",
       "reviewmain",
     ]);
+  });
+
+  /** A worktree is reached for by its branch, not by the repo's name. */
+  it("finds a worktree by the branch it holds", () => {
+    seed([
+      repo("/src/review", "review", "main"),
+      worktree("/src/review", "review", "fix-the-parser", "/wt/fix-the-parser"),
+    ]);
+    render(<RepoPicker attached={new Set()} onPick={() => {}} />);
+
+    fireEvent.change(input(), { target: { value: "parser" } });
+
+    expect(rows()).toEqual(["reviewfix-the-parser"]);
+  });
+
+  /**
+   * "open" is the tab you are already on, and a repo's tab is pointed at one
+   * ref — so its other worktrees are still somewhere to go.
+   */
+  it("marks only the attached ref as open", () => {
+    seed([
+      repo("/src/review", "review", "main"),
+      worktree("/src/review", "review", "fix-the-parser", "/wt/fix-the-parser"),
+    ]);
+    render(
+      <RepoPicker
+        attached={new Set([repoChoiceKey("/src/review", "main")])}
+        onPick={() => {}}
+      />,
+    );
+
+    expect(rows()).toEqual(["reviewmainopen", "reviewfix-the-parser"]);
+  });
+
+  /**
+   * A repo's own checkout and its worktrees are the same noun — this repo, at
+   * this branch — so nothing marks one out as a worktree. Which of them happens
+   * to have its own directory is the app's problem, not a distinction to make
+   * someone read past on every row.
+   */
+  it("draws a worktree row exactly like the repo's own", () => {
+    seed([
+      repo("/src/review", "review", "main"),
+      worktree("/src/review", "review", "fix-the-parser", "/wt/fix-the-parser"),
+    ]);
+    render(<RepoPicker attached={new Set()} onPick={() => {}} />);
+
+    expect(rows()).toEqual(["reviewmain", "reviewfix-the-parser"]);
   });
 });
 

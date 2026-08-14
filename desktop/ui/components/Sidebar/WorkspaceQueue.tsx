@@ -15,10 +15,15 @@ import {
   useWorkspaces,
 } from "../../stores/selectors/workspaces";
 import {
+  useTabsByWorkspaceId,
   useTerminalsByWorkspaceId,
   workspaceTerminals,
 } from "../../stores/selectors/terminals";
-import { focusWorkspace } from "../../commands/workspaceCommands";
+import {
+  focusWorkspace,
+  SHORTCUT_LIMIT,
+} from "../../commands/workspaceCommands";
+import { useModHeld } from "../../hooks/useModHeld";
 import type { Workspace } from "../../types";
 import {
   ContextMenu,
@@ -30,13 +35,16 @@ import { ContextActionItems } from "./ActionMenu";
 import { WorkspaceTitleInput } from "./WorkspaceTitleInput";
 import { PrBadge } from "./PrBadge";
 import { StatusDot, STATE_LABEL, workspaceState } from "./StatusDot";
-import { activateOnKey, ROW_MODIFIED_BADGE } from "./row-chrome";
+import { TerminalRow } from "./TerminalRow";
+import { activateOnKey } from "./row-chrome";
 import { workspaceActions } from "./workspace-actions";
 import { useWorkspaceContext } from "./workspace-context";
 import {
   attentionSignalAt,
+  fileCountLabel,
   describeWorkspace,
   isUnseen,
+  type PhraseClause,
   type WorkspaceContext,
   type WorkspaceStatus,
 } from "./workspace-status";
@@ -46,6 +54,13 @@ import {
   useIsWorkDropTarget,
   workSectionDropHandlers,
 } from "./workspace-drag";
+
+/**
+ * The answer for a workspace running nothing, shared so it is the *same* empty
+ * array every time — a fresh `[]` per render would defeat `QueueEntry`'s memo
+ * for every dormant card in the queue.
+ */
+const NO_TABS: string[] = [];
 
 /**
  * The queue: every workspace, in the order the user put them in.
@@ -61,7 +76,9 @@ export function WorkspaceQueue(): ReactNode {
   const workspaces = useWorkspaces();
   const ctx = useWorkspaceContext();
   const terminals = useTerminalsByWorkspaceId();
+  const tabsByWorkspace = useTabsByWorkspaceId();
   const focused = useFocusedWorkspace();
+  const modHeld = useModHeld();
   const seenAt = useReviewStore((s) => s.workspaceSeenAt);
   const markWorkspaceSeen = useReviewStore((s) => s.markWorkspaceSeen);
 
@@ -131,6 +148,11 @@ export function WorkspaceQueue(): ReactNode {
               count={workspaces.length}
               ctx={ctx}
               terminals={workspaceTerminals(terminals, workspace.id)}
+              tabIds={tabsByWorkspace[workspace.id] ?? NO_TABS}
+              // Resolved here rather than handing every card the raw key state:
+              // a card past the ninth has no digit to reveal, so it must not
+              // re-render each time a ⌘ chord is pressed anywhere in the app.
+              showShortcut={modHeld && index < SHORTCUT_LIMIT}
               focused={workspace.id === focused?.id}
               seenAt={seenAt[workspace.id]}
               onSeen={markSeen}
@@ -195,6 +217,14 @@ interface QueueEntryProps {
   count: number;
   ctx: WorkspaceContext;
   terminals: ReturnType<typeof workspaceTerminals>;
+  /**
+   * The workspace's terminal tabs, in strip order. Ids rather than the tabs
+   * themselves: each row subscribes to its own tab, so a status tick re-renders
+   * one line instead of arriving here as a new prop for the whole card.
+   */
+  tabIds: string[];
+  /** ⌘ is down and this card is one a digit can reach — show its number. */
+  showShortcut: boolean;
   focused: boolean;
   /** When this workspace was last looked at, for the unseen accent. */
   seenAt: number | undefined;
@@ -215,6 +245,8 @@ const QueueEntry = memo(function QueueEntry({
   count,
   ctx,
   terminals,
+  tabIds,
+  showShortcut,
   focused,
   seenAt,
   onSeen,
@@ -302,7 +334,28 @@ const QueueEntry = memo(function QueueEntry({
           )}
 
           <div className="flex items-center gap-2">
-            <StatusDot state={state} />
+            {/* While ⌘ is down the dot's slot answers a different question:
+                which number this card is. The two never share the space —
+                a digit is what you want while reaching for one, and the dot is
+                what you want the rest of the time — and swapping them inside a
+                box the size of the dot is what keeps the title from moving.
+                The number is the card's position, the same one ⌘1–9 press. */}
+            <span className="relative flex shrink-0">
+              <StatusDot
+                state={state}
+                className={showShortcut ? "opacity-0" : undefined}
+              />
+              {showShortcut && (
+                <span
+                  aria-hidden="true"
+                  data-shortcut-digit
+                  className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2
+                             text-[9px] leading-none text-fg-faint tabular-nums"
+                >
+                  {index + 1}
+                </span>
+              )}
+            </span>
             {renaming ? (
               <WorkspaceTitleInput
                 workspaceId={workspace.id}
@@ -343,12 +396,10 @@ const QueueEntry = memo(function QueueEntry({
                   )}
                 />
               ) : (
-                <>
-                  {status.openPr && <PrBadge pr={status.openPr} />}
-                  {status.hasChanges && (
-                    <span className={ROW_MODIFIED_BADGE}>M</span>
-                  )}
-                </>
+                // No "M" beside the PR badge any more: the line below now says
+                // how big the working tree is, and a badge that means "there is
+                // something uncommitted" is the same fact with less in it.
+                status.openPr && <PrBadge pr={status.openPr} />
               )}
               {done && (
                 <button
@@ -390,11 +441,34 @@ const QueueEntry = memo(function QueueEntry({
                   {repo.chipLabel}
                 </span>
               ))}
-              {status.phrase && (
-                <span className="truncate text-[9.5px] leading-4 text-fg-faint">
-                  {status.phrase}
-                </span>
-              )}
+              {status.clauses.map((clause, index) => (
+                <Fragment key={clause.text}>
+                  {index > 0 && (
+                    <span
+                      aria-hidden="true"
+                      className="text-[9.5px] leading-4 text-fg-faint/50"
+                    >
+                      ·
+                    </span>
+                  )}
+                  <PhraseClauseText clause={clause} />
+                </Fragment>
+              ))}
+            </div>
+          )}
+
+          {/* The workspace's terminals, one line each. The dot above is the
+              loudest of them, which is the right summary for a card you are
+              scanning past and the wrong one for the card you stopped at: two
+              agents working and a third asking for a password read as "asking"
+              and say nothing about the other two. Nothing is drawn for a
+              workspace running nothing — a heading over an empty list is the
+              queue claiming space for something that isn't there. */}
+          {tabIds.length > 0 && (
+            <div className="mt-1 pl-[15px]">
+              {tabIds.map((tabId) => (
+                <TerminalRow key={tabId} tabId={tabId} />
+              ))}
             </div>
           )}
 
@@ -424,6 +498,33 @@ const QueueEntry = memo(function QueueEntry({
     </ContextMenu>
   );
 });
+
+/**
+ * One clause of the status line.
+ *
+ * The changes clause is the only one drawn as more than its words: how much is
+ * uncommitted is a number you compare across cards, and it reads as one at a
+ * glance only if the two signs are the colours the diff itself uses for them.
+ * The file count stays the phrase's own grey — it is the noun, not the news.
+ */
+function PhraseClauseText({ clause }: { clause: PhraseClause }): ReactNode {
+  if (!clause.stat) {
+    return (
+      <span className="truncate text-[9.5px] leading-4 text-fg-faint">
+        {clause.text}
+      </span>
+    );
+  }
+  // The words come from the same helpers that built `clause.text`, so the line
+  // and the tooltip describing it cannot say different things.
+  return (
+    <span className="flex shrink-0 items-center gap-1 text-[9.5px] leading-4 tabular-nums text-fg-faint">
+      <span>{fileCountLabel(clause.stat)}</span>
+      <span className="text-diff-added">+{clause.stat.additions}</span>
+      <span className="text-diff-removed">−{clause.stat.deletions}</span>
+    </span>
+  );
+}
 
 /** The entry's verbs, resolved only once a menu is actually open. */
 function EntryMenuItems({

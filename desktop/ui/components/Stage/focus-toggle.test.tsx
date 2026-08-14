@@ -37,20 +37,20 @@ describe("a half's Focus button", () => {
   it("gives its own half the stage, and hands it back", () => {
     show("terminal");
 
-    fireEvent.click(screen.getByLabelText("Focus"));
+    fireEvent.click(screen.getByLabelText("Full view"));
     expect(focus()).toBe("terminal");
 
-    fireEvent.click(screen.getByLabelText("Exit focus"));
+    fireEvent.click(screen.getByLabelText("Exit full view"));
     expect(focus()).toBe("split");
   });
 
   it("does the same for the code half", () => {
     show("code");
 
-    fireEvent.click(screen.getByLabelText("Focus"));
+    fireEvent.click(screen.getByLabelText("Full view"));
     expect(focus()).toBe("code");
 
-    fireEvent.click(screen.getByLabelText("Exit focus"));
+    fireEvent.click(screen.getByLabelText("Exit full view"));
     expect(focus()).toBe("split");
   });
 
@@ -63,14 +63,14 @@ describe("a half's Focus button", () => {
     show("terminal");
 
     expect(
-      screen.getByLabelText("Exit focus").getAttribute("aria-pressed"),
+      screen.getByLabelText("Exit full view").getAttribute("aria-pressed"),
     ).toBe("true");
 
     cleanup();
     show("code");
-    expect(screen.getByLabelText("Focus").getAttribute("aria-pressed")).toBe(
-      "false",
-    );
+    expect(
+      screen.getByLabelText("Full view").getAttribute("aria-pressed"),
+    ).toBe("false");
   });
 
   /** Focusing one half from the other's focus is one click, not two. */
@@ -78,7 +78,7 @@ describe("a half's Focus button", () => {
     useReviewStore.setState({ contentFocus: "terminal" });
     show("code");
 
-    fireEvent.click(screen.getByLabelText("Focus"));
+    fireEvent.click(screen.getByLabelText("Full view"));
     expect(focus()).toBe("code");
   });
 });

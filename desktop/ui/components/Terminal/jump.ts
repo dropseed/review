@@ -28,6 +28,13 @@ export function jumpToTerminal(id: string): void {
 
   const tab = findTabForTerminal(store.terminalTabs, id);
 
+  // Every route onto the stage has to leave the terminals-only row, and this
+  // is the one `focusWorkspace` can't cover: the workspace below is focused
+  // only when it isn't already, so jumping to a terminal in the workspace you
+  // are on would otherwise select its tab behind an overview still covering
+  // the stage — a click that visibly does nothing.
+  if (store.terminalOverview) store.setTerminalOverview(false);
+
   // Before the tab is activated, because focusing a workspace selects that
   // workspace's own remembered tab — doing it after would immediately point
   // the panel somewhere else.

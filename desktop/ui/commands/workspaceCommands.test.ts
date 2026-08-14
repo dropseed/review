@@ -32,6 +32,7 @@ function branch(name: string): LocalBranchInfo {
     isCurrent: false,
     commitsAhead: 1,
     unpushedCommits: 0,
+    behindUpstream: 0,
     hasWorkingTreeChanges: true,
     lastCommitDate: new Date().toISOString(),
     lastCommitMessage: "x",

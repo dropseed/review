@@ -25,13 +25,9 @@ export function FocusToggle({
   const contentFocus = useReviewStore((s) => s.contentFocus);
   const toggleTerminalFocus = useReviewStore((s) => s.toggleTerminalFocus);
   const toggleTerminalPanel = useReviewStore((s) => s.toggleTerminalPanel);
-  const dockSide = useReviewStore((s) => s.terminalDockSide);
 
   const focused = contentFocus === half;
-  const label = focused ? "Exit focus" : "Focus";
-  // The terminal sits on its dock side; the code has the other one.
-  const side =
-    half === "terminal" ? dockSide : dockSide === "left" ? "right" : "left";
+  const label = focused ? "Exit full view" : "Full view";
 
   return (
     <SimpleTooltip content={label} side={tooltipSide}>
@@ -49,44 +45,52 @@ export function FocusToggle({
             : "text-fg-faint hover:bg-fg/[0.08] hover:text-fg-secondary",
         )}
       >
-        <StageHalfGlyph side={side} filled={focused} />
+        <ExpandGlyph collapsing={focused} />
       </button>
     </SimpleTooltip>
   );
 }
 
 /**
- * A miniature of the stage: the frame is the content region, the fill is what
- * this half holds — half of it, or all of it once it has focus. The same
- * language the dock-side button beside it speaks.
+ * Corner arrows: out to the corners to take the whole stage, back in to give it
+ * up again.
+ *
+ * This used to be a miniature of the stage — a frame with a bar filling half of
+ * it or all of it. It was accurate and unreadable at 14px: the difference
+ * between the two states was the width of a bar, and neither state said what
+ * clicking would *do*. The full-screen arrows are the one glyph every media
+ * player and every image viewer has already taught, and the direction of the
+ * arrowheads is legible at a glance.
  */
-function StageHalfGlyph({
-  side,
-  filled,
-}: {
-  side: "left" | "right";
-  filled: boolean;
-}): ReactNode {
-  const width = filled ? 12 : 6.5;
+function ExpandGlyph({ collapsing }: { collapsing: boolean }): ReactNode {
   return (
     <svg
       viewBox="0 0 16 16"
       className="h-3.5 w-3.5"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.3"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
       aria-hidden="true"
     >
-      <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
-      <rect
-        x={side === "left" ? 2 : 14 - width}
-        y="2.5"
-        width={width}
-        height="11"
-        rx="1.5"
-        fill="currentColor"
-        stroke="none"
-      />
+      {collapsing ? (
+        <>
+          {/* Arrowheads at the corners pointing inward, each with its tail
+              running out to the edge it came from. */}
+          <path d="M6.5 2.5v4h-4M2.5 2.5l4 4" />
+          <path d="M9.5 2.5v4h4M13.5 2.5l-4 4" />
+          <path d="M6.5 13.5v-4h-4M2.5 13.5l4-4" />
+          <path d="M9.5 13.5v-4h4M13.5 13.5l-4-4" />
+        </>
+      ) : (
+        <>
+          <path d="M2.5 6.5v-4h4M2.5 2.5l4 4" />
+          <path d="M13.5 6.5v-4h-4M13.5 2.5l-4 4" />
+          <path d="M2.5 9.5v4h4M2.5 13.5l4-4" />
+          <path d="M13.5 9.5v4h-4M13.5 13.5l-4-4" />
+        </>
+      )}
     </svg>
   );
 }

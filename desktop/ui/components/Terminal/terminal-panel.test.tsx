@@ -55,8 +55,8 @@ describe("the terminal strip's controls", () => {
   it("carries this half's Focus toggle", () => {
     show();
 
-    fireEvent.click(screen.getByLabelText("Focus"));
+    fireEvent.click(screen.getByLabelText("Full view"));
     expect(useReviewStore.getState().contentFocus).toBe("terminal");
-    expect(screen.getByLabelText("Exit focus")).toBeDefined();
+    expect(screen.getByLabelText("Exit full view")).toBeDefined();
   });
 });

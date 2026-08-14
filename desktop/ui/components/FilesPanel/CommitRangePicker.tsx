@@ -1,8 +1,16 @@
-import { type MouseEvent, type ReactNode, useRef, useEffect } from "react";
+import {
+  type MouseEvent,
+  type ReactNode,
+  useMemo,
+  useRef,
+  useEffect,
+} from "react";
+import { toast } from "sonner";
 import { useReviewStore } from "../../stores";
 import {
   commitRangeFor,
   uncommittedRange,
+  unpushedRange,
   sameRange,
   type CommitRange,
 } from "../../types/commitRange";
@@ -11,10 +19,12 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import { Spinner } from "../ui/spinner";
+import { WarningIcon } from "../ui/icons";
 import { SELECTED_CHECK } from "./PanelToolbar";
 
 const CHEVRON_DOWN = (
@@ -32,13 +42,26 @@ const CHEVRON_DOWN = (
 );
 
 /**
- * The Review tab's commit range picker: narrows the review to one commit, a
- * contiguous shift-click range, or the uncommitted bucket. Unlike the hunk
- * filter it replaced, a selection re-diffs — the range *is* the comparison —
- * so changes a later commit overwrote are visible inside the range that made
- * them. Ranges are offered from the branch's commit attribution, which
- * `setCommitRange` deliberately preserves across a narrowing so the full list
- * stays reachable.
+ * What slice of the branch the Review tab is showing.
+ *
+ * Nobody opening a branch asks "what is my merge-base?". They ask one of three
+ * things — what is *in* this branch, what have I done since I last pushed, what
+ * have I not committed — and the app could already answer all three, through
+ * three unrelated controls with three vocabularies: a base override buried in a
+ * menu you could only reach from a deleted-ref notice, an entry in this list,
+ * and the default. So the base was a mechanism leaking out as though it were
+ * the intent. Here they are three rows of one menu, named as the questions.
+ *
+ * All three are ordinary `CommitRange`s, including "unpushed": a selection
+ * re-diffs — the range *is* the comparison — so changes a later commit
+ * overwrote are visible inside the range that made them, and expressing the
+ * unpushed slice as a base override instead would have made it the one row that
+ * behaved differently. Ranges are offered from the branch's commit attribution,
+ * which `setCommitRange` deliberately preserves across a narrowing so the full
+ * list stays reachable.
+ *
+ * The trigger names the base it is diffing against, which nothing in the review
+ * screen used to say — the base was visible only in the macOS window title.
  */
 export function CommitRangePicker(): ReactNode {
   const repoPath = useReviewStore((s) => s.repoPath);
@@ -51,6 +74,31 @@ export function CommitRangePicker(): ReactNode {
   const attributionLoading = useReviewStore((s) => s.attributionLoading);
   const attributionLoaded = useReviewStore((s) => s.attributionLoaded);
   const loadAttribution = useReviewStore((s) => s.loadAttribution);
+  const localActivity = useReviewStore((s) => s.localActivity);
+  const baseReason = useReviewStore((s) => s.baseReason);
+  const reviewRef = useReviewStore((s) => s.reviewRef);
+  const setBaseOverride = useReviewStore((s) => s.setBaseOverride);
+
+  // What git already knows about the two branches this comparison spans: how
+  // much of the head is unpublished, and how far the *base* has fallen behind
+  // its own remote. Both ride along on the branch listing the sidebar loads, so
+  // neither costs a call of its own.
+  const { unpushed, baseBehind, defaultBranch } = useMemo(() => {
+    const repo = localActivity.find((r) => r.repoPath === repoPath);
+    const branch = (name: string | undefined) =>
+      repo?.branches.find((b) => b.name === name);
+    return {
+      unpushed: branch(reviewComparison?.head)?.unpushedCommits ?? 0,
+      baseBehind: branch(reviewComparison?.base)?.behindUpstream ?? 0,
+      defaultBranch: repo?.defaultBranch ?? null,
+    };
+  }, [localActivity, repoPath, reviewComparison]);
+
+  // A base someone pinned, which until now nothing in the review screen either
+  // showed or could undo — the menu that clears it is reachable only from the
+  // notice that says your ref was deleted. So a review pinned to a commit
+  // months ago just quietly kept diffing against it.
+  const pinned = baseReason === "override";
 
   // Always attributed against the *review* comparison, never the active range —
   // otherwise narrowing would shrink the list you narrow from.
@@ -88,6 +136,24 @@ export function CommitRangePicker(): ReactNode {
     setCommitRange(sameRange(range, commitRange) ? null : range);
   };
 
+  /**
+   * Drop a pinned base, which is what picking "whole branch" means when one is
+   * set — the only row here whose slice lives in the review rather than in
+   * `commitRange`.
+   *
+   * A refusal is reported rather than swallowed: the whole failure is that the
+   * label doesn't change, which is indistinguishable from nothing having been
+   * clicked. `ChangeBaseMenu` already surfaces the same failure this way.
+   */
+  const clearBase = async (repo: string, ref: string): Promise<void> => {
+    const resolved = await setBaseOverride(repo, ref, null);
+    if (!resolved) {
+      toast.error(`Couldn't compare ${ref} against ${defaultBranch}`);
+      return;
+    }
+    setCommitRange(null);
+  };
+
   const handleCommitClick = (ordinal: number): void => {
     if (!reviewComparison) return;
     const [lo, hi] =
@@ -106,18 +172,70 @@ export function CommitRangePicker(): ReactNode {
     );
   }
 
+  // Stated once, rather than paid for at every mention below: `attribution` is
+  // only ever loaded against a comparison, so having commits at all implies
+  // one. Without this the rest of the function reads as though the base might
+  // be missing and renders `vs ` if it ever were.
+  if (!attribution || !reviewComparison) return null;
+
   // Uncommitted work needs the review's head to actually be checked out —
   // either here, or in the linked worktree this review owns. Mirrors core's
   // `working_tree_dir`, which resolves the diff against both.
   const showUncommitted =
-    !!reviewComparison &&
-    (reviewComparison.head === currentBranch || !!worktreePath);
+    reviewComparison.head === currentBranch || !!worktreePath;
 
-  if (!attribution || (commits.length === 0 && !showUncommitted)) return null;
+  if (commits.length === 0 && !showUncommitted) return null;
 
+  // Offered only when it is its own answer — see `unpushedRange`.
+  const unpushedSlice = unpushedRange(commits, reviewComparison.base, unpushed);
+
+  // What the review's *own* comparison is, named by the arm of the backend
+  // ladder that produced it. This is what `BaseReason` was added for — "so the
+  // UI can label the comparison honestly" — and it had never been read, which
+  // is why one label had to cover four different comparisons and got at least
+  // two of them wrong. The trunk case especially: the default branch against
+  // itself is nothing but a working tree, and calling that "whole branch" is
+  // the single most common review in the app describing itself as its
+  // opposite.
+  const wholeSlice = {
+    override: { label: `Since ${reviewComparison.base}`, hint: "pinned" },
+    trunkWorkingTree: { label: "Uncommitted", hint: reviewComparison.base },
+    branchVsDefault: {
+      label: "Whole branch",
+      hint: `vs ${reviewComparison.base}`,
+    },
+    singleCommit: { label: "This commit", hint: reviewComparison.base },
+  }[baseReason ?? "branchVsDefault"];
+
+  // The trunk review *is* its working tree, so the uncommitted row would be
+  // the row above it a second time, and "uncommitted work is included in the
+  // whole branch" would be describing it as being inside itself.
+  const uncommittedRow = showUncommitted && baseReason !== "trunkWorkingTree";
+  // Every condition the pinned row itself renders under: counting it from
+  // `pinned` alone let the two disagree, and a menu could reach the "nothing to
+  // choose" case below with a chevron still on it.
+  const unpinRow = pinned && !!defaultBranch && !!reviewRef && !!repoPath;
+
+  // "All commits" named the *contents* and left out what they were being
+  // compared against, which is the half nobody could see. The base is the
+  // answer to "why is this list bigger than I expected".
   const label = commitRange
     ? truncateSubject(commitRange.title, 40)
-    : "All commits";
+    : [wholeSlice.label, wholeSlice.hint].filter(Boolean).join(" · ");
+
+  // With one slice and no commits there is nothing to choose, and a menu whose
+  // only row is the row you are already on is a control that lies about being
+  // one. The trunk review is exactly this case — and it is the app's most
+  // common screen, so it is worth getting right rather than leaving a chevron
+  // that opens onto a single tick. It still has to *say* what it is showing:
+  // being unable to see that is what sent us here.
+  if (!unpinRow && !unpushedSlice && !uncommittedRow && commits.length === 0) {
+    return (
+      <div className="shrink-0 border-b border-edge/60 px-3 py-1.5 text-xs text-fg-muted">
+        {label}
+      </div>
+    );
+  }
 
   return (
     <div className="shrink-0 border-b border-edge/60">
@@ -128,62 +246,142 @@ export function CommitRangePicker(): ReactNode {
             className="flex w-full min-w-0 items-center gap-1.5 px-3 py-1.5 text-left text-xs
                        text-fg-muted hover:bg-fg/[0.04] hover:text-fg-secondary
                        focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring/70"
-            title="Narrow the review to a commit or range (shift-click to extend)"
+            title="Which slice of the branch to review (shift-click commits to extend)"
           >
             <span className="min-w-0 flex-1 truncate">{label}</span>
             {CHEVRON_DOWN}
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-80">
+          {/* The review's own comparison, named for what it actually is. */}
           <DropdownMenuItem onClick={() => select(null)}>
-            <span className="flex-1">All commits</span>
+            <span className="flex-1">{wholeSlice.label}</span>
+            <span className="shrink-0 text-xxs text-fg-faint">
+              {wholeSlice.hint}
+            </span>
             {!commitRange && SELECTED_CHECK}
           </DropdownMenuItem>
-          {commits.length > 0 && <DropdownMenuSeparator />}
-          {commits.map((c, i) => {
-            const ordinal = i + 1;
-            const selected =
-              commitRange?.kind === "commits" &&
-              ordinal >= commitRange.loOrdinal &&
-              ordinal <= commitRange.hiOrdinal;
-            return (
-              <DropdownMenuItem
-                key={c.hash}
-                onClick={(e: MouseEvent) => {
-                  shiftRef.current = e.shiftKey;
-                  handleCommitClick(ordinal);
-                }}
-                onSelect={(e: Event) => {
-                  if (shiftRef.current) e.preventDefault();
-                }}
-                className={selected ? "bg-focus-ring/10" : undefined}
-              >
-                <span className="w-6 shrink-0 text-right font-mono text-xxs text-fg-faint">
-                  #{ordinal}
-                </span>
-                <span className="shrink-0 font-mono text-xxs text-fg-muted">
-                  {c.shortHash}
-                </span>
-                <span className="min-w-0 flex-1 truncate">
-                  {truncateSubject(c.message, 40)}
-                </span>
-                {selected && SELECTED_CHECK}
-              </DropdownMenuItem>
-            );
-          })}
-          {showUncommitted && (
+
+          {/* A pinned base is a slice like any other, so escaping it is picking
+              a different one rather than a verb of its own. "Unpin" was a
+              fourth vocabulary for the one idea this menu exists to unify —
+              and it left the row above it reading "Whole branch · vs e14efa9",
+              which is two claims that contradict each other.
+
+              Clearing the override *is* what "whole branch" means, so the row
+              that says so is the row that does it. */}
+          {unpinRow && (
+            <DropdownMenuItem
+              onClick={() => void clearBase(repoPath!, reviewRef!)}
+            >
+              <span className="flex-1">Whole branch</span>
+              <span className="shrink-0 text-xxs text-fg-faint">
+                vs {defaultBranch}
+              </span>
+            </DropdownMenuItem>
+          )}
+
+          {unpushedSlice && (
+            <DropdownMenuItem onClick={() => select(unpushedSlice)}>
+              <span className="flex-1">Unpushed</span>
+              <span className="shrink-0 text-xxs text-fg-faint tabular-nums">
+                {unpushed} commits
+              </span>
+              {sameRange(unpushedSlice, commitRange) && SELECTED_CHECK}
+            </DropdownMenuItem>
+          )}
+
+          {uncommittedRow && (
+            <DropdownMenuItem
+              onClick={() => select(uncommittedRange(reviewComparison.head))}
+            >
+              <span className="flex-1">Uncommitted</span>
+              {commitRange?.kind === "uncommitted" && SELECTED_CHECK}
+            </DropdownMenuItem>
+          )}
+
+          {/* The honest footnote on the whole-branch row: with the head branch
+              checked out, core diffs against the working tree rather than the
+              head commit, so uncommitted work is already inside every slice
+              above except the ones bounded by two commits. Nothing said so, and
+              it is half of why a review reads bigger than the branch is. */}
+          {uncommittedRow && (
+            <p className="px-2 pb-1 pt-0.5 text-xxs leading-4 text-fg-faint/70">
+              Uncommitted work is included in {wholeSlice.label.toLowerCase()}.
+            </p>
+          )}
+
+          {baseBehind > 0 && (
             <>
               <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={() => select(uncommittedRange(reviewComparison.head))}
-              >
-                <span className="flex-1 italic text-fg-muted">
-                  Uncommitted changes
+              {/* Not a row you can act on — git is the only thing that can fix
+                  it — but the one fact that explains a file list nobody
+                  recognizes, and it is invisible from inside the diff. */}
+              <p className="flex items-start gap-1.5 px-2 py-1 text-xxs leading-4 text-status-modified/90">
+                <WarningIcon className="mt-px h-3 w-3 shrink-0" />
+                <span>
+                  <span className="tabular-nums">{baseBehind}</span> commits
+                  behind on {reviewComparison?.base} — pull it to drop what
+                  landed there from this diff.
                 </span>
-                {commitRange?.kind === "uncommitted" && SELECTED_CHECK}
-              </DropdownMenuItem>
+              </p>
             </>
           )}
+
+          {commits.length > 0 && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="flex items-center gap-2">
+                <span className="flex-1">Commits</span>
+                {/* Said up front, because the list below is the one part of
+                    this menu whose length is the branch's business rather than
+                    the app's — thirty-four of them is worth knowing before you
+                    start scrolling. */}
+                <span className="text-xxs font-normal text-fg-faint tabular-nums">
+                  {commits.length}
+                </span>
+              </DropdownMenuLabel>
+            </>
+          )}
+          {/* The commits scroll inside the menu rather than lengthening it.
+              A branch's commit count is the branch's business — on a long one
+              this list ran past the bottom of the window and took the three
+              rows above it with it, so the slices, the warning and the whole
+              point of the menu were off screen behind a scroll nobody could
+              see the end of. Bounded here, they stay put and the list moves. */}
+          <div className="max-h-64 overflow-y-auto scrollbar-thin">
+            {commits.map((c, i) => {
+              const ordinal = i + 1;
+              const selected =
+                commitRange?.kind === "commits" &&
+                ordinal >= commitRange.loOrdinal &&
+                ordinal <= commitRange.hiOrdinal;
+              return (
+                <DropdownMenuItem
+                  key={c.hash}
+                  onClick={(e: MouseEvent) => {
+                    shiftRef.current = e.shiftKey;
+                    handleCommitClick(ordinal);
+                  }}
+                  onSelect={(e: Event) => {
+                    if (shiftRef.current) e.preventDefault();
+                  }}
+                  className={selected ? "bg-focus-ring/10" : undefined}
+                >
+                  <span className="w-6 shrink-0 text-right font-mono text-xxs text-fg-faint">
+                    #{ordinal}
+                  </span>
+                  <span className="shrink-0 font-mono text-xxs text-fg-muted">
+                    {c.shortHash}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">
+                    {truncateSubject(c.message, 40)}
+                  </span>
+                  {selected && SELECTED_CHECK}
+                </DropdownMenuItem>
+              );
+            })}
+          </div>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

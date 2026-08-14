@@ -4,6 +4,7 @@ import {
   commitsInRange,
   sameRange,
   uncommittedRange,
+  unpushedRange,
 } from "./commitRange";
 import { commitRangeForSha } from "./commitRange";
 import type { CommitEntry, HunkAttribution } from "./index";
@@ -37,6 +38,26 @@ describe("commitRangeFor", () => {
 
   it("titles a multi-commit range by its ordinals", () => {
     expect(commitRangeFor(commits, "main", 1, 3)!.title).toBe("Commits #1–#3");
+  });
+
+  it("takes the unpushed commits off the end of the branch", () => {
+    // Two of three unpushed: the range starts at the commit before #2, so #2
+    // and #3 are what it shows.
+    const r = unpushedRange(commits, "main", 2)!;
+    expect(r.comparison.key).toBe("sha1..sha3");
+    expect(r.title).toBe("Unpushed · 2 commits");
+    expect(r.loOrdinal).toBe(2);
+    expect(r.hiOrdinal).toBe(3);
+  });
+
+  /**
+   * Both ends collapse onto a row the menu already has, and the same diff
+   * offered twice under two names is worse than not offering it.
+   */
+  it("declines when unpushed is nothing or everything", () => {
+    expect(unpushedRange(commits, "main", 0)).toBeNull();
+    expect(unpushedRange(commits, "main", 3)).toBeNull();
+    expect(unpushedRange(commits, "main", 4)).toBeNull();
   });
 
   it("rejects out-of-bounds and inverted ordinals", () => {

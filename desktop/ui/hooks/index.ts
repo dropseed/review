@@ -48,3 +48,4 @@ export { useHoverInfo } from "./useHoverInfo";
 export { useSidebarTree } from "./useSidebarTree";
 export { useDeepLinkFocus } from "./useDeepLinkFocus";
 export { useScopeReconciliation } from "./useScopeReconciliation";
+export { useModHeld } from "./useModHeld";

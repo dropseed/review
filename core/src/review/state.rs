@@ -212,10 +212,19 @@ pub struct ReviewState {
     )]
     pub guide: Option<Guide>,
     /// Total number of hunks in the diff (including unclassified).
-    /// Used by `to_summary()` for accurate progress. Defaults to 0 for
-    /// legacy data; `syncTotalDiffHunks` sets the real count when opened.
+    ///
+    /// Superseded by [`progress`](Self::progress) and kept as the fallback for
+    /// reviews written before it existed.
     #[serde(default, rename = "totalDiffHunks")]
     pub total_diff_hunks: usize,
+    /// Progress as last counted against a complete diff. See [`Self::measure`].
+    ///
+    /// Stored rather than derived because counting it needs the diff, and the
+    /// sidebar summarizes every saved review without loading any of them — it
+    /// reads this file and nothing else. Absent on a review nothing has saved
+    /// since this field existed, which is what the fallback is for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progress: Option<MeasuredProgress>,
     /// Optional GitHub PR reference (moved from Comparison).
     #[serde(rename = "githubPr", default, skip_serializing_if = "Option::is_none")]
     pub github_pr: Option<crate::sources::github::GitHubPrRef>,
@@ -309,6 +318,7 @@ impl ReviewState {
             ref_name: ref_name.into(),
             base_override,
             hunks: HashMap::new(),
+            progress: None,
             trust_list: get_all_pattern_ids(),
             notes: String::new(),
             annotations: Vec::new(),
@@ -424,46 +434,89 @@ impl ReviewState {
         })
     }
 
-    /// Create a summary of this review state
-    pub fn to_summary(&self) -> ReviewSummary {
-        let total_hunks = self.total_diff_hunks;
+    /// Count this review's progress **against the diff**, rather than against
+    /// its own decision map.
+    ///
+    /// The difference is the whole point. A decision is keyed by
+    /// `filepath:contentHash`, so a hunk that was amended, rebased or reverted
+    /// away leaves its decision behind — and the desktop path deliberately
+    /// retains those, because it reconciles against whatever hunks the UI
+    /// happens to have loaded and must never delete a decision merely absent
+    /// from a partial set. Counting the map therefore counts ghosts: a fully
+    /// reviewed branch that then grows ten commits still reported every one of
+    /// its old decisions, so `reviewed` could exceed `total` and the sidebar
+    /// clamped the overflow into "finished".
+    ///
+    /// Walking the live hunks instead makes an orphan worth exactly nothing,
+    /// because a decision is only reachable through a hunk that still exists.
+    pub fn measure(&self, live_hunks: &[DiffHunk]) -> MeasuredProgress {
+        // A hunk with nothing recorded against it counts toward the total and
+        // nothing else, which is what an untouched hunk is.
+        self.tally(
+            live_hunks
+                .iter()
+                .filter_map(|hunk| self.hunks.get(&hunk.id)),
+            live_hunks.len(),
+        )
+    }
 
-        // Single pass over hunks to count all status categories
-        let mut approved_hunks = 0usize;
-        let mut rejected_hunks = 0usize;
-        let mut saved_for_later_hunks = 0usize;
-        let mut trusted_hunks = 0usize;
-
-        for h in self.hunks.values() {
-            match h.status.as_ref().map(|s| &s.value) {
-                Some(HunkStatus::Approved) => approved_hunks += 1,
-                Some(HunkStatus::Rejected) => rejected_hunks += 1,
-                Some(HunkStatus::SavedForLater) => saved_for_later_hunks += 1,
+    /// Sort `states` into the counters, over a `total` the caller decides.
+    ///
+    /// The one place the rule lives — what counts as reviewed, and that an
+    /// untouched hunk carrying a trusted label counts without anyone having
+    /// said so. [`measure`](Self::measure) walks the diff and
+    /// [`to_summary`](Self::to_summary)'s legacy arm walks the decision map, and
+    /// the two differ *only* in that: a new `HunkStatus`, or a decision to count
+    /// saved-for-later as reviewed, must not be able to land in one and not the
+    /// other.
+    fn tally<'a>(
+        &self,
+        states: impl Iterator<Item = &'a HunkState>,
+        total_hunks: usize,
+    ) -> MeasuredProgress {
+        let mut m = MeasuredProgress {
+            total_hunks,
+            ..MeasuredProgress::default()
+        };
+        for state in states {
+            match state.status.as_ref().map(|s| &s.value) {
+                Some(HunkStatus::Approved) => m.approved_hunks += 1,
+                Some(HunkStatus::Rejected) => m.rejected_hunks += 1,
+                Some(HunkStatus::SavedForLater) => m.saved_for_later_hunks += 1,
+                // No decision of its own: reviewed anyway when a label the
+                // classifier gave it matches the trust list.
                 None => {
-                    // Hunks with no explicit status count as reviewed when a
-                    // label matches the trust list.
-                    if self.labels_trusted(h.labels()) {
-                        trusted_hunks += 1;
+                    if self.labels_trusted(state.labels()) {
+                        m.trusted_hunks += 1;
                     }
                 }
             }
         }
+        m
+    }
 
-        let reviewed_hunks = trusted_hunks + approved_hunks + rejected_hunks;
-
-        let state = overall_review_state(rejected_hunks, reviewed_hunks, total_hunks)
-            .map(ToOwned::to_owned);
+    /// Create a summary of this review state
+    pub fn to_summary(&self) -> ReviewSummary {
+        // A measurement is the answer whenever there is one. Counting the map
+        // is the legacy arm, for a review nothing has saved since `progress`
+        // existed — and it is the arm that counts orphans, which is the whole
+        // reason the measurement is stored.
+        let p = self
+            .progress
+            .clone()
+            .unwrap_or_else(|| self.tally(self.hunks.values(), self.total_diff_hunks));
 
         ReviewSummary {
             ref_name: self.ref_name.clone(),
             base_override: self.base_override.clone(),
-            total_hunks,
-            trusted_hunks,
-            approved_hunks,
-            reviewed_hunks,
-            rejected_hunks,
-            saved_for_later_hunks,
-            state,
+            total_hunks: p.total_hunks,
+            trusted_hunks: p.trusted_hunks,
+            approved_hunks: p.approved_hunks,
+            reviewed_hunks: p.reviewed_hunks(),
+            rejected_hunks: p.rejected_hunks,
+            saved_for_later_hunks: p.saved_for_later_hunks,
+            state: overall_review_state(p.rejected_hunks, p.reviewed_hunks(), p.total_hunks)
+                .map(ToOwned::to_owned),
             updated_at: self.updated_at.clone(),
             github_pr: self.github_pr.clone(),
             worktree_path: self.worktree_path.clone(),
@@ -558,6 +611,35 @@ pub(crate) fn iso8601_from_system_time(time: std::time::SystemTime) -> String {
 
 fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+}
+
+/// Progress counted against a diff, as [`ReviewState::measure`] produced it.
+///
+/// Persisted on the review so every surface reports the same number without
+/// re-deriving it — the frontend used to count live hunks while the backend
+/// counted the decision map, two definitions that disagreed precisely when it
+/// mattered, and whichever ran last won the sidebar.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeasuredProgress {
+    pub total_hunks: usize,
+    pub trusted_hunks: usize,
+    pub approved_hunks: usize,
+    pub rejected_hunks: usize,
+    pub saved_for_later_hunks: usize,
+}
+
+impl MeasuredProgress {
+    /// `trusted + approved + rejected` — decided one way or another. Saved-for-
+    /// later is deliberately not among them: it is a hunk you came back to.
+    ///
+    /// Derived rather than stored, because a persisted total alongside its own
+    /// three inputs is an invariant nothing checks on read: any writer, or a
+    /// hand-edited file, could put a `reviewedHunks` on disk that contradicts
+    /// the counts it is made of, and every surface would believe it.
+    pub fn reviewed_hunks(&self) -> usize {
+        self.trusted_hunks + self.approved_hunks + self.rejected_hunks
+    }
 }
 
 /// Summary information about a saved review (for listing on start screen)
@@ -780,6 +862,74 @@ mod tests {
             .into_iter()
             .next()
             .expect("expected one hunk")
+    }
+
+    /// The bug this whole field exists for: a decision whose hunk is gone must
+    /// count for nothing.
+    ///
+    /// Review everything, then let the diff move on — a rebase, an amend, ten
+    /// new commits. The decision map still holds the old ids (the desktop path
+    /// retains them deliberately, since it reconciles against whatever hunks
+    /// the UI loaded), so counting the map reported a review as finished that
+    /// had a whole diff left in it.
+    #[test]
+    fn measuring_counts_the_diff_not_the_decisions_left_over_from_an_old_one() {
+        let mut state = new_state();
+        let live = hunk_from(DIFF_A);
+
+        // One decision on a hunk that is still there, one on a hunk that isn't.
+        state.hunks.insert(live.id.clone(), approved_entry(None));
+        state
+            .hunks
+            .insert("gone.rs:deadbeef".to_owned(), approved_entry(None));
+
+        let measured = state.measure(std::slice::from_ref(&live));
+        assert_eq!(measured.total_hunks, 1);
+        assert_eq!(measured.approved_hunks, 1, "the orphan must not count");
+        assert_eq!(measured.reviewed_hunks(), 1);
+
+        // And the summary reports that, rather than the two the map holds —
+        // which is what let `reviewed` exceed `total` and read as "finished".
+        state.progress = Some(measured);
+        let summary = state.to_summary();
+        assert_eq!(summary.reviewed_hunks, 1);
+        assert_eq!(summary.total_hunks, 1);
+    }
+
+    /// A trusted label is a decision the classifier made, so it counts — but
+    /// only for a hunk that is actually in the diff.
+    #[test]
+    fn measuring_counts_trusted_labels_on_live_hunks() {
+        let mut state = new_state();
+        let live = hunk_from(DIFF_A);
+        state.trust_list = vec!["imports:*".to_owned()];
+        state.hunks.insert(
+            live.id.clone(),
+            HunkState {
+                classification: Some(Attributed::new(
+                    vec!["imports:added".to_owned()],
+                    Source::Static,
+                )),
+                ..Default::default()
+            },
+        );
+
+        let measured = state.measure(std::slice::from_ref(&live));
+        assert_eq!(measured.trusted_hunks, 1);
+        assert_eq!(measured.reviewed_hunks(), 1);
+        assert_eq!(measured.saved_for_later_hunks, 0);
+    }
+
+    /// A hunk in the diff that nobody has touched is the ordinary case, and it
+    /// has to land in the denominator without landing in the numerator.
+    #[test]
+    fn measuring_counts_an_undecided_hunk_toward_the_total_only() {
+        let state = new_state();
+        let live = hunk_from(DIFF_A);
+
+        let measured = state.measure(std::slice::from_ref(&live));
+        assert_eq!(measured.total_hunks, 1);
+        assert_eq!(measured.reviewed_hunks(), 0);
     }
 
     fn approved_entry(stable_key: Option<String>) -> HunkState {

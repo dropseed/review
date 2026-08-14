@@ -78,9 +78,21 @@ function FooterVersionInfo({
  * `+` makes the workspace on the spot — no picker, no title prompt. An empty
  * workspace is a legible thing now: it lands on the stage showing its own two
  * verbs, and it names itself after whatever you put in it first.
+ *
+ * The columns button beside it is the queue read the other way round: instead
+ * of one workspace at a time, every terminal in every one of them at once. It
+ * belongs here because the row it opens spans the whole list this header names.
  */
 function SidebarHeader({ onToggle }: { onToggle: () => void }): ReactNode {
   const addWorkspace = useReviewStore((s) => s.addWorkspace);
+  const terminalOverview = useReviewStore((s) => s.terminalOverview);
+  const toggleTerminalOverview = useReviewStore(
+    (s) => s.toggleTerminalOverview,
+  );
+  // Same gate the terminal's own commands use: with no daemon to talk to there
+  // are no terminals to line up, and the button would open a view whose only
+  // possible answer is "nothing is running".
+  const terminalsSupported = useReviewStore((s) => s.terminalsSupported);
 
   async function create(): Promise<void> {
     const workspace = await addWorkspace(null, []);
@@ -93,6 +105,38 @@ function SidebarHeader({ onToggle }: { onToggle: () => void }): ReactNode {
         Working on
       </span>
       <span className="flex shrink-0 items-center gap-1">
+        {terminalsSupported && (
+          <button
+            type="button"
+            onClick={toggleTerminalOverview}
+            aria-pressed={terminalOverview}
+            className={`flex items-center justify-center w-6 h-6 rounded
+                   hover:bg-surface-raised transition-colors ${
+                     terminalOverview
+                       ? "bg-surface-raised text-fg-secondary"
+                       : "text-fg-muted hover:text-fg-secondary"
+                   }`}
+            aria-label="All terminals"
+            title="All terminals"
+          >
+            {/* Columns: the shape of what it opens — every terminal side by
+              side, in a row you scroll. */}
+            <svg
+              className="h-3 w-3"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="3" y="4" width="5" height="16" rx="1" />
+              <rect x="10" y="4" width="5" height="16" rx="1" />
+              <rect x="17" y="4" width="4" height="16" rx="1" />
+            </svg>
+          </button>
+        )}
         <button
           type="button"
           onClick={() => void create()}

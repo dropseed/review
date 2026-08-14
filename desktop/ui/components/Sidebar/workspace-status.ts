@@ -16,6 +16,7 @@
  */
 
 import type {
+  DiffShortStat,
   GlobalReviewSummary,
   Workspace,
   Attachment,
@@ -38,6 +39,17 @@ export interface WorkspaceContext {
    * that is gone — and only the second one resolves a card.
    */
   knownRepos: Set<string>;
+  /**
+   * Repo path → the ref it has checked out.
+   *
+   * What an attachment with no `refName` resolves to. The hint is optional and
+   * "never identity", so a card that keyed straight off it built `path:` —
+   * matching no review — and that repo silently contributed nothing to the
+   * card's progress. The checkout is the honest answer for a tab that named
+   * only a repo, and it is the same answer `targetForAttachment` gives when
+   * opening one.
+   */
+  heads: Map<string, string>;
   reviews: Record<string, GlobalReviewSummary>;
   /** Confirmed merges by review key — the branches whose PR has landed. */
   shipped: Map<string, ShippedPr>;
@@ -64,8 +76,72 @@ export interface AttachmentStatus {
   /** This repo's PR merged. Mutually exclusive with `openPr` in practice. */
   shipped?: ShippedPr;
   hasChanges: boolean;
+  /**
+   * How big those changes are, when the branch row knows. Null is "not
+   * measured", never "nothing": a repo known only through a saved review has
+   * no branch row to have counted, and a working tree can have changes here
+   * with the count still on its way.
+   */
+  workingTreeStats: DiffShortStat | null;
   /** `repo · branch` — the chip a card, a tab and the breadcrumb all draw. */
   chipLabel: string;
+}
+
+/**
+ * One clause of the status phrase.
+ *
+ * Structured rather than a joined string because the changes clause is drawn in
+ * the diff's own two colours, and a card handed one sentence cannot colour half
+ * of it. Every other clause is already a finished phrase, so it stays text —
+ * this is the smallest shape that lets one of them be more than that.
+ */
+export interface PhraseClause {
+  /** What this clause says, and the whole of what `phrase` is built from. */
+  text: string;
+  /**
+   * Set on the changes clause, whose numbers the card colours. Carried
+   * *alongside* the text rather than instead of it, so the sentence has one
+   * author: a discriminated union meant the card rebuilt the words itself, and
+   * a tooltip could disagree with the line it described.
+   */
+  stat?: DiffShortStat;
+}
+
+/** `3 files` — the noun of a change stat, shared by the sentence and the card. */
+export function fileCountLabel(stat: DiffShortStat): string {
+  return `${stat.fileCount} file${stat.fileCount === 1 ? "" : "s"}`;
+}
+
+/**
+ * `3 files +48 −12` — the working tree, as a number instead of an adjective.
+ *
+ * A real minus, not a hyphen, so the two signs are the same width and a column
+ * of cards doesn't wobble. Both counts are always written, zero included: they
+ * are one shape read at a glance, and a stat that sometimes has two numbers and
+ * sometimes one has to be *read* to be understood.
+ */
+export function formatChangeStat(stat: DiffShortStat): string {
+  return `${fileCountLabel(stat)} +${stat.additions} −${stat.deletions}`;
+}
+
+/**
+ * The working tree of the repos that have one, summed.
+ *
+ * One number for the card, because the card has one line and per-repo counts
+ * would need per-repo rows it doesn't have. A repo whose stats haven't arrived
+ * contributes nothing rather than suppressing the clause — a second repo still
+ * being counted shouldn't take the first one's answer away.
+ */
+function changeStatFor(repos: AttachmentStatus[]): DiffShortStat | null {
+  const measured = repos
+    .map((repo) => repo.workingTreeStats)
+    .filter((stat): stat is DiffShortStat => stat != null);
+  if (measured.length === 0) return null;
+  return measured.reduce((sum, stat) => ({
+    fileCount: sum.fileCount + stat.fileCount,
+    additions: sum.additions + stat.additions,
+    deletions: sum.deletions + stat.deletions,
+  }));
 }
 
 export interface WorkspaceStatus {
@@ -74,6 +150,12 @@ export interface WorkspaceStatus {
   title: string;
   /** The card's second line, after the repo names. */
   phrase: string;
+  /**
+   * The same phrase, unjoined — what the card actually draws, so the changes
+   * clause can carry the diff's colours. `phrase` stays the sentence for
+   * everything that needs one (the subtitle, the entry's tooltip).
+   */
+  clauses: PhraseClause[];
   /** The second line whole — `repos · phrase` — as every surface shows it. */
   subtitle: string;
   /**
@@ -93,7 +175,6 @@ export interface WorkspaceStatus {
    * queue entry they still need. The PR named is the last one to land.
    */
   shipped?: ShippedPr;
-  hasChanges: boolean;
   /**
    * Review progress across every attached repo that has a saved review,
    * summed. What the card's `N/M reviewed` phrase reports; null when nothing
@@ -107,7 +188,7 @@ function describeAttachment(
   ctx: WorkspaceContext,
 ): AttachmentStatus {
   const { path, refName } = attachment;
-  const reviewKey = makeReviewKey(path, refName ?? "");
+  const reviewKey = makeReviewKey(path, refName ?? ctx.heads.get(path) ?? "");
   const row = ctx.rows.get(reviewKey) ?? null;
   const repoName = repoLabel(ctx, path);
   const branch =
@@ -128,6 +209,7 @@ function describeAttachment(
     // worked on, not shipped — the open PR is the newer fact either way.
     shipped: row?.openPr ? undefined : ctx.shipped.get(reviewKey),
     hasChanges: branch?.hasWorkingTreeChanges ?? false,
+    workingTreeStats: branch?.workingTreeStats ?? null,
     repoName,
     chipLabel: attachmentLabel(attachment, repoName),
   };
@@ -143,9 +225,14 @@ function progressFor(
   for (const repo of repos) {
     const review = ctx.reviews[repo.reviewKey];
     if (!review || review.totalHunks === 0) continue;
-    // A saved review can hold decisions for hunks the diff no longer has, so
-    // the raw count can exceed the total — clamp, or the card reads "2/1".
-    reviewed += Math.min(review.reviewedHunks, review.totalHunks);
+    // More decided than there is to decide is not a number to round off: it
+    // means the count was taken against a diff this review no longer has. It
+    // used to be clamped, which turned the impossible case into the *worst*
+    // case — `40/40`, a card claiming a review is finished at exactly the
+    // moment it can't know. Say nothing instead; the review's own screen
+    // counts live hunks and is right.
+    if (review.reviewedHunks > review.totalHunks) return null;
+    reviewed += review.reviewedHunks;
     total += review.totalHunks;
   }
   return total === 0 ? null : { reviewed, total };
@@ -164,35 +251,55 @@ function phraseFor(
   progress: { reviewed: number; total: number } | null,
   resolved: boolean,
   shipped: ShippedPr | undefined,
-): string {
+): PhraseClause[] {
+  const text = (value: string): PhraseClause => ({ text: value });
+
   // Shipped outranks everything, including a deleted branch — a branch that is
   // gone *because it merged* is the good ending, and "branch gone" reads as a
   // problem. It is also the whole line: the queue entry is done, and how far
   // along its review got is no longer a thing to do.
-  if (shipped) return `#${shipped.number} shipped`;
-  if (resolved) return repos.length === 1 ? "branch gone" : "branches gone";
-  const parts: string[] = [];
+  if (shipped) return [text(`#${shipped.number} shipped`)];
+  if (resolved) {
+    return [text(repos.length === 1 ? "branch gone" : "branches gone")];
+  }
+  const parts: PhraseClause[] = [];
 
   const pr = repos.find((c) => c.openPr && prNeedsAttention(c.openPr))?.openPr;
   if (pr) {
     parts.push(
-      pr.reviewDecision === "CHANGES_REQUESTED"
-        ? `#${pr.number} changes requested`
-        : `#${pr.number} CI failing`,
+      text(
+        pr.reviewDecision === "CHANGES_REQUESTED"
+          ? `#${pr.number} changes requested`
+          : `#${pr.number} CI failing`,
+      ),
     );
   } else {
     const open = repos.find((c) => c.openPr)?.openPr;
     if (open)
-      parts.push(open.isDraft ? `#${open.number} draft` : `#${open.number}`);
+      parts.push(
+        text(open.isDraft ? `#${open.number} draft` : `#${open.number}`),
+      );
   }
 
-  if (repos.some((c) => c.hasChanges)) parts.push("uncommitted changes");
+  // The size when it is known, the adjective when it isn't. Only a repo that
+  // *has* changes is asked how big they are: a branch nobody measured — every
+  // branch but the checked-out one — would otherwise contribute a "0 files
+  // +0 −0" the card would be stating as a fact.
+  const changed = repos.filter((c) => c.hasChanges);
+  if (changed.length > 0) {
+    const stat = changeStatFor(changed);
+    parts.push(
+      stat
+        ? { text: formatChangeStat(stat), stat }
+        : text("uncommitted changes"),
+    );
+  }
 
   if (parts.length < 2 && progress) {
-    parts.push(`${progress.reviewed}/${progress.total} reviewed`);
+    parts.push(text(`${progress.reviewed}/${progress.total} reviewed`));
   }
 
-  return parts.slice(0, 2).join(" · ");
+  return parts.slice(0, 2);
 }
 
 /** Everything a queue entry and the repo tab strip render, for one workspace. */
@@ -207,18 +314,19 @@ export function describeWorkspace(
   const attention = repos.find((c) => c.openPr && prNeedsAttention(c.openPr));
   const progress = progressFor(repos, ctx);
   const shipped = shippedFor(repos);
-  const phrase = phraseFor(repos, progress, resolved, shipped);
+  const clauses = phraseFor(repos, progress, resolved, shipped);
+  const phrase = clauses.map((clause) => clause.text).join(" · ");
   const names = [...new Set(repos.map((c) => c.repoName))];
 
   return {
     repos,
     title: workspace.displayTitle,
     phrase,
+    clauses,
     subtitle: [names.join(", "), phrase].filter(Boolean).join(" · "),
     resolved,
     openPr: (attention ?? repos.find((c) => c.openPr))?.openPr,
     shipped,
-    hasChanges: repos.some((c) => c.hasChanges),
     progress,
   };
 }

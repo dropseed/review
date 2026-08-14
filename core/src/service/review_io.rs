@@ -58,6 +58,11 @@ pub fn save_review(
         if !state.hunks.is_empty() {
             state.reconcile(hunks, false);
         }
+        // The one moment the complete diff and the decisions are both in hand,
+        // which is what counting progress honestly requires: the sidebar reads
+        // these files without loading a diff for any of them, so if the number
+        // isn't right here it is never right anywhere.
+        state.progress = Some(state.measure(hunks));
     }
     state.prepare_for_save();
     storage::save_review_state(repo, &state)?;

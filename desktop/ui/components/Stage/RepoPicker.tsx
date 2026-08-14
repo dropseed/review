@@ -1,17 +1,26 @@
 import { type ReactNode, useMemo, useRef, useState } from "react";
 import { clsx } from "clsx";
 import { scoreCandidate } from "../../lib/fuzzy";
-import { shortPath, useRepoChoices, type RepoChoice } from "./repo-choices";
+import {
+  repoChoiceKey,
+  shortPath,
+  useRepoChoices,
+  type RepoChoice,
+} from "./repo-choices";
 
 /**
- * How many repos a pick is ever chosen from. The list is a shortlist, not an
- * inventory — anything past it is one keystroke of search away, and a column of
- * rows long enough to scroll asks to be read rather than typed at.
+ * How many checkouts a pick is ever chosen from. The list is a shortlist, not
+ * an inventory — anything past it is one keystroke of search away, and a column
+ * of rows long enough to scroll asks to be read rather than typed at.
+ *
+ * A little longer than it was now that a repo's worktrees are rows of their
+ * own: at seven, a single repo mid-rebase could fill the whole list and hide
+ * that there are other repos at all.
  */
-const MAX_ROWS = 7;
+const MAX_ROWS = 10;
 
 /**
- * The list of repos a workspace can open, filtered as you type.
+ * The list of checkouts a workspace can open, filtered as you type.
  *
  * One list for both front doors — the repo tab bar's `+` and the empty state's
  * right half — because "which repo" is one question and two answers to it would
@@ -23,7 +32,11 @@ export function RepoPicker({
   onPick,
   autoFocus = false,
 }: {
-  /** Paths already open in this workspace, marked so a pick reads as a jump. */
+  /**
+   * `repoChoiceKey`s already open in this workspace, marked so a pick reads as
+   * a jump. Keyed by repo *and* ref: a repo's worktrees are separate rows, and
+   * only the one the tab is actually pointed at is the one already open.
+   */
   attached: ReadonlySet<string>;
   onPick: (choice: RepoChoice) => void;
   autoFocus?: boolean;
@@ -42,6 +55,10 @@ export function RepoPicker({
         score:
           scoreCandidate(trimmed, [
             { key: "name", text: choice.name, weight: 1 },
+            // Nearly as heavily as the name: a worktree is reached for by the
+            // branch it holds, which is the only thing distinguishing its row
+            // from the repo's own.
+            { key: "ref", text: choice.refName ?? "", weight: 0.9 },
             { key: "path", text: choice.path, weight: 0.6 },
           ])?.score ?? 0,
       }))
@@ -51,17 +68,19 @@ export function RepoPicker({
       .map((scored) => scored.choice);
   }, [choices, query]);
 
-  // Two repos called the same thing are told apart by where they are, not by
-  // which branch they happen to be on — the branch is the useful line only
-  // while the name already identifies the repo.
+  // Two repos called the same thing are told apart by where they are. Counted
+  // over distinct *paths* rather than over rows: a repo and its worktrees are
+  // all one repo under one name, and counting rows would make every repo that
+  // has a worktree look ambiguous with itself.
   const ambiguous = useMemo(() => {
-    const seen = new Map<string, number>();
+    const firstPath = new Map<string, string>();
+    const names = new Set<string>();
     for (const choice of shown) {
-      seen.set(choice.name, (seen.get(choice.name) ?? 0) + 1);
+      const seen = firstPath.get(choice.name);
+      if (seen === undefined) firstPath.set(choice.name, choice.path);
+      else if (seen !== choice.path) names.add(choice.name);
     }
-    return new Set(
-      [...seen].filter(([, count]) => count > 1).map(([name]) => name),
-    );
+    return names;
   }, [shown]);
 
   const at = Math.min(highlight, Math.max(shown.length - 1, 0));
@@ -121,48 +140,64 @@ export function RepoPicker({
             {choices.length === 0 ? "No repos yet." : "Nothing matches."}
           </p>
         ) : (
-          shown.map((choice, index) => (
-            <button
-              key={choice.path}
-              type="button"
-              onClick={() => onPick(choice)}
-              onMouseMove={() => setHighlight(index)}
-              title={choice.path}
-              className={clsx(
-                `flex w-full items-baseline gap-2 rounded-md px-2.5 py-1.5
+          shown.map((choice, index) => {
+            const key = repoChoiceKey(choice.path, choice.refName);
+            const isOpen = attached.has(key);
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => onPick(choice)}
+                onMouseMove={() => setHighlight(index)}
+                title={choice.worktreePath ?? choice.path}
+                className={clsx(
+                  `flex w-full items-baseline gap-2 rounded-md px-2.5 py-1.5
                  text-left text-sm outline-none hover:bg-fg/[0.06]
                  focus-visible:ring-1 focus-visible:ring-focus-ring/70`,
-                index === at && "bg-fg/[0.06]",
-              )}
-            >
-              <span
-                className={clsx(
-                  "min-w-0 truncate",
-                  attached.has(choice.path)
-                    ? "text-fg-muted"
-                    : "text-fg-secondary",
+                  index === at && "bg-fg/[0.06]",
                 )}
               >
-                {choice.name}
-              </span>
-              {ambiguous.has(choice.name) ? (
-                <span className="min-w-0 truncate text-xs text-fg-faint">
-                  {shortPath(choice.path)}
+                {/* The repo name is capped rather than flexible, so it gives
+                    up its space before it gives up its identity: with six
+                    worktrees of one repo listed, an evenly-shrinking row
+                    truncated every column at once and left a column of
+                    "pullapp…" against "pulla…" — six rows that looked
+                    identical and differed only in the part that had been
+                    truncated away. */}
+                <span
+                  className={clsx(
+                    "max-w-[45%] shrink-0 truncate",
+                    isOpen ? "text-fg-muted" : "text-fg-secondary",
+                  )}
+                >
+                  {choice.name}
                 </span>
-              ) : (
-                choice.refName && (
-                  <span className="min-w-0 truncate text-xs text-fg-faint">
+                {/* The ref takes what's left, because on a list of one repo's
+                    checkouts it is the only thing telling them apart — the
+                    name is the same word six times. */}
+                {choice.refName && (
+                  <span className="min-w-0 flex-1 truncate text-xs text-fg-faint">
                     {choice.refName}
                   </span>
-                )
-              )}
-              {attached.has(choice.path) && (
-                <span className="ml-auto shrink-0 text-xs text-fg-faint">
-                  open
-                </span>
-              )}
-            </button>
-          ))
+                )}
+                {/* Last in the shrink order and last on the row: the path only
+                    ever separates two *repos* of the same name, so on a list of
+                    one repo's branches it repeats itself and is worth nothing.
+                    `ml-auto` on it alone keeps the trailing edge stable whether
+                    or not the row has a ref. */}
+                {ambiguous.has(choice.name) && (
+                  <span className="ml-auto max-w-[45%] shrink truncate text-xs text-fg-faint/70">
+                    {shortPath(choice.path)}
+                  </span>
+                )}
+                {isOpen && (
+                  <span className="ml-auto shrink-0 text-xs text-fg-faint">
+                    open
+                  </span>
+                )}
+              </button>
+            );
+          })
         )}
       </div>
     </div>

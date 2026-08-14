@@ -19,6 +19,7 @@ function repo(): RepoLocalActivity {
         isCurrent: true,
         commitsAhead: 0,
         unpushedCommits: 0,
+        behindUpstream: 0,
         hasWorkingTreeChanges: false,
         lastCommitDate: new Date(NOW).toISOString(),
         lastCommitMessage: "wip",

@@ -91,6 +91,15 @@ pub struct LocalBranchInfo {
     /// A branch with no upstream (or a `gone` one) has published nothing, so this
     /// is its whole `commits_ahead`. See [`unpushed_count`].
     pub unpushed_commits: u32,
+    /// Commits its upstream has that it doesn't — `branch..@{upstream}`. Zero
+    /// for a branch with no upstream to be behind.
+    ///
+    /// The reason a review can show more than anyone expected: a comparison is
+    /// based on the *local* default branch, so when that is behind its remote,
+    /// everything that landed on trunk in between is reachable from the feature
+    /// branch and counts as the branch's own work. Nothing else can tell the
+    /// user that, because from inside the diff it looks like their changes.
+    pub behind_upstream: u32,
     pub has_working_tree_changes: bool,
     pub last_commit_date: String,
     pub last_commit_message: String,
@@ -865,6 +874,9 @@ impl LocalGitSource {
                 true,
                 0,
                 0,
+                // An unborn branch has no commits, so there is no upstream it
+                // could have fallen behind.
+                0,
                 String::new(),
                 String::new(),
                 "",
@@ -935,6 +947,7 @@ impl LocalGitSource {
             // commits sitting on trunk that exist nowhere but this machine
             // while some other branch is checked out.
             let unpushed_commits = unpushed_count(upstream, track, commits_ahead);
+            let behind_upstream = behind_count(upstream, track);
 
             // Include branch if it holds unpushed work, is ahead, is the
             // current branch, or is in a worktree
@@ -949,6 +962,7 @@ impl LocalGitSource {
                 is_current,
                 commits_ahead,
                 unpushed_commits,
+                behind_upstream,
                 last_commit_date,
                 last_commit_message,
                 committer_email,
@@ -969,6 +983,7 @@ impl LocalGitSource {
         is_current: bool,
         commits_ahead: u32,
         unpushed_commits: u32,
+        behind_upstream: u32,
         last_commit_date: String,
         last_commit_message: String,
         committer_email: &str,
@@ -994,6 +1009,7 @@ impl LocalGitSource {
             name,
             commits_ahead,
             unpushed_commits,
+            behind_upstream,
             last_commit_date,
             last_commit_message,
             last_commit_by_user: self.commit_is_by_user(committer_email),
@@ -1051,6 +1067,7 @@ impl LocalGitSource {
             // Same order as the batch path: unpushed first, because it earns
             // inclusion on its own — see `parse_branches_batch`.
             let unpushed_commits = unpushed_count(upstream, track, commits_ahead);
+            let behind_upstream = behind_count(upstream, track);
 
             // Include branch if it holds unpushed work, is ahead, is the
             // current branch, or is in a worktree
@@ -1075,6 +1092,7 @@ impl LocalGitSource {
                 has_working_tree_changes: has_changes,
                 worktree_path: wt_path.cloned(),
                 unpushed_commits,
+                behind_upstream,
                 name,
                 commits_ahead,
                 last_commit_date,
@@ -3020,10 +3038,27 @@ fn unpushed_count(upstream: &str, track: &str, commits_ahead: u32) -> u32 {
     if upstream.is_empty() || track == "gone" {
         return commits_ahead;
     }
-    // "ahead 3, behind 1" / "ahead 3" / "behind 1" / "" when in sync.
+    track_count(track, "ahead ")
+}
+
+/// How many commits a branch's upstream has that it doesn't.
+///
+/// Read off the same `%(upstream:track,nobracket)` field as [`unpushed_count`],
+/// so it costs nothing extra. A branch with no upstream — or a `gone` one — is
+/// behind nothing: there is no published branch for it to have fallen behind.
+fn behind_count(upstream: &str, track: &str) -> u32 {
+    if upstream.is_empty() || track == "gone" {
+        return 0;
+    }
+    track_count(track, "behind ")
+}
+
+/// One side of a `%(upstream:track,nobracket)` value, which git writes as
+/// "ahead 3, behind 1" / "ahead 3" / "behind 1" / "" when in sync.
+fn track_count(track: &str, prefix: &str) -> u32 {
     track
         .split(',')
-        .filter_map(|part| part.trim().strip_prefix("ahead "))
+        .filter_map(|part| part.trim().strip_prefix(prefix))
         .find_map(|n| n.trim().parse::<u32>().ok())
         .unwrap_or(0)
 }
@@ -3757,6 +3792,25 @@ mod tests {
         assert_eq!(unpushed_count("origin/feat", "behind 2", 9), 0);
         assert_eq!(unpushed_count("origin/feat", "ahead 3", 9), 3);
         assert_eq!(unpushed_count("origin/feat", "ahead 3, behind 1", 9), 3);
+    }
+
+    #[test]
+    fn behind_count_reads_the_other_half_of_the_same_summary() {
+        assert_eq!(behind_count("origin/main", ""), 0);
+        assert_eq!(behind_count("origin/main", "behind 2"), 2);
+        assert_eq!(behind_count("origin/main", "ahead 3"), 0);
+        assert_eq!(behind_count("origin/main", "ahead 3, behind 1"), 1);
+    }
+
+    /// Being behind is a fact about a branch and the branch it was published
+    /// as. With nothing published, there is nothing to have fallen behind — and
+    /// reporting a number there would put a "your base is stale" warning on
+    /// every purely local repo.
+    #[test]
+    fn a_branch_with_no_upstream_is_behind_nothing() {
+        assert_eq!(behind_count("", ""), 0);
+        assert_eq!(behind_count("", "behind 7"), 0);
+        assert_eq!(behind_count("origin/main", "gone"), 0);
     }
 
     #[test]

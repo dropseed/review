@@ -41,6 +41,7 @@ function branch(
     isCurrent: false,
     commitsAhead: 0,
     unpushedCommits: 0,
+    behindUpstream: 0,
     hasWorkingTreeChanges: false,
     lastCommitDate: new Date().toISOString(),
     lastCommitMessage: "x",

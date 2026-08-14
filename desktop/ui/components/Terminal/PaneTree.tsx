@@ -1,10 +1,4 @@
-import {
-  type DragEvent,
-  type ReactNode,
-  Fragment,
-  useRef,
-  useState,
-} from "react";
+import { type DragEvent, type ReactNode, Fragment, useRef } from "react";
 import { clsx } from "clsx";
 import { useReviewStore } from "../../stores";
 import {
@@ -26,12 +20,6 @@ import {
 } from "./pane-drag";
 import { TerminalPane } from "./TerminalPane";
 import { SplitDivider } from "./SplitDivider";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "../ui/dropdown-menu";
-import { TerminalDropdownItems } from "../Sidebar/ActionMenu";
 
 /** Smallest fraction a pane can be dragged to, so a pane never vanishes. */
 const MIN_PANE_FRACTION = 0.1;
@@ -57,7 +45,6 @@ interface PaneTreeProps {
   /** Whether this tab is the visible one (drives auto-focus of the focused pane). */
   tabActive: boolean;
   onFocus: (terminalId: string) => void;
-  onSplit: (terminalId: string, direction: SplitDirection) => void;
   onClose: (terminalId: string) => void;
 }
 
@@ -89,7 +76,6 @@ export function PaneTree({
   focusedId,
   tabActive,
   onFocus,
-  onSplit,
   onClose,
 }: PaneTreeProps): ReactNode {
   const resizeSplit = useReviewStore((s) => s.resizeSplit);
@@ -117,9 +103,13 @@ export function PaneTree({
         isOnlyPane={parentDirection === null}
         foldDirection={canFold ? parentDirection : null}
         isFocused={tabActive && node.terminalId === focusedId}
+        // "Which of these has the keyboard" is a question only the tab on
+        // screen has an answer to. The panel never draws two tabs at once so it
+        // could not tell the difference, but the overview draws every tab side
+        // by side — and there, dimming each unselected tab's panes made a row
+        // of split terminals read as a row of asleep ones.
+        tabActive={tabActive}
         onFocus={onFocus}
-        onSplit={onSplit}
-        onClose={onClose}
         onCollapse={() => setPaneCollapsed(tabId, node.terminalId, true)}
       />
     );
@@ -218,7 +208,6 @@ export function PaneTree({
                 focusedId={focusedId}
                 tabActive={tabActive}
                 onFocus={onFocus}
-                onSplit={onSplit}
                 onClose={onClose}
               />
             </div>
@@ -235,9 +224,9 @@ interface PaneLeafProps {
   /** The axis this pane would fold along, or null when it can't be folded. */
   foldDirection: SplitDirection | null;
   isFocused: boolean;
+  /** Whether this pane's tab is the one on screen — see the veil below. */
+  tabActive: boolean;
   onFocus: (terminalId: string) => void;
-  onSplit: (terminalId: string, direction: SplitDirection) => void;
-  onClose: (terminalId: string) => void;
   onCollapse: () => void;
 }
 
@@ -251,9 +240,8 @@ function PaneLeaf({
   isOnlyPane,
   foldDirection,
   isFocused,
+  tabActive,
   onFocus,
-  onSplit,
-  onClose,
   onCollapse,
 }: PaneLeafProps): ReactNode {
   const dropPaneOn = useReviewStore((s) => s.dropPaneOn);
@@ -265,7 +253,6 @@ function PaneLeaf({
   // strip already reads, and a second copy of "this pane is in flight" is one
   // that can be left behind set when a drop unmounts this pane's grip.
   const lifted = usePaneDragActive() === id;
-  const [menuOpen, setMenuOpen] = useState(false);
 
   // The pane's box can't move while a drag is in flight, so it is measured once
   // per drag instead of per `dragover`. The handler itself dirties layout (the
@@ -334,8 +321,12 @@ function PaneLeaf({
             against the app chrome behind it, which tints the output and
             washes it out, while a veil settles it toward the background it
             already sits on. Reads as "still a terminal, just not this one".
-            Non-interactive, so a click still focuses the pane underneath. */}
-        {!isFocused && !isOnlyPane && (
+            Non-interactive, so a click still focuses the pane underneath.
+
+            Only within the tab on screen: a tab nobody has selected has no
+            pane holding the keyboard, so there is nothing for the veil to
+            contrast against and every pane would wear it. */}
+        {tabActive && !isFocused && !isOnlyPane && (
           <div
             aria-hidden
             className="pointer-events-none absolute inset-0 z-[5] bg-surface-inset/30 transition-opacity"
@@ -356,16 +347,17 @@ function PaneLeaf({
         />
       )}
 
-      {/* Hover affordances — menu / move / split / close. This cluster is
-              the pane's only chrome, so it is also where its menu hangs: the
-              surface below belongs to the shell, right-click included. */}
+      {/* Hover affordances: move, and fold. Splitting, closing and the menu
+          used to sit here too — they are ⌘D / ⇧⌘D, ⌘W, and a right-click on
+          the tab, and six controls floating over a shell's output cost more
+          attention than the gestures they duplicated. What is left is the one
+          thing with no keyboard equivalent (the grip) and the one that folds
+          the pane away. */}
       <div
         className={clsx(
           `absolute right-1.5 top-1.5 z-10 flex items-center gap-0.5
                rounded-md bg-surface-raised/90 p-0.5 transition-opacity`,
-          // An open menu pins the cluster: it fades on pointer-out
-          // otherwise, taking the trigger of the menu you are reading.
-          menuOpen ? "opacity-100" : "opacity-0 group-hover/pane:opacity-100",
+          "opacity-0 group-hover/pane:opacity-100",
         )}
       >
         {/* The only pane in the tab has nowhere to be moved to. A div rather
@@ -395,12 +387,6 @@ function PaneLeaf({
             <GripIcon />
           </div>
         )}
-        <PaneButton label="Split right" onClick={() => onSplit(id, "row")}>
-          <SplitRightIcon />
-        </PaneButton>
-        <PaneButton label="Split down" onClick={() => onSplit(id, "column")}>
-          <SplitDownIcon />
-        </PaneButton>
         {/* Folding needs somewhere for the space to go, so the tab's only pane
             doesn't offer it — ⌘` hides the whole panel instead. */}
         {foldDirection && (
@@ -408,34 +394,6 @@ function PaneLeaf({
             <CollapseIcon direction={foldDirection} />
           </PaneButton>
         )}
-        <PaneButton label="Close pane" onClick={() => onClose(id)}>
-          <span className="text-sm leading-none">×</span>
-        </PaneButton>
-        {/* The same menu a sidebar row and a strip tab carry, opened by a
-                button rather than by right-click: this pane's surface is a
-                live terminal, and a shell with mouse reporting on is sent the
-                right button itself. */}
-        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              aria-label="Terminal options"
-              title="Terminal options"
-              className={PANE_CONTROL_CLASS}
-            >
-              <MoreIcon />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="end"
-            // Radix restores focus to the trigger when the menu closes,
-            // and the trigger is about to fade out — let the terminal keep
-            // the keyboard.
-            onCloseAutoFocus={(e) => e.preventDefault()}
-          >
-            <TerminalDropdownItems sessionIds={[id]} />
-          </DropdownMenuContent>
-        </DropdownMenu>
       </div>
     </div>
   );
@@ -455,8 +413,8 @@ interface PaneButtonProps {
   pressed?: boolean;
 }
 
-/** The small square icon button used by every terminal-chrome control. */
-export function PaneButton({
+/** The small square icon button the pane chrome draws its one control with. */
+function PaneButton({
   label,
   onClick,
   children,
@@ -479,22 +437,6 @@ export function PaneButton({
   );
 }
 
-/** The pane's menu button — the same three dots every overflow control uses. */
-function MoreIcon(): ReactNode {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className="h-3.5 w-3.5"
-      fill="currentColor"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="5" r="2" />
-      <circle cx="12" cy="12" r="2" />
-      <circle cx="12" cy="19" r="2" />
-    </svg>
-  );
-}
-
 /** Grip dots — the handle a pane is dragged by. */
 function GripIcon(): ReactNode {
   return (
@@ -510,22 +452,6 @@ function GripIcon(): ReactNode {
           <circle cx="10" cy={y} r="1.1" />
         </Fragment>
       ))}
-    </svg>
-  );
-}
-
-function SplitRightIcon(): ReactNode {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      className="h-3.5 w-3.5"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      aria-hidden="true"
-    >
-      <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
-      <line x1="8" y1="2.5" x2="8" y2="13.5" />
     </svg>
   );
 }
@@ -546,22 +472,6 @@ function CollapseIcon({ direction }: { direction: SplitDirection }): ReactNode {
       <line x1="2.5" y1="8" x2="13.5" y2="8" />
       <path d="M5.5 2.5 8 5 10.5 2.5" />
       <path d="M5.5 13.5 8 11 10.5 13.5" />
-    </svg>
-  );
-}
-
-function SplitDownIcon(): ReactNode {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      className="h-3.5 w-3.5"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      aria-hidden="true"
-    >
-      <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
-      <line x1="2" y1="8" x2="14" y2="8" />
     </svg>
   );
 }

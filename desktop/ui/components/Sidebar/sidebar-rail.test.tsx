@@ -131,6 +131,7 @@ describe("the collapsed sidebar rail", () => {
               isCurrent: false,
               commitsAhead: 1,
               unpushedCommits: 0,
+              behindUpstream: 0,
               hasWorkingTreeChanges: true,
               lastCommitDate: new Date().toISOString(),
               lastCommitMessage: "x",

@@ -344,6 +344,15 @@ pub fn set_base_override(
         ReviewState::new(ref_name, None)
     };
 
+    // A different base is a different diff, so the stored progress is a count
+    // of hunks this review no longer has. Dropping it makes the sidebar report
+    // nothing until the next save measures the new comparison — which is the
+    // honest answer, and the alternative is a confident number for a diff that
+    // no longer exists. Now that changing the base is a row in the review
+    // screen's own picker, this is one click away rather than a rarity.
+    if state.base_override != base_override {
+        state.progress = None;
+    }
     state.base_override = base_override;
     state.prepare_for_save();
     save_review_state(repo_path, &state)?;

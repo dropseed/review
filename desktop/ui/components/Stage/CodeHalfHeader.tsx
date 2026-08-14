@@ -10,7 +10,7 @@ import { useWorkspaceContext } from "../Sidebar/workspace-context";
 import { describeWorkspace } from "../Sidebar/workspace-status";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { RepoPicker } from "./RepoPicker";
-import { openRepoIn } from "./repo-choices";
+import { openRepoIn, useAttachedKeys } from "./repo-choices";
 import type { Workspace } from "../../types";
 
 /**
@@ -120,10 +120,7 @@ function RepoTabs({ workspace }: { workspace: Workspace }): ReactNode {
 /** The strip's `+`: pick a repo, and it becomes the tab you are on. */
 function AddRepoTab({ workspace }: { workspace: Workspace }): ReactNode {
   const [open, setOpen] = useState(false);
-  const attached = useMemo(
-    () => new Set(workspace.attachments.map((a) => a.path)),
-    [workspace],
-  );
+  const attached = useAttachedKeys(workspace);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -138,7 +135,10 @@ function AddRepoTab({ workspace }: { workspace: Workspace }): ReactNode {
           +
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="max-h-80 w-72 p-2">
+      {/* Wide enough for `name  branch` to both survive: a repo with several
+          worktrees lists one name against six branches, and at 18rem the two
+          columns were truncating each other into ambiguity. */}
+      <PopoverContent align="start" className="max-h-80 w-96 p-2">
         <RepoPicker
           autoFocus
           attached={attached}

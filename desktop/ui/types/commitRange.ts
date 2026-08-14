@@ -64,6 +64,36 @@ export function commitRangeForSha(
   return commitRangeFor(commits, branchBase, ordinal, ordinal);
 }
 
+/**
+ * The commits this branch holds that nowhere else does — "what have I done
+ * since I last pushed".
+ *
+ * A slice of the same oldest-first list rather than a comparison against
+ * `origin/<branch>`: git's own ahead count *is* the length of that slice, so
+ * the last `unpushed` ordinals are exactly the unpublished commits. Which means
+ * this is an ordinary range — it highlights its own commits in the list, shares
+ * the selection and re-diff machinery, and needs no remote ref to resolve.
+ *
+ * Null when the answer would be a worse version of one already on offer:
+ * nothing unpushed (there is no range), or everything unpushed (that is the
+ * whole branch, and two rows selecting the same diff under different names is
+ * how a menu teaches someone that it is lying to them).
+ */
+export function unpushedRange(
+  commits: CommitEntry[],
+  branchBase: string,
+  unpushed: number,
+): CommitRange | null {
+  if (unpushed <= 0 || unpushed >= commits.length) return null;
+  const range = commitRangeFor(
+    commits,
+    branchBase,
+    commits.length - unpushed + 1,
+    commits.length,
+  );
+  return range && { ...range, title: `Unpushed · ${unpushed} commits` };
+}
+
 /** The working tree on top of `branchHead` — `head..head` reads as "uncommitted". */
 export function uncommittedRange(branchHead: string): CommitRange {
   return {

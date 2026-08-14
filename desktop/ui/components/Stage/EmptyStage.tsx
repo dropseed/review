@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo } from "react";
+import type { ReactNode } from "react";
 import { useFocusedWorkspace } from "../../stores/selectors/workspaces";
 import {
   useTerminalsByWorkspaceId,
@@ -6,7 +6,7 @@ import {
 } from "../../stores/selectors/terminals";
 import { StartTerminal } from "../Terminal/StartTerminal";
 import { RepoPicker } from "./RepoPicker";
-import { openRepoIn } from "./repo-choices";
+import { openRepoIn, useAttachedKeys } from "./repo-choices";
 import type { Workspace } from "../../types";
 
 /**
@@ -53,10 +53,7 @@ export function EmptyStage(): ReactNode {
 
 /** The hero: the one thing an empty workspace is actually waiting for. */
 function RepoHalf({ workspace }: { workspace: Workspace }): ReactNode {
-  const attached = useMemo(
-    () => new Set(workspace.attachments.map((a) => a.path)),
-    [workspace],
-  );
+  const attached = useAttachedKeys(workspace);
 
   return (
     <section className="panel-card flex min-w-0 flex-1 items-center justify-center overflow-hidden bg-surface-panel px-4">

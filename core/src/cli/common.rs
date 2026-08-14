@@ -342,6 +342,10 @@ where
         // drop_orphans=true: `live_hunks` is the authoritative full diff loaded
         // by `load_for_mutation`.
         state.reconcile(live_hunks, true);
+        // Counted here for the same reason the desktop path counts on save: a
+        // review the CLI touched has to report the same progress as one the app
+        // touched, or the sidebar's number depends on which drove it last.
+        state.progress = Some(state.measure(live_hunks));
         state.prepare_for_save();
         match storage::save_review_state(repo, &state) {
             Ok(()) => return Ok(state),

@@ -12,11 +12,7 @@ import { PhaseDot } from "../Sidebar/PhaseDot";
 import { RICH_TOOLTIP_CLASS, SimpleTooltip } from "../ui/tooltip";
 import { tabGlance } from "./glance";
 import { TerminalGlanceCard } from "./TerminalGlanceCard";
-import {
-  collectLeafIds,
-  expandedLeafIds,
-  type SplitDirection,
-} from "./pane-tree";
+import { collectLeafIds, expandedLeafIds } from "./pane-tree";
 import {
   DROP_RING,
   TERMINAL_PANE_MIME,
@@ -33,7 +29,7 @@ import {
 import { closeTerminalPane, closeTerminalTab } from "./close";
 import { openTerminalTab } from "./newTab";
 import { StartTerminal } from "./StartTerminal";
-import { PaneTree, PaneButton } from "./PaneTree";
+import { PaneTree } from "./PaneTree";
 import { FocusToggle } from "../Stage/FocusToggle";
 import { WarningIcon } from "../ui/icons";
 import {
@@ -51,7 +47,6 @@ export function TerminalPanel(): ReactNode {
   const terminalTabs = useReviewStore((s) => s.terminalTabs);
   const activeTabId = useReviewStore((s) => s.activeTabId);
 
-  const splitTerminal = useReviewStore((s) => s.splitTerminal);
   const setActiveTab = useReviewStore((s) => s.setActiveTab);
   const moveTab = useReviewStore((s) => s.moveTab);
   const setFocusedTerminalPane = useReviewStore(
@@ -59,10 +54,6 @@ export function TerminalPanel(): ReactNode {
   );
   const movePaneToTab = useReviewStore((s) => s.movePaneToTab);
   const movePaneToNewTab = useReviewStore((s) => s.movePaneToNewTab);
-  const terminalDockSide = useReviewStore((s) => s.terminalDockSide);
-  const toggleTerminalDockSide = useReviewStore(
-    (s) => s.toggleTerminalDockSide,
-  );
 
   // Tab drag-to-reorder. The in-flight tab lives in the pane-drag module
   // rather than component state, because under Tauri the drop lands on the
@@ -120,14 +111,6 @@ export function TerminalPanel(): ReactNode {
   // Started *in* the workspace the stage is showing, so the "+" beside its own
   // tabs can't hand it to another one.
   const handleNewTab = () => void openTerminalTab(focusedWorkspace);
-
-  const handleSplit = (
-    tabId: string,
-    targetTerminalId: string,
-    direction: SplitDirection,
-  ) => {
-    void splitTerminal(tabId, targetTerminalId, direction);
-  };
 
   const handleClosePane = (id: string) => {
     void closeTerminalPane(id);
@@ -389,33 +372,26 @@ export function TerminalPanel(): ReactNode {
               <span>New tab</span>
             </div>
           )}
+
+          {/* New terminal, in the strip itself rather than pinned past its
+              right edge — the mirror of the repo strip's `+`, which sits after
+              the last repo tab. One verb, no menu: splitting is a gesture on
+              the pane you want to split (⌘D), not a choice made before there is
+              anything to split. */}
+          <button
+            type="button"
+            aria-label="New terminal tab"
+            title="New terminal tab (⌘T)"
+            onClick={handleNewTab}
+            className="shrink-0 rounded-md px-2 py-1 text-sm leading-none text-fg-muted
+                       hover:bg-fg/[0.06] hover:text-fg-secondary"
+          >
+            +
+          </button>
         </div>
 
-        {/* New terminal. One verb, no menu: splitting is a gesture on the pane
-            you want to split (its own chrome, or ⌘D), not a choice made before
-            there is anything to split. */}
-        <button
-          type="button"
-          aria-label="New terminal tab"
-          title="New terminal tab (⌘T)"
-          onClick={handleNewTab}
-          className="ml-1 shrink-0 rounded px-2 py-1 text-sm leading-none text-fg-muted
-                     hover:bg-fg/[0.06] hover:text-fg-secondary"
-        >
-          +
-        </button>
-
-        {/* Panel controls: dock side, and this half's own focus toggle. */}
-        <div className="ml-2 flex shrink-0 items-center gap-1">
-          <PaneButton
-            label={`Move terminal to ${
-              terminalDockSide === "left" ? "right" : "left"
-            }`}
-            onClick={toggleTerminalDockSide}
-          >
-            <DockSideIcon side={terminalDockSide} />
-          </PaneButton>
-
+        {/* This half's own focus toggle, at the far end. */}
+        <div className="ml-2 flex shrink-0 items-center">
           <FocusToggle half="terminal" />
         </div>
       </div>
@@ -444,7 +420,6 @@ export function TerminalPanel(): ReactNode {
                 focusedId={tab.focused}
                 tabActive={tab.id === showingTabId}
                 onFocus={(id) => setFocusedTerminalPane(tab.id, id)}
-                onSplit={(id, direction) => handleSplit(tab.id, id, direction)}
                 onClose={handleClosePane}
               />
             </div>
@@ -476,30 +451,5 @@ function TabHoverPeek({
     >
       {children}
     </SimpleTooltip>
-  );
-}
-
-/** Panel-dock glyph: a frame with the filled bar on the terminal's current side. */
-function DockSideIcon({ side }: { side: "left" | "right" }): ReactNode {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      className="h-3.5 w-3.5"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      aria-hidden="true"
-    >
-      <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
-      <rect
-        x={side === "left" ? 2 : 10}
-        y="2.5"
-        width="4"
-        height="11"
-        rx="1.5"
-        fill="currentColor"
-        stroke="none"
-      />
-    </svg>
   );
 }
