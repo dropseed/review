@@ -316,4 +316,46 @@ mod tests {
         assert_eq!(PathBuf::from(&resolved), expected);
         assert_eq!(focused_file, None);
     }
+
+    #[test]
+    fn strip_jsonc_comments_strips_line_comments() {
+        let input = "{\n  \"a\": 1, // trailing comment\n  \"b\": 2\n}";
+        let result = strip_jsonc_comments(input);
+        assert_eq!(result, "{\n  \"a\": 1, \n  \"b\": 2\n}");
+    }
+
+    #[test]
+    fn strip_jsonc_comments_strips_block_comments() {
+        let input = "{ /* comment */ \"a\": 1 /* multi\nline */ }";
+        let result = strip_jsonc_comments(input);
+        assert_eq!(result, "{  \"a\": 1  }");
+    }
+
+    #[test]
+    fn strip_jsonc_comments_leaves_slashes_inside_strings_untouched() {
+        let input = r#"{ "url": "https://example.com" }"#;
+        let result = strip_jsonc_comments(input);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn strip_jsonc_comments_handles_escaped_quotes_inside_strings() {
+        let input = r#"{ "a": "she said \"// not a comment\"" }"#;
+        let result = strip_jsonc_comments(input);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn strip_jsonc_comments_handles_comment_followed_by_content_on_next_line() {
+        let input = "{\n  // leading comment\n  \"a\": 1\n}";
+        let result = strip_jsonc_comments(input);
+        assert_eq!(result, "{\n  \n  \"a\": 1\n}");
+    }
+
+    #[test]
+    fn strip_jsonc_comments_handles_unterminated_trailing_block_comment() {
+        let input = "{ \"a\": 1 } /* trailing, never closed";
+        let result = strip_jsonc_comments(input);
+        assert_eq!(result, "{ \"a\": 1 } ");
+    }
 }
