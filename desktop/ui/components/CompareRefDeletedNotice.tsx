@@ -4,7 +4,7 @@ import type { Comparison } from "../types";
 import { useReviewStore } from "../stores";
 import { WarningIcon } from "./ui/icons";
 import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
-import { ChangeBaseMenu } from "./TabRail/ChangeBaseMenu";
+import { ChangeBaseMenu } from "./Sidebar/ChangeBaseMenu";
 
 interface CompareRefDeletedNoticeProps {
   repoPath: string;

@@ -52,6 +52,18 @@ export interface PaletteDialogProps<T> {
   getKey: (item: T) => string;
   renderRow: (item: T, state: { selected: boolean }) => ReactNode;
   onActivate: (item: T) => void;
+  /**
+   * ⌘Enter — "the same destination, plus the thing you were going to do when
+   * you got there".
+   *
+   * A second verb on the row the cursor is already on, rather than a mode of
+   * its own: the row is the noun either way, and a mode would make the user
+   * decide which list they are in before they have found the entry. Rows that
+   * have no second verb simply ignore it.
+   */
+  onAlternateActivate?: (item: T) => void;
+  /** Verb shown next to the ⌘Enter hint. Omitted hides the hint. */
+  alternateLabel?: string;
 
   busy?: boolean;
   error?: string | null;
@@ -96,6 +108,8 @@ export type PaletteSource<T> = Pick<
   | "getKey"
   | "renderRow"
   | "onActivate"
+  | "onAlternateActivate"
+  | "alternateLabel"
   | "busy"
   | "error"
   | "emptyMessage"
@@ -184,6 +198,8 @@ export function PaletteDialog<T>({
   inputAccessories,
   inputPrefix,
   onKeyDown,
+  onAlternateActivate,
+  alternateLabel,
   enterLabel = "select",
   renderCount,
   footerHints,
@@ -274,18 +290,34 @@ export function PaletteDialog<T>({
           event.preventDefault();
           setSelectedIndex(Math.max(0, flat.length - 1));
           break;
-        case "Enter":
-          // Only a bare Enter activates. A modified Enter belongs to whatever
-          // global shortcut owns that chord, and would otherwise fire both.
+        case "Enter": {
+          const item = flat[selectedIndex];
+          if (!item) return;
+          // ⌘Enter is the row's second verb when the mode offers one.
+          if ((event.metaKey || event.ctrlKey) && onAlternateActivate) {
+            event.preventDefault();
+            onAlternateActivate(item);
+            return;
+          }
+          // Otherwise only a bare Enter activates. A modified Enter belongs to
+          // whatever global shortcut owns that chord, and would otherwise fire
+          // both.
           if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
             return;
-          if (!flat[selectedIndex]) return;
           event.preventDefault();
           activate(selectedIndex);
           break;
+        }
       }
     },
-    [activate, flat, onKeyDown, selectedIndex, setSelectedIndex],
+    [
+      activate,
+      flat,
+      onAlternateActivate,
+      onKeyDown,
+      selectedIndex,
+      setSelectedIndex,
+    ],
   );
 
   // The error branch renders in place of the list, so there are no options to
@@ -405,14 +437,19 @@ export function PaletteDialog<T>({
             )}
           </div>
 
-          <div className="border-t border-edge px-4 py-2 flex items-center justify-between text-xxs text-fg-faint">
-            <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between gap-3 border-t border-edge px-4 py-2 text-xxs text-fg-faint">
+            {/* Wraps rather than clipping: the root mode advertises every other
+                mode's prefix, which is more hints than one line holds. */}
+            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
               <Hint keys={["↑", "↓"]} label="navigate" />
               <Hint keys={["Enter"]} label={enterLabel} />
+              {alternateLabel && (
+                <Hint keys={["⌘", "Enter"]} label={alternateLabel} />
+              )}
               <Hint keys={["Esc"]} label="close" />
               {footerHints}
             </div>
-            <span aria-live="polite">
+            <span className="shrink-0" aria-live="polite">
               {hasResults &&
                 (renderCount
                   ? renderCount(flat.length)

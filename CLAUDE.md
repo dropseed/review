@@ -142,6 +142,26 @@ Only the `terminal` feature needs this, so only `review-daemon` (and `cargo test
 - **Trust Pattern**: Label from the taxonomy (e.g., `imports:added`, `formatting:whitespace`)
 - **Trust List**: Patterns the user has chosen to auto-approve
 - **Comparison**: The base..compare refs being reviewed
+- **Workspace**: One thing the user is working on — an optional title and an ordered list of **attachments**. It is a container that becomes whatever is put in it. Everything live (terminals, PRs, review state) is derived and joined against its attachments, or against the workspace id the daemon stamps on a session.
+- **Attachment**: `{path, refName?}` — a repository (or a plain directory) the workspace shows, plus an optional view hint. **Not exclusive**: any number of workspaces may attach the same path, and a workspace shows a path at most once. Nothing here conflicts.
+
+## Titles are derived
+
+A workspace's title is `null` until someone types one. `Workspace::display_title` derives it live, in three rungs: the first attachment's label ("review · feature/x"), else the title of a live terminal in it, else "Untitled". The wire carries both `title` (raw, nullable) and `displayTitle` (always set), so a rename field prefills with what the human typed rather than what was derived for them; renaming to an empty string clears the stored title and derivation resumes.
+
+The terminal rung is the daemon's answer, so only the two liveness reads (`review work list`, the app's `work_list`) can supply it. Every other surface derives without it.
+
+## Cleanup, not endorsement
+
+`autoCreated` is set by the router alone and cleared by **every** mutation in `core/src/work/` (rename, move, attach, detach) — so it means, precisely, "nothing but the router has ever touched this". `work::cleanup` drops a workspace that is `autoCreated`, has no live terminal, and is past a 60s creation grace. Nothing else ever removes one, and reviewing a comparison has no effect on the queue at all.
+
+## Shipped workspaces
+
+The viewer-PR query asks GitHub for `states: OPEN`, so a merged PR does not change in the snapshot — it disappears from it. `service::viewer_prs::refresh_now` diffs each refresh against the previous cached snapshot, hands the departures to `service::shipped::record_departed`, and that asks `gh pr view` once per departure and keeps the answer in `~/.review/shipped_prs.json` (a merged or closed PR stays that way). Confirmed merges ride back on `ViewerPrSnapshot.shipped`, keyed by repo path and head branch so a workspace card can find its own attachment. No `gh` means no answer, which shows as nothing new.
+
+A truncated snapshot on either side of the diff reports no departures at all: above the query's page of 100 open PRs a PR can leave the _window_ without leaving the open set, and treating those as departed would spend a `gh` call each on an answer of "still open". A viewer with more than a page of open PRs simply gets no shipped detection. `record_departed` is also capped per refresh, because each unsettled departure is a serial `gh` call under the refresh lock.
+
+A workspace whose every attached branch has landed wears a **shipped** state — a tick on the card, `#N shipped` in place of the status phrase, and a "Remove" prompt on the card itself. Removal stays the user's alone.
 
 ## The `review` CLI
 
@@ -163,13 +183,18 @@ The `review` binary (built with `--features cli`, source in `core/src/cli/`) is 
 
 The **guide** is an agent-authored grouping of a comparison's hunks into a themed walkthrough. The desktop app renders it but no longer generates it — agents compose it via `review guide add` (each add lands live through the file watcher); `guide show` reconciles the stored groups against the current diff and reports any unplaced hunks as `ungrouped`.
 
-**Work queue** — the sidebar's user-ordered "Working on" list. Global (cross-repo), stored at `~/.review/work.json`; array order is the priority order. A work item stores intent only — title, position, zero-or-more repo+branch bindings — everything live (terminals, PRs, review state) is derived. Agents may read priorities and add/bind items, but the ordering belongs to the user; only the user removes items in the UI (removal is their acknowledgment moment).
+**Work queue** — the sidebar's user-ordered "Working on" list, a priority queue of **workspaces**. Global (cross-repo), stored at `~/.review/work.json`; array order is the priority order. A workspace stores an optional title and its attachments; everything live (terminals, PRs, review state) is derived. Agents may read priorities and add/attach workspaces, but the ordering belongs to the user; only the user removes them in the UI (removal is their acknowledgment moment).
 
 - `review work [list] [--json]` — numbered list; `--json` is global to the subcommand
-- `review work add "title" [--ref BRANCH [--repo PATH]]` — a bare title is a note; adds always append
-- `review work move <id> <position>` (1-based) · `review work rename <id> "title"` · `review work remove <id>`
-- `review work bind|unbind <id> BRANCH [--repo PATH]` — a ref can be bound to at most one item; conflicts name the holder
+- `review work add ["title"]` — the title is optional; adds always append
+- `review work move <id> <position>` (1-based) · `review work rename <id> ["title"]` (no title clears it) · `review work remove <id>`
+- `review work attach <id> [PATH] [--ref REF]` · `review work detach <id> [PATH]` — PATH defaults to the current directory
+- `review work resolve [DIR]` — preview a route without writing
 - `<id>` accepts unique prefixes
+
+`core/src/work/router.rs` resolves any cwd to a workspace: the first one in queue order attached to that repo root (or plain directory when outside a repo), else a fresh one it mints (`autoCreated: true`) attached to it — so nothing the app shows is ever unattached. Because attachments are not exclusive, that tie-break is a heuristic: a wrong guess costs one drag of a terminal onto the right card. Naming a workspace explicitly (⌘T, `review terminal start --workspace`, ⌘K) lands there and **writes nothing** — what a workspace is about is answered by `attach`, not by where a shell happened to open.
+
+A workspace's terminals are the daemon's record, not the queue's: each session carries a `workspaceId`, set by whoever started it (`review terminal start`, the app's `terminal_start` — both route first). That is what every surface groups by, what `DaemonClient::reassign_sessions` moves when a terminal is dragged to another card, and what keeps a router-made workspace alive. `work::cleanup` is lazy — it runs on the two reads that hold both the queue and the daemon's liveness answer, `review work list` and the app's `work_list` — so the daemon never writes `work.json`. **With no daemon reachable, neither read cleans anything up**: an empty liveness set means "nothing is running", never "I don't know".
 
 **Git index** — stage individual hunks (the thing `git add` can't do non-interactively):
 
@@ -178,7 +203,7 @@ The **guide** is an agent-authored grouping of a comparison's hunks into a theme
 
 **Terminal sessions** — drive the daemon-backed terminals the desktop app shows. Thin clients of the `review-daemon` control socket (`~/.review/daemon.sock`); the daemon must already be running (the app spawns it). Ids accept unique prefixes.
 
-- `review terminal list [--repo PATH|--all] [--json]` · `review terminal start [--id NAME] [--cwd DIR] [--cols N] [--rows N] [--shell SH] [--json]`
+- `review terminal list [--repo PATH|--all] [--json]` · `review terminal start [--id NAME] [--cwd DIR] [--cols N] [--rows N] [--shell SH] [--workspace ID] [--json]` — `start` routes its cwd to a workspace and reports where it landed (`--json` carries the landing as `workspace: {id, title, created}`); `--workspace ID` names one instead, which attaches nothing. The daemon carries the id and never reads `work.json`
 - `review terminal send <id> [TEXT] [--key KEY]... [--enter]` — write to the PTY; named keys: enter, tab, esc, backspace, space, arrows, home/end, ctrl-\<letter\>
 - `review terminal peek <id>` — plain-text snapshot of the visible screen (the libghostty-vt render)
 - `review terminal wait <id> [--until <phase|exit>] [--match REGEX] [--timeout SECS]` — block until a status transition, new output matching the regex, or exit; built client-side on the stream connection

@@ -11,6 +11,7 @@ pub mod files;
 pub mod freshness;
 pub mod pr;
 pub mod review_io;
+pub mod shipped;
 pub mod symbols;
 pub mod targets;
 pub mod usage;
@@ -19,7 +20,7 @@ pub mod viewer_prs;
 pub mod vscode;
 pub mod watcher_events;
 
-use crate::diff::parser::{DiffHunk, MovePair};
+use crate::diff::parser::DiffHunk;
 use crate::symbols::Symbol;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -38,10 +39,27 @@ pub struct FileContent {
     pub old_image_data_url: Option<String>,
 }
 
+/// One requested path's place in the comparison, as of now.
+///
+/// `status: None` means the comparison no longer touches this file — the edit
+/// that triggered the delta put it back the way the base has it.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DetectMovePairsResponse {
-    pub pairs: Vec<MovePair>,
+pub struct FileDeltaEntry {
+    pub path: String,
+    pub status: Option<crate::sources::traits::FileStatus>,
+    pub renamed_from: Option<String>,
+    /// Whether the file is on disk in the comparison's working tree. A path
+    /// that is neither changed nor present is one the caller should forget
+    /// entirely rather than merely mark unchanged.
+    pub exists: bool,
+}
+
+/// The recomputed slice of a comparison covering a named set of paths.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FilesDelta {
+    pub files: Vec<FileDeltaEntry>,
     pub hunks: Vec<DiffHunk>,
 }
 
@@ -85,10 +103,6 @@ pub struct RepoLocalActivity {
     pub branches: Vec<crate::sources::local_git::LocalBranchInfo>,
     #[serde(default)]
     pub recent_remote_branches: Vec<crate::sources::local_git::RecentRemoteBranch>,
-    /// Unix-seconds timestamp of the last `git fetch` on this repo
-    /// (from `.git/FETCH_HEAD` mtime). None if never fetched.
-    #[serde(default)]
-    pub last_fetched_at: Option<i64>,
 }
 
 /// Emitted by the file watcher when a repo's activity changes. The payload is

@@ -4,14 +4,15 @@ import { useReviewProgress } from "../../hooks/useReviewProgress";
 import { SimpleTooltip } from "../ui/tooltip";
 import { ProgressRing } from "../ui/progress-ring";
 import { Rail, railTooltipSide, type RailEdge } from "../ui/rail";
-import { FocusSwitch } from "../Terminal/FocusSwitch";
 
 /**
  * The code, while the terminal has focus — the mirror of TerminalRail, on the
  * opposite edge. Focusing the terminal means "give it everything", so this
- * stays as narrow as the terminal's own rail: the same focus switch, and
- * exactly one thing worth knowing from a shell — how much of the review is
- * left.
+ * stays as narrow as the terminal's own rail and carries exactly one thing
+ * worth knowing from a shell: how much of the review is left.
+ *
+ * The way back is the Focus button on the terminal's bar, which is the visible
+ * one whenever this rail is drawn.
  */
 export function DiffRail(): ReactNode {
   const terminalDockSide = useReviewStore((s) => s.terminalDockSide);
@@ -23,11 +24,8 @@ export function DiffRail(): ReactNode {
 
   return (
     <Rail className="bg-surface">
-      <FocusSwitch vertical tooltipSide={railTooltipSide(edge)} />
-
       {progress.totalHunks > 0 && (
         <>
-          <div className="h-px w-4 shrink-0 bg-edge/60" />
           <SimpleTooltip
             content={`${progress.reviewedHunks}/${progress.totalHunks} hunks reviewed${
               remaining > 0 ? ` · ${remaining} left` : ""

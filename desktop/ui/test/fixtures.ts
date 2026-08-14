@@ -8,10 +8,52 @@
  */
 
 import type {
+  Attachment,
   TerminalPhase,
   TerminalSessionInfo,
   TerminalStatus,
+  Workspace,
 } from "../types";
+
+/**
+ * A workspace as the backend hands it over.
+ *
+ * `displayTitle` follows the backend's own ladder unless it is overridden, so a
+ * suite states the title *or* the attachments and gets the same answer the app
+ * would render.
+ */
+export function workspace(
+  id: string,
+  overrides: Partial<Workspace> = {},
+): Workspace {
+  const title = overrides.title ?? null;
+  const attachments = overrides.attachments ?? [];
+  return {
+    id,
+    title,
+    displayTitle: title || derivedTitle(attachments),
+    attachments,
+    autoCreated: false,
+    createdAt: "2026-08-13T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+/** The backend's derived title, minus the live-terminal rung. */
+function derivedTitle(attachments: Attachment[]): string {
+  const first = attachments[0];
+  if (!first) return "Untitled";
+  const name = first.path.slice(first.path.lastIndexOf("/") + 1);
+  return first.refName ? `${name} · ${first.refName}` : name;
+}
+
+/** One repo tab. */
+export function attachment(
+  path: string,
+  refName: string | null = null,
+): Attachment {
+  return { path, refName };
+}
 
 /** A terminal status in `phase`, with everything else quiet unless overridden. */
 export function terminalStatus(
@@ -40,6 +82,7 @@ export function terminalSession(
   return {
     id,
     repoPath: "/repo",
+    workspaceId: null,
     cwd: "/repo",
     title: null,
     cols: 80,

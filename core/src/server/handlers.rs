@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::classify::{self, ClassifyResponse};
-use crate::diff::parser::{detect_move_pairs, DiffHunk};
+use crate::diff::parser::DiffHunk;
 use crate::review::state::{ReviewState, ReviewSummary};
 use crate::review::storage::{self, GlobalReviewSummary};
 use crate::service::watcher_events::{categorize_change, ChangeKind, GitChangedPayload};
@@ -25,7 +25,7 @@ use crate::sources::traits::{
 };
 use crate::symbols::{FileSymbolDiff, Symbol, SymbolDefinition};
 use crate::trust::patterns::TrustCategory;
-use crate::work::{self, WorkItem, WorkRef};
+use crate::work::{self, Attachment, Workspace, WorkspaceView};
 
 pub(super) type ApiResult<T> = Result<Json<T>, (StatusCode, String)>;
 
@@ -103,6 +103,7 @@ pub fn build_api_router() -> Router {
         )
         .route("/api/files/content", post(files_content))
         .route("/api/files/all-hunks", post(files_all_hunks))
+        .route("/api/files/delta", post(files_delta))
         .route("/api/files/expanded-context", post(files_expanded_context))
         .route("/api/files/search", post(files_search))
         .route("/api/files/read-raw", post(files_read_raw))
@@ -131,11 +132,12 @@ pub fn build_api_router() -> Router {
         .route("/api/work/remove", post(work_remove))
         .route("/api/work/rename", post(work_rename))
         .route("/api/work/move", post(work_move))
-        .route("/api/work/bind", post(work_bind))
-        .route("/api/work/unbind", post(work_unbind))
+        .route("/api/work/attach", post(work_attach))
+        .route("/api/work/detach", post(work_detach))
+        .route("/api/work/route", post(work_route))
         // Classification
         .route("/api/classify/static", post(classify_static))
-        .route("/api/classify/move-pairs", post(classify_move_pairs))
+        .route("/api/files/move-pairs", post(files_move_pairs))
         // Trust
         .route("/api/trust/taxonomy", post(trust_taxonomy))
         .route("/api/trust/match", post(trust_match))
@@ -807,6 +809,29 @@ async fn files_all_hunks(Json(req): Json<GetAllHunksRequest>) -> ApiResult<Vec<D
     .await
 }
 
+async fn files_move_pairs(
+    Json(req): Json<ListFilesRequest>,
+) -> ApiResult<Vec<crate::diff::parser::MovePair>> {
+    blocking(move || {
+        crate::service::files::comparison_move_pairs(
+            &PathBuf::from(&req.repo_path),
+            &req.comparison,
+        )
+    })
+    .await
+}
+
+async fn files_delta(Json(req): Json<GetAllHunksRequest>) -> ApiResult<crate::service::FilesDelta> {
+    blocking(move || {
+        crate::service::files::files_delta(
+            &PathBuf::from(&req.repo_path),
+            &req.comparison,
+            &req.file_paths,
+        )
+    })
+    .await
+}
+
 async fn files_expanded_context(
     Json(req): Json<ExpandedContextRequest>,
 ) -> ApiResult<ExpandedContextResult> {
@@ -989,9 +1014,10 @@ async fn review_freshness(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct WorkAddRequest {
-    title: String,
     #[serde(default)]
-    refs: Vec<WorkRef>,
+    title: Option<String>,
+    #[serde(default)]
+    attachments: Vec<Attachment>,
 }
 
 #[derive(Deserialize)]
@@ -1004,7 +1030,9 @@ struct WorkIdRequest {
 #[serde(rename_all = "camelCase")]
 struct WorkRenameRequest {
     id: String,
-    title: String,
+    /// Absent (or empty) clears the stored title and resumes derivation.
+    #[serde(default)]
+    title: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -1017,40 +1045,112 @@ struct WorkMoveRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct WorkBindRequest {
+struct WorkRouteRequest {
+    repo_path: String,
+    r#ref: String,
+    #[serde(default)]
+    workspace_id: Option<String>,
+}
+
+/// Mirrors the app's `RouteLanding` — see `desktop/tauri/src/desktop/commands.rs`.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RouteLanding {
+    workspace: WorkspaceView,
+    created: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkAttachRequest {
     id: String,
-    /// The `{repoPath, ref}` pair, deserialized as the `WorkRef` it becomes
+    /// The `{path, refName}` pair, deserialized as the `Attachment` it becomes
     /// rather than respelled field by field.
     #[serde(flatten)]
-    work_ref: WorkRef,
+    attachment: Attachment,
 }
 
-async fn work_list() -> ApiResult<Vec<WorkItem>> {
-    blocking(|| Ok(work::list()?.items)).await
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkDetachRequest {
+    id: String,
+    path: String,
 }
 
-async fn work_add(Json(req): Json<WorkAddRequest>) -> ApiResult<Vec<WorkItem>> {
-    blocking(move || Ok(work::add(&req.title, req.refs)?.0.items)).await
+/// Every workspace as the frontend reads it. Derived titles get no terminal
+/// rung here: web mode has no daemon to ask (see [`work::views`]).
+fn views(workspaces: Vec<Workspace>) -> Vec<WorkspaceView> {
+    work::views(workspaces, None)
 }
 
-async fn work_remove(Json(req): Json<WorkIdRequest>) -> ApiResult<Vec<WorkItem>> {
-    blocking(move || Ok(work::remove(&req.id)?.0.items)).await
+/// Deliberately never cleans up. Cleanup needs the daemon's answer to "what is
+/// running", and web mode has no daemon to ask — an empty set here would mean
+/// "nothing is live" and reap every router-made workspace the desktop app is
+/// using. See `work::cleanup`: a caller that cannot answer must not reap.
+async fn work_list() -> ApiResult<Vec<WorkspaceView>> {
+    blocking(|| Ok(views(work::list_with_liveness(None)?.workspaces))).await
 }
 
-async fn work_rename(Json(req): Json<WorkRenameRequest>) -> ApiResult<Vec<WorkItem>> {
-    blocking(move || Ok(work::rename(&req.id, &req.title)?.0.items)).await
+async fn work_add(Json(req): Json<WorkAddRequest>) -> ApiResult<Vec<WorkspaceView>> {
+    blocking(move || {
+        Ok(views(
+            work::add(req.title.as_deref(), req.attachments)?
+                .0
+                .workspaces,
+        ))
+    })
+    .await
 }
 
-async fn work_move(Json(req): Json<WorkMoveRequest>) -> ApiResult<Vec<WorkItem>> {
-    blocking(move || Ok(work::move_item(&req.id, req.position)?.0.items)).await
+async fn work_remove(Json(req): Json<WorkIdRequest>) -> ApiResult<Vec<WorkspaceView>> {
+    blocking(move || Ok(views(work::remove(&req.id)?.0.workspaces))).await
 }
 
-async fn work_bind(Json(req): Json<WorkBindRequest>) -> ApiResult<Vec<WorkItem>> {
-    blocking(move || Ok(work::bind(&req.id, req.work_ref)?.0.items)).await
+async fn work_rename(Json(req): Json<WorkRenameRequest>) -> ApiResult<Vec<WorkspaceView>> {
+    blocking(move || {
+        Ok(views(
+            work::rename(&req.id, req.title.as_deref())?.0.workspaces,
+        ))
+    })
+    .await
 }
 
-async fn work_unbind(Json(req): Json<WorkBindRequest>) -> ApiResult<Vec<WorkItem>> {
-    blocking(move || Ok(work::unbind(&req.id, &req.work_ref)?.0.items)).await
+async fn work_move(Json(req): Json<WorkMoveRequest>) -> ApiResult<Vec<WorkspaceView>> {
+    blocking(move || {
+        Ok(views(
+            work::move_workspace(&req.id, req.position)?.0.workspaces,
+        ))
+    })
+    .await
+}
+
+async fn work_attach(Json(req): Json<WorkAttachRequest>) -> ApiResult<Vec<WorkspaceView>> {
+    blocking(move || Ok(views(work::attach(&req.id, req.attachment)?.0.workspaces))).await
+}
+
+async fn work_detach(Json(req): Json<WorkDetachRequest>) -> ApiResult<Vec<WorkspaceView>> {
+    blocking(move || {
+        Ok(views(
+            work::detach(&req.id, std::path::Path::new(&req.path))?
+                .0
+                .workspaces,
+        ))
+    })
+    .await
+}
+
+/// The routing front door, for parity with the app's `work_route`.
+async fn work_route(Json(req): Json<WorkRouteRequest>) -> ApiResult<RouteLanding> {
+    blocking(move || {
+        let location =
+            work::router::location_of_ref(std::path::Path::new(&req.repo_path), &req.r#ref);
+        let landing = work::router::land(&location, req.workspace_id.as_deref())?;
+        Ok(RouteLanding {
+            workspace: work::views(vec![landing.workspace], None).remove(0),
+            created: landing.created,
+        })
+    })
+    .await
 }
 
 // ============================================================
@@ -1064,19 +1164,6 @@ struct ClassifyStaticRequest {
 
 async fn classify_static(Json(req): Json<ClassifyStaticRequest>) -> Json<ClassifyResponse> {
     Json(classify::classify_hunks_static(&req.hunks))
-}
-
-#[derive(Deserialize)]
-struct ClassifyMovePairsRequest {
-    hunks: Vec<DiffHunk>,
-}
-
-async fn classify_move_pairs(
-    Json(req): Json<ClassifyMovePairsRequest>,
-) -> Json<DetectMovePairsResponse> {
-    let mut hunks = req.hunks;
-    let pairs = detect_move_pairs(&mut hunks);
-    Json(DetectMovePairsResponse { pairs, hunks })
 }
 
 // ============================================================

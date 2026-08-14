@@ -376,9 +376,14 @@ pub fn run() {
                 .accelerator("CmdOrCtrl+O")
                 .build(app)?;
 
+            let new_terminal = MenuItemBuilder::new("New Terminal")
+                .id("new_terminal")
+                .accelerator("CmdOrCtrl+T")
+                .build(app)?;
+
             let new_tab = MenuItemBuilder::new("New Tab")
                 .id("new_tab")
-                .accelerator("CmdOrCtrl+T")
+                .accelerator("CmdOrCtrl+Shift+T")
                 .build(app)?;
 
             let new_window = MenuItemBuilder::new("New Window")
@@ -489,6 +494,7 @@ pub fn run() {
                 .build()?;
 
             let file_menu = SubmenuBuilder::new(app, "File")
+                .item(&new_terminal)
                 .item(&new_tab)
                 .item(&new_window)
                 .item(&open_repo)
@@ -606,6 +612,7 @@ pub fn run() {
             let id = event.id().as_ref();
             match id {
                 "close" => emit_menu_event(app, "menu:close", ()),
+                "new_terminal" => emit_menu_event(app, "menu:new-terminal", ()),
                 "new_tab" => emit_menu_event(app, "menu:new-tab", ()),
                 "new_window" => emit_menu_event(app, "menu:new-window", ()),
                 "open_repo" => emit_menu_event(app, "menu:open-repo", ()),
@@ -696,6 +703,7 @@ pub fn run() {
             commands::list_directory_contents,
             commands::get_file_content,
             commands::get_all_hunks,
+            commands::get_files_delta,
             commands::get_diff,
             commands::get_diff_shortstat,
             commands::get_expanded_context,
@@ -716,13 +724,14 @@ pub fn run() {
             commands::work_remove,
             commands::work_rename,
             commands::work_move,
-            commands::work_bind,
-            commands::work_unbind,
+            commands::work_attach,
+            commands::work_detach,
+            commands::work_route,
             commands::consume_cli_request,
             commands::open_repo_window,
             commands::check_claude_available,
             commands::classify_hunks_static,
-            commands::detect_hunks_move_pairs,
+            commands::get_comparison_move_pairs,
             commands::write_text_file,
             commands::append_to_file,
             commands::start_file_watcher,
@@ -763,6 +772,7 @@ pub fn run() {
             commands::lsp_find_references,
             terminal_commands::terminals_available,
             terminal_commands::terminal_start,
+            terminal_commands::terminal_assign_workspace,
             terminal_commands::terminal_write,
             terminal_commands::terminal_resize,
             terminal_commands::terminal_kill,

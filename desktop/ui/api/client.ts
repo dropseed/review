@@ -22,6 +22,8 @@ import type {
   CommitResult,
   FileEntry,
   FileContent,
+  FilesDelta,
+  MovePair,
   ReviewState,
   ReviewLoadResult,
   ResolvedReview,
@@ -31,7 +33,6 @@ import type {
   DiffHunk,
   DiffShortStat,
   ClassifyResponse,
-  DetectMovePairsResponse,
   ExpandedContext,
   SearchMatch,
   FileSymbol,
@@ -43,10 +44,12 @@ import type {
   RepoLocalActivity,
   ReviewFreshnessInput,
   ReviewFreshnessResult,
-  WorkItem,
-  WorkRef,
+  Workspace,
+  RouteLanding,
+  Attachment,
   WorktreeInfo,
   TerminalSessionInfo,
+  TerminalStarted,
   TerminalStatus,
   TerminalOutput,
   TerminalExit,
@@ -256,6 +259,20 @@ export interface ApiClient {
     filePaths: string[],
   ): Promise<DiffHunk[]>;
 
+  /**
+   * Recompute only the named files of the comparison.
+   *
+   * The file watcher's path: an edit names the paths it touched, and this
+   * returns their current hunks plus enough file-list identity to place them
+   * in (or drop them from) a diff the caller already holds. Hunks are
+   * identical to what `getAllHunks` would return for those files.
+   */
+  getFilesDelta(
+    repoPath: string,
+    comparison: Comparison,
+    filePaths: string[],
+  ): Promise<FilesDelta>;
+
   /** Get expanded context around a range of lines */
   getExpandedContext(
     repoPath: string,
@@ -352,7 +369,18 @@ export interface ApiClient {
   classifyHunksStatic(hunks: DiffHunk[]): Promise<ClassifyResponse>;
 
   /** Detect move pairs in hunks */
-  detectMovePairs(hunks: DiffHunk[]): Promise<DetectMovePairsResponse>;
+  /**
+   * The comparison's move pairs, detected from the diff on disk.
+   *
+   * Takes the comparison rather than the hunks: a move is a cross-file fact so
+   * the whole diff has to be examined either way, and shipping several hundred
+   * files of hunks across the boundary to learn a handful of id pairs is the
+   * expensive way to ask. Callers annotate the hunks they already hold.
+   */
+  getComparisonMovePairs(
+    repoPath: string,
+    comparison: Comparison,
+  ): Promise<MovePair[]>;
 
   // ----- Commit -----
 
@@ -438,30 +466,58 @@ export interface ApiClient {
   // in between. Both transports and the two Rust backends follow this; they
   // don't restate it.
 
-  /** List work items in priority order */
-  listWorkItems(): Promise<WorkItem[]>;
+  /**
+   * List work items in priority order.
+   *
+   * `focused` is the workspace on screen. The desktop backend cleans up dead
+   * router-made workspaces on this read, and a workspace being *looked at* is
+   * in use even with nothing running in it — see `in_use` in `commands.rs`.
+   */
+  listWorkspaces(focused?: string | null): Promise<Workspace[]>;
 
-  /** Create a work item, optionally pre-bound to refs */
-  addWorkItem(title: string, refs: WorkRef[]): Promise<WorkItem[]>;
+  /** Create a workspace. A null title leaves it deriving its own. */
+  addWorkspace(
+    title: string | null,
+    attachments: Attachment[],
+  ): Promise<Workspace[]>;
 
   /** Delete a work item */
-  removeWorkItem(id: string): Promise<WorkItem[]>;
+  removeWorkspace(id: string): Promise<Workspace[]>;
 
   /** Move a work item to a 0-based position in the priority order */
-  moveWorkItem(id: string, position: number): Promise<WorkItem[]>;
+  moveWorkspace(id: string, position: number): Promise<Workspace[]>;
 
-  /** Bind a review (repo + ref) to a work item */
-  bindWorkItem(id: string, repoPath: string, ref: string): Promise<WorkItem[]>;
-
-  /** Unbind a review (repo + ref) from a work item */
-  unbindWorkItem(
+  /**
+   * Show a repo in a workspace — opening a repo tab.
+   *
+   * Cannot fail on a conflict: attachments are non-exclusive. A path the
+   * workspace already shows keeps its one tab and takes the new ref hint.
+   */
+  attachWorkspace(
     id: string,
+    path: string,
+    refName?: string | null,
+  ): Promise<Workspace[]>;
+
+  /** Stop showing a repo — closing a repo tab. A no-op if it isn't attached. */
+  detachWorkspace(id: string, path: string): Promise<Workspace[]>;
+
+  /** Rename a work item. Null (or empty) clears it back to the derived title. */
+  renameWorkspace(id: string, title: string | null): Promise<Workspace[]>;
+
+  /**
+   * Route a repo+branch to its workspace and commit that — what ⌘K's Enter
+   * does.
+   *
+   * The palette previews this decision client-side (`previewRoute`) so it costs
+   * nothing per keystroke; this is the call that makes the preview true. It
+   * never writes attachments — that is `attachWorkspace`'s job alone.
+   */
+  routeWorkspace(
     repoPath: string,
     ref: string,
-  ): Promise<WorkItem[]>;
-
-  /** Rename a work item */
-  renameWorkItem(id: string, title: string): Promise<WorkItem[]>;
+    workspaceId?: string,
+  ): Promise<RouteLanding>;
 
   /** Subscribe to external changes to ~/.review/work.json (returns unsubscribe fn) */
   onWorkChanged(callback: () => void): () => void;
@@ -593,6 +649,11 @@ export interface ApiClient {
    * Start a new terminal session. `terminalId` is client-generated
    * (`crypto.randomUUID()`) so the caller can subscribe to its events BEFORE
    * the session exists.
+   *
+   * The backend routes it: every session is born in the workspace its cwd
+   * belongs to, and the answer comes back with the session because the caller
+   * has to know where to draw it — and whether that workspace is one the queue
+   * has never listed.
    */
   terminalStart(params: {
     terminalId: string;
@@ -601,7 +662,23 @@ export interface ApiClient {
     cols: number;
     rows: number;
     shell?: string;
-  }): Promise<TerminalSessionInfo>;
+    /**
+     * The workspace to be born in, when the caller knows which one — the
+     * stage's own "+". Omitted, the backend routes by cwd. Naming it here
+     * rather than reassigning afterwards is what keeps the workspace and the
+     * session together.
+     */
+    workspaceId?: string;
+  }): Promise<TerminalStarted>;
+
+  /**
+   * Move a session into a workspace — what dragging a terminal onto a card
+   * does. Attribution lives on the session, so this is the only way it changes.
+   */
+  terminalAssignWorkspace(
+    terminalId: string,
+    workspaceId: string | null,
+  ): Promise<void>;
 
   /** Write UTF-8 input (keystrokes) to a session's PTY. */
   terminalWrite(terminalId: string, data: string): Promise<void>;

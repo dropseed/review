@@ -26,6 +26,7 @@ import {
 } from "../hooks";
 import { useAsyncAction } from "../hooks/useAsyncAction";
 import { FilesPanelDock } from "./FilesPanel/FilesPanelDock";
+import { CodeHalfHeader } from "./Stage/CodeHalfHeader";
 import { ContentArea } from "./ContentArea";
 import { WarningIcon } from "./ui/icons";
 import { ActivityBar } from "./ActivityBar";
@@ -292,29 +293,36 @@ export function ReviewView({
         <main className="relative flex flex-1 flex-row overflow-hidden bg-surface">
           {/* Activity island — floats over the top of the content region */}
           {comparison && !compareRefMissing && <ActivityBar />}
-          {/* The diff sits in a rounded, raised card — the same one a terminal
-              pane uses. Its padding is the gutter the terminal dock leaves for
-              it, which is why it is unconditional: this screen doesn't know
+          {/* The code half is one rounded, raised card — the same one a
+              terminal pane uses — holding its own header, the diff, and the
+              files column. Its padding is the gutter the terminal dock leaves
+              for it, which is why it is unconditional: this screen doesn't know
               whether a terminal is beside it, or on which side. */}
           <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden p-2">
             <div className="panel-card relative flex min-h-0 flex-1 flex-col overflow-hidden bg-surface">
-              {compareRefMissing ? (
-                <CompareRefDeletedNotice
-                  repoPath={repoPath!}
-                  comparison={comparison!}
-                  missingRefs={missingRefs}
-                />
-              ) : (
-                <ContentArea />
-              )}
+              <CodeHalfHeader />
+              <div className="flex min-h-0 flex-1 flex-row overflow-hidden">
+                <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+                  {compareRefMissing ? (
+                    <CompareRefDeletedNotice
+                      repoPath={repoPath!}
+                      comparison={comparison!}
+                      missingRefs={missingRefs}
+                    />
+                  ) : (
+                    <ContentArea />
+                  )}
+                </div>
+
+                {/* The files column — hidden when the compared branch is
+                    gone, since its list would otherwise show every file as
+                    deleted. */}
+                {!compareRefMissing && <FilesPanelDock />}
+              </div>
             </div>
           </div>
         </main>
       </div>
-
-      {/* FilesPanel (right side) — hidden when the compared branch is gone,
-          since its file list would otherwise show every file as deleted. */}
-      {!compareRefMissing && <FilesPanelDock />}
 
       {/* Debug Modal */}
       {activeOverlay === "debug" && (

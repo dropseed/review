@@ -14,20 +14,6 @@ pub fn repo_relative_path(path: &Path, repo_root: &Path) -> String {
         .unwrap_or_else(|_| path.to_string_lossy().into_owned())
 }
 
-/// Walk up from `start` to find a directory containing `.git/`.
-pub fn find_repo_root(start: &Path) -> Option<PathBuf> {
-    let mut current = start;
-    loop {
-        if current.join(".git").exists() {
-            return Some(current.to_path_buf());
-        }
-        match current.parent() {
-            Some(parent) => current = parent,
-            None => return None,
-        }
-    }
-}
-
 /// Resolve an already-absolute path to an "open target": the repo it lives in
 /// (or the path itself if it's not inside a git repo) plus, when the target
 /// is a file inside a repo, its path relative to the repo root.
@@ -45,7 +31,7 @@ pub fn resolve_open_target(target: &Path) -> (String, Option<String>) {
         target.clone()
     };
 
-    match find_repo_root(&search_start) {
+    match crate::review::central::enclosing_working_tree(&search_start) {
         Some(repo_root) => {
             let focused_file = if target.is_file() {
                 target

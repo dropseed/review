@@ -209,7 +209,7 @@ the daemon yourself.
 
 ```
 review terminal list [--all|--repo PATH] [--json]     # sessions + phase + cwd
-review terminal start [--id NAME] [--cwd DIR] [--json]
+review terminal start [--id NAME] [--cwd DIR] [--workspace ID] [--json]
 review terminal send <id> [TEXT] [--key KEY]... [--enter]
 review terminal peek <id>                             # what's on screen right now
 review terminal wait <id> [--until <phase|exit>] [--match REGEX] [--timeout SECS]
@@ -221,6 +221,17 @@ Ids accept any unique prefix and resolve across all repos. `--json` on
 `list`/`start`/`wait` gives you the wire shapes. Named keys: `enter`, `tab`,
 `esc`, `backspace`, `space`, `up`/`down`/`left`/`right`, `home`, `end`,
 `ctrl-<letter>`.
+
+Every session belongs to a workspace from birth. `start` routes its working
+directory to one — joining the first workspace attached to that directory, or
+creating one for it — and says which in its output (`--json` carries it as
+`workspace: {id, title, created}`). `--workspace <id>` names one explicitly
+instead, which lands the session there and attaches nothing. See Part 3 for the
+queue those ids come from.
+
+The human's equivalents, if they ask: **⌘T** starts a terminal in whichever
+workspace is focused, no questions asked, and **⌘K** then **⌘Enter** on a branch
+row goes to that branch *and* starts a terminal there in one gesture.
 
 ## Ground rules
 
@@ -303,20 +314,45 @@ on, in their order. It's the "Working on" section at the top of the app's
 sidebar, stored at `~/.review/work.json`; every change lands live through the
 file watcher.
 
-An item is **intent only** — a title plus zero or more repo+branch bindings.
-Everything live (terminals, PRs, review state) is derived by joining against
-those refs, so the queue stays stable while the world underneath it moves.
+An item — a **workspace** — is a container that becomes whatever is put in it:
+an optional title and an ordered list of **attachments** (`{path, refName?}` —
+the repos it shows). Everything live (terminals, PRs, review state) is derived
+by joining against those attachments, so the queue stays stable while the world
+underneath it moves.
 
 ```
 review work [list] [--json]                        # priority order, top first
-review work add "title" [--ref BRANCH [--repo PATH]]
-review work bind|unbind <id> BRANCH [--repo PATH]
-review work rename <id> "title"
+review work add ["title"]                          # title optional
+review work attach <id> [PATH] [--ref REF]         # show a repo in a workspace
+review work detach <id> [PATH]
+review work rename <id> ["title"]                  # no title = derive one
+review work resolve [DIR] [--json]                 # what DIR routes to
 ```
 
 `--json` is global to the subcommand (either side of it) and gives you
-`{id, title, refs: [{repoPath, ref}], createdAt}` per item. Ids accept unique
-prefixes. `--repo` defaults to the repo you're running in.
+`{id, title, displayTitle, attachments: [{path, refName}], createdAt}` per
+workspace. Ids accept unique prefixes. `PATH` defaults to the directory you're
+running in.
+
+**Titles are derived unless someone typed one.** `title` is null until a rename
+sets it; `displayTitle` is what to show — the first attachment ("review ·
+feature/x"), else a live terminal's title, else "Untitled". Use `displayTitle`
+when you talk about a workspace.
+
+**Attachments are not exclusive.** Two workspaces may show the same repo, so
+`attach` never conflicts and never takes anything from anyone. Within one
+workspace a path appears once; re-attaching it just updates the ref hint.
+
+Some workspaces are the app's own: it makes one so a terminal opened in an
+unattached directory has somewhere to live. Those are disposable — one with no
+live terminal disappears from the list on its own a minute after it was made —
+so don't treat one as a statement of the human's intent, and don't expect an id
+you saw in a listing to still be there. Any edit you make to a workspace
+(renaming, moving, attaching, detaching) makes it durable. Reviewing a
+comparison does not: the queue and review state are independent now.
+
+A workspace whose PRs have all merged shows as **shipped** in the app, with a
+prompt to remove it. Removing is the human's — see below.
 
 ## Read priorities before you pick up work
 
@@ -335,26 +371,21 @@ it may be a detour from what they actually prioritized.
 ## Put your own work on the queue
 
 Work you start should be visible to the human instead of running untracked. Add
-an item, and bind the branch so the app can join terminals, PRs, and review
+an item, and attach the repo so the app can join terminals, PRs, and review
 state onto it:
 
 ```
-review work add "Fix the flaky terminal wait test" --ref fix/flaky-wait
-review work bind 3f9a other-branch --repo ~/code/other-repo
+review work add "Fix the flaky terminal wait test"
+review work attach 3f9a ~/code/other-repo --ref fix/flaky-wait
 ```
 
 `add` **always appends to the end** — the newest thing is the least prioritized
 until the human moves it. That's deliberate; don't work around it.
 
-A ref belongs to **at most one item**. Binding one another item already holds
-fails with an error naming the holder:
-
-```
-feature/x (review) is already bound to work item 3f9a2b1c (Ship the sidebar).
-```
-
-That's not an error to route around — it means this work is already tracked.
-Use the named item, and tell the human you found it there.
+Before adding, check whether the work is already on the queue (`review work
+list`) — nothing stops two workspaces covering the same repo, so duplicates are
+yours to avoid. If one is already there, use it and tell the human you found
+it.
 
 ## What is the human's, not yours
 

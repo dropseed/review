@@ -173,7 +173,7 @@ pub(crate) fn get_repo_path(repo: &Option<String>) -> Result<String, String> {
     }
 
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-    crate::service::util::find_repo_root(&cwd)
+    crate::review::central::enclosing_working_tree(&cwd)
         .map(|p| p.to_string_lossy().to_string())
         .ok_or_else(|| "Not a git repository. Use --repo to specify a repository path.".to_owned())
 }
@@ -236,11 +236,7 @@ pub(crate) fn resolve_absolute(path: &Path) -> Result<PathBuf, String> {
 /// When the target is a file inside a git repo, the relative path from the repo root is returned.
 /// When no git repo is found, returns `(target_path, None)`.
 fn resolve_open_path(path: Option<String>) -> Result<(String, Option<String>), String> {
-    let target = match path {
-        Some(p) => resolve_absolute(Path::new(&p))?,
-        None => std::env::current_dir().map_err(|e| e.to_string())?,
-    };
-
+    let target = common::resolve_cwd_arg(path)?;
     Ok(crate::service::util::resolve_open_target(&target))
 }
 
@@ -472,10 +468,8 @@ fn run_start(
 /// The current branch — the ref a spec-less command reviews. Falls back to
 /// `HEAD` (detached) when there's no current branch.
 pub(crate) fn auto_detect_ref(repo_path: &Path) -> Result<String, String> {
-    let source = LocalGitSource::new(repo_path.to_path_buf()).map_err(|e| e.to_string())?;
-    Ok(source
-        .get_current_branch()
-        .unwrap_or_else(|_| "HEAD".to_owned()))
+    crate::sources::local_git::current_branch_or_head(repo_path)
+        .ok_or_else(|| format!("{} is not a git repository.", repo_path.display()))
 }
 
 /// Resolve a `ref` (+ optional base override) into a [`ResolvedReview`] via the

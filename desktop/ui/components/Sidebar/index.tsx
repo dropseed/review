@@ -1,0 +1,224 @@
+import { type ReactNode, memo, useEffect, useState } from "react";
+import { useReviewStore } from "../../stores";
+import { useSidebarResize } from "../../hooks/useSidebarResize";
+import { useAutoUpdater } from "../../hooks/useAutoUpdater";
+import { getPlatformServices } from "../../platform";
+import { focusWorkspace } from "../../commands/workspaceCommands";
+import { SidebarPanelIcon } from "../ui/icons";
+import { SidebarResizeHandle } from "../ui/sidebar-resize-handle";
+import { Spinner } from "../ui/spinner";
+import { LspStatusIndicator } from "../LspStatusIndicator";
+import { AgentUsageIndicator } from "../AgentUsageIndicator";
+import { SidebarRail } from "./SidebarRail";
+import { WorkspaceQueue } from "./WorkspaceQueue";
+
+const GITHUB_REPO_URL = "https://github.com/dropseed/review";
+
+interface FooterVersionInfoProps {
+  updateAvailable: { version: string } | null;
+  installing: boolean;
+  installUpdate: () => void;
+  appVersion: string | null;
+  onOpenRelease: () => void;
+}
+
+/** Displays either an update button or the current version in the footer. */
+function FooterVersionInfo({
+  updateAvailable,
+  installing,
+  installUpdate,
+  appVersion,
+  onOpenRelease,
+}: FooterVersionInfoProps): ReactNode {
+  if (updateAvailable) {
+    return (
+      <button
+        type="button"
+        onClick={installUpdate}
+        disabled={installing}
+        className="flex items-center gap-1.5 text-[10px] font-medium text-status-approved hover:text-status-approved transition-colors duration-100 disabled:opacity-50"
+      >
+        {installing ? (
+          <>
+            <Spinner className="h-2.5 w-2.5 border-[1.5px] border-edge-strong border-t-status-approved" />
+            Installing…
+          </>
+        ) : (
+          <>
+            <span className="h-1.5 w-1.5 rounded-full bg-status-approved" />
+            Update to v{updateAvailable.version}
+          </>
+        )}
+      </button>
+    );
+  }
+
+  if (appVersion) {
+    return (
+      <button
+        type="button"
+        onClick={onOpenRelease}
+        className="text-[10px] tabular-nums text-fg-faint hover:text-fg-muted transition-colors duration-100"
+      >
+        v{appVersion}
+      </button>
+    );
+  }
+
+  return null;
+}
+
+/**
+ * The sidebar's own header: what the queue is, create a workspace, and put
+ * the sidebar away.
+ *
+ * "Working on" names the whole list, not a section of it — it also anchors
+ * the row so the two buttons aren't floating alone against the right edge.
+ *
+ * `+` makes the workspace on the spot — no picker, no title prompt. An empty
+ * workspace is a legible thing now: it lands on the stage showing its own two
+ * verbs, and it names itself after whatever you put in it first.
+ */
+function SidebarHeader({ onToggle }: { onToggle: () => void }): ReactNode {
+  const addWorkspace = useReviewStore((s) => s.addWorkspace);
+
+  async function create(): Promise<void> {
+    const workspace = await addWorkspace(null, []);
+    if (workspace) focusWorkspace(workspace);
+  }
+
+  return (
+    <div className="shrink-0 pl-3 pr-2 py-2 flex items-center justify-between gap-1">
+      <span className="min-w-0 truncate text-[11px] font-medium leading-4 text-fg-muted">
+        Working on
+      </span>
+      <span className="flex shrink-0 items-center gap-1">
+        <button
+          type="button"
+          onClick={() => void create()}
+          className="flex items-center justify-center w-6 h-6 rounded
+                   text-fg-muted hover:text-fg-secondary hover:bg-surface-raised
+                   transition-colors"
+          aria-label="New workspace"
+          title="New workspace"
+        >
+          <svg
+            className="h-3 w-3"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex items-center justify-center w-6 h-6 shrink-0 rounded
+                   hover:bg-fg/[0.08] transition-colors duration-100
+                   text-fg-muted hover:text-fg-secondary"
+          aria-label="Hide sidebar"
+        >
+          <SidebarPanelIcon className="w-3.5 h-3.5" />
+        </button>
+      </span>
+    </div>
+  );
+}
+
+/**
+ * The sidebar: the app's chrome, and the whole of its navigation.
+ *
+ * It holds exactly two things — the workspace queue, and the app-level bits at
+ * the foot (agent usage, LSP, version). No repo list: repos and branches are
+ * reached through ⌘K, which searches the same tree the list used to draw, and a
+ * repo you are actually working in is a workspace in the queue by definition.
+ * Nothing here is a second place to look.
+ */
+export const Sidebar = memo(function Sidebar() {
+  const collapsed = useReviewStore((s) => s.tabRailCollapsed);
+  const toggleSidebar = useReviewStore((s) => s.toggleTabRail);
+
+  const [appVersion, setAppVersion] = useState<string | null>(null);
+  const { updateAvailable, installing, installUpdate } = useAutoUpdater();
+
+  const { sidebarWidth, isResizing, handleResizeStart } = useSidebarResize({
+    sidebarPosition: "left",
+    initialWidth: 15,
+    minWidth: 10,
+    maxWidth: 24,
+  });
+
+  useEffect(() => {
+    getPlatformServices()
+      .window.getVersion()
+      .then(setAppVersion)
+      .catch(() => {});
+  }, []);
+
+  function handleOpenRelease(): void {
+    getPlatformServices().opener.openUrl(
+      `${GITHUB_REPO_URL}/releases/tag/v${appVersion}`,
+    );
+  }
+
+  return (
+    <div className="relative flex shrink-0">
+      {/* Collapsed, the sidebar keeps its column as a rail rather than
+          vanishing — the way back lives on the sidebar's own edge instead of
+          floating over whichever view is mounted. The nav below stays mounted
+          at zero width so expanding is a width animation, not a remount. */}
+      {collapsed && <SidebarRail onExpand={toggleSidebar} />}
+
+      {/* select-none for the whole sidebar: entries are things you click and
+          drag, not text you select. */}
+      <nav
+        className={`tab-rail flex h-full shrink-0 select-none flex-col
+                   bg-surface overflow-hidden
+                   ${isResizing ? "" : "transition-[width,opacity] duration-200 ease-out"}`}
+        style={{
+          width: collapsed ? 0 : `${sidebarWidth}rem`,
+          opacity: collapsed ? 0 : 1,
+        }}
+        aria-label="Workspaces"
+        aria-hidden={collapsed}
+      >
+        <div
+          className="flex flex-col h-full min-w-0"
+          style={{ width: `${sidebarWidth}rem` }}
+        >
+          <SidebarHeader onToggle={toggleSidebar} />
+
+          <WorkspaceQueue />
+
+          <AgentUsageIndicator />
+
+          <div className="shrink-0 px-3 py-3 border-t border-t-edge/40">
+            <div className="flex items-center justify-between">
+              <LspStatusIndicator />
+              <FooterVersionInfo
+                updateAvailable={updateAvailable}
+                installing={installing}
+                installUpdate={installUpdate}
+                appVersion={appVersion}
+                onOpenRelease={handleOpenRelease}
+              />
+            </div>
+          </div>
+        </div>
+
+        {!collapsed && (
+          <SidebarResizeHandle
+            position="right"
+            onMouseDown={handleResizeStart}
+          />
+        )}
+      </nav>
+    </div>
+  );
+});

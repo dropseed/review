@@ -2,79 +2,225 @@ import { useMemo } from "react";
 import { useReviewStore } from "../index";
 import {
   findTab,
-  selectSessionsByHomeKey,
-  selectTabsByItemId,
-  selectUnattachedTabIds,
+  selectTabsByWorkspaceId,
+  terminalDockPresent,
   terminalSeverity,
 } from "../slices/terminalSlice";
+import { useFocusedWorkspace } from "./workspaces";
 import {
   sessionTitle,
   tabGlance,
   type TabGlance,
 } from "../../components/Terminal/glance";
-import type { TerminalPhase, TerminalSessionInfo } from "../../types";
+import type { TerminalTab } from "../slices/terminalSlice";
+import type {
+  TerminalPhase,
+  TerminalSessionInfo,
+  TerminalStatus,
+} from "../../types";
+
+/** Everything the terminal roll-ups read that lives in the store. */
+export interface TerminalState {
+  terminalTabs: TerminalTab[];
+  terminalSessions: Record<string, TerminalSessionInfo>;
+  terminalStatuses: Record<string, TerminalStatus>;
+  terminalExited: Record<string, number | null>;
+}
+
+/** What a workspace's own terminals amount to, as the queue wears it. */
+export interface WorkspaceTerminals {
+  /** How many tabs the workspace holds — zero is what makes it dormant. */
+  tabs: number;
+  /** The loudest phase among them, or null when it holds none. */
+  phase: TerminalPhase | null;
+  /**
+   * The one line a blocked terminal is blocked on: what the escape that raised
+   * the attention said, else the title of the session that is waiting. Null
+   * unless something is actually waiting — the snippet is the card's loudest
+   * element and it must not appear for a workspace that is merely busy.
+   */
+  waitingOn: string | null;
+  /**
+   * When the workspace most recently *became* blocked, as epoch ms — the
+   * newest transition into a waiting phase among its terminals, else null.
+   *
+   * The timestamp rather than the fact, because "has the human seen this?"
+   * needs something to compare a last-focused moment against. Newest rather
+   * than oldest: a second agent stopping for a person is a new thing to look
+   * at, even if the first one has already been acknowledged.
+   */
+  waitingSince: number | null;
+}
+
+const NO_TERMINALS: WorkspaceTerminals = {
+  tabs: 0,
+  phase: null,
+  waitingOn: null,
+  waitingSince: null,
+};
 
 /**
- * Every session (exited included) grouped by the checkout-derived row it sits
- * in — what the terminal overview groups by.
+ * The roll-ups, cached on input identity — the pattern `getSidebarTree` uses,
+ * and for the same reason.
  *
- * Built once per state change and shared by every group, rather than each
- * deriving its own membership: that was both a scan per group and a second
- * chance to disagree.
+ * Five mounted components read these (the queue, the collapsed rail, the stage
+ * header, the terminal panel, the terminal rail). Per-consumer `useMemo` meant
+ * five rebuilds on every status push — and, worse, five *distinct* objects, so
+ * every downstream `memo` that took one as a prop was defeated by identity.
+ * Statuses arrive seconds apart for every agent in the window, so this is the
+ * steady-state cost of an idle window rather than a rare one.
  */
-export function useSessionsByHomeKey(): Record<string, string[]> {
-  const terminalSessions = useReviewStore((s) => s.terminalSessions);
-  const terminalCheckouts = useReviewStore((s) => s.terminalCheckouts);
+let tabsCache: {
+  deps: readonly unknown[];
+  out: Record<string, string[]>;
+} | null = null;
+let rollUpCache: {
+  deps: readonly unknown[];
+  out: Record<string, WorkspaceTerminals>;
+} | null = null;
 
-  return useMemo(
-    () => selectSessionsByHomeKey({ terminalSessions, terminalCheckouts }),
-    [terminalSessions, terminalCheckouts],
+function hits(
+  cached: { deps: readonly unknown[] } | null,
+  deps: readonly unknown[],
+) {
+  return cached != null && deps.every((dep, i) => dep === cached.deps[i]);
+}
+
+/** Tab ids grouped by the workspace they belong to, in strip order. */
+export function getTabsByWorkspaceId(
+  state: TerminalState,
+): Record<string, string[]> {
+  const deps = [state.terminalTabs, state.terminalSessions];
+  if (hits(tabsCache, deps)) return tabsCache!.out;
+  const out = selectTabsByWorkspaceId(state);
+  tabsCache = { deps, out };
+  return out;
+}
+
+/** Every workspace's terminal state, in one pass over the tabs. */
+export function getTerminalsByWorkspaceId(
+  state: TerminalState,
+): Record<string, WorkspaceTerminals> {
+  const deps = [
+    state.terminalTabs,
+    state.terminalSessions,
+    state.terminalStatuses,
+    state.terminalExited,
+  ];
+  if (hits(rollUpCache, deps)) return rollUpCache!.out;
+
+  const previous = rollUpCache?.out ?? {};
+  const byWorkspace = getTabsByWorkspaceId(state);
+  const out: Record<string, WorkspaceTerminals> = {};
+
+  for (const [workspaceId, tabIds] of Object.entries(byWorkspace)) {
+    const own = tabIds
+      .map((tabId) => findTab(state.terminalTabs, tabId))
+      .filter((tab) => tab != null)
+      .flatMap(
+        (tab) =>
+          tabGlance(
+            tab,
+            state.terminalSessions,
+            state.terminalStatuses,
+            state.terminalExited,
+          ).statuses,
+      );
+    const phase = terminalSeverity(own);
+    const blocked = wantsAHuman(phase);
+    const next: WorkspaceTerminals = {
+      tabs: tabIds.length,
+      phase,
+      waitingOn: blocked ? waitingLine(own) : null,
+      waitingSince: blocked ? waitingSince(own) : null,
+    };
+    // One agent's status tick changes one workspace's entry; every other
+    // workspace keeps the object it had, so its card's `memo` bails instead of
+    // re-rendering the whole queue.
+    const before = previous[workspaceId];
+    out[workspaceId] = before && sameTerminals(before, next) ? before : next;
+  }
+
+  rollUpCache = { deps, out };
+  return out;
+}
+
+function sameTerminals(a: WorkspaceTerminals, b: WorkspaceTerminals): boolean {
+  return (
+    a.tabs === b.tabs &&
+    a.phase === b.phase &&
+    a.waitingOn === b.waitingOn &&
+    a.waitingSince === b.waitingSince
   );
 }
 
-/**
- * Tab ids grouped by the work item they're attached to.
- *
- * Built once for the whole "Working on" section, the same reason
- * `useSessionsByHomeKey` is built once for the overview.
- */
-export function useTabsByItemId(): Record<string, string[]> {
-  const terminalTabs = useReviewStore((s) => s.terminalTabs);
-  const terminalAttachments = useReviewStore((s) => s.terminalAttachments);
+/** [`getTabsByWorkspaceId`] as a hook. */
+export function useTabsByWorkspaceId(): Record<string, string[]> {
+  return useReviewStore(getTabsByWorkspaceId);
+}
 
-  return useMemo(
-    () => selectTabsByItemId({ terminalTabs, terminalAttachments }),
-    [terminalTabs, terminalAttachments],
-  );
+/** [`getTerminalsByWorkspaceId`] as a hook. */
+export function useTerminalsByWorkspaceId(): Record<
+  string,
+  WorkspaceTerminals
+> {
+  return useReviewStore(getTerminalsByWorkspaceId);
 }
 
 /**
- * The loudest phase among each work item's own terminals — the colour a card's
- * dot and its rail number carry.
+ * The tabs of one workspace, or every tab when none is focused.
  *
- * One pass for the whole section, off the same grouping the rows are built
- * from. Derived here rather than per card because every card would otherwise
- * subscribe to the whole status map and re-derive on every status push, which
- * arrive seconds apart.
+ * Shared by the terminal panel and the rail so the strip and the strip-turned-
+ * sideways cannot list different terminals. Cached on the grouping's identity,
+ * so the filtered array is stable between status ticks.
  */
-export function usePhasesByItemId(): Record<string, TerminalPhase | null> {
-  const tabsByItem = useTabsByItemId();
-  const terminalTabs = useReviewStore((s) => s.terminalTabs);
-  const statuses = useReviewStore((s) => s.terminalStatuses);
-  const sessions = useReviewStore((s) => s.terminalSessions);
-  const exited = useReviewStore((s) => s.terminalExited);
+export function useWorkspaceTabs(workspaceId: string | null): TerminalTab[] {
+  const tabs = useReviewStore((s) => s.terminalTabs);
+  const byWorkspace = useTabsByWorkspaceId();
 
   return useMemo(() => {
-    const phases: Record<string, TerminalPhase | null> = {};
-    for (const [itemId, tabIds] of Object.entries(tabsByItem)) {
-      const glances = tabIds
-        .map((tabId) => findTab(terminalTabs, tabId))
-        .filter((tab) => tab != null)
-        .map((tab) => tabGlance(tab, sessions, statuses, exited));
-      phases[itemId] = terminalSeverity(glances.flatMap((g) => g.statuses));
-    }
-    return phases;
-  }, [tabsByItem, terminalTabs, sessions, statuses, exited]);
+    if (!workspaceId) return tabs;
+    const own = new Set(byWorkspace[workspaceId] ?? []);
+    return tabs.filter((tab) => own.has(tab.id));
+  }, [tabs, byWorkspace, workspaceId]);
+}
+
+/** [`getTerminalsByWorkspaceId`] for one workspace, with the empty answer. */
+export function workspaceTerminals(
+  byId: Record<string, WorkspaceTerminals>,
+  workspaceId: string | null,
+): WorkspaceTerminals {
+  return (workspaceId ? byId[workspaceId] : undefined) ?? NO_TERMINALS;
+}
+
+/** Whether a phase is one that has stopped and is waiting on a person. */
+export function wantsAHuman(phase: TerminalPhase | null): boolean {
+  return phase === "needs_attention" || phase === "waiting_for_input";
+}
+
+/**
+ * The blocked session's own words, else its title.
+ *
+ * Broader than `attentionText`, deliberately: that answers "what raised this
+ * attention", which is a question only `needs_attention` has. A shell that has
+ * stopped at a prompt is waiting on a person just as much, and if it said what
+ * it is waiting for, that sentence is the most useful thing the card can carry.
+ */
+function waitingLine(statuses: TerminalStatus[]): string | null {
+  const blocked = statuses.filter((s) => wantsAHuman(s.phase));
+  return (
+    blocked.map((s) => s.attentionMessage).find((text) => !!text) ??
+    blocked.map((s) => s.title).find((title) => !!title) ??
+    null
+  );
+}
+
+/** The newest transition into a waiting phase; see `waitingSince`. */
+function waitingSince(statuses: TerminalStatus[]): number | null {
+  const moments = statuses
+    .filter((s) => wantsAHuman(s.phase))
+    .map((s) => s.enteredStateAt);
+  return moments.length === 0 ? null : Math.max(...moments);
 }
 
 /** One pane of a tab, as the row's status cluster draws it. */
@@ -133,25 +279,6 @@ export function useTabGlance(tabId: string): TabRowGlance | null {
 }
 
 /**
- * The tabs no work item accounts for — the whole of the "Unclaimed terminals"
- * band, and the only rows the sidebar has for a shell nothing owns.
- */
-export function useUnattachedTabIds(): string[] {
-  const terminalTabs = useReviewStore((s) => s.terminalTabs);
-  const terminalAttachments = useReviewStore((s) => s.terminalAttachments);
-  const workItems = useReviewStore((s) => s.workItems);
-
-  return useMemo(
-    () =>
-      selectUnattachedTabIds(
-        { terminalTabs, terminalAttachments },
-        new Set(workItems.map((item) => item.id)),
-      ),
-    [terminalTabs, terminalAttachments, workItems],
-  );
-}
-
-/**
  * The tab the user is in right now — the one the open panel is showing. Null
  * while the code has focus: there is no "terminal you're in" without one on
  * screen.
@@ -159,5 +286,34 @@ export function useUnattachedTabIds(): string[] {
 export function useCurrentTabId(): string | null {
   return useReviewStore((s) =>
     s.contentFocus === "code" ? null : s.activeTabId,
+  );
+}
+
+/**
+ * Whether the stage is actually split between two halves right now.
+ *
+ * `TerminalDock` decides this, and the code half's own bar has to reach the
+ * same answer — a Focus button on a stage with nothing to take the room from
+ * would report a state the screen doesn't have. One hook, so the two can't
+ * disagree.
+ */
+export function useTerminalDockPresent(): boolean {
+  const terminalsSupported = useReviewStore((s) => s.terminalsSupported);
+  const terminalTabs = useReviewStore((s) => s.terminalTabs);
+  const repoPath = useReviewStore((s) => s.repoPath);
+  const focused = useFocusedWorkspace();
+  // Just the boolean, not the whole roll-up: subscribing to the roll-up would
+  // re-render every consumer on any status tick in any workspace.
+  const hasTabs = useReviewStore(
+    (s) => (getTabsByWorkspaceId(s)[focused?.id ?? ""] ?? []).length > 0,
+  );
+
+  // A workspace with neither a terminal nor a repo has no terminal half at
+  // all: its stage is the empty state, whose own left half offers to start
+  // one.
+  const scoped = focused === null || hasTabs || focused.attachments.length > 0;
+  return (
+    scoped &&
+    terminalDockPresent({ terminalsSupported, terminalTabs, repoPath })
   );
 }

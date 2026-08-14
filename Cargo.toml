@@ -40,3 +40,17 @@ similar_names = "allow"
 # Cargo lint overrides
 multiple_crate_versions = "allow"
 cargo_common_metadata = "allow"
+
+# Dev builds: fast enough to live in.
+#
+# The diff pipeline (hunk parsing, linescan, tree-sitter symbol extraction) is
+# several-fold slower at opt-level 0, which made `scripts/dev` unusable on large
+# comparisons. Dependencies get real optimization — they compile once and are
+# where tree-sitter lives — while workspace crates take opt-level 1: most of the
+# runtime win at a small incremental-compile cost, so cargo-watch iteration
+# stays quick.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 2

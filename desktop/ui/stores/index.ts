@@ -23,7 +23,7 @@ import { createWorktreeSlice } from "./slices/worktreeSlice";
 import { createTierSlice } from "./slices/tierSlice";
 import { createTerminalSlice } from "./slices/terminalSlice";
 import { createViewerPrsSlice } from "./slices/viewerPrsSlice";
-import { createWorkSlice } from "./slices/workSlice";
+import { createWorkspaceSlice } from "./slices/workspaceSlice";
 // Get dependencies
 const apiClient = getApiClient();
 const platform = getPlatformServices();
@@ -50,5 +50,5 @@ export const useReviewStore = create<ReviewStore>()((...args) => ({
   ...createTierSlice(apiClient)(...args),
   ...createTerminalSlice(apiClient, platform.storage)(...args),
   ...createViewerPrsSlice(apiClient)(...args),
-  ...createWorkSlice(apiClient)(...args),
+  ...createWorkspaceSlice(apiClient)(...args),
 }));

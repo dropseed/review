@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   hasNeedsYou,
   needsYouQueue,
-  overviewGroups,
   primaryStatus,
   sessionTitle,
   tabGlance,
@@ -134,43 +133,5 @@ describe("needsYouQueue", () => {
     const quiet = state([terminalStatus("idle", { id: "a" })]);
     expect(hasNeedsYou(asking)).toBe(true);
     expect(hasNeedsYou(quiet)).toBe(false);
-  });
-});
-
-describe("overviewGroups", () => {
-  it("sorts loudest group first and loudest card within a group", () => {
-    const groups = overviewGroups(
-      { "/repo:quiet": ["idle1"], "/repo:hot": ["busy", "asking"] },
-      {
-        idle1: terminalSession("idle1"),
-        busy: terminalSession("busy"),
-        asking: terminalSession("asking"),
-      },
-      {
-        idle1: terminalStatus("idle", { id: "idle1" }),
-        busy: terminalStatus("working", { id: "busy" }),
-        asking: terminalStatus("needs_attention", { id: "asking" }),
-      },
-      {},
-      {},
-    );
-    expect(groups.map((g) => g.key)).toEqual(["/repo:hot", "/repo:quiet"]);
-    expect(groups[0].ids).toEqual(["asking", "busy"]);
-    expect(groups[0].label).toBe("repo · hot");
-  });
-
-  it("sinks exited sessions and ignores them when ranking the group", () => {
-    const groups = overviewGroups(
-      { "/repo:main": ["gone", "quiet"] },
-      { gone: terminalSession("gone"), quiet: terminalSession("quiet") },
-      {
-        gone: terminalStatus("needs_attention", { id: "gone" }),
-        quiet: terminalStatus("idle", { id: "quiet" }),
-      },
-      { gone: 0 },
-      {},
-    );
-    expect(groups[0].ids).toEqual(["quiet", "gone"]);
-    expect(groups[0].severity).toBe("idle");
   });
 });

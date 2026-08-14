@@ -585,21 +585,13 @@ export function StatusGroupList({
 
   if (!hasChanges) {
     return (
-      <div className="flex flex-col items-center justify-center flex-1 px-6 py-12">
-        <div className="relative mb-6">
-          <div className="flex gap-1.5">
-            <div className="w-10 h-14 rounded bg-surface-raised/80 border border-edge-default/50" />
-            <div className="w-10 h-14 rounded bg-surface-raised/80 border border-edge-default/50" />
-          </div>
-          <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-0.5">
-            <div className="w-1.5 h-0.5 bg-surface-active rounded-full" />
-            <div className="w-1.5 h-0.5 bg-surface-active rounded-full" />
-          </div>
+      <div className="flex flex-1 items-center justify-center px-6">
+        <div className="max-w-xs -translate-y-[8vh] text-center">
+          <p className="text-sm text-fg-muted">No changes.</p>
+          <p className="mt-2 text-sm text-fg-faint">
+            The base and compare refs are identical.
+          </p>
         </div>
-        <p className="text-sm font-medium text-fg-muted mb-1">No changes</p>
-        <p className="text-xs text-fg-muted text-center max-w-[200px]">
-          The base and compare refs are identical
-        </p>
       </div>
     );
   }

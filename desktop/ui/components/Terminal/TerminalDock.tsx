@@ -20,8 +20,8 @@ import {
 import {
   TERMINAL_PANEL_WIDTH_MAX,
   TERMINAL_PANEL_WIDTH_MIN,
-  terminalDockPresent,
 } from "../../stores/slices/terminalSlice";
+import { useTerminalDockPresent } from "../../stores/selectors/terminals";
 
 /**
  * The terminal's place in the window: a resizable pane docked left or right of
@@ -38,19 +38,14 @@ import {
  */
 export function TerminalDock({ children }: { children: ReactNode }): ReactNode {
   const contentFocus = useReviewStore((s) => s.contentFocus);
-  const terminalsSupported = useReviewStore((s) => s.terminalsSupported);
-  const terminalTabs = useReviewStore((s) => s.terminalTabs);
-  const repoPath = useReviewStore((s) => s.repoPath);
   const terminalPanelWidth = useReviewStore((s) => s.terminalPanelWidth);
   const setTerminalPanelWidth = useReviewStore((s) => s.setTerminalPanelWidth);
   const terminalDockSide = useReviewStore((s) => s.terminalDockSide);
   const contentRowRef = useRef<HTMLDivElement | null>(null);
 
-  const docked = terminalDockPresent({
-    terminalsSupported,
-    terminalTabs,
-    repoPath,
-  });
+  // A workspace showing a repo keeps its dock whether or not it is running
+  // anything — the strip's own "+" is how a shell gets started in it.
+  const docked = useTerminalDockPresent();
   const focus = docked ? contentFocus : "code";
   const terminalFocused = focus === "terminal";
   // Focusing the code still leaves the terminal on its dock edge — as a

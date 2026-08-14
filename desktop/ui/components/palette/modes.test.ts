@@ -7,12 +7,13 @@ describe("prefixes", () => {
       .map((info) => info.prefix)
       .filter((prefix): prefix is string => prefix !== null);
     expect(new Set(prefixes).size).toBe(prefixes.length);
-    // Files is the unprefixed root, and the only one.
+    // Go is the unprefixed root, and the only one.
     expect(prefixes.length).toBe(Object.keys(PALETTE_MODES).length - 1);
-    expect(PALETTE_MODES.files.prefix).toBeNull();
+    expect(PALETTE_MODES.go.prefix).toBeNull();
   });
 
   it("resolves a prefix to its mode", () => {
+    expect(modeForPrefix("/")).toBe("files");
     expect(modeForPrefix(">")).toBe("commands");
     expect(modeForPrefix("@")).toBe("symbols");
     expect(modeForPrefix("#")).toBe("content");
@@ -22,8 +23,9 @@ describe("prefixes", () => {
 
 describe("reading a mode switch out of an input change", () => {
   it("switches on a prefix typed into an empty box", () => {
-    expect(readModeSwitch("", ">", "files")).toBe("commands");
-    expect(readModeSwitch("", "@", "files")).toBe("symbols");
+    expect(readModeSwitch("", ">", "go")).toBe("commands");
+    expect(readModeSwitch("", "@", "go")).toBe("symbols");
+    expect(readModeSwitch("", "/", "go")).toBe("files");
   });
 
   /**
@@ -37,8 +39,8 @@ describe("reading a mode switch out of an input change", () => {
   });
 
   it("ignores a prefix that is not the first thing typed", () => {
-    expect(readModeSwitch("src", "src>", "files")).toBeNull();
-    expect(readModeSwitch("a", "a@b", "files")).toBeNull();
+    expect(readModeSwitch("src", "src>", "go")).toBeNull();
+    expect(readModeSwitch("a", "a@b", "go")).toBeNull();
   });
 
   /** Pasting a whole query in must not be read one character at a time. */
@@ -47,6 +49,6 @@ describe("reading a mode switch out of an input change", () => {
   });
 
   it("takes ordinary text as text", () => {
-    expect(readModeSwitch("", "s", "files")).toBeNull();
+    expect(readModeSwitch("", "s", "go")).toBeNull();
   });
 });

@@ -2,9 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   allSidebarRows,
   buildSidebarTree,
-  groupPrsElsewhere,
-  groupReposByOrg,
-  visibleRows,
+  rowHasFacts,
   type RepoNode,
   type SidebarRow,
 } from "./sidebar-tree";
@@ -49,7 +47,6 @@ function repo(
     defaultBranch: "main",
     branches,
     recentRemoteBranches: [],
-    lastFetchedAt: null,
     ...overrides,
   };
 }
@@ -124,11 +121,9 @@ function refs(rows: SidebarRow[]): string[] {
   return rows.map((r) => r.ref);
 }
 
-const NOTHING_CLAIMED: ReadonlySet<string> = new Set();
-
-/** The refs a repo actually draws, with nothing claimed in "Working on". */
-function shown(node: RepoNode, claimed = NOTHING_CLAIMED): string[] {
-  return refs(visibleRows(node, claimed));
+/** The refs a repo has something to report about — the rows with facts. */
+function shown(node: RepoNode): string[] {
+  return refs(node.rows.filter(rowHasFacts));
 }
 
 describe("the repo row is the repo-root checkout", () => {
@@ -300,7 +295,7 @@ describe("row facts", () => {
   });
 });
 
-describe("what the sidebar draws", () => {
+describe("rows and facts", () => {
   const busy = () =>
     build([
       repo("/r", [
@@ -310,24 +305,23 @@ describe("what the sidebar draws", () => {
       ]),
     ])[0];
 
-  it("draws a row with a fact and skips one without", () => {
-    expect(shown(busy())).toEqual(["dirty"]);
+  /**
+   * The tree builds every branch, whether or not anything would draw it: ⌘K
+   * reads the whole list, and a branch with nothing to report is exactly what
+   * you go looking for by name.
+   */
+  it("keeps the rows nothing would draw, for the palette to find", () => {
+    expect(refs(busy().rows)).toEqual(["dirty", "quiet"]);
+    expect(
+      busy()
+        .rows.filter(rowHasFacts)
+        .map((r) => r.ref),
+    ).toEqual(["dirty"]);
   });
 
-  it("skips a row the user has claimed in Working on", () => {
-    // The card up there already reports the branch, its PR and its uncommitted
-    // changes; the row underneath would be the same news a second time.
-    expect(shown(busy(), new Set(["/r:dirty"]))).toEqual([]);
-  });
-
-  it("keeps a claimed row in the tree for the palette to find", () => {
-    const node = busy();
-    expect(refs(node.rows)).toContain("dirty");
-  });
-
-  it("never filters the repo row, claimed or not", () => {
-    // The head row isn't in `rows` at all: a repo you have claimed is still a
-    // repo you can open, and the row is how you open it.
+  it("never puts the repo row among them", () => {
+    // A repo's own row is the repo: it is drawn on different terms from
+    // everything under it, so it is not in `rows` at all.
     const node = busy();
     expect(node.head?.ref).toBe("master");
     expect(refs(node.rows)).not.toContain("master");
@@ -677,124 +671,6 @@ describe("open pull requests", () => {
       "/r:pr/5",
       "/r:pr/9",
     ]);
-  });
-});
-
-describe("the elsewhere bucket", () => {
-  it("groups rowless PRs by repo, newest first, and skips the joined ones", () => {
-    const groups = groupPrsElsewhere([
-      viewerPr({ number: 1, repoPath: "/r" }),
-      viewerPr({
-        number: 2,
-        repoPath: null,
-        repoNameWithOwner: "a/one",
-        updatedAt: iso(5000),
-      }),
-      viewerPr({
-        number: 3,
-        repoPath: null,
-        repoNameWithOwner: "b/two",
-        updatedAt: iso(1000),
-      }),
-      viewerPr({
-        number: 4,
-        repoPath: null,
-        repoNameWithOwner: "a/one",
-        updatedAt: iso(9000),
-      }),
-    ]);
-
-    expect(groups.map((g) => g.repoNameWithOwner)).toEqual(["b/two", "a/one"]);
-    expect(groups[1].prs.map((p) => p.number)).toEqual([2, 4]);
-  });
-});
-
-describe("the org grouping", () => {
-  const meta = (routePrefix: string, avatarUrl: string | null = null) => ({
-    routePrefix,
-    avatarUrl,
-  });
-
-  it("files repos under the org half of their route prefix", () => {
-    const nodes = build([
-      repo("/one", [branch({ name: "main", isCurrent: true })]),
-      repo("/two", [branch({ name: "main", isCurrent: true })]),
-    ]);
-    const groups = groupReposByOrg(
-      nodes,
-      { "/one": meta("acme/alpha"), "/two": meta("other/beta") },
-      [],
-    );
-
-    expect(groups.map((g) => g.org)).toEqual(["acme", "other"]);
-    expect(groups[0].repos.map((r) => r.name)).toEqual(["alpha"]);
-  });
-
-  it("puts repos with no resolvable remote in one trailing local group", () => {
-    // Two ways to have no org: metadata that resolved to `local/dirname`, and
-    // metadata that hasn't come back at all. Both are the same row to a user.
-    const nodes = build([
-      repo("/zeta", [branch({ name: "main", isCurrent: true })]),
-      repo("/unresolved", [branch({ name: "main", isCurrent: true })]),
-      repo("/acme", [branch({ name: "main", isCurrent: true })]),
-    ]);
-    const groups = groupReposByOrg(
-      nodes,
-      { "/zeta": meta("local/zeta"), "/acme": meta("acme/thing") },
-      [],
-    );
-
-    expect(groups.map((g) => g.org)).toEqual(["acme", "local"]);
-    expect(groups[1].repos.map((r) => r.name)).toEqual(["unresolved", "zeta"]);
-  });
-
-  it("folds a repo that isn't cloned here in among the cloned ones", () => {
-    const nodes = build([
-      repo("/z", [branch({ name: "main", isCurrent: true })]),
-    ]);
-    const groups = groupReposByOrg(nodes, { "/z": meta("acme/zebra") }, [
-      viewerPr({
-        number: 3,
-        repoPath: null,
-        repoNameWithOwner: "acme/ant",
-        repoUrl: "https://github.com/acme/ant",
-      }),
-    ]);
-
-    expect(groups).toHaveLength(1);
-    expect(groups[0].repos.map((r) => r.name)).toEqual(["ant", "zebra"]);
-    // The uncloned one carries PRs instead of a node — there is no checkout
-    // under it for the tree to promise.
-    expect(groups[0].repos[0]).toMatchObject({ key: "acme/ant", node: null });
-    expect(groups[0].repos[0].prs.map((p) => p.number)).toEqual([3]);
-    expect(groups[0].repos[1].prs).toEqual([]);
-  });
-
-  it("takes the org's avatar from whichever of its repos resolved one", () => {
-    const nodes = build([
-      repo("/a", [branch({ name: "main", isCurrent: true })]),
-      repo("/b", [branch({ name: "main", isCurrent: true })]),
-    ]);
-    const groups = groupReposByOrg(
-      nodes,
-      {
-        "/a": meta("acme/a"),
-        "/b": meta("acme/b", "https://github.com/acme.png?size=64"),
-      },
-      [],
-    );
-    expect(groups[0].avatarUrl).toBe("https://github.com/acme.png?size=64");
-  });
-
-  it("derives an org's avatar from a PR when nothing there is cloned", () => {
-    const groups = groupReposByOrg([], {}, [
-      viewerPr({
-        repoPath: null,
-        repoNameWithOwner: "acme/ant",
-        repoUrl: "https://github.com/acme/ant",
-      }),
-    ]);
-    expect(groups[0].avatarUrl).toBe("https://github.com/acme.png?size=64");
   });
 });
 

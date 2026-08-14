@@ -9,14 +9,16 @@ import {
   useOutletContext,
 } from "react-router-dom";
 import { toast } from "sonner";
-import { TabRail } from "./components/TabRail";
+import { Sidebar } from "./components/Sidebar";
 import { ReviewView } from "./components/ReviewView";
 import { NewReviewView } from "./components/NewReviewView";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { TerminalDock } from "./components/Terminal/TerminalDock";
+import { EmptyStage } from "./components/Stage/EmptyStage";
 import { TERMINAL_COMMANDS } from "./components/Terminal/commands";
 import { closeFocusedTerminal } from "./components/Terminal/close";
 import { useReviewStore } from "./stores";
+import { useFocusedWorkspace } from "./stores/selectors/workspaces";
 import { findSidebarRow } from "./stores/selectors/sidebar";
 import { activateSidebarRow } from "./utils/sidebar-tree";
 import { makeReviewKey } from "./utils/review-key";
@@ -30,7 +32,7 @@ import {
   useFileRouteSync,
   useMenuState,
   useRepoActivitySync,
-  useWorkSync,
+  useWorkspaceSync,
   useTerminalCheckoutSync,
   useTerminalEvents,
   useTerminalFileDrop,
@@ -42,7 +44,7 @@ import { useReviewFreshness } from "./hooks/useReviewFreshness";
 import {
   APP_COMMANDS,
   reviewCommands,
-  workCommands,
+  workspaceCommands,
   useRegisterCommands,
   useCommandDispatch,
 } from "./commands";
@@ -68,8 +70,8 @@ function AppShell() {
   const loadGlobalReviews = useReviewStore((s) => s.loadGlobalReviews);
   const loadLocalActivity = useReviewStore((s) => s.loadLocalActivity);
 
-  // The work list is deliberately not here: `useWorkSync` owns its load
-  // lifecycle, because it needs the completion signal to gate the migration.
+  // The workspace queue is deliberately not here: `useWorkspaceSync` owns its
+  // load lifecycle, including the watcher and the focus refresh.
   useEffect(() => {
     loadGlobalReviews();
     loadLocalActivity();
@@ -101,8 +103,8 @@ function AppShell() {
    * The same path the comparison picker takes for a PR row — fetch the head,
    * write the review with its `githubPr`, resolve, navigate. Sharing it is the
    * point: a review started from the sidebar has to be indistinguishable from
-   * one started from the picker, or the ephemeral row would produce a second
-   * kind of PR review with its own quirks.
+   * one started from the picker, or a PR row would produce a second kind of PR
+   * review with its own quirks.
    */
   const handleActivateOpenPr = useCallback(
     (pr: ViewerPr) => {
@@ -146,7 +148,7 @@ function AppShell() {
   // in the desktop app and in web mode (which has no native menu at all).
   useRegisterCommands(APP_COMMANDS);
   useRegisterCommands(reviewCommands);
-  useRegisterCommands(workCommands);
+  useRegisterCommands(workspaceCommands);
   // The terminal's own commands are registered here, not by the review screen,
   // for the same reason its panel is mounted here: ⌘` has to answer on the
   // home screen too.
@@ -197,7 +199,7 @@ function AppShell() {
   useMenuState();
   useReviewFreshness();
   useRepoActivitySync();
-  useWorkSync();
+  useWorkspaceSync();
   useTerminalCheckoutSync();
   useTerminalEvents();
   // Tauri's window-level drag-and-drop, which is the *only* drop channel in the
@@ -217,33 +219,35 @@ function AppShell() {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="flex h-screen">
-        {/* Left sidebar */}
-        <TabRail
-          onActivateReview={handleActivateReview}
-          onActivateLocalBranch={handleActivateLocalBranch}
-          onActivateOpenPr={handleActivateOpenPr}
-        />
+      <div className="flex h-screen bg-surface">
+        {/* The sidebar is chrome: it owns the window's left edge, and the two
+            work halves float on it as rounded panels. */}
+        <Sidebar />
 
-        {/* The terminal docks beside whatever the route is showing, not inside
-            it: tabs are global, so a shell has to survive going back to the
-            home screen — and its xterms have to survive the route change. */}
-        <TerminalDock>
-          <Outlet
-            context={{
-              repoStatus,
-              repoError,
-              repoPath,
-              comparisonReady,
-              handleOpenRepo,
-              handleNewWindow,
-              handleCloseRepo,
-              handleSelectRepo,
-              handleNewReview,
-              handleStartReview,
-            }}
-          />
-        </TerminalDock>
+        {/* The stage: one workspace, as its two halves and nothing above them
+            — the sidebar is where a workspace says what it is. The terminal
+            dock is what splits them; it is mounted here rather than inside the
+            review screen because tabs are global, so a shell has to survive
+            going back to the home screen, and its xterms have to survive the
+            route change. */}
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <TerminalDock>
+            <Outlet
+              context={{
+                repoStatus,
+                repoError,
+                repoPath,
+                comparisonReady,
+                handleOpenRepo,
+                handleNewWindow,
+                handleCloseRepo,
+                handleSelectRepo,
+                handleNewReview,
+                handleStartReview,
+              }}
+            />
+          </TerminalDock>
+        </div>
       </div>
 
       {activeOverlay === "settings" && (
@@ -276,12 +280,24 @@ export function useAppContext() {
   return useOutletContext<AppContext>();
 }
 
-/** Empty state — shown at "/" when no tab is active */
+/**
+ * What "/" shows: the focused workspace's empty state when there is one, and
+ * the app's own empty states when there isn't.
+ *
+ * A workspace showing no repo has no comparison, so `focusWorkspace` sends it
+ * here — which makes this route the workspace's first screen rather than one of
+ * its own. That is exactly what the sidebar's `+` produces, so there is no
+ * separate "create" flow to design.
+ */
 function EmptyTabState() {
   const { repoStatus, repoError, handleOpenRepo, handleNewReview } =
     useAppContext();
   const globalReviews = useReviewStore((s) => s.globalReviews);
   const globalReviewsLoading = useReviewStore((s) => s.globalReviewsLoading);
+  const focusedWorkspace = useFocusedWorkspace();
+
+  if (focusedWorkspace) return <EmptyStage />;
+
   if (repoStatus === "error") {
     return (
       <div className="flex h-full items-center justify-center">

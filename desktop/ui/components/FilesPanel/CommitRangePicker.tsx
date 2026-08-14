@@ -31,21 +31,6 @@ const CHEVRON_DOWN = (
   </svg>
 );
 
-const COMMITS_ICON = (
-  <svg
-    className="h-3.5 w-3.5 shrink-0 text-fg-faint"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={2}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <circle cx="12" cy="12" r="3" />
-    <path d="M12 3v6M12 15v6" />
-  </svg>
-);
-
 /**
  * The Review tab's commit range picker: narrows the review to one commit, a
  * contiguous shift-click range, or the uncommitted bucket. Unlike the hunk
@@ -114,7 +99,7 @@ export function CommitRangePicker(): ReactNode {
 
   if (attributionLoading && !attribution) {
     return (
-      <div className="flex items-center gap-1.5 border-b border-edge-default/40 px-2 py-1.5 text-xxs text-fg-faint">
+      <div className="flex items-center gap-1.5 border-b border-edge/60 px-3 py-1.5 text-xxs text-fg-faint">
         <Spinner className="h-3 w-3 border-2 border-edge-default border-t-status-modified" />
         Loading commits…
       </div>
@@ -135,15 +120,16 @@ export function CommitRangePicker(): ReactNode {
     : "All commits";
 
   return (
-    <div className="border-b border-edge-default/40 px-2 py-1.5">
+    <div className="shrink-0 border-b border-edge/60">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="flex w-full min-w-0 items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs text-fg-secondary hover:bg-surface-raised/60"
+            className="flex w-full min-w-0 items-center gap-1.5 px-3 py-1.5 text-left text-xs
+                       text-fg-muted hover:bg-fg/[0.04] hover:text-fg-secondary
+                       focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring/70"
             title="Narrow the review to a commit or range (shift-click to extend)"
           >
-            {COMMITS_ICON}
             <span className="min-w-0 flex-1 truncate">{label}</span>
             {CHEVRON_DOWN}
           </button>

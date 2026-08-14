@@ -6,7 +6,6 @@ import {
   addTerminalToState,
   removeTerminalFromState,
   mergeSessionList,
-  selectSessionsByHomeKey,
   sessionCheckout,
   terminalSeverity,
   addTabForTerminal,
@@ -20,19 +19,15 @@ import {
   resizeSplitInTab,
   ingestTabs,
   buildCheckoutIndex,
-  sessionReviewKey,
   isOrphanedSession,
   resolveActiveTabId,
   createTerminalSlice,
   TERMINAL_PANEL_WIDTH_DEFAULT,
-  sessionHomeKey,
-  reachableKey,
-  migrateTabAttachments,
   mostRecentTabId,
-  selectTabsByItemId,
-  selectUnattachedTabIds,
+  selectTabsByWorkspaceId,
+  tabWorkspaceId,
+  withWorkspace,
   tabSessionIds,
-  itemHome,
   terminalDockPresent,
 } from "./terminalSlice";
 import {
@@ -68,6 +63,7 @@ function session(
   return {
     id,
     repoPath,
+    workspaceId: null,
     cwd: repoPath,
     title: `sh-${id}`,
     cols: 80,
@@ -199,187 +195,61 @@ describe("terminalSlice reducers", () => {
   });
 });
 
-describe("selectSessionsByHomeKey", () => {
-  // A repo on `main` at its root, with `feature` in a linked worktree and
-  // `idle` checked out nowhere.
-  const INDEX = buildCheckoutIndex([
-    {
-      repoPath: "/r",
-      repoName: "r",
-      defaultBranch: "main",
-      branches: [
-        branch("main", { isCurrent: true }),
-        branch("feature", { worktreePath: "/r/.worktrees/feature" }),
-        branch("idle"),
-      ],
-      recentRemoteBranches: [],
-    },
-  ]);
-
-  function grouped(state: TestState): Record<string, string[]> {
-    return selectSessionsByHomeKey({
-      terminalSessions: state.terminalSessions,
-      terminalCheckouts: INDEX,
-    });
-  }
-
-  function withSessions(...sessions: TerminalSessionInfo[]): TestState {
-    let state = { ...emptyState() };
-    for (const s of sessions) {
-      state = { ...state, ...addTerminalToState(state, s) };
-    }
-    return state;
-  }
-
-  it("splits sessions between the rows that own their directories", () => {
-    const state = withSessions(
-      session("a", "/r", { cwd: "/r" }),
-      session("b", "/r", { cwd: "/r/.worktrees/feature" }),
-    );
-    // A prefix test would hand the worktree's session to the repo root too;
-    // the innermost checkout has to win.
-    expect(grouped(state)).toEqual({ "/r:main": ["a"], "/r:feature": ["b"] });
-  });
-
-  it("attributes a session started in a subdirectory to its checkout", () => {
-    const state = withSessions(
-      session("a", "/r", { cwd: "/r/.worktrees/feature/src/deep" }),
-    );
-    expect(grouped(state)["/r:feature"]).toEqual(["a"]);
-  });
-
-  it("gives a row with no checkout nothing to show", () => {
-    const state = withSessions(session("a", "/r", { cwd: "/r" }));
-    expect(grouped(state)["/r:idle"]).toBeUndefined();
-  });
-
-  it("keeps each repo's sessions under its own keys", () => {
-    const state = withSessions(
-      session("a", "/r", { cwd: "/r" }),
-      session("b", "/other", { cwd: "/other" }),
-    );
-    expect(grouped(state)["/r:main"]).toEqual(["a"]);
-    expect(grouped(state)["/other:"]).toEqual(["b"]);
-  });
-});
-
-describe("sessionHomeKey", () => {
-  // Built rather than hand-written, so the shape can't drift from the builder.
-  const index = buildCheckoutIndex([
-    {
-      repoPath: "/r",
-      repoName: "r",
-      defaultBranch: "main",
-      branches: [
-        branch("main", { isCurrent: true }),
-        branch("feature", { worktreePath: "/wt/feature" }),
-      ],
-      recentRemoteBranches: [],
-    },
-    {
-      repoPath: "/other",
-      repoName: "other",
-      defaultBranch: "dev",
-      branches: [branch("dev", { isCurrent: true })],
-      recentRemoteBranches: [],
-    },
-  ]);
-
-  it("places a session by the checkout its directory falls in", () => {
-    expect(
-      sessionHomeKey(index, session("a", "/r", { cwd: "/wt/feature" }), ""),
-    ).toBe("/r:feature");
-  });
-
-  it("adopts a session whose checkout is gone into the repo root", () => {
-    expect(
-      sessionHomeKey(index, session("a", "/r", { cwd: "/gone" }), ""),
-    ).toBe("/r:main");
-  });
-
-  it("leaves a key alone for a repo nothing is known about", () => {
-    // An empty index is not evidence the row went away.
-    expect(reachableKey({}, "/other", "/other:branch")).toBe("/other:branch");
-  });
-});
-
-describe("work item attachments", () => {
-  const items = [
-    {
-      id: "one",
-      title: "",
-      refs: [{ repoPath: "/r", ref: "feature" }],
-      createdAt: "",
-    },
-    { id: "two", title: "A note", refs: [], createdAt: "" },
-  ];
-
-  it("converts a legacy review-key attachment onto the item that bound that ref", () => {
-    // The row a terminal was dragged onto, and the item that has since taken
-    // that ref, are the same work — so the attachment carries over.
-    expect(migrateTabAttachments({ a: "/r:feature" }, [], items)).toEqual({
-      a: "item:one",
-    });
-  });
-
-  it("drops a legacy attachment no item claims", () => {
-    // Unattached is a state the band can show; an attachment pointing at
-    // nothing is not.
-    expect(migrateTabAttachments({ a: "/r:other" }, [], items)).toEqual({});
-  });
-
-  it("keeps attachments to items that still exist, drops the rest", () => {
-    expect(
-      migrateTabAttachments({ a: "item:two", b: "item:gone" }, [], items),
-    ).toEqual({ a: "item:two" });
-  });
-
-  it("is idempotent, so it can run whenever the item list changes", () => {
-    const once = migrateTabAttachments({ a: "/r:feature" }, [], items);
-    expect(migrateTabAttachments(once, [], items)).toEqual(once);
-  });
-
-  it("gives a tab whose panes disagree its first answer, under every key", () => {
-    // Only reachable from the session-keyed map older installs wrote, where
-    // each pane carried an attachment of its own.
-    const tab = {
-      ...makeTab("a", "a"),
-      root: splitLeaf(leaf("a"), "a", "b", "row"),
-    };
-    expect(
-      migrateTabAttachments({ b: "item:two", a: "item:one" }, [tab], items),
-    ).toEqual({ a: "item:one", b: "item:one" });
-  });
-
-  it("clears every key of a tab whose attachment no item claims", () => {
-    const tab = {
-      ...makeTab("a", "a"),
-      root: splitLeaf(leaf("a"), "a", "b", "row"),
-    };
-    expect(
-      migrateTabAttachments({ a: "item:gone", b: "item:gone" }, [tab], items),
-    ).toEqual({});
-  });
-
-  it("groups tabs by the item holding them", () => {
+describe("workspace attribution", () => {
+  it("groups tabs by the workspace their sessions are in", () => {
     const state = {
       terminalTabs: [
         makeTab("t1", "a"),
         makeTab("t2", "b"),
         makeTab("t3", "c"),
       ],
-      terminalAttachments: { t1: itemHome("one"), t2: itemHome("one") },
+      terminalSessions: {
+        a: session("a", "/r", { workspaceId: "one" }),
+        b: session("b", "/r", { workspaceId: "one" }),
+        c: session("c", "/r", { workspaceId: "two" }),
+      },
     };
-    expect(selectTabsByItemId(state)).toEqual({ one: ["t1", "t2"] });
-    // t3 has no attachment at all, and one naming a removed item counts as
-    // none — otherwise its terminal would be attached to nothing and shown
-    // nowhere.
-    expect(selectUnattachedTabIds(state, new Set(["one"]))).toEqual(["t3"]);
-    expect(selectUnattachedTabIds(state, new Set())).toEqual([
-      "t1",
-      "t2",
-      "t3",
-    ]);
+    expect(selectTabsByWorkspaceId(state)).toEqual({
+      one: ["t1", "t2"],
+      two: ["t3"],
+    });
+  });
+
+  it("takes a split tab's answer from the first pane that has one", () => {
+    const tab = {
+      ...makeTab("t1", "a"),
+      root: splitLeaf(leaf("a"), "a", "b", "row"),
+    };
+    const state = {
+      terminalTabs: [tab],
+      terminalSessions: {
+        a: session("a", "/r", { workspaceId: "one" }),
+        b: session("b", "/r", { workspaceId: "two" }),
+      },
+    };
+    expect(tabWorkspaceId(state, tab)).toBe("one");
+
+    // A session the list hasn't arrived for yet has no answer, and a tab with
+    // no answer is in no bucket rather than in a wrong one.
+    const unknown = { terminalTabs: [tab], terminalSessions: {} };
+    expect(tabWorkspaceId(unknown, tab)).toBeNull();
+    expect(selectTabsByWorkspaceId(unknown)).toEqual({});
+  });
+
+  it("re-attributes a whole tab's sessions at once", () => {
+    const state = {
+      terminalSessions: {
+        a: session("a", "/r", { workspaceId: "one" }),
+        b: session("b", "/r", { workspaceId: "one" }),
+      },
+    };
+    const moved = withWorkspace(state, ["a", "b"], "two");
+    expect(moved.a.workspaceId).toBe("two");
+    expect(moved.b.workspaceId).toBe("two");
+    // A session it doesn't know about is skipped rather than invented.
+    expect(withWorkspace(state, ["gone"], "two")).toEqual(
+      state.terminalSessions,
+    );
   });
 
   it("mostRecentTabId picks the last activated, or the first never activated", () => {
@@ -749,11 +619,35 @@ describe("slice actions", () => {
     return { get, set, writes, reads };
   }
 
-  const startingClient = (started: TerminalSessionInfo) => ({
-    terminalStart: async () => started,
+  /**
+   * A client whose `terminalStart` answers with `started` and the landing the
+   * backend routed it to — the shape the real one returns.
+   */
+  const startingClient = (
+    started: TerminalSessionInfo,
+    workspace: { id: string; title: string; created: boolean } = {
+      id: started.workspaceId ?? "one",
+      title: "routed",
+      created: false,
+    },
+    assigned: [string, string | null][] = [],
+  ) => ({
+    terminalStart: async () => ({ session: started, workspace }),
+    terminalAssignWorkspace: async (id: string, ws: string | null) => {
+      assigned.push([id, ws]);
+    },
     onTerminalStatus: () => () => {},
     onTerminalExit: () => () => {},
     terminalWrite: async () => {},
+  });
+
+  /** A client that only records reassignments. */
+  const assigningClient = (assigned: [string, string | null][]) => ({
+    terminalAssignWorkspace: async (id: string, ws: string | null) => {
+      assigned.push([id, ws]);
+    },
+    onTerminalStatus: () => () => {},
+    onTerminalExit: () => () => {},
   });
 
   it("defaults dock side to left and width to the default", () => {
@@ -762,22 +656,46 @@ describe("slice actions", () => {
     expect(get().terminalPanelWidth).toBe(TERMINAL_PANEL_WIDTH_DEFAULT);
   });
 
-  it("startTerminal opens a tab attached to nothing", async () => {
+  it("startTerminal opens a tab in the workspace the backend routed it to", async () => {
     const { get } = makeSlice(
-      startingClient(session("a", "/r", { cwd: "/r" })),
+      startingClient(session("a", "/r", { cwd: "/r", workspaceId: "one" })),
     );
 
     await get().startTerminal("/r", "/r", 80, 24);
 
     expect(get().terminalTabs).toHaveLength(1);
     expect(get().activeTabId).toBe(get().terminalTabs[0].id);
-    // A new shell is one more live thing until the user says what it's for —
-    // the "Unclaimed terminals" band is where it shows up meanwhile.
-    expect(get().terminalAttachments).toEqual({});
+    // Born routed: the session carries the workspace it belongs to, and that
+    // is the only record of it this window keeps.
+    expect(get().terminalSessions.a.workspaceId).toBe("one");
   });
 
-  it("attachTerminalToItem records the tab and every session in it", () => {
-    const { get, set, writes } = makeSlice();
+  it("startTerminal re-reads the queue when the router invented a workspace", async () => {
+    let loads = 0;
+    const { get, set } = makeSlice(
+      startingClient(session("a", "/r", { cwd: "/r", workspaceId: "new" }), {
+        id: "new",
+        title: "r · main",
+        created: true,
+      }),
+    );
+    set({
+      loadWorkspaces: async () => {
+        loads += 1;
+        return true;
+      },
+    });
+
+    await get().startTerminal("/r", "/r", 80, 24);
+
+    // A workspace the queue has never listed is a terminal with nowhere to be
+    // drawn, so the list is re-read rather than waited for.
+    expect(loads).toBe(1);
+  });
+
+  it("attachTerminalToWorkspace moves every session in the tab", async () => {
+    const assigned: [string, string | null][] = [];
+    const { get, set } = makeSlice(assigningClient(assigned));
     set({
       terminalTabs: [
         {
@@ -785,25 +703,43 @@ describe("slice actions", () => {
           root: splitLeaf(leaf("a"), "a", "b", "row"),
         },
       ],
+      terminalSessions: {
+        a: session("a", "/r", { workspaceId: "one" }),
+        b: session("b", "/r", { workspaceId: "one" }),
+      },
     });
 
-    get().attachTerminalToItem("b", "one");
+    // Naming one pane moves the tab: panes travel together, and attribution
+    // was never a per-pane fact.
+    await get().attachTerminalToWorkspace("b", "two");
 
-    // Keyed by tab, and written under each session too: a reload rebuilds one
-    // tab per session, taking the session's id as the tab id, and each of those
-    // fragments has to find the attachment its old tab had.
-    expect(get().terminalAttachments).toEqual({
-      tabA: "item:one",
-      a: "item:one",
-      b: "item:one",
-    });
-    expect(writes.terminalAttachments).toEqual(get().terminalAttachments);
-
-    get().detachTerminal("a");
-    expect(get().terminalAttachments).toEqual({});
+    expect(assigned).toEqual([
+      ["a", "two"],
+      ["b", "two"],
+    ]);
+    expect(get().terminalSessions.a.workspaceId).toBe("two");
+    expect(get().terminalSessions.b.workspaceId).toBe("two");
   });
 
-  it("selectItemTab shows the item's most recently used tab", () => {
+  it("attachTerminalToWorkspace leaves the store alone when the daemon refuses", async () => {
+    const { get, set } = makeSlice({
+      terminalAssignWorkspace: async () => {
+        throw new Error("no such terminal");
+      },
+    });
+    set({
+      terminalTabs: [makeTab("tabA", "a")],
+      terminalSessions: { a: session("a", "/r", { workspaceId: "one" }) },
+    });
+
+    await get().attachTerminalToWorkspace("a", "two");
+
+    // The daemon's copy is the real one; a local write it did not accept would
+    // put the row under a card it does not belong to.
+    expect(get().terminalSessions.a.workspaceId).toBe("one");
+  });
+
+  it("selectWorkspaceTab shows the workspace's most recently used tab", () => {
     const { get, set } = makeSlice();
     set({
       terminalTabs: [
@@ -811,16 +747,21 @@ describe("slice actions", () => {
         makeTab("t2", "b"),
         makeTab("t3", "c"),
       ],
-      terminalAttachments: { t1: itemHome("one"), t2: itemHome("one") },
+      terminalSessions: {
+        a: session("a", "/r", { workspaceId: "one" }),
+        b: session("b", "/r", { workspaceId: "one" }),
+        c: session("c", "/r", { workspaceId: "two" }),
+      },
     });
 
     get().setActiveTab("t1");
     get().setActiveTab("t2");
     get().setActiveTab("t3");
 
-    get().selectItemTab("one");
+    get().selectWorkspaceTab("one");
     expect(get().activeTabId).toBe("t2");
-    // The other item's tab is still in the strip — selecting never hides one.
+    // The other workspace's tab is still in the strip — selecting never hides
+    // one.
     expect(get().terminalTabs.map((t: TerminalTab) => t.id)).toEqual([
       "t1",
       "t2",
@@ -828,47 +769,34 @@ describe("slice actions", () => {
     ]);
   });
 
-  it("selectItemTab leaves the strip alone for an item with no terminals", () => {
+  it("selectWorkspaceTab leaves the strip alone for a workspace with no terminals", () => {
     const { get, set } = makeSlice();
     set({ terminalTabs: [makeTab("t1", "a")], activeTabId: "t1" });
-    get().selectItemTab("nobody");
+    get().selectWorkspaceTab("nobody");
     expect(get().activeTabId).toBe("t1");
   });
 
-  it("movePaneToTab hands the pane the attachment of the tab it joined", async () => {
-    const { get, set } = makeSlice();
+  it("movePaneToTab moves the pane into the workspace of the tab it joined", async () => {
+    const assigned: [string, string | null][] = [];
+    const { get, set } = makeSlice(assigningClient(assigned));
     set({
       terminalTabs: [makeTab("tabA", "a"), makeTab("tabB", "b")],
-      terminalAttachments: { tabB: itemHome("one"), b: itemHome("one") },
+      terminalSessions: {
+        a: session("a", "/r", { workspaceId: "one" }),
+        b: session("b", "/r", { workspaceId: "two" }),
+      },
     });
 
     get().movePaneToTab("a", "tabB");
+    await Promise.resolve();
 
-    expect(get().terminalAttachments).toEqual({
-      tabB: "item:one",
-      a: "item:one",
-      b: "item:one",
-    });
+    expect(assigned).toEqual([["a", "two"]]);
     expect(get().activeTabId).toBe("tabB");
   });
 
-  it("movePaneToTab drops an attachment the pane arrived with", () => {
-    const { get, set } = makeSlice();
-    set({
-      terminalTabs: [makeTab("tabA", "a"), makeTab("tabB", "b")],
-      terminalAttachments: { tabA: itemHome("one"), a: itemHome("one") },
-    });
-
-    // tabB is unclaimed, and a pane belongs to the tab it is in. tabA was that
-    // pane's only one, so the move emptied it — and a key naming a tab no
-    // window will ever have again would sit in storage forever.
-    get().movePaneToTab("a", "tabB");
-
-    expect(get().terminalAttachments).toEqual({});
-  });
-
-  it("movePaneToNewTab carries the old tab's attachment onto the new one", () => {
-    const { get, set } = makeSlice();
+  it("movePaneToNewTab reassigns nothing — the session took its workspace with it", () => {
+    const assigned: [string, string | null][] = [];
+    const { get, set } = makeSlice(assigningClient(assigned));
     set({
       terminalTabs: [
         {
@@ -876,109 +804,80 @@ describe("slice actions", () => {
           root: splitLeaf(leaf("a"), "a", "b", "row"),
         },
       ],
-      terminalAttachments: {
-        tabA: itemHome("one"),
-        a: itemHome("one"),
-        b: itemHome("one"),
+      terminalSessions: {
+        a: session("a", "/r", { workspaceId: "one" }),
+        b: session("b", "/r", { workspaceId: "one" }),
       },
     });
 
     const newTabId = get().movePaneToNewTab("b");
 
     expect(newTabId).not.toBeNull();
-    expect(get().terminalAttachments[newTabId!]).toBe("item:one");
     expect(get().activeTabId).toBe(newTabId);
+    expect(assigned).toEqual([]);
   });
 
-  it("splitTerminal gives the new pane its tab's attachment", async () => {
-    const { get, set } = makeSlice(
-      startingClient(session("b", "/r", { cwd: "/r" })),
-    );
+  /**
+   * The tab a split joins decides where it belongs — not the cwd, which may
+   * route somewhere else entirely once the tab has been moved.
+   *
+   * Named at start rather than assigned afterwards: starting first and moving
+   * second leaves behind a workspace the router minted for a cwd nothing is
+   * running in any more.
+   */
+  it("splitTerminal names its tab's workspace when it starts the pane", async () => {
+    const assigned: [string, string | null][] = [];
+    const requests: { workspaceId?: string }[] = [];
+    const started = session("b", "/r", { cwd: "/r", workspaceId: "one" });
+    const { get, set } = makeSlice({
+      terminalStart: async (req: { workspaceId?: string }) => {
+        requests.push(req);
+        return {
+          session: started,
+          workspace: { id: "one", title: "r · main", created: false },
+        };
+      },
+      terminalAssignWorkspace: async (id: string, ws: string | null) => {
+        assigned.push([id, ws]);
+      },
+      onTerminalStatus: () => () => {},
+      onTerminalExit: () => () => {},
+      terminalWrite: async () => {},
+    });
     set({
-      terminalSessions: { a: session("a", "/r", { cwd: "/r" }) },
+      terminalSessions: { a: session("a", "/r", { workspaceId: "one" }) },
       terminalTabs: [makeTab("tabA", "a")],
-      terminalAttachments: { tabA: itemHome("one"), a: itemHome("one") },
     });
 
     await get().splitTerminal("tabA", "a", "row");
+    await Promise.resolve();
 
     expect(collectLeafIds(get().terminalTabs[0].root)).toEqual(["a", "b"]);
-    expect(get().terminalAttachments.b).toBe("item:one");
+    expect(requests[0].workspaceId).toBe("one");
+    expect(assigned).toEqual([]);
   });
 
-  it("removeTerminal prunes the dead session's attachment, tab key included", () => {
-    const { get, set, writes } = makeSlice();
+  it("splitTerminal re-reads the queue when the router invented a workspace", async () => {
+    let loads = 0;
+    const { get, set } = makeSlice(
+      startingClient(session("b", "/r", { cwd: "/r", workspaceId: "fresh" }), {
+        id: "fresh",
+        title: "r · main",
+        created: true,
+      }),
+    );
     set({
+      terminalSessions: { a: session("a", "/r", { workspaceId: null }) },
       terminalTabs: [makeTab("tabA", "a")],
-      terminalAttachments: {
-        tabA: "item:one",
-        a: "item:one",
-        b: "item:two",
+      loadWorkspaces: async () => {
+        loads += 1;
       },
     });
 
-    get().removeTerminal("a");
+    await get().splitTerminal("tabA", "a", "row");
+    await Promise.resolve();
 
-    // The tab is gone with its last pane, and its id is window-local — an
-    // entry under it would outlive every window that could ever read it.
-    expect(get().terminalAttachments).toEqual({ b: "item:two" });
-    expect(writes.terminalAttachments).toEqual({ b: "item:two" });
-  });
-
-  it("removeTerminal keeps the tab's attachment while other panes remain", () => {
-    const { get, set } = makeSlice();
-    set({
-      terminalTabs: [
-        {
-          ...makeTab("tabA", "a"),
-          root: splitLeaf(leaf("a"), "a", "b", "row"),
-        },
-      ],
-      terminalAttachments: {
-        tabA: "item:one",
-        a: "item:one",
-        b: "item:one",
-      },
-    });
-
-    get().removeTerminal("a");
-
-    expect(get().terminalAttachments).toEqual({
-      tabA: "item:one",
-      b: "item:one",
-    });
-  });
-
-  it("migrateTerminalAttachments writes only when something changed", () => {
-    const { get, set, writes } = makeSlice();
-    set({
-      terminalTabs: [makeTab("t1", "a")],
-      terminalAttachments: { t1: itemHome("one"), a: itemHome("one") },
-    });
-    const items = [{ id: "one", title: "", refs: [], createdAt: "" }];
-
-    get().migrateTerminalAttachments(items);
-    expect(writes.terminalAttachments).toBeUndefined();
-
-    get().migrateTerminalAttachments([]);
-    expect(get().terminalAttachments).toEqual({});
-    expect(writes.terminalAttachments).toEqual({});
-  });
-
-  it("hydrateTerminalPrefs restores the persisted attachments", async () => {
-    const { get, reads } = makeSlice();
-    reads.terminalAttachments = { a: "item:one" };
-    await get().hydrateTerminalPrefs();
-    expect(get().terminalAttachments).toEqual({ a: "item:one" });
-  });
-
-  it("hydrateTerminalPrefs reads the pre-tab session-keyed attachments", async () => {
-    // A tab rebuilt from a session takes that session's id, so the old map is
-    // already a valid attachments map.
-    const { get, reads } = makeSlice();
-    reads.terminalHomes = { a: "item:one" };
-    await get().hydrateTerminalPrefs();
-    expect(get().terminalAttachments).toEqual({ a: "item:one" });
+    expect(loads).toBe(1);
   });
 
   it("toggleTerminalDockSide flips the side and persists it", () => {
@@ -1060,7 +959,7 @@ describe("slice actions", () => {
       ],
       [],
     );
-    expect(get().terminalCheckouts["/r"].rootKey).toBe("/r:main");
+    expect(get().terminalCheckouts["/r"].owners).toEqual({ "/r": "/r:main" });
   });
 
   it("focusing code from a focused terminal reopens as a split", () => {
@@ -1218,7 +1117,6 @@ describe("checkout attribution", () => {
 
   it("buildCheckoutIndex maps each checkout to the row that owns it", () => {
     const index = buildCheckoutIndex(activity);
-    expect(index["/r"].rootKey).toBe("/r:main");
     expect(index["/r"].owners).toEqual({
       "/r": "/r:main",
       [FEATURE_WT]: "/r:feature",
@@ -1247,94 +1145,6 @@ describe("checkout attribution", () => {
     expect(index["/r"].owners["/home/.review/worktrees/r/pr-7"]).toBe(
       "/r:pr-7",
     );
-  });
-
-  it("sessionReviewKey attributes a cwd to its innermost checkout", () => {
-    const index = buildCheckoutIndex(activity);
-    expect(sessionReviewKey(index, "/r", `${FEATURE_WT}/src`, "x")).toBe(
-      "/r:feature",
-    );
-    expect(sessionReviewKey(index, "/r", "/r/src", "x")).toBe("/r:main");
-  });
-
-  it("sessionReviewKey adopts an orphan into the repo's root row", () => {
-    const index = buildCheckoutIndex(activity);
-    // The worktree was removed; the shell is still running in a gone directory.
-    expect(
-      sessionReviewKey(index, "/r", "/home/.review/worktrees/r/removed", "x"),
-    ).toBe("/r:main");
-  });
-
-  it("anchors a detached HEAD on a row that exists, not on an unreachable key", () => {
-    // Detached HEAD: git names no branch as checked out, so nothing owns the
-    // repo root. `/r:` is a key no view reads, so anything attributed there
-    // would be listed under a row that isn't drawn.
-    const detached = buildCheckoutIndex([
-      {
-        repoPath: "/r",
-        repoName: "r",
-        defaultBranch: "main",
-        branches: [branch("feature", { worktreePath: FEATURE_WT })],
-        recentRemoteBranches: [],
-      },
-    ]);
-    expect(detached["/r"].rootKey).toBe("/r:feature");
-    // Both the orphan and a shell sitting in the detached main working tree
-    // land somewhere the sidebar has a row for.
-    expect(sessionReviewKey(detached, "/r", "/gone/elsewhere", "x")).toBe(
-      "/r:feature",
-    );
-    expect(sessionReviewKey(detached, "/r", "/r/src", "x")).toBe("/r:feature");
-  });
-
-  it("anchors a detached HEAD on a review's worktree when there are no branches", () => {
-    const index = buildCheckoutIndex(
-      [
-        {
-          repoPath: "/r",
-          repoName: "r",
-          defaultBranch: "main",
-          branches: [],
-          recentRemoteBranches: [],
-        },
-      ],
-      [
-        {
-          repoPath: "/r",
-          repoName: "r",
-          ref: "pr-7",
-          worktreePath: "/home/.review/worktrees/r/pr-7",
-          tier: "materialized",
-          totalHunks: 0,
-          trustedHunks: 0,
-          approvedHunks: 0,
-          reviewedHunks: 0,
-          rejectedHunks: 0,
-          savedForLaterHunks: 0,
-          state: null,
-          updatedAt: "",
-        },
-      ],
-    );
-    expect(index["/r"].rootKey).toBe("/r:pr-7");
-  });
-
-  it("keeps the placeholder key for a repo with no checkouts at all", () => {
-    // No rows to be reachable from either.
-    const index = buildCheckoutIndex([
-      {
-        repoPath: "/r",
-        repoName: "r",
-        defaultBranch: "main",
-        branches: [],
-        recentRemoteBranches: [],
-      },
-    ]);
-    expect(index["/r"].rootKey).toBe("/r:");
-  });
-
-  it("sessionReviewKey falls back for a repo the index has never seen", () => {
-    expect(sessionReviewKey({}, "/r", "/r", "fallback")).toBe("fallback");
   });
 
   it("isOrphanedSession is true only for a cwd outside every checkout", () => {

@@ -1,22 +1,17 @@
-import { type ReactElement, type ReactNode } from "react";
+import { type ReactElement, type ReactNode, useMemo } from "react";
 import { clsx } from "clsx";
 import { useReviewStore } from "../../stores";
 import {
   isOrphanedSession,
   type TerminalTab,
 } from "../../stores/slices/terminalSlice";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from "../ui/dropdown-menu";
-import { basename } from "../TabRail/terminal-status-format";
-import { PhaseDot } from "../TabRail/PhaseDot";
+import { useFocusedWorkspace } from "../../stores/selectors/workspaces";
+import { useWorkspaceTabs } from "../../stores/selectors/terminals";
+import { basename } from "../Sidebar/terminal-status-format";
+import { PhaseDot } from "../Sidebar/PhaseDot";
 import { RICH_TOOLTIP_CLASS, SimpleTooltip } from "../ui/tooltip";
 import { tabGlance } from "./glance";
 import { TerminalGlanceCard } from "./TerminalGlanceCard";
-import { TerminalOverview } from "./TerminalOverview";
 import {
   collectLeafIds,
   expandedLeafIds,
@@ -37,15 +32,16 @@ import {
 } from "./pane-drag";
 import { closeTerminalPane, closeTerminalTab } from "./close";
 import { openTerminalTab } from "./newTab";
+import { StartTerminal } from "./StartTerminal";
 import { PaneTree, PaneButton } from "./PaneTree";
-import { FocusSwitch } from "./FocusSwitch";
+import { FocusToggle } from "../Stage/FocusToggle";
 import { WarningIcon } from "../ui/icons";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuTrigger,
 } from "../ui/context-menu";
-import { TerminalMenuItems } from "../TabRail/ActionMenu";
+import { TerminalMenuItems } from "../Sidebar/ActionMenu";
 
 export function TerminalPanel(): ReactNode {
   const terminalSessions = useReviewStore((s) => s.terminalSessions);
@@ -66,13 +62,6 @@ export function TerminalPanel(): ReactNode {
   const terminalDockSide = useReviewStore((s) => s.terminalDockSide);
   const toggleTerminalDockSide = useReviewStore(
     (s) => s.toggleTerminalDockSide,
-  );
-  const overviewOpen = useReviewStore((s) => s.terminalOverviewOpen);
-  const toggleTerminalOverview = useReviewStore(
-    (s) => s.toggleTerminalOverview,
-  );
-  const setTerminalOverviewOpen = useReviewStore(
-    (s) => s.setTerminalOverviewOpen,
   );
 
   // Tab drag-to-reorder. The in-flight tab lives in the pane-drag module
@@ -95,7 +84,28 @@ export function TerminalPanel(): ReactNode {
   // ⌘D / ⇧⌘D pane splits are dispatched by useKeyboardNavigation, which routes
   // the chord to whichever pane has focus.
 
+  // The strip is this workspace's terminals and nothing else — a tab belongs
+  // to exactly one workspace, and the stage is a zoom into one of them. Every
+  // tab still *renders* below, hidden, because unmounting an xterm to switch
+  // workspaces would throw away its screen.
+  const focusedWorkspace = useFocusedWorkspace();
+  const stripTabs = useWorkspaceTabs(focusedWorkspace?.id ?? null);
+  // A tab's position in the *whole* strip, which is what a reorder moves and
+  // what `data-strip-index` has to carry. Built once rather than an `indexOf`
+  // per rendered tab.
+  const indexOfTab = useMemo(
+    () => new Map(terminalTabs.map((tab, index) => [tab.id, index])),
+    [terminalTabs],
+  );
+
   const activeTab = terminalTabs.find((tab) => tab.id === activeTabId) ?? null;
+  // Nothing of this workspace is on screen when the active tab is another
+  // workspace's — which happens for the moment between focusing a workspace
+  // and its own tab being selected.
+  const showingTabId =
+    activeTab && stripTabs.some((tab) => tab.id === activeTab.id)
+      ? activeTab.id
+      : null;
 
   // Offered only for a pane that has somewhere to leave: the sole pane of a tab
   // already is its own tab, and a slot that did nothing would still read as an
@@ -107,7 +117,9 @@ export function TerminalPanel(): ReactNode {
       return leaves.length > 1 && leaves.includes(draggedPaneId);
     });
 
-  const handleNewTab = () => void openTerminalTab();
+  // Started *in* the workspace the stage is showing, so the "+" beside its own
+  // tabs can't hand it to another one.
+  const handleNewTab = () => void openTerminalTab(focusedWorkspace);
 
   const handleSplit = (
     tabId: string,
@@ -115,15 +127,6 @@ export function TerminalPanel(): ReactNode {
     direction: SplitDirection,
   ) => {
     void splitTerminal(tabId, targetTerminalId, direction);
-  };
-
-  /** Split the active tab's focused pane; with no tab open, start one. */
-  const handleSplitActive = (direction: SplitDirection) => {
-    if (!activeTab) {
-      handleNewTab();
-      return;
-    }
-    handleSplit(activeTab.id, activeTab.focused, direction);
   };
 
   const handleClosePane = (id: string) => {
@@ -152,7 +155,12 @@ export function TerminalPanel(): ReactNode {
           className="flex max-h-[4.75rem] flex-1 flex-wrap items-center gap-0.5
                      overflow-y-auto scrollbar-thin"
         >
-          {terminalTabs.map((tab, index) => {
+          {stripTabs.map((tab) => {
+            // The strip shows one workspace's tabs, but a reorder moves a tab
+            // within the whole list — so the index that travels with the drag
+            // (and lands in `data-strip-index`, which the Tauri drop path
+            // reads) is the tab's position in `terminalTabs`, not in the strip.
+            const index = indexOfTab.get(tab.id) ?? 0;
             const { leafIds, severity, allDead, title, primaryId } = tabGlance(
               tab,
               terminalSessions,
@@ -277,12 +285,7 @@ export function TerminalPanel(): ReactNode {
                     <TabHoverPeek sessionId={allDead ? null : primaryId}>
                       <button
                         type="button"
-                        onClick={() => {
-                          setActiveTab(tab.id);
-                          // Picking a tab is leaving the overview — otherwise the
-                          // click looks eaten, since the grid stays on top.
-                          if (overviewOpen) setTerminalOverviewOpen(false);
-                        }}
+                        onClick={() => setActiveTab(tab.id)}
                         title={allDead ? title : undefined}
                         className="flex min-w-0 items-center gap-1.5"
                       >
@@ -388,57 +391,22 @@ export function TerminalPanel(): ReactNode {
           )}
         </div>
 
-        {/* New terminal: the button opens a tab, the caret offers the rest. */}
-        <div className="ml-1 flex shrink-0 items-center rounded text-fg-muted hover:bg-fg/[0.06]">
-          <button
-            type="button"
-            aria-label="New terminal tab"
-            title="New terminal tab (⌘T)"
-            onClick={handleNewTab}
-            className="rounded-l py-1 pl-2 pr-1 text-sm hover:text-fg-secondary"
-          >
-            +
-          </button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                aria-label="New terminal options"
-                className="rounded-r py-1 pl-0.5 pr-1.5 hover:text-fg-secondary"
-              >
-                <CaretIcon />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              // Radix restores focus to the trigger when the menu closes, and
-              // it does so after the exit animation — landing *after* the new
-              // pane focused itself. Let the terminal keep the focus.
-              onCloseAutoFocus={(e) => e.preventDefault()}
-            >
-              <DropdownMenuItem onClick={handleNewTab}>
-                New tab
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleSplitActive("row")}>
-                Split vertical
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleSplitActive("column")}>
-                Split horizontal
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+        {/* New terminal. One verb, no menu: splitting is a gesture on the pane
+            you want to split (its own chrome, or ⌘D), not a choice made before
+            there is anything to split. */}
+        <button
+          type="button"
+          aria-label="New terminal tab"
+          title="New terminal tab (⌘T)"
+          onClick={handleNewTab}
+          className="ml-1 shrink-0 rounded px-2 py-1 text-sm leading-none text-fg-muted
+                     hover:bg-fg/[0.06] hover:text-fg-secondary"
+        >
+          +
+        </button>
 
-        {/* Panel controls: overview / dock side / the focus switch */}
+        {/* Panel controls: dock side, and this half's own focus toggle. */}
         <div className="ml-2 flex shrink-0 items-center gap-1">
-          <PaneButton
-            label="All terminals (⇧⌘`)"
-            onClick={toggleTerminalOverview}
-            pressed={overviewOpen}
-          >
-            <OverviewIcon />
-          </PaneButton>
-
           <PaneButton
             label={`Move terminal to ${
               terminalDockSide === "left" ? "right" : "left"
@@ -448,24 +416,22 @@ export function TerminalPanel(): ReactNode {
             <DockSideIcon side={terminalDockSide} />
           </PaneButton>
 
-          <FocusSwitch tooltipSide="bottom" />
+          <FocusToggle half="terminal" />
         </div>
       </div>
 
       {/* Tabs — all mounted, inactive ones hidden to keep xterms streaming.
           The panes own the only inner gutter, so nothing is inset here. */}
       <div className="relative flex-1 overflow-hidden">
-        {terminalTabs.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-xs text-fg-faint">
-            No terminals — use + to start one.
-          </div>
+        {stripTabs.length === 0 ? (
+          <StartTerminal workspace={focusedWorkspace} />
         ) : (
           terminalTabs.map((tab) => (
             <div
               key={tab.id}
               className={clsx(
                 "absolute inset-0",
-                tab.id === activeTabId ? "" : "hidden",
+                tab.id === showingTabId ? "" : "hidden",
               )}
             >
               <PaneTree
@@ -476,7 +442,7 @@ export function TerminalPanel(): ReactNode {
                 canFold={expandedLeafIds(tab.root).length > 1}
                 tabId={tab.id}
                 focusedId={tab.focused}
-                tabActive={tab.id === activeTabId}
+                tabActive={tab.id === showingTabId}
                 onFocus={(id) => setFocusedTerminalPane(tab.id, id)}
                 onSplit={(id, direction) => handleSplit(tab.id, id, direction)}
                 onClose={handleClosePane}
@@ -484,9 +450,6 @@ export function TerminalPanel(): ReactNode {
             </div>
           ))
         )}
-        {/* Overlaid rather than swapped in, so every xterm stays mounted and
-            streaming underneath — leaving the overview costs nothing. */}
-        {overviewOpen && <TerminalOverview />}
       </div>
     </div>
   );
@@ -513,43 +476,6 @@ function TabHoverPeek({
     >
       {children}
     </SimpleTooltip>
-  );
-}
-
-/** Overview glyph: a grid of terminal cards. */
-function OverviewIcon(): ReactNode {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      className="h-3.5 w-3.5"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      aria-hidden="true"
-    >
-      <rect x="2" y="2.5" width="5.25" height="4.75" rx="1" />
-      <rect x="8.75" y="2.5" width="5.25" height="4.75" rx="1" />
-      <rect x="2" y="8.75" width="5.25" height="4.75" rx="1" />
-      <rect x="8.75" y="8.75" width="5.25" height="4.75" rx="1" />
-    </svg>
-  );
-}
-
-/** Caret opening the new-terminal menu beside the split button. */
-function CaretIcon(): ReactNode {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      className="h-3 w-3"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M4 6.5 8 10.5l4-4" />
-    </svg>
   );
 }
 

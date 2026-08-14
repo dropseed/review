@@ -17,11 +17,11 @@ import {
   DropdownMenuSeparator,
 } from "../../components/ui/dropdown-menu";
 import { CollapsibleSection } from "../../components/ui/collapsible-section";
-import type { FileSymbolDiff } from "../../types";
 import { ReviewDataProvider } from "../ReviewDataContext";
 import { GitStatusPanel } from "./GitStatusPanel";
 import { FilesPanelProvider } from "./FilesPanelContext";
 import { StatusGroupList } from "./StatusGroupList";
+import { CarryForwardRow } from "./CarryForwardRow";
 import { GuideBanner } from "./GuideBanner";
 import { GuideModePanel } from "./GuideModePanel";
 import { CommitRangePicker } from "./CommitRangePicker";
@@ -111,15 +111,6 @@ export function FilesPanel() {
   const fileSortOrder = useReviewStore((s) => s.fileSortOrder);
   const setFileSortOrder = useReviewStore((s) => s.setFileSortOrder);
 
-  // Symbol diff map for flat mode (read globally so FlatFileNode in either
-  // tab can render symbol annotations)
-  const symbolDiffs = useReviewStore((s) => s.symbolDiffs);
-  const symbolDiffMap = useMemo(() => {
-    const map = new Map<string, FileSymbolDiff>();
-    for (const sd of symbolDiffs) map.set(sd.filePath, sd);
-    return map;
-  }, [symbolDiffs]);
-
   // Navigate to a specific hunk (used by FlatFileNode symbol rows)
   const handleNavigateToHunk = useCallback(
     (filePath: string, hunkId: string) => {
@@ -203,7 +194,6 @@ export function FilesPanel() {
       hunkStatusMap,
       fileStatusMap,
       symlinkMap,
-      symbolDiffMap,
       expandAll,
       collapseAll,
       grayscaleIcons: viewMode !== "browse",
@@ -224,7 +214,6 @@ export function FilesPanel() {
       hunkStatusMap,
       fileStatusMap,
       symlinkMap,
-      symbolDiffMap,
       expandAll,
       collapseAll,
       viewMode,
@@ -242,66 +231,66 @@ export function FilesPanel() {
     );
   }
 
+  const tabStrip = (
+    /* The panel's own header row: what this column is for on the left, and the
+       control that puts it away on the right — the button sits in the thing it
+       collapses. A container so the strip can trade its words for icons when it
+       is given too little room for them, which is also why its width is
+       `w-full` rather than shrink-to-fit: an inline-size container sized by its
+       own content collapses, taking every label with it. */
+    <div className="@container flex w-full items-center gap-1.5">
+      <Tabs
+        value={viewMode}
+        onValueChange={(v) => setFilesPanelTab(v as typeof viewMode)}
+        className="min-w-0 flex-1"
+      >
+        <TabsList aria-label="File view mode">
+          {visibleTabs.map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <TabsTrigger key={tab.id} value={tab.id} aria-label={tab.label}>
+                <Icon className="size-3 shrink-0 @min-[16rem]:hidden" />
+                <span className="hidden truncate @min-[16rem]:inline">
+                  {tab.label}
+                </span>
+                {tab.id === "git" && <TabCount value={gitChangeCount} />}
+                {/* Unresolved, not total: the count is there to answer
+                          "is anything waiting", and a check answers it better
+                          than a zero once the answer is no. */}
+                {tab.id === "changes" &&
+                  (unresolved > 0 ? (
+                    <TabCount value={unresolved} />
+                  ) : (
+                    complete && (
+                      <CheckIcon className="size-2.5 shrink-0 text-status-approved" />
+                    )
+                  ))}
+              </TabsTrigger>
+            );
+          })}
+        </TabsList>
+      </Tabs>
+
+      <SimpleTooltip content="Hide files (⌥⌘B)">
+        <button
+          type="button"
+          onClick={toggleFilesPanel}
+          aria-label="Hide files"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded
+                     text-fg-muted transition-colors duration-100
+                     hover:bg-fg/[0.08] hover:text-fg-secondary"
+        >
+          <SidebarPanelIcon className="h-3.5 w-3.5 -scale-x-100" />
+        </button>
+      </SimpleTooltip>
+    </div>
+  );
+
   return (
     <ReviewDataProvider value={reviewDataContextValue}>
       <FilesPanelProvider value={filesPanelContextValue}>
         <div className="flex h-full flex-col">
-          {/* View mode toggle. A container so the strip can trade its words
-              for icons when the panel is dragged too narrow for them. */}
-          <div className="@container flex items-center gap-1.5 px-3 py-2">
-            {/* Collapsing lives on the panel's own header, the way the
-                sidebar's does — the rail it leaves behind is the way back. It
-                sits on the inner edge, against the content it makes room for,
-                rather than out at the window edge where nothing else is. */}
-            <SimpleTooltip content="Hide files (⌥⌘B)">
-              <button
-                type="button"
-                onClick={toggleFilesPanel}
-                aria-label="Hide files"
-                className="flex h-6 w-6 shrink-0 items-center justify-center rounded
-                           text-fg-muted transition-colors duration-100
-                           hover:bg-fg/[0.08] hover:text-fg-secondary"
-              >
-                <SidebarPanelIcon className="h-3.5 w-3.5 -scale-x-100" />
-              </button>
-            </SimpleTooltip>
-
-            <Tabs
-              value={viewMode}
-              onValueChange={(v) => setFilesPanelTab(v as typeof viewMode)}
-              className="flex-1 min-w-0"
-            >
-              <TabsList aria-label="File view mode">
-                {visibleTabs.map((tab) => {
-                  const Icon = tab.icon;
-                  return (
-                    <TabsTrigger
-                      key={tab.id}
-                      value={tab.id}
-                      aria-label={tab.label}
-                    >
-                      <Icon className="size-3 shrink-0 @min-[16rem]:hidden" />
-                      <span className="hidden truncate @min-[16rem]:inline">
-                        {tab.label}
-                      </span>
-                      {tab.id === "git" && <TabCount value={gitChangeCount} />}
-                      {/* Unresolved, not total: the count is there to answer
-                          "is anything waiting", and a check answers it better
-                          than a zero once the answer is no. */}
-                      {tab.id === "changes" &&
-                        (unresolved > 0 ? (
-                          <TabCount value={unresolved} />
-                        ) : (
-                          complete && (
-                            <CheckIcon className="size-2.5 shrink-0 text-status-approved" />
-                          )
-                        ))}
-                    </TabsTrigger>
-                  );
-                })}
-              </TabsList>
-            </Tabs>
-          </div>
+          <div className="px-3 py-2">{tabStrip}</div>
 
           {/* Panel content based on view mode */}
           {viewMode === "git" ? (
@@ -315,6 +304,7 @@ export function FilesPanel() {
                 <GuideModePanel />
               ) : (
                 <>
+                  <CarryForwardRow />
                   <GuideBanner />
                   <CommitRangePicker />
                   <CommitRangeHeader />

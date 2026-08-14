@@ -6,7 +6,7 @@ export { useTerminalEvents } from "./useTerminalEvents";
 export { useReviewTier } from "./useReviewTier";
 export { useTerminalFileDrop } from "./useTerminalFileDrop";
 export { useRepoActivitySync } from "./useRepoActivitySync";
-export { useWorkSync } from "./useWorkSync";
+export { useWorkspaceSync } from "./useWorkspaceSync";
 export { useTerminalCheckoutSync } from "./useTerminalCheckoutSync";
 export { useViewerPrsSync } from "./useViewerPrsSync";
 export { usePollWhileVisible } from "./usePollWhileVisible";

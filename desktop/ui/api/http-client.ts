@@ -20,11 +20,12 @@ import type {
   HunkAttribution,
   CommitOutputLine,
   CommitResult,
-  DetectMovePairsResponse,
   DiffHunk,
   DiffShortStat,
   ExpandedContext,
   FileContent,
+  FilesDelta,
+  MovePair,
   FileEntry,
   FileSymbol,
   FileSymbolDiff,
@@ -48,10 +49,12 @@ import type {
   SymbolDefinition,
   LspServerStatus,
   TrustCategory,
-  WorkItem,
-  WorkRef,
+  Workspace,
+  RouteLanding,
+  Attachment,
   WorktreeInfo,
   TerminalSessionInfo,
+  TerminalStarted,
   TerminalStatus,
   TerminalOutput,
   TerminalExit,
@@ -427,6 +430,18 @@ export class HttpClient implements ApiClient {
     });
   }
 
+  async getFilesDelta(
+    repoPath: string,
+    comparison: Comparison,
+    filePaths: string[],
+  ): Promise<FilesDelta> {
+    return this.post("/api/files/delta", {
+      repoPath,
+      comparison,
+      filePaths,
+    });
+  }
+
   async getExpandedContext(
     repoPath: string,
     filePath: string,
@@ -552,8 +567,11 @@ export class HttpClient implements ApiClient {
     return this.post("/api/classify/static", { hunks });
   }
 
-  async detectMovePairs(hunks: DiffHunk[]): Promise<DetectMovePairsResponse> {
-    return this.post("/api/classify/move-pairs", { hunks });
+  async getComparisonMovePairs(
+    repoPath: string,
+    comparison: Comparison,
+  ): Promise<MovePair[]> {
+    return this.post("/api/files/move-pairs", { repoPath, comparison });
   }
 
   // ----- Commit -----
@@ -694,40 +712,56 @@ export class HttpClient implements ApiClient {
 
   // ----- Work items -----
 
-  async listWorkItems(): Promise<WorkItem[]> {
+  async listWorkspaces(): Promise<Workspace[]> {
+    // No `focused`: a thin client can't answer liveness, so the server never
+    // cleans up on this read and has nothing to spare.
     return this.post("/api/work/list");
   }
 
-  async addWorkItem(title: string, refs: WorkRef[]): Promise<WorkItem[]> {
-    return this.post("/api/work/add", { title, refs });
+  async addWorkspace(
+    title: string | null,
+    attachments: Attachment[],
+  ): Promise<Workspace[]> {
+    return this.post("/api/work/add", { title, attachments });
   }
 
-  async removeWorkItem(id: string): Promise<WorkItem[]> {
+  async removeWorkspace(id: string): Promise<Workspace[]> {
     return this.post("/api/work/remove", { id });
   }
 
-  async moveWorkItem(id: string, position: number): Promise<WorkItem[]> {
+  async moveWorkspace(id: string, position: number): Promise<Workspace[]> {
     return this.post("/api/work/move", { id, position });
   }
 
-  async bindWorkItem(
+  async attachWorkspace(
     id: string,
-    repoPath: string,
-    ref: string,
-  ): Promise<WorkItem[]> {
-    return this.post("/api/work/bind", { id, repoPath, ref });
+    path: string,
+    refName?: string | null,
+  ): Promise<Workspace[]> {
+    return this.post("/api/work/attach", {
+      id,
+      path,
+      refName: refName ?? null,
+    });
   }
 
-  async unbindWorkItem(
-    id: string,
-    repoPath: string,
-    ref: string,
-  ): Promise<WorkItem[]> {
-    return this.post("/api/work/unbind", { id, repoPath, ref });
+  async detachWorkspace(id: string, path: string): Promise<Workspace[]> {
+    return this.post("/api/work/detach", { id, path });
   }
 
-  async renameWorkItem(id: string, title: string): Promise<WorkItem[]> {
+  async renameWorkspace(
+    id: string,
+    title: string | null,
+  ): Promise<Workspace[]> {
     return this.post("/api/work/rename", { id, title });
+  }
+
+  async routeWorkspace(
+    repoPath: string,
+    ref: string,
+    workspaceId?: string,
+  ): Promise<RouteLanding> {
+    return this.post("/api/work/route", { repoPath, ref, workspaceId });
   }
 
   // ----- File watcher -----
@@ -818,7 +852,7 @@ export class HttpClient implements ApiClient {
   /**
    * Work-item changes. This stream only exists while a repo watcher is running
    * and is scoped to that repo, but `work.json` is global and the CLI can edit
-   * it with no repo open at all — `useWorkSync` carries the focus/visibility
+   * it with no repo open at all — `useWorkspaceSync` carries the focus/visibility
    * backstop that covers what the stream misses, for both transports.
    */
   onWorkChanged(callback: () => void): () => void {
@@ -974,8 +1008,9 @@ export class HttpClient implements ApiClient {
     cols: number;
     rows: number;
     shell?: string;
-  }): Promise<TerminalSessionInfo> {
-    const info = await this.post<TerminalSessionInfo>("/api/terminal/start", {
+    workspaceId?: string;
+  }): Promise<TerminalStarted> {
+    const started = await this.post<TerminalStarted>("/api/terminal/start", {
       terminalId: params.terminalId,
       repoPath: params.repoPath,
       cwd: params.cwd,
@@ -985,7 +1020,17 @@ export class HttpClient implements ApiClient {
     });
     // Session exists now — open its socket so output/status start flowing.
     this.ensureTerminalSocket(params.terminalId);
-    return info;
+    return started;
+  }
+
+  async terminalAssignWorkspace(
+    terminalId: string,
+    workspaceId: string | null,
+  ): Promise<void> {
+    await this.post("/api/terminal/assign-workspace", {
+      terminalId,
+      workspaceId,
+    });
   }
 
   async terminalWrite(terminalId: string, data: string): Promise<void> {

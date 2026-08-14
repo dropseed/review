@@ -9,9 +9,10 @@
     reason = "Tauri commands require owned parameters for IPC deserialization"
 )]
 
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use review::classify::{self, ClassifyResponse};
-use review::diff::parser::{detect_move_pairs, DiffHunk};
+use review::daemon::LiveWorkspaces;
+use review::diff::parser::DiffHunk;
 use review::lsp::client::LspClient;
 use review::lsp::registry;
 use review::review::state::{ReviewState, ReviewSummary};
@@ -20,9 +21,8 @@ use review::service::pr::ReviewTierInfo;
 use review::service::usage::AgentUsage;
 use review::service::viewer_prs::ViewerPrSnapshot;
 use review::service::{
-    CommitOutputLine, CommitResult, DetectMovePairsResponse, ExpandedContextResult, FileContent,
-    RepoFileSymbols, RepoLocalActivity, ReviewFreshnessInput, ReviewFreshnessResult,
-    VscodeThemeDetection,
+    CommitOutputLine, CommitResult, ExpandedContextResult, FileContent, RepoFileSymbols,
+    RepoLocalActivity, ReviewFreshnessInput, ReviewFreshnessResult, VscodeThemeDetection,
 };
 use review::sources::github::{GhCliProvider, GitHubPrRef, GitHubProvider, PullRequest};
 use review::sources::local_git::{
@@ -34,11 +34,13 @@ use review::sources::traits::{
 };
 use review::symbols::{self, FileSymbolDiff, Symbol};
 use review::trust::patterns::TrustCategory;
-use review::work::{WorkItem, WorkRef};
+use review::work::{Attachment, Workspace, WorkspaceView};
 use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tokio::sync::Mutex as TokioMutex;
+
+use super::terminal_commands::TerminalState;
 
 // --- Window defaults ---
 
@@ -103,7 +105,7 @@ pub(crate) struct LspServerHandle {
 /// into one indexed workspace per review the user ever opened.
 const MAX_WARM_LSP_ROOTS: usize = 3;
 
-// Types are now imported from review::service::{FileContent, DetectMovePairsResponse, ...}
+// Types are now imported from review::service::{FileContent, ...}
 
 // --- Tauri Commands ---
 
@@ -280,6 +282,35 @@ pub fn get_all_hunks_sync(
         .map_err(|e| e.to_string())
 }
 
+/// Recompute only the named files of the comparison — the file watcher's path.
+#[tauri::command]
+pub async fn get_files_delta(
+    repo_path: String,
+    comparison: Comparison,
+    file_paths: Vec<String>,
+) -> Result<review::service::FilesDelta, String> {
+    tokio::task::spawn_blocking(move || {
+        review::service::files::files_delta(&PathBuf::from(&repo_path), &comparison, &file_paths)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Detect the comparison's move pairs from the diff on disk.
+#[tauri::command]
+pub async fn get_comparison_move_pairs(
+    repo_path: String,
+    comparison: Comparison,
+) -> Result<Vec<review::diff::parser::MovePair>, String> {
+    tokio::task::spawn_blocking(move || {
+        review::service::files::comparison_move_pairs(&PathBuf::from(&repo_path), &comparison)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 pub fn get_diff(repo_path: String, comparison: Comparison) -> Result<String, String> {
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
@@ -430,72 +461,186 @@ pub fn get_review_storage_path(repo_path: String) -> Result<String, String> {
 // Work queue
 //
 // The queue is global and cross-repo, so none of these take a repo path — only
-// the refs bound to an item do. See `ApiClient` for why every mutation returns
-// the full list.
+// the attachments a workspace holds do. See `ApiClient` for why every mutation
+// returns the full list.
+//
+// `work_list` talks to the terminal daemon as well, because two facts about a
+// workspace live there rather than in `work.json`: whether anything is running
+// in it (cleanup), and what its terminals are called (the derived title's last
+// rung). Both degrade to "leave it alone" when the daemon has not been
+// contacted yet.
 // ============================================================
 
+/// What the daemon can say about the queue, or `None` when nobody can say —
+/// see `work::cleanup` for why the difference matters.
+async fn live_workspaces(terminals: &TerminalState) -> Option<LiveWorkspaces> {
+    terminals.connected().await?.live_workspaces().await.ok()
+}
+
+/// What cleanup may not touch: whatever has a live terminal, plus whatever is on
+/// screen right now.
+///
+/// The second half is this window's to add. A ⌘K peek is a router-made
+/// workspace with no terminal, so neither adoption, liveness, nor the creation
+/// grace covers the one case a reader is most likely to hit — reading the diff
+/// for longer than the grace period, while the queue refreshes underneath. The
+/// workspace the stage is showing is in use by definition.
+///
+/// `None` in means `None` out: liveness is unknown, and cleanup must not run at
+/// all rather than run against a set of one.
+fn in_use(live: Option<HashSet<String>>, focused: Option<String>) -> Option<HashSet<String>> {
+    let mut live = live?;
+    if let Some(focused) = focused {
+        live.insert(focused);
+    }
+    Some(live)
+}
+
+/// Every workspace as the frontend reads it, with no terminal titles joined —
+/// what a mutation can answer without a daemon round trip of its own. The
+/// derived title's last rung arrives on the next `work_list`.
+fn views(workspaces: Vec<Workspace>) -> Vec<WorkspaceView> {
+    review::work::views(workspaces, None)
+}
+
+/// `focused` is the workspace the stage is showing, so the read that cleans up
+/// does not reap it out from under the human. Absent when nothing is focused.
 #[tauri::command]
-pub fn work_list() -> Result<Vec<WorkItem>, String> {
+pub async fn work_list(
+    terminals: tauri::State<'_, TerminalState>,
+    focused: Option<String>,
+) -> Result<Vec<WorkspaceView>, String> {
     let t0 = Instant::now();
-    let state = review::work::list().map_err(|e| e.to_string())?;
+    // The read that cleans up: this and `review work list` are the two places
+    // that hold the queue and the liveness answer at once.
+    let live = live_workspaces(&terminals).await;
+    let titles = live.as_ref().map(|live| live.titles.clone());
+    let in_use = in_use(live.map(|live| live.ids), focused);
+    let state = review::work::list_with_liveness(in_use.as_ref()).map_err(|e| e.to_string())?;
+    let views = review::work::views(state.workspaces, titles.as_ref());
     info!(
-        "work_list -> {} items in {:?}",
-        state.items.len(),
+        "work_list -> {} workspaces in {:?}",
+        views.len(),
         t0.elapsed()
     );
-    Ok(state.items)
+    Ok(views)
 }
 
 #[tauri::command]
-pub fn work_add(title: String, refs: Vec<WorkRef>) -> Result<Vec<WorkItem>, String> {
+pub fn work_add(
+    title: Option<String>,
+    attachments: Vec<Attachment>,
+) -> Result<Vec<WorkspaceView>, String> {
     let t0 = Instant::now();
-    let (state, item) = review::work::add(&title, refs).map_err(|e| e.to_string())?;
+    let (state, item) =
+        review::work::add(title.as_deref(), attachments).map_err(|e| e.to_string())?;
     info!("work_add {} in {:?}", item.id, t0.elapsed());
-    Ok(state.items)
+    Ok(views(state.workspaces))
 }
 
 #[tauri::command]
-pub fn work_remove(id: String) -> Result<Vec<WorkItem>, String> {
+pub fn work_remove(id: String) -> Result<Vec<WorkspaceView>, String> {
     let t0 = Instant::now();
     let (state, item) = review::work::remove(&id).map_err(|e| e.to_string())?;
     info!("work_remove {} in {:?}", item.id, t0.elapsed());
-    Ok(state.items)
+    Ok(views(state.workspaces))
 }
 
+/// Retitle an item. An absent (or empty) `title` clears the stored one and the
+/// title goes back to being derived.
 #[tauri::command]
-pub fn work_rename(id: String, title: String) -> Result<Vec<WorkItem>, String> {
+pub fn work_rename(id: String, title: Option<String>) -> Result<Vec<WorkspaceView>, String> {
     let t0 = Instant::now();
-    let (state, item) = review::work::rename(&id, &title).map_err(|e| e.to_string())?;
+    let (state, item) = review::work::rename(&id, title.as_deref()).map_err(|e| e.to_string())?;
     info!("work_rename {} in {:?}", item.id, t0.elapsed());
-    Ok(state.items)
+    Ok(views(state.workspaces))
 }
 
 /// Reorder an item. `position` is 0-based, matching the array the frontend
 /// dragged (the CLI's `review work move` is the 1-based surface).
 #[tauri::command]
-pub fn work_move(id: String, position: usize) -> Result<Vec<WorkItem>, String> {
+pub fn work_move(id: String, position: usize) -> Result<Vec<WorkspaceView>, String> {
     let t0 = Instant::now();
-    let (state, item) = review::work::move_item(&id, position).map_err(|e| e.to_string())?;
+    let (state, item) = review::work::move_workspace(&id, position).map_err(|e| e.to_string())?;
     info!("work_move {} -> {position} in {:?}", item.id, t0.elapsed());
-    Ok(state.items)
+    Ok(views(state.workspaces))
 }
 
+/// Show a repo in a workspace — opening a repo tab. Nothing is exclusive, so
+/// this cannot fail on another workspace showing the same repo.
 #[tauri::command]
-pub fn work_bind(id: String, repo_path: String, r#ref: String) -> Result<Vec<WorkItem>, String> {
+pub fn work_attach(
+    id: String,
+    path: String,
+    r#ref: Option<String>,
+) -> Result<Vec<WorkspaceView>, String> {
     let t0 = Instant::now();
     let (state, item) =
-        review::work::bind(&id, WorkRef::new(&repo_path, &r#ref)).map_err(|e| e.to_string())?;
-    info!("work_bind {} {} in {:?}", item.id, r#ref, t0.elapsed());
-    Ok(state.items)
+        review::work::attach(&id, Attachment::new(&path, r#ref)).map_err(|e| e.to_string())?;
+    info!("work_attach {} {} in {:?}", item.id, path, t0.elapsed());
+    Ok(views(state.workspaces))
 }
 
+/// Stop showing a repo — closing a repo tab.
 #[tauri::command]
-pub fn work_unbind(id: String, repo_path: String, r#ref: String) -> Result<Vec<WorkItem>, String> {
+pub fn work_detach(id: String, path: String) -> Result<Vec<WorkspaceView>, String> {
     let t0 = Instant::now();
     let (state, item) =
-        review::work::unbind(&id, &WorkRef::new(&repo_path, &r#ref)).map_err(|e| e.to_string())?;
-    info!("work_unbind {} {} in {:?}", item.id, r#ref, t0.elapsed());
-    Ok(state.items)
+        review::work::detach(&id, std::path::Path::new(&path)).map_err(|e| e.to_string())?;
+    info!("work_detach {} {} in {:?}", item.id, path, t0.elapsed());
+    Ok(views(state.workspaces))
+}
+
+/// Where a repo+branch landed, as the frontend reads it.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RouteLanding {
+    workspace: WorkspaceView,
+    /// Whether getting here minted the workspace — a queue entry the frontend
+    /// does not have yet, and the reason it re-reads the list.
+    created: bool,
+}
+
+/// Route a repo+branch to its workspace and commit that — the front door ⌘K
+/// opens.
+///
+/// The preview the palette draws beside a branch ("joins X" / "new workspace")
+/// is computed in the frontend against the attachments it already holds, so it
+/// costs nothing per keystroke. This is what makes the promise true: pressing
+/// Enter lands through `router::land`, which is the same decision the preview
+/// mirrored, and *commits* it.
+///
+/// `workspace_id` names a workspace explicitly, which lands there and writes
+/// nothing — attaching the repo is `work_attach`'s job.
+#[tauri::command]
+pub async fn work_route(
+    repo_path: String,
+    r#ref: String,
+    workspace_id: Option<String>,
+) -> Result<RouteLanding, String> {
+    let t0 = Instant::now();
+    let location = review::work::router::location_of_ref(std::path::Path::new(&repo_path), &r#ref);
+    // Off the UI thread: landing is a read-modify-write of the queue file, and
+    // path normalization touches the filesystem.
+    let landing = tokio::task::spawn_blocking(move || {
+        review::work::router::land(&location, workspace_id.as_deref())
+    })
+    .await
+    .map_err(|e| format!("routing panicked: {e}"))?
+    .map_err(|e| e.to_string())?;
+
+    info!(
+        "work_route {} {} -> {} (created: {}) in {:?}",
+        repo_path,
+        r#ref,
+        landing.workspace.id,
+        landing.created,
+        t0.elapsed()
+    );
+    Ok(RouteLanding {
+        workspace: views(vec![landing.workspace]).remove(0),
+        created: landing.created,
+    })
 }
 
 #[tauri::command]
@@ -907,26 +1052,6 @@ pub fn classify_hunks_static(hunks: Vec<DiffHunk>) -> ClassifyResponse {
         t0.elapsed()
     );
     result
-}
-
-#[tauri::command]
-pub fn detect_hunks_move_pairs(mut hunks: Vec<DiffHunk>) -> DetectMovePairsResponse {
-    let t0 = Instant::now();
-    debug!(
-        "[detect_hunks_move_pairs] Analyzing {} hunks for moves",
-        hunks.len()
-    );
-
-    let pairs = detect_move_pairs(&mut hunks);
-
-    info!(
-        "[detect_hunks_move_pairs] Found {} move pairs from {} hunks in {:?}",
-        pairs.len(),
-        hunks.len(),
-        t0.elapsed()
-    );
-
-    review::service::DetectMovePairsResponse { pairs, hunks }
 }
 
 /// Validate that a path is within .git/review/ or ~/.review/ for security
@@ -1913,8 +2038,32 @@ async fn start_and_register_server(
         language: language.to_owned(),
         last_used: Instant::now(),
     };
-    let mut servers = state.0.lock().await;
-    servers.insert(key, handle);
+    // The spawn happens outside the lock, so two concurrent inits (dev
+    // StrictMode fires every effect twice) can both pass the already-running
+    // check and both reach here. Whoever registers second must shut their
+    // process down — a plain insert would overwrite the first handle and
+    // orphan a live server nothing can reach again.
+    let duplicate = {
+        let mut servers = state.0.lock().await;
+        match servers.entry(key) {
+            std::collections::hash_map::Entry::Occupied(mut existing) => {
+                existing.get_mut().last_used = Instant::now();
+                Some(handle)
+            }
+            std::collections::hash_map::Entry::Vacant(slot) => {
+                slot.insert(handle);
+                None
+            }
+        }
+    };
+    if let Some(loser) = duplicate {
+        if let Err(e) = loser.client.shutdown().await {
+            warn!(
+                "[init_lsp_servers] shutting down duplicate {} failed: {e}",
+                config.name
+            );
+        }
+    }
 
     Ok(LspServerStatus {
         name: config.name.to_owned(),
@@ -1968,4 +2117,37 @@ async fn find_lsp_key_for_file(
     );
 
     Ok(key)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ids(of: &[&str]) -> HashSet<String> {
+        of.iter().map(|s| (*s).to_owned()).collect()
+    }
+
+    #[test]
+    fn the_focused_workspace_counts_as_in_use() {
+        // A ⌘K peek has no terminal, so nothing else in `cleanup`'s three
+        // rules keeps it while it is being read.
+        let live = in_use(Some(ids(&["running"])), Some("peeked".to_owned()));
+        assert_eq!(live.unwrap(), ids(&["running", "peeked"]));
+    }
+
+    #[test]
+    fn nothing_focused_leaves_the_live_set_alone() {
+        assert_eq!(
+            in_use(Some(ids(&["running"])), None).unwrap(),
+            ids(&["running"])
+        );
+    }
+
+    #[test]
+    fn an_unknown_liveness_answer_stays_unknown() {
+        // `None` is "the daemon could not be reached", not "nothing is
+        // running" — cleanup must not run, and a focused id is not a
+        // reason to start.
+        assert!(in_use(None, Some("peeked".to_owned())).is_none());
+    }
 }

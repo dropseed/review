@@ -8,7 +8,7 @@ export {
 } from "./registry";
 export { APP_COMMANDS, nextFontSize } from "./appCommands";
 export { reviewCommands } from "./reviewCommands";
-export { workCommands, activateWorkItem } from "./workCommands";
+export { workspaceCommands, focusWorkspace } from "./workspaceCommands";
 export { useCommandDispatch, buildCommandContext } from "./useCommandDispatch";
 export {
   formatShortcut,

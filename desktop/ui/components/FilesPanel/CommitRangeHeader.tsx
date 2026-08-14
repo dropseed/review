@@ -17,7 +17,7 @@ export function CommitRangeHeader(): ReactNode {
   if (commits.length === 1) {
     const c = commits[0];
     return (
-      <div className="border-b border-edge-default/40 px-3 py-2">
+      <div className="border-b border-edge/60 px-3 py-2">
         <p className="text-xs font-medium text-fg-secondary">{c.message}</p>
         {c.body && (
           <p className="mt-1 whitespace-pre-line text-xxs text-fg-muted">
@@ -29,7 +29,7 @@ export function CommitRangeHeader(): ReactNode {
   }
 
   return (
-    <div className="space-y-0.5 border-b border-edge-default/40 px-3 py-2">
+    <div className="space-y-0.5 border-b border-edge/60 px-3 py-2">
       {commits.map((c) => (
         <p key={c.hash} className="truncate text-xxs text-fg-muted">
           <span className="mr-1.5 font-mono text-fg-faint">{c.shortHash}</span>

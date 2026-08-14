@@ -4597,6 +4597,7 @@ dependencies = [
  "chrono",
  "dirs",
  "fix-path-env",
+ "futures",
  "ignore",
  "log",
  "notify 6.1.1",

@@ -3,9 +3,6 @@ import { useReviewStore } from "../../stores";
 import { FileViewer } from "../FileViewer";
 import { ResizeHandle } from "./ResizeHandle";
 import { toggleToCanonical } from "../../utils/resize";
-const OverviewContent = lazy(() =>
-  import("./OverviewContent").then((m) => ({ default: m.OverviewContent })),
-);
 const MultiFileDiffViewer = lazy(() =>
   import("./MultiFileDiffViewer").then((m) => ({
     default: m.MultiFileDiffViewer,
@@ -19,6 +16,28 @@ const WorkingTreeMultiFileDiffViewer = lazy(() =>
 const SearchView = lazy(() =>
   import("../search/SearchView").then((m) => ({ default: m.SearchView })),
 );
+
+/**
+ * Nothing open yet.
+ *
+ * A sentence and the way to a file, and deliberately nothing else: this used to
+ * be a whole second screen — a progress header, a file tree with its own
+ * per-file fractions, a symbol listing — restating what the files column beside
+ * it already says. What is left to review is that column's job now, and the
+ * workspace's own state is the sidebar's.
+ */
+function NoFileSelected(): ReactNode {
+  return (
+    <div className="flex h-full items-center justify-center">
+      <div className="max-w-xs -translate-y-[8vh] text-center">
+        <p className="text-sm text-fg-muted">Select a file to review.</p>
+        <p className="mt-2 text-sm text-fg-faint">
+          <kbd className="font-mono">⌘P</kbd> to find one.
+        </p>
+      </div>
+    </div>
+  );
+}
 
 export function ContentArea(): ReactNode {
   const selectedFile = useReviewStore((s) => s.selectedFile);
@@ -95,13 +114,8 @@ export function ContentArea(): ReactNode {
     );
   }
 
-  // No file selected: show overview
   if (!effectiveFile && !secondaryFile) {
-    return (
-      <Suspense fallback={null}>
-        <OverviewContent />
-      </Suspense>
-    );
+    return <NoFileSelected />;
   }
 
   // Single pane mode

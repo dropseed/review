@@ -80,8 +80,10 @@ pub async fn ensure_daemon(app: &AppHandle) -> Result<DaemonClient> {
 
     // What the daemon *should* be running: the version plus a fingerprint of the
     // binary, so a rebuilt daemon forces a respawn instead of the app attaching
-    // to the previous build's code. Derived from the binary we would spawn,
-    // which is the same file a running daemon reports on. Never gate this on the
+    // to the previous build's code. Derived from the binary we would spawn; a
+    // running daemon reports the identity it captured at its own startup, so a
+    // file rebuilt underneath a live daemon reads as a mismatch rather than
+    // letting the old process impersonate the new build. Never gate this on the
     // build profile — the app is debug-built while the sidecar is release-built,
     // so the two would disagree forever. See `review::daemon::build_identity`.
     let expected_identity = resolve_daemon_binary(app).map_or_else(

@@ -1,12 +1,12 @@
 import { memo, type ReactNode } from "react";
 import { clsx } from "clsx";
 import { useReviewStore } from "../../stores";
-import { PhaseDot } from "../TabRail/PhaseDot";
+import { PhaseDot } from "../Sidebar/PhaseDot";
 import {
   basename,
   formatDuration,
   phaseLabel,
-} from "../TabRail/terminal-status-format";
+} from "../Sidebar/terminal-status-format";
 import { sessionTitle, tailLines } from "./glance";
 import { useNow, useTerminalPeek } from "./useTerminalPeek";
 

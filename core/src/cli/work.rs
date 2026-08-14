@@ -1,9 +1,10 @@
-//! Work subcommands: `work [list] | add | remove | rename | move | bind | unbind`.
+//! Work subcommands: `work [list] | add | remove | rename | move | attach |
+//! detach | resolve`.
 //!
-//! The work queue is the global, user-ordered list of what you intend to work
-//! on next (see [`crate::work`]). It is cross-repo, so nothing here resolves a
-//! comparison — `--repo` only qualifies a branch name into a [`WorkRef`],
-//! defaulting to the repo the command was run in.
+//! The work queue is the global, user-ordered list of the workspaces you intend
+//! to work on next (see [`crate::work`]). It is cross-repo, so nothing here
+//! resolves a comparison — `--repo` only says which repository an [`Attachment`]
+//! points at, defaulting to the repo the command was run in.
 //!
 //! Positions are **1-based here** and 0-based in the core module, matching how
 //! the list prints. Ids accept unique prefixes, like `review terminal`.
@@ -11,11 +12,13 @@
 use std::path::PathBuf;
 
 use clap::{Args, Subcommand};
+use serde_json::json;
 
-use crate::work::{self, WorkItem, WorkRef};
+use crate::daemon::{socket_path, DaemonClient, LiveWorkspaces};
+use crate::work::router::{self, RouteResult};
+use crate::work::{self, Attachment, Workspace};
 
-use super::common::print_json;
-use super::get_repo_path;
+use super::common::{print_json, resolve_cwd_arg};
 
 #[derive(Debug, Args)]
 pub struct WorkArgs {
@@ -33,64 +36,73 @@ pub struct WorkArgs {
 pub enum WorkAction {
     /// List the work queue in priority order
     List,
-    /// Add an item to the end of the queue
+    /// Add a workspace to the end of the queue
     Add(AddArgs),
-    /// Remove an item
+    /// Remove a workspace
     Remove(IdArgs),
-    /// Retitle an item
+    /// Retitle a workspace (omit the title to go back to a derived one)
     Rename(RenameArgs),
-    /// Move an item to a new position (1-based)
+    /// Move a workspace to a new position (1-based)
     Move(MoveArgs),
-    /// Bind a branch to an item
-    Bind(BindArgs),
-    /// Unbind a branch from an item
-    Unbind(BindArgs),
+    /// Show a repository in a workspace
+    Attach(AttachArgs),
+    /// Stop showing a repository in a workspace
+    Detach(DetachArgs),
+    /// Show which workspace a directory routes to (without creating anything)
+    Resolve(ResolveArgs),
 }
 
 #[derive(Debug, Args)]
 pub struct AddArgs {
-    /// What you intend to do (may be empty when `--ref` is given)
-    pub title: String,
-    /// Branch to bind to the new item
-    #[arg(long = "ref", value_name = "BRANCH")]
-    pub ref_name: Option<String>,
-    /// Repository the branch lives in (defaults to the current directory's repo)
-    #[arg(short, long)]
-    pub repo: Option<String>,
+    /// What you intend to do (omit for an untitled workspace)
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Args)]
 pub struct IdArgs {
-    /// Work item id (a unique prefix is accepted)
+    /// Workspace id (a unique prefix is accepted)
     pub id: String,
 }
 
 #[derive(Debug, Args)]
 pub struct RenameArgs {
-    /// Work item id (a unique prefix is accepted)
+    /// Workspace id (a unique prefix is accepted)
     pub id: String,
-    /// The new title
-    pub title: String,
+    /// The new title (omit or pass an empty string to derive one instead)
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Args)]
 pub struct MoveArgs {
-    /// Work item id (a unique prefix is accepted)
+    /// Workspace id (a unique prefix is accepted)
     pub id: String,
     /// New position, 1-based (1 is the top of the queue)
     pub position: usize,
 }
 
 #[derive(Debug, Args)]
-pub struct BindArgs {
-    /// Work item id (a unique prefix is accepted)
+pub struct AttachArgs {
+    /// Workspace id (a unique prefix is accepted)
     pub id: String,
-    /// Branch name
-    #[arg(value_name = "BRANCH")]
-    pub ref_name: String,
-    /// Repository the branch lives in (defaults to the current directory's repo)
-    #[arg(short, long)]
-    pub repo: Option<String>,
+    /// Repository (or directory) to show (defaults to the current directory)
+    pub path: Option<String>,
+    /// Branch or comparison being looked at — a display hint, not identity
+    #[arg(long = "ref", value_name = "REF")]
+    pub ref_name: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct DetachArgs {
+    /// Workspace id (a unique prefix is accepted)
+    pub id: String,
+    /// Repository (or directory) to stop showing (defaults to the current directory)
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct ResolveArgs {
+    /// Directory to route (defaults to the current directory)
+    pub cwd: Option<String>,
 }
 
 /// Dispatch a `review work ...` invocation. No subcommand lists the queue.
@@ -102,82 +114,125 @@ pub fn run_work(args: WorkArgs) -> Result<(), String> {
         Some(WorkAction::Remove(a)) => run_remove(a, json),
         Some(WorkAction::Rename(a)) => run_rename(a, json),
         Some(WorkAction::Move(a)) => run_move(a, json),
-        Some(WorkAction::Bind(a)) => run_bind(a, false, json),
-        Some(WorkAction::Unbind(a)) => run_bind(a, true, json),
+        Some(WorkAction::Attach(a)) => run_attach(a, json),
+        Some(WorkAction::Detach(a)) => run_detach(a, json),
+        Some(WorkAction::Resolve(a)) => run_resolve(a, json),
     }
 }
 
-/// Build a [`WorkRef`] from a branch name and an optional `--repo`, resolving
-/// the repo the same way every other command does when the flag is absent.
-fn build_ref(repo: &Option<String>, ref_name: &str) -> Result<WorkRef, String> {
-    let repo_path = PathBuf::from(get_repo_path(repo)?);
-    Ok(WorkRef::new(repo_path, ref_name))
+/// Resolve an optional path argument: what was given, else here.
+///
+/// Deliberately not `get_repo_path`, which refuses a directory outside any
+/// repository — an attachment is happy with one, and [`Attachment::new`]
+/// normalizes either kind to the same identity the router uses.
+fn target_path(path: Option<String>) -> Result<PathBuf, String> {
+    resolve_cwd_arg(path)
+}
+
+/// A runtime to run one daemon round trip on, mirroring `review terminal`'s
+/// bridge from the synchronous CLI.
+fn daemon_runtime() -> Option<tokio::runtime::Runtime> {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .ok()
+}
+
+/// What the daemon can say about the queue, or `None` when it is not running.
+///
+/// The distinction is the whole point: `None` means "unknown", and cleanup on
+/// unknown liveness would reap every workspace the app is using. The work queue
+/// is a plain file, so `review work` keeps working either way — a workspace that
+/// would have been named after its terminal just reads "Untitled".
+fn live_workspaces() -> Option<LiveWorkspaces> {
+    let runtime = daemon_runtime()?;
+    runtime.block_on(async {
+        let client = DaemonClient::connect(&socket_path().ok()?).await.ok()?;
+        client.live_workspaces().await.ok()
+    })
 }
 
 fn run_list(json: bool) -> Result<(), String> {
-    let state = work::list().map_err(|e| e.to_string())?;
+    // Cleanup is lazy, and this is one of the two reads that can do it — the
+    // other is the app's `work_list`. Both need the daemon's answer first.
+    //
+    // Unlike the app's, this read cannot spare the workspace the human is
+    // *looking at*: which one that is belongs to a window this process has no
+    // handle on. So a `review work list` from a shell can reap a workspace the
+    // app has open on the stage — an accepted race. It costs a peek that could
+    // be re-made in one keystroke, and closing it would mean the queue file
+    // carrying per-window UI state.
+    let live = live_workspaces();
+    let state =
+        work::list_with_liveness(live.as_ref().map(|live| &live.ids)).map_err(|e| e.to_string())?;
+    let views = work::views(state.workspaces, live.as_ref().map(|live| &live.titles));
     if json {
-        print_json(&state.items);
+        print_json(&views);
         return Ok(());
     }
-    if state.items.is_empty() {
+    if views.is_empty() {
         println!("Nothing in the work queue. Add one with `review work add \"...\"`.");
         return Ok(());
     }
-    for (i, item) in state.items.iter().enumerate() {
-        println!("{}. {}  {}", i + 1, item.display_title(), item.id);
-        for work_ref in &item.refs {
-            println!("     {}  {}", work_ref.repo_name(), work_ref.ref_name);
+    for (i, view) in views.iter().enumerate() {
+        println!("{}. {}  {}", i + 1, view.display_title, view.workspace.id);
+        for attachment in &view.workspace.attachments {
+            println!("     {}", attachment.label());
         }
     }
     Ok(())
 }
 
-/// Print an item after a mutation: the JSON item, or a one-line confirmation.
-fn report(json: bool, item: &WorkItem, message: &str) {
+/// Print a workspace after a mutation: the JSON workspace, or a one-line
+/// confirmation.
+///
+/// The JSON carries the same derived title the list does, minus the terminal
+/// rung — a mutation has no daemon answer in hand, and a round trip for one
+/// fallback title is not worth it.
+fn report(json: bool, workspace: Workspace, message: &str) {
     if json {
-        print_json(item);
+        print_json(&work::views(vec![workspace], None)[0]);
     } else {
         println!("{message}");
     }
 }
 
+/// A workspace's name in a message, derived without the terminal rung.
+fn name(workspace: &Workspace) -> String {
+    workspace.display_title(None)
+}
+
 fn run_add(args: AddArgs, json: bool) -> Result<(), String> {
-    let refs = match &args.ref_name {
-        Some(name) => vec![build_ref(&args.repo, name)?],
-        None => vec![],
-    };
-    let (state, item) = work::add(&args.title, refs).map_err(|e| e.to_string())?;
-    report(
-        json,
-        &item,
-        &format!(
-            "Added \"{}\" at position {} ({}).",
-            item.display_title(),
-            state.items.len(),
-            item.id
-        ),
+    let (state, ws) = work::add(args.title.as_deref(), vec![]).map_err(|e| e.to_string())?;
+    let message = format!(
+        "Added \"{}\" at position {} ({}).",
+        name(&ws),
+        state.workspaces.len(),
+        ws.id
     );
+    report(json, ws, &message);
     Ok(())
 }
 
 fn run_remove(args: IdArgs, json: bool) -> Result<(), String> {
-    let (_state, item) = work::remove(&args.id).map_err(|e| e.to_string())?;
-    report(
-        json,
-        &item,
-        &format!("Removed \"{}\" ({}).", item.display_title(), item.id),
-    );
+    let (_state, ws) = work::remove(&args.id).map_err(|e| e.to_string())?;
+    let message = format!("Removed \"{}\" ({}).", name(&ws), ws.id);
+    report(json, ws, &message);
     Ok(())
 }
 
 fn run_rename(args: RenameArgs, json: bool) -> Result<(), String> {
-    let (_state, item) = work::rename(&args.id, &args.title).map_err(|e| e.to_string())?;
-    report(
-        json,
-        &item,
-        &format!("Renamed {} to \"{}\".", item.id, item.display_title()),
-    );
+    let (_state, ws) = work::rename(&args.id, args.title.as_deref()).map_err(|e| e.to_string())?;
+    let message = match ws.title {
+        Some(_) => format!("Renamed {} to \"{}\".", ws.id, name(&ws)),
+        // Cleared: what it is called now is whatever it is showing.
+        None => format!(
+            "Cleared the title of {}; it reads \"{}\".",
+            ws.id,
+            name(&ws)
+        ),
+    };
+    report(json, ws, &message);
     Ok(())
 }
 
@@ -185,40 +240,54 @@ fn run_move(args: MoveArgs, json: bool) -> Result<(), String> {
     // 1-based on the way in, to match the printed list; 0 and 1 both mean "top"
     // rather than erroring on an off-by-one.
     let to_index = args.position.saturating_sub(1);
-    let (state, item) = work::move_item(&args.id, to_index).map_err(|e| e.to_string())?;
+    let (state, ws) = work::move_workspace(&args.id, to_index).map_err(|e| e.to_string())?;
     // Report where it actually landed, which differs from what was asked for
     // when the position was past the end.
-    let position = to_index.min(state.items.len().saturating_sub(1)) + 1;
-    report(
-        json,
-        &item,
-        &format!("Moved \"{}\" to position {position}.", item.display_title()),
-    );
+    let position = to_index.min(state.workspaces.len().saturating_sub(1)) + 1;
+    let message = format!("Moved \"{}\" to position {position}.", name(&ws));
+    report(json, ws, &message);
     Ok(())
 }
 
-fn run_bind(args: BindArgs, unbind: bool, json: bool) -> Result<(), String> {
-    let work_ref = build_ref(&args.repo, &args.ref_name)?;
-    let (_state, item) = if unbind {
-        work::unbind(&args.id, &work_ref)
-    } else {
-        work::bind(&args.id, work_ref.clone())
-    }
-    .map_err(|e| e.to_string())?;
-    let (verb, preposition) = if unbind {
-        ("Unbound", "from")
-    } else {
-        ("Bound", "to")
+fn run_attach(args: AttachArgs, json: bool) -> Result<(), String> {
+    let attachment = Attachment::new(target_path(args.path)?, args.ref_name);
+    let label = attachment.label();
+    let (_state, ws) = work::attach(&args.id, attachment).map_err(|e| e.to_string())?;
+    let message = format!("Attached {label} to \"{}\".", name(&ws));
+    report(json, ws, &message);
+    Ok(())
+}
+
+fn run_detach(args: DetachArgs, json: bool) -> Result<(), String> {
+    let path = target_path(args.path)?;
+    let (_state, ws) = work::detach(&args.id, &path).map_err(|e| e.to_string())?;
+    let message = format!("Detached {} from \"{}\".", path.display(), name(&ws));
+    report(json, ws, &message);
+    Ok(())
+}
+
+fn run_resolve(args: ResolveArgs, json: bool) -> Result<(), String> {
+    let cwd = resolve_cwd_arg(args.cwd)?;
+    let (payload, line) = match router::preview(&cwd).map_err(|e| e.to_string())? {
+        RouteResult::Existing(ws) => {
+            let line = format!("Joins \"{}\" ({}).", name(&ws), ws.id);
+            (
+                json!({ "action": "join", "workspace": work::views(vec![ws], None).remove(0) }),
+                line,
+            )
+        }
+        RouteResult::WouldCreate(attachment) => {
+            let line = format!("Starts a new workspace \"{}\".", attachment.label());
+            (
+                json!({ "action": "create", "attachment": attachment }),
+                line,
+            )
+        }
     };
-    report(
-        json,
-        &item,
-        &format!(
-            "{verb} {} {} {preposition} \"{}\".",
-            work_ref.repo_name(),
-            work_ref.ref_name,
-            item.display_title()
-        ),
-    );
+    if json {
+        print_json(&payload);
+    } else {
+        println!("{line}");
+    }
     Ok(())
 }

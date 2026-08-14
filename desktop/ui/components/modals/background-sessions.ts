@@ -1,5 +1,5 @@
 import type { TerminalPhase, TerminalSessionInfo } from "../../types";
-import { basename } from "../TabRail/terminal-status-format";
+import { basename } from "../Sidebar/terminal-status-format";
 
 /**
  * One row of the Settings "Background Sessions" list — the display shape

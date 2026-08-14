@@ -171,9 +171,30 @@ pub(crate) fn resolve_git_dirs(repo_path: &Path) -> (PathBuf, PathBuf) {
     (gitdir, common_dir)
 }
 
+/// The working tree containing `start`: the nearest ancestor with a `.git`,
+/// or `None` outside any repository.
+///
+/// This answers "which checkout am I in?" and stops there — a linked worktree
+/// stays itself. [`repo_root`] is the second half, collapsing that onto the
+/// repository's main working tree; callers that key anything by repo identity
+/// need both, in that order.
+pub fn enclosing_working_tree(start: &Path) -> Option<PathBuf> {
+    let mut current = start;
+    loop {
+        if current.join(".git").exists() {
+            return Some(current.to_path_buf());
+        }
+        current = current.parent()?;
+    }
+}
+
 /// The main working tree for a repo, given any path inside it (including a
 /// linked or Review-managed worktree). A repo registers and stores reviews
 /// under this single root so worktrees don't fork into separate entries.
+///
+/// Idempotent, and total: a path that isn't in a repository at all comes back
+/// canonicalized, which is what lets a plain directory be identified the same
+/// way a repository is.
 pub fn repo_root(repo_path: &Path) -> PathBuf {
     let (_git_dir, common_dir) = resolve_git_dirs(repo_path);
     let canonical_common = canonical_path(&common_dir);

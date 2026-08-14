@@ -15,7 +15,7 @@
  * mode, and the store is what everything else imports.
  */
 
-export type PaletteMode = "files" | "commands" | "symbols" | "content";
+export type PaletteMode = "go" | "files" | "commands" | "symbols" | "content";
 
 interface ModeInfo {
   /** Character that switches to this mode, or null for the unprefixed root. */
@@ -25,7 +25,10 @@ interface ModeInfo {
 }
 
 export const PALETTE_MODES: Record<PaletteMode, ModeInfo> = {
-  files: { prefix: null, label: "Files" },
+  // Where ⌘K lands. Everything the app can navigate to is one list, and the
+  // other modes are what you reach from it by typing a prefix.
+  go: { prefix: null, label: "Go" },
+  files: { prefix: "/", label: "Files" },
   commands: { prefix: ">", label: "Commands" },
   symbols: { prefix: "@", label: "Symbols" },
   content: { prefix: "#", label: "In Files" },

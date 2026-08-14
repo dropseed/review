@@ -31,7 +31,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
-import { TerminalDropdownItems } from "../TabRail/ActionMenu";
+import { TerminalDropdownItems } from "../Sidebar/ActionMenu";
 
 /** Smallest fraction a pane can be dragged to, so a pane never vanishes. */
 const MIN_PANE_FRACTION = 0.1;

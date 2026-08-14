@@ -4,10 +4,12 @@ import { focusedTerminalId, focusedTerminalTab } from "./close";
 import { focusNextNeedsYou } from "./jump";
 import { hasNeedsYou } from "./glance";
 import { collectLeafIds, expandedLeafIds, type TerminalTab } from "./pane-tree";
+import { openTerminalTab } from "./newTab";
 import {
   findTab,
   terminalDockPresent,
 } from "../../stores/slices/terminalSlice";
+import { focusedWorkspace } from "../../stores/selectors/workspaceData";
 
 /**
  * The terminal answers "is a terminal focused?" for the command context.
@@ -95,6 +97,34 @@ function splittable(ctx: CommandContext): boolean {
  */
 export const TERMINAL_COMMANDS: readonly Command[] = [
   {
+    id: "terminal.new",
+    title: "New Terminal",
+    category: "Terminal",
+    keywords: ["shell", "console", "tab", "run", "command line"],
+    // ⌘T is the terminal now. It used to open an app tab unless a terminal
+    // pane happened to have DOM focus, which made the app's most common
+    // gesture depend on where the caret was; the focused workspace answers
+    // "where" instead, and app tabs moved to ⇧⌘T.
+    shortcut: { code: "KeyT", mod: true },
+    // Zero questions from anywhere, including from inside a shell or a search
+    // field — and never a picker: a shell that landed somewhere else than you
+    // wanted is one `cd` away. With no workspace focused it starts in home and
+    // the router places it, exactly as it would a shell started outside the
+    // app.
+    allowInInput: true,
+    allowInTerminal: true,
+    isVisible: supported,
+    run: ({ store }) => {
+      void openTerminalTab(
+        focusedWorkspace(
+          store.workspaces,
+          store.focusedWorkspaceId,
+          store.activeReviewKey,
+        ),
+      );
+    },
+  },
+  {
     id: "view.toggleTerminal",
     title: "Toggle Terminal",
     category: "View",
@@ -132,20 +162,6 @@ export const TERMINAL_COMMANDS: readonly Command[] = [
     isVisible: supported,
     isEnabled: docked,
     run: ({ store }) => store.toggleTerminalFocus(),
-  },
-  {
-    id: "view.terminalOverview",
-    title: "Terminal Overview",
-    category: "View",
-    keywords: ["mission control", "all terminals", "agents", "sessions"],
-    // The panel's own chord, shifted: ⌘` shows the terminal, ⇧⌘` shows all of
-    // them.
-    shortcut: { code: "Backquote", mod: true, shift: true },
-    allowInTerminal: true,
-    allowInInput: true,
-    isVisible: supported,
-    isEnabled: docked,
-    run: ({ store }) => store.toggleTerminalOverview(),
   },
   {
     id: "go.terminalNeedsYou",

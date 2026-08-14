@@ -13,7 +13,7 @@
 //! difference.
 
 use std::collections::hash_map::Entry;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -76,6 +76,19 @@ impl TerminalState {
     /// free of borrows from Tauri state.
     async fn client(&self, app: &AppHandle) -> Result<DaemonClient, String> {
         self.establish(|| daemon::ensure_daemon(app)).await
+    }
+
+    /// The control client if one has already been established — never spawning
+    /// a daemon to produce one.
+    ///
+    /// What `work_list` uses. Cleanup and derived titles both want the daemon's
+    /// answer, but neither is a reason to *start* a daemon, and a
+    /// version-mismatch respawn (which kills every live session) is emphatically
+    /// not something listing the work queue should be able to trigger. Terminal
+    /// commands open the connection; this rides along once it exists, and treats
+    /// "not yet" as "don't know".
+    pub async fn connected(&self) -> Option<DaemonClient> {
+        self.client.lock().await.clone()
     }
 
     /// [`Self::client`] with the ensure step injected, so the lazy slot's
@@ -293,11 +306,32 @@ async fn drain_stream(
     }
 }
 
+/// What `terminal_start` answers with: the session, and where it landed.
+///
+/// The landing rides along because the app has the same question the CLI does
+/// — "which workspace is this terminal in, and did opening it invent one?" —
+/// and the frontend needs the answer to draw the session at all: it groups
+/// terminals by `workspaceId`, so a workspace the queue hasn't heard of yet is
+/// a terminal with nowhere to appear.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalStarted {
+    session: TerminalSummary,
+    workspace: LandedIn,
+}
+
+/// The landing, flattened to what a client actually reads: which workspace,
+/// and whether the queue has to go and fetch it.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LandedIn {
+    id: String,
+    /// Whether getting here minted the workspace — a queue entry the frontend
+    /// does not have yet.
+    created: bool,
+}
+
 #[tauri::command]
-#[expect(
-    clippy::too_many_arguments,
-    reason = "each argument is a distinct field of the terminal_start wire contract"
-)]
 pub async fn terminal_start(
     app: AppHandle,
     state: tauri::State<'_, TerminalState>,
@@ -307,9 +341,42 @@ pub async fn terminal_start(
     cols: u16,
     rows: u16,
     shell: Option<String>,
-) -> Result<TerminalSummary, String> {
+    workspace_id: Option<String>,
+) -> Result<TerminalStarted, String> {
     let t0 = Instant::now();
     let client = state.client(&app).await?;
+
+    // An empty cwd means the caller has no directory to offer: a workspace
+    // holding no claim has none of its own, and the *previous* screen's
+    // checkout is the one directory it must not inherit. Home is the neutral
+    // answer (see `router::land`).
+    let cwd = if cwd.is_empty() {
+        dirs::home_dir()
+            .ok_or("Could not determine the home directory.")?
+            .to_string_lossy()
+            .into_owned()
+    } else {
+        cwd
+    };
+
+    // The app's front door routes, exactly as `review terminal start` does:
+    // every session is born in a workspace, and the daemon is told which one at
+    // birth rather than being asked to guess later. Off-thread because routing
+    // walks the filesystem and shells out to git.
+    //
+    // `workspace_id` is the caller naming the workspace — the stage's own "+",
+    // which knows which workspace the user is looking at. Naming one lands the
+    // session there and writes nothing: what a workspace shows is answered by
+    // its repo tabs, not by where a shell happened to open.
+    let landing = {
+        let cwd = cwd.clone();
+        tokio::task::spawn_blocking(move || {
+            review::work::router::route_to(cwd.as_ref(), workspace_id.as_deref())
+        })
+        .await
+        .map_err(|e| format!("routing panicked: {e}"))?
+        .map_err(|e| e.to_string())?
+    };
 
     let summary: TerminalSummary = request(
         &client,
@@ -320,6 +387,7 @@ pub async fn terminal_start(
             cols,
             rows,
             shell,
+            workspace_id: Some(landing.workspace.id.clone()),
         },
     )
     .await?;
@@ -328,8 +396,40 @@ pub async fn terminal_start(
     // is empty, so the drain just carries live output.
     ensure_drain(app, &state, &client, terminal_id.clone(), true).await;
 
-    info!("[terminal_start] {terminal_id} in {:?}", t0.elapsed());
-    Ok(summary)
+    info!(
+        "[terminal_start] {terminal_id} in {} in {:?}",
+        landing.workspace.id,
+        t0.elapsed()
+    );
+    Ok(TerminalStarted {
+        session: summary,
+        workspace: LandedIn {
+            id: landing.workspace.id,
+            created: landing.created,
+        },
+    })
+}
+
+/// Move a session to another workspace — the drag of a terminal onto a card.
+///
+/// Attribution is the daemon's, so this is the only way the app changes it;
+/// there is no second copy of the answer to keep in step.
+#[tauri::command]
+pub async fn terminal_assign_workspace(
+    app: AppHandle,
+    state: tauri::State<'_, TerminalState>,
+    terminal_id: String,
+    workspace_id: Option<String>,
+) -> Result<(), String> {
+    let client = state.client(&app).await?;
+    request(
+        &client,
+        Op::AssignWorkspace {
+            terminal_id,
+            workspace_id,
+        },
+    )
+    .await
 }
 
 /// Whether embedded terminals are supported right now.
@@ -398,6 +498,9 @@ pub async fn terminal_kill(
 /// sidebar phase dots and titles keep updating for sessions whose pane was
 /// never opened in this app run. Restored sessions otherwise only ever show
 /// the snapshot taken here.
+///
+/// Also the app's reconciler: anything that arrives without a workspace it can
+/// be shown under is routed here, before the frontend ever sees it.
 #[tauri::command]
 pub async fn terminal_list(
     app: AppHandle,
@@ -405,11 +508,132 @@ pub async fn terminal_list(
     repo_path: Option<String>,
 ) -> Result<Vec<TerminalSummary>, String> {
     let client = state.client(&app).await?;
-    let summaries: Vec<TerminalSummary> = request(&client, Op::List { repo_path }).await?;
+    let mut summaries: Vec<TerminalSummary> = request(&client, Op::List { repo_path }).await?;
+    reroute_strays(&client, &mut summaries).await;
     for summary in &summaries {
         ensure_drain(app.clone(), &state, &client, summary.id.to_string(), false).await;
     }
     Ok(summaries)
+}
+
+/// Give every session a workspace the queue can actually show it under.
+///
+/// Sessions are born routed on both surfaces, so this is a fallback, not a
+/// path — but the ways attribution can go stale are real and all lead to the
+/// same place: a session whose workspace nobody has heard of is a terminal the
+/// sidebar cannot draw. It happens when a raw daemon client started one, when
+/// the workspace was removed by hand, and when cleanup reaped one while this app
+/// was not looking.
+///
+/// Re-routing by the session's own cwd is what makes it self-healing rather than
+/// arbitrary: it lands wherever anything else in that directory lands. Failures
+/// are logged and left — the next list tries again.
+///
+/// **The stray filter runs before any routing, and that ordering is the whole
+/// correctness of this function.** [`land`] is a *write*: it mints a workspace
+/// whenever nothing is attached to the directory. Routing every listed session
+/// and filtering afterwards therefore invented a workspace for each correctly
+/// attributed shell — one per checked-out-elsewhere branch, one per `$HOME`
+/// shell — on every `terminal_list`, rewrote `work.json`, fired a work-changed
+/// event, and left phantoms in the queue that were reaped and re-minted on the
+/// next list. Nothing downstream can undo that; only not asking can.
+///
+/// [`land`]: review::work::router::land
+async fn reroute_strays(client: &DaemonClient, summaries: &mut [TerminalSummary]) {
+    // One blocking hop for the whole reconcile, not one per stray. The first
+    // list on a fresh build is exactly the case where *every* session is a
+    // stray — attribution is younger than the sessions — so the K-stray path
+    // is the one that has to be cheap, not the zero-stray one.
+    let listed: Vec<(String, Option<String>, String)> = summaries
+        .iter()
+        .map(|summary| {
+            (
+                summary.id.to_string(),
+                summary.workspace_id.clone(),
+                summary.cwd.clone(),
+            )
+        })
+        .collect();
+
+    let routed = tokio::task::spawn_blocking(move || {
+        let known: HashSet<String> = match review::work::list() {
+            Ok(state) => state.workspaces.into_iter().map(|ws| ws.id).collect(),
+            Err(e) => {
+                // Unreadable queue: every session would look like a stray, so
+                // routing them all would be maximally wrong. Do nothing.
+                warn!("[terminal] could not read the work queue: {e}");
+                return HashMap::new();
+            }
+        };
+
+        // Locating a directory walks the filesystem and shells out to git, so
+        // sessions sharing a cwd — several shells in one checkout, the common
+        // shape — resolve it once between them.
+        let mut by_cwd: HashMap<String, String> = HashMap::new();
+        let mut landed: HashMap<String, String> = HashMap::new();
+        for (id, workspace_id, cwd) in listed {
+            // A session the queue can already show is left alone entirely.
+            if workspace_id.is_some_and(|id| known.contains(&id)) {
+                continue;
+            }
+            if let Some(workspace_id) = by_cwd.get(&cwd) {
+                landed.insert(id, workspace_id.clone());
+                continue;
+            }
+            let location = review::work::router::locate(cwd.as_ref());
+            match review::work::router::land(&location, None) {
+                Ok(landing) => {
+                    by_cwd.insert(cwd, landing.workspace.id.clone());
+                    landed.insert(id, landing.workspace.id);
+                }
+                Err(e) => warn!("[terminal] could not route {id}: {e}"),
+            }
+        }
+        landed
+    })
+    .await;
+
+    let landed = match routed {
+        Ok(landed) => landed,
+        Err(e) => {
+            warn!("[terminal] routing panicked: {e}");
+            return;
+        }
+    };
+
+    // Already only the strays — see the filter above.
+    let assignments = summaries
+        .iter()
+        .filter_map(|summary| {
+            let workspace_id = landed.get(&summary.id.to_string())?.clone();
+            let id = summary.id.to_string();
+            Some(async move {
+                let result = client
+                    .request(Op::AssignWorkspace {
+                        terminal_id: id.clone(),
+                        workspace_id: Some(workspace_id.clone()),
+                    })
+                    .await;
+                (id, workspace_id, result)
+            })
+        })
+        .collect::<Vec<_>>();
+
+    if assignments.is_empty() {
+        return;
+    }
+
+    for (id, workspace_id, result) in futures::future::join_all(assignments).await {
+        match result {
+            Ok(_) => {
+                info!("[terminal] re-routed {id} into {workspace_id}");
+                if let Some(summary) = summaries.iter_mut().find(|s| s.id.to_string() == id) {
+                    summary.workspace_id = Some(workspace_id);
+                }
+            }
+            Err(e) => warn!("[terminal] could not attribute {id}: {e:#}"),
+        }
+    }
 }
 
 #[tauri::command]

@@ -14,7 +14,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use super::{WorkError, WorkState};
+use super::{WorkError, WorkState, WORK_SCHEMA_VERSION};
 use crate::review::central;
 
 /// Path to the global work queue file.
@@ -22,15 +22,54 @@ pub fn work_path() -> Result<PathBuf, WorkError> {
     Ok(central::get_central_root()?.join("work.json"))
 }
 
+/// The two fields that decide whether the rest of the document can be read at
+/// all, parsed on their own so an older queue can be recognized rather than
+/// deserialized.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Envelope {
+    #[serde(default)]
+    schema_version: u32,
+    #[serde(default)]
+    version: u64,
+}
+
 /// Load the work queue. A missing file is an empty queue at version 0 — the
 /// same "nothing recorded yet" shape a first write expects.
+///
+/// An **older** document is dropped, not migrated: workspaces are cheap to
+/// remake and the model they were written against no longer exists. It comes
+/// back as an empty queue *at the file's own version*, so the first write after
+/// it satisfies [`save`]'s version check instead of conflicting with a document
+/// nothing will read again.
+///
+/// A document from a **newer** build is rejected loudly rather than emptied:
+/// downgrading is a temporary state, and blowing away the newer build's queue
+/// on the way through is not a thing to do quietly.
 pub fn load() -> Result<WorkState, WorkError> {
     let path = work_path()?;
     if !path.exists() {
         return Ok(WorkState::default());
     }
-    let content = fs::read_to_string(&path)?;
-    Ok(serde_json::from_str(&content)?)
+    let raw = fs::read_to_string(&path)?;
+    let envelope: Envelope = serde_json::from_str(&raw)?;
+    if envelope.schema_version > WORK_SCHEMA_VERSION {
+        return Err(WorkError::SchemaTooNew {
+            found: envelope.schema_version,
+            supported: WORK_SCHEMA_VERSION,
+        });
+    }
+    if envelope.schema_version < WORK_SCHEMA_VERSION {
+        log::info!(
+            "[work] work.json is schema v{} and this build reads v{WORK_SCHEMA_VERSION}; starting from an empty queue",
+            envelope.schema_version
+        );
+        return Ok(WorkState {
+            version: envelope.version,
+            ..WorkState::default()
+        });
+    }
+    Ok(serde_json::from_str(&raw)?)
 }
 
 /// Save the work queue with optimistic concurrency control.
@@ -132,5 +171,49 @@ mod tests {
         names.sort();
         assert_eq!(names, ["work.json"]);
         assert_eq!(load().unwrap().version, 3);
+    }
+
+    #[test]
+    fn a_queue_from_a_newer_build_is_rejected_not_truncated() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _home, _repo) = setup_test();
+
+        fs::write(
+            work_path().unwrap(),
+            r#"{"schemaVersion":99,"version":1,"workspaces":[]}"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            load(),
+            Err(WorkError::SchemaTooNew { found: 99, .. })
+        ));
+    }
+
+    #[test]
+    fn an_older_queue_loads_empty_and_keeps_its_version() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _home, _repo) = setup_test();
+
+        // A v1 document: shapes this build cannot deserialize at all, which is
+        // why the envelope is read on its own.
+        fs::write(
+            work_path().unwrap(),
+            r#"{"schemaVersion":1,"version":7,"workspaces":[
+                {"id":"0a1b2c3d","title":"old","notes":"","endorsed":true,
+                 "claims":[{"repoPath":"/r","ref":"main"}],"createdAt":"x"}]}"#,
+        )
+        .unwrap();
+
+        let state = load().unwrap();
+        assert!(state.workspaces.is_empty());
+        assert_eq!(state.schema_version, WORK_SCHEMA_VERSION);
+        // Carrying the version forward is what lets the next write land instead
+        // of conflicting forever with a document nothing will read again.
+        assert_eq!(state.version, 7);
+        let mut next = state;
+        next.version += 1;
+        save(&next).unwrap();
+        assert_eq!(load().unwrap().version, 8);
     }
 }

@@ -76,6 +76,9 @@ impl Shared {
 pub struct Session {
     shared: Arc<Shared>,
     repo_path: String,
+    /// The workspace this session belongs to. Mutable — a session can be moved
+    /// between workspaces (`Op::AssignWorkspace`) without being restarted.
+    workspace_id: Mutex<Option<String>>,
     cwd: String,
     /// The shell's process id (== its process group, since it's a session
     /// leader). The poller compares this to the PTY foreground pgid.
@@ -103,6 +106,7 @@ impl Session {
         let SessionSpec {
             terminal_id: id,
             repo_path,
+            workspace_id,
             cwd,
             shell,
             cols,
@@ -192,6 +196,7 @@ impl Session {
         Ok(Self {
             shared,
             repo_path,
+            workspace_id: Mutex::new(workspace_id),
             cwd,
             shell_pid,
             size: Mutex::new((cols, rows)),
@@ -206,6 +211,11 @@ impl Session {
     /// The repo this session belongs to (as a lossy path string).
     pub fn repo_path(&self) -> &str {
         &self.repo_path
+    }
+
+    /// Move this session to another workspace, or to none.
+    pub fn assign_workspace(&self, workspace_id: Option<String>) {
+        *self.workspace_id.lock().unwrap() = workspace_id;
     }
 
     /// Whether the child has exited (EOF reached).
@@ -225,6 +235,7 @@ impl Session {
         TerminalSummary {
             id: self.shared.id.clone(),
             repo_path: self.repo_path.clone(),
+            workspace_id: self.workspace_id.lock().unwrap().clone(),
             cwd: self.cwd.clone(),
             title: status.title.clone(),
             cols,

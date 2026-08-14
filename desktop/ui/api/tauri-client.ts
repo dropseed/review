@@ -23,11 +23,12 @@ import type {
   HunkAttribution,
   CommitOutputLine,
   CommitResult,
-  DetectMovePairsResponse,
   DiffHunk,
   DiffShortStat,
   ExpandedContext,
   FileContent,
+  FilesDelta,
+  MovePair,
   FileEntry,
   FileSymbol,
   FileSymbolDiff,
@@ -51,10 +52,12 @@ import type {
   SymbolDefinition,
   LspServerStatus,
   TrustCategory,
-  WorkItem,
-  WorkRef,
+  Workspace,
+  RouteLanding,
+  Attachment,
   WorktreeInfo,
   TerminalSessionInfo,
+  TerminalStarted,
   TerminalStatus,
   TerminalOutput,
   TerminalExit,
@@ -331,6 +334,18 @@ export class TauriClient implements ApiClient {
     });
   }
 
+  async getFilesDelta(
+    repoPath: string,
+    comparison: Comparison,
+    filePaths: string[],
+  ): Promise<FilesDelta> {
+    return invoke<FilesDelta>("get_files_delta", {
+      repoPath,
+      comparison,
+      filePaths,
+    });
+  }
+
   async getExpandedContext(
     repoPath: string,
     filePath: string,
@@ -453,9 +468,13 @@ export class TauriClient implements ApiClient {
     return invoke<ClassifyResponse>("classify_hunks_static", { hunks });
   }
 
-  async detectMovePairs(hunks: DiffHunk[]): Promise<DetectMovePairsResponse> {
-    return invoke<DetectMovePairsResponse>("detect_hunks_move_pairs", {
-      hunks,
+  async getComparisonMovePairs(
+    repoPath: string,
+    comparison: Comparison,
+  ): Promise<MovePair[]> {
+    return invoke<MovePair[]>("get_comparison_move_pairs", {
+      repoPath,
+      comparison,
     });
   }
 
@@ -564,40 +583,58 @@ export class TauriClient implements ApiClient {
 
   // ----- Work items -----
 
-  async listWorkItems(): Promise<WorkItem[]> {
-    return invoke<WorkItem[]>("work_list");
+  async listWorkspaces(focused?: string | null): Promise<Workspace[]> {
+    return invoke<Workspace[]>("work_list", { focused: focused ?? null });
   }
 
-  async addWorkItem(title: string, refs: WorkRef[]): Promise<WorkItem[]> {
-    return invoke<WorkItem[]>("work_add", { title, refs });
+  async addWorkspace(
+    title: string | null,
+    attachments: Attachment[],
+  ): Promise<Workspace[]> {
+    return invoke<Workspace[]>("work_add", { title, attachments });
   }
 
-  async removeWorkItem(id: string): Promise<WorkItem[]> {
-    return invoke<WorkItem[]>("work_remove", { id });
+  async removeWorkspace(id: string): Promise<Workspace[]> {
+    return invoke<Workspace[]>("work_remove", { id });
   }
 
-  async moveWorkItem(id: string, position: number): Promise<WorkItem[]> {
-    return invoke<WorkItem[]>("work_move", { id, position });
+  async moveWorkspace(id: string, position: number): Promise<Workspace[]> {
+    return invoke<Workspace[]>("work_move", { id, position });
   }
 
-  async bindWorkItem(
+  async attachWorkspace(
     id: string,
+    path: string,
+    refName?: string | null,
+  ): Promise<Workspace[]> {
+    return invoke<Workspace[]>("work_attach", {
+      id,
+      path,
+      ref: refName ?? null,
+    });
+  }
+
+  async detachWorkspace(id: string, path: string): Promise<Workspace[]> {
+    return invoke<Workspace[]>("work_detach", { id, path });
+  }
+
+  async renameWorkspace(
+    id: string,
+    title: string | null,
+  ): Promise<Workspace[]> {
+    return invoke<Workspace[]>("work_rename", { id, title });
+  }
+
+  async routeWorkspace(
     repoPath: string,
     ref: string,
-  ): Promise<WorkItem[]> {
-    return invoke<WorkItem[]>("work_bind", { id, repoPath, ref });
-  }
-
-  async unbindWorkItem(
-    id: string,
-    repoPath: string,
-    ref: string,
-  ): Promise<WorkItem[]> {
-    return invoke<WorkItem[]>("work_unbind", { id, repoPath, ref });
-  }
-
-  async renameWorkItem(id: string, title: string): Promise<WorkItem[]> {
-    return invoke<WorkItem[]>("work_rename", { id, title });
+    workspaceId?: string,
+  ): Promise<RouteLanding> {
+    return invoke<RouteLanding>("work_route", {
+      repoPath,
+      ref,
+      workspaceId: workspaceId ?? null,
+    });
   }
 
   // ----- File watcher -----
@@ -811,15 +848,24 @@ export class TauriClient implements ApiClient {
     cols: number;
     rows: number;
     shell?: string;
-  }): Promise<TerminalSessionInfo> {
-    return invoke<TerminalSessionInfo>("terminal_start", {
+    workspaceId?: string;
+  }): Promise<TerminalStarted> {
+    return invoke<TerminalStarted>("terminal_start", {
       terminalId: params.terminalId,
       repoPath: params.repoPath,
       cwd: params.cwd,
       cols: params.cols,
       rows: params.rows,
       shell: params.shell ?? null,
+      workspaceId: params.workspaceId ?? null,
     });
+  }
+
+  async terminalAssignWorkspace(
+    terminalId: string,
+    workspaceId: string | null,
+  ): Promise<void> {
+    await invoke("terminal_assign_workspace", { terminalId, workspaceId });
   }
 
   async terminalWrite(terminalId: string, data: string): Promise<void> {

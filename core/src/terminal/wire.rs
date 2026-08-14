@@ -92,6 +92,12 @@ pub struct SessionStatus {
 pub struct TerminalSummary {
     pub id: TerminalId,
     pub repo_path: String,
+    /// The workspace this session belongs to, as decided by whoever started it.
+    /// Runtime-only attribution: the daemon carries the id and never persists
+    /// it, so a session that outlives a restart comes back unattributed and is
+    /// re-routed rather than pointing at a workspace that may be gone.
+    #[serde(default)]
+    pub workspace_id: Option<String>,
     pub cwd: String,
     pub title: Option<String>,
     pub cols: u16,

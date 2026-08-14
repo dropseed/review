@@ -91,7 +91,7 @@ let rowsCache: { tree: RepoNode[]; rows: Map<string, SidebarRow> } | null =
  * `getSidebarTree` is cached but `allSidebarRows` is not, and every caller that
  * wanted a row wanted it by key — so the flatten and the index are cached here
  * together, on the tree's own identity. Work cards, `activateReviewKey` and
- * `activateWorkItem` all read this one map, which is also what keeps them from
+ * `focusWorkspace` all read this one map, which is also what keeps them from
  * each answering "does this ref have a row" their own way.
  */
 export function sidebarRowsByKey(tree: RepoNode[]): Map<string, SidebarRow> {

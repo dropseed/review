@@ -29,7 +29,6 @@ function repo(): RepoLocalActivity {
       },
     ],
     recentRemoteBranches: [],
-    lastFetchedAt: null,
   };
 }
 
@@ -66,6 +65,7 @@ function snapshot(overrides: Partial<ViewerPrSnapshot> = {}): ViewerPrSnapshot {
     prs: [viewerPr()],
     truncated: false,
     error: null,
+    shipped: [],
     available: true,
     ...overrides,
   };

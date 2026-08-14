@@ -3,21 +3,47 @@ import { vi, describe, it, expect, afterEach } from "vitest";
 vi.mock("../../api", () => ({ getApiClient: () => ({}) }));
 
 import { useReviewStore } from "../../stores";
-import { terminalSession } from "../../test/fixtures";
+import {
+  terminalSession,
+  workspace as makeWorkspace,
+} from "../../test/fixtures";
+import type { Workspace } from "../../types";
 import { jumpToTab, jumpToTerminal } from "./jump";
 import { leaf, makeTab, splitLeaf } from "./pane-tree";
 
 const REPO = "/r";
 
-/** Two sessions in one split tab, plus one in another repo's own tab. */
+function workspace(id: string): Workspace {
+  return makeWorkspace(id, { title: id });
+}
+
+/**
+ * Two sessions in one split tab, plus one in another repo's own tab — and the
+ * two tabs live in *different workspaces*, which is the shape the panel filters
+ * on.
+ */
 function seed(): void {
-  const a = terminalSession("a", { repoPath: REPO, cwd: REPO });
-  const b = terminalSession("b", { repoPath: REPO, cwd: REPO });
-  const z = terminalSession("z", { repoPath: "/other", cwd: "/other" });
+  const a = terminalSession("a", {
+    repoPath: REPO,
+    cwd: REPO,
+    workspaceId: "ws-a",
+  });
+  const b = terminalSession("b", {
+    repoPath: REPO,
+    cwd: REPO,
+    workspaceId: "ws-a",
+  });
+  const z = terminalSession("z", {
+    repoPath: "/other",
+    cwd: "/other",
+    workspaceId: "ws-z",
+  });
   useReviewStore.setState({
     repoPath: REPO,
     reviewRef: "main",
     contentFocus: "split",
+    workspaces: [workspace("ws-a"), workspace("ws-z")],
+    focusedWorkspaceId: "ws-a",
     terminalSessions: { a, b, z },
     terminalStatuses: { a: a.status, b: b.status, z: z.status },
     terminalTabs: [
@@ -33,11 +59,12 @@ afterEach(() => {
     repoPath: null,
     reviewRef: null,
     contentFocus: "code",
-    terminalOverviewOpen: false,
     terminalSessions: {},
     terminalStatuses: {},
     terminalTabs: [],
     activeTabId: null,
+    workspaces: [],
+    focusedWorkspaceId: null,
   });
   vi.clearAllMocks();
 });
@@ -54,30 +81,42 @@ describe("jumping to a terminal", () => {
     expect(state.terminalTabs[0].focused).toBe("b");
   });
 
-  it("shows another repo's terminal without changing what is being reviewed", () => {
-    // One strip holds every tab, so there is no review to switch to first.
+  /**
+   * The panel draws only the focused workspace's tabs, so activating a tab
+   * from another one used to leave it rendering nothing at all: the active id
+   * pointed at a tab the strip had filtered out.
+   */
+  it("focuses the workspace the tab lives in", () => {
     seed();
 
     jumpToTerminal("z");
 
     const state = useReviewStore.getState();
+    expect(state.focusedWorkspaceId).toBe("ws-z");
     expect(state.activeTabId).toBe("tabZ");
-    expect(state.repoPath).toBe(REPO);
-    expect(state.reviewRef).toBe("main");
   });
 
-  it("opens the panel and leaves the overview", () => {
+  it("leaves the focus alone for a tab in the workspace already on screen", () => {
     seed();
     useReviewStore.setState({
-      contentFocus: "code",
-      terminalOverviewOpen: true,
+      activeTabId: "tabZ",
+      focusedWorkspaceId: "ws-a",
     });
+
+    jumpToTerminal("b");
+
+    const state = useReviewStore.getState();
+    expect(state.focusedWorkspaceId).toBe("ws-a");
+    expect(state.activeTabId).toBe("tabA");
+  });
+
+  it("brings the panel into view when the code has focus", () => {
+    seed();
+    useReviewStore.setState({ contentFocus: "code" });
 
     jumpToTerminal("a");
 
-    const state = useReviewStore.getState();
-    expect(state.contentFocus).toBe("split");
-    expect(state.terminalOverviewOpen).toBe(false);
+    expect(useReviewStore.getState().contentFocus).toBe("split");
   });
 
   it("jumpToTab lands on the tab's own focused pane", () => {

@@ -95,6 +95,39 @@ describe("selection and activation", () => {
     expect(onActivate).not.toHaveBeenCalled();
   });
 
+  it("runs the row's second verb on ⌘Enter", () => {
+    const onActivate = vi.fn();
+    const onAlternateActivate = vi.fn();
+    render(
+      <Harness
+        items={rows("alpha", "beta")}
+        onActivate={onActivate}
+        onAlternateActivate={onAlternateActivate}
+        alternateLabel="open + terminal"
+      />,
+    );
+    fireEvent.keyDown(input(), { key: "ArrowDown" });
+    fireEvent.keyDown(input(), { key: "Enter", metaKey: true });
+
+    // The same row Enter would have taken, and only the second verb.
+    expect(onAlternateActivate.mock.calls[0][0]).toMatchObject({
+      label: "beta",
+    });
+    expect(onActivate).not.toHaveBeenCalled();
+    expect(screen.getByText("open + terminal")).toBeTruthy();
+  });
+
+  /**
+   * A mode with no second verb must leave ⌘Enter alone: it belongs to whatever
+   * global shortcut owns that chord, and swallowing it would fire both.
+   */
+  it("leaves ⌘Enter alone when the mode offers no second verb", () => {
+    const onActivate = vi.fn();
+    render(<Harness items={rows("alpha")} onActivate={onActivate} />);
+    fireEvent.keyDown(input(), { key: "Enter", metaKey: true });
+    expect(onActivate).not.toHaveBeenCalled();
+  });
+
   it("syncs the keyboard cursor to the hovered row", () => {
     render(<Harness items={rows("alpha", "beta", "gamma")} />);
     fireEvent.mouseMove(options()[2]);

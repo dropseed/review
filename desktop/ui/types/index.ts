@@ -209,6 +209,27 @@ export interface ViewerPr {
   repoPath: string | null;
 }
 
+/**
+ * A pull request Review watched land.
+ *
+ * The viewer query asks for open PRs only, so a merge is never a change in
+ * `prs` — it is a disappearance. The backend confirms each departure once and
+ * keeps the answer (see `core/src/service/shipped.rs`); this is that answer,
+ * carrying the repo and branch it belongs to so a workspace card can find its
+ * own.
+ */
+export interface ShippedPr {
+  number: number;
+  url: string;
+  title: string;
+  mergedAt: string;
+  /** The local repo the branch lives in, as an attachment spells it. */
+  repoPath: string;
+  headRefName: string;
+  /** When Review confirmed the merge — not when GitHub merged it. */
+  confirmedAt: string;
+}
+
 // Last known state of the user's open PRs. `error` and `prs` are independent:
 // an errored snapshot still carries the last good data, dated when it was
 // fetched, so a failure never masquerades as "no open PRs".
@@ -217,6 +238,8 @@ export interface ViewerPrSnapshot {
   prs: ViewerPr[];
   truncated: boolean; // more open PRs than the query's page of 100
   error: string | null;
+  /** Recently confirmed merges, newest first. */
+  shipped: ShippedPr[];
   /**
    * Whether GitHub is reachable *in principle* — false only when `gh` is
    * missing or unauthenticated. That is not a failure to report, it's a user
@@ -650,19 +673,34 @@ export interface ReviewSummary {
   worktreePath?: string; // Path to review-managed worktree, if created
 }
 
-// A ref bound to a work item: the review identity (repo + ref), the same pair
-// `makeReviewKey` builds a key from.
-export interface WorkRef {
-  repoPath: string;
-  ref: string;
+// A repo a workspace is showing — one tab on the code side.
+//
+// Nothing about it is exclusive: any number of workspaces may attach the same
+// path, so there is no holder to name and no conflict to report.
+export interface Attachment {
+  /** Repo root (or a plain directory), normalized backend-side. The identity. */
+  path: string;
+  /** A view hint — the branch being looked at. Never part of the identity. */
+  refName: string | null;
 }
 
-// One thing the user is working on. Stored in ~/.review/work.json; array order
-// is priority order, so the list is never re-sorted on read.
-export interface WorkItem {
+// One workspace: a unit of intent in the work queue. Stored in
+// ~/.review/work.json; array order is priority order, so the list is never
+// re-sorted on read.
+//
+// A container that becomes what you put in it: the attachments are the code
+// side's tabs, and everything live (terminals, PRs, review progress) is derived
+// and joined onto it, which is why nothing here moves when the world does.
+export interface Workspace {
   id: string;
-  title: string;
-  refs: WorkRef[];
+  /** What the human typed. Null means the title derives — see `displayTitle`. */
+  title: string | null;
+  /** Always set, and what every surface renders. */
+  displayTitle: string;
+  /** The code side's repo tabs, in order. */
+  attachments: Attachment[];
+  /** Backend plumbing for cleanup. Never rendered, never branched on. */
+  autoCreated: boolean;
   createdAt: string;
 }
 
@@ -781,8 +819,27 @@ export interface FileCluster {
 
 // API operation types
 
-export interface DetectMovePairsResponse {
-  pairs: MovePair[];
+/**
+ * One requested path's place in the comparison, as of now.
+ *
+ * `status` absent means the comparison no longer touches this file — the edit
+ * that triggered the delta put it back the way the base has it.
+ */
+export interface FileDeltaEntry {
+  path: string;
+  status?: FileEntry["status"];
+  renamedFrom?: string;
+  /**
+   * Whether the file is on disk in the comparison's working tree. A path that
+   * is neither changed nor present is one to forget rather than merely mark
+   * unchanged.
+   */
+  exists: boolean;
+}
+
+/** The recomputed slice of a comparison covering a named set of paths. */
+export interface FilesDelta {
+  files: FileDeltaEntry[];
   hunks: DiffHunk[];
 }
 
@@ -907,7 +964,6 @@ export interface RepoLocalActivity {
   branches: LocalBranchInfo[];
   recentRemoteBranches: RecentRemoteBranch[];
   /** Unix seconds of the last `git fetch` (FETCH_HEAD mtime). */
-  lastFetchedAt?: number | null;
 }
 
 // --- LSP types ---
@@ -956,12 +1012,50 @@ export interface TerminalStatus {
 export interface TerminalSessionInfo {
   id: string;
   repoPath: string;
+  /**
+   * The workspace this session belongs to — the daemon's answer, and the only
+   * one: every surface that groups terminals reads this rather than keeping its
+   * own record. Null only for a session started by something that skipped the
+   * router, which the app re-routes when it next lists sessions.
+   */
+  workspaceId: string | null;
   cwd: string;
   /** Terminal title (OSC 0/2); null until the session sets one. */
   title: string | null;
   cols: number;
   rows: number;
   status: TerminalStatus;
+}
+
+/**
+ * What starting a terminal answers with: the session, and the workspace the
+ * backend routed it into.
+ *
+ * The landing is not decoration — terminals are drawn under their workspace, so
+ * a session whose workspace the queue has not listed yet has nowhere to appear;
+ * `created` is what tells the caller to re-read the queue.
+ */
+/**
+ * Where routing a repo+branch landed — the answer ⌘K's Enter acts on.
+ *
+ * `created` is what tells the queue to re-read: a workspace the router just
+ * invented is one the frontend's list has never held.
+ */
+export interface RouteLanding {
+  workspace: Workspace;
+  created: boolean;
+}
+
+export interface TerminalStarted {
+  session: TerminalSessionInfo;
+  workspace: {
+    id: string;
+    /**
+     * Whether getting here invented the workspace — the reason the queue
+     * re-reads. Nothing draws the title from here; the queue's own entry does.
+     */
+    created: boolean;
+  };
 }
 
 /**

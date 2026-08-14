@@ -105,6 +105,7 @@ export const createViewerPrsSlice: SliceCreatorWithClient<ViewerPrsSlice> = (
             fetchedAt: previous?.fetchedAt ?? new Date(0).toISOString(),
             prs: previous?.prs ?? [],
             truncated: previous?.truncated ?? false,
+            shipped: previous?.shipped ?? [],
             error: err instanceof Error ? err.message : String(err),
             // Nothing here says GitHub tooling is absent — the call never got
             // far enough to find out — so keep the last answer, or assume the

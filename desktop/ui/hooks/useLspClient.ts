@@ -31,6 +31,25 @@ function publishStatuses(discovered: LspServerStatus[], disabled: string[]) {
  * every time the user came back. The backend keeps the most recently used
  * roots warm and shuts the rest down (`MAX_WARM_LSP_ROOTS`).
  */
+/**
+ * One init per root at a time. StrictMode mounts every effect twice in dev,
+ * and each init is a real IPC call that can spawn a language server — the
+ * backend now survives the race, but there is no reason to run it. The entry
+ * clears on settle so a later revisit re-inits (the backend may have evicted
+ * the root by then).
+ */
+const initsInFlight = new Map<string, Promise<LspServerStatus[]>>();
+
+function initOncePerRoot(root: string): Promise<LspServerStatus[]> {
+  const existing = initsInFlight.get(root);
+  if (existing) return existing;
+  const promise = getApiClient()
+    .initLspServers(root)
+    .finally(() => initsInFlight.delete(root));
+  initsInFlight.set(root, promise);
+  return promise;
+}
+
 export function useLspClient() {
   const lspRoot = useDebounce(
     useReviewStore((s) => s.worktreePath ?? s.repoPath),
@@ -47,8 +66,7 @@ export function useLspClient() {
     if (!lspRoot || !isTauriEnvironment()) return;
 
     let cancelled = false;
-    getApiClient()
-      .initLspServers(lspRoot)
+    initOncePerRoot(lspRoot)
       .then((statuses) => {
         if (cancelled) return;
         discoveredRef.current = statuses;

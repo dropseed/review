@@ -62,6 +62,9 @@ pub struct SessionSpec {
     pub terminal_id: TerminalId,
     /// Repository the session belongs to (used for grouping in `list`).
     pub repo_path: PathBuf,
+    /// Workspace the session belongs to, decided by the caller's router. Kept
+    /// in memory only; see [`TerminalSummary::workspace_id`].
+    pub workspace_id: Option<String>,
     /// Working directory the shell starts in (repo root or a worktree path).
     pub cwd: PathBuf,
     /// Shell to run; falls back to `$SHELL`, then `/bin/zsh`.
@@ -84,6 +87,7 @@ impl SessionSpec {
         Self {
             terminal_id: terminal_id.into(),
             repo_path: repo_path.into(),
+            workspace_id: None,
             cwd: cwd.into(),
             shell: None,
             cols: 80,

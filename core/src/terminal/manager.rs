@@ -101,6 +101,15 @@ impl SessionManager {
         self.get(id)?.resize(cols, rows)
     }
 
+    /// Move a session to another workspace (or to none).
+    ///
+    /// The id is opaque here — the daemon never reads the work queue, so it
+    /// neither validates the workspace exists nor reacts when it stops existing.
+    pub fn assign_workspace(&self, id: &TerminalId, workspace_id: Option<String>) -> Result<()> {
+        self.get(id)?.assign_workspace(workspace_id);
+        Ok(())
+    }
+
     /// Terminate a session's child, join its threads, and drop it from the map.
     ///
     /// Errors if the session is unknown — so a second `kill` of the same id (or a
@@ -309,6 +318,32 @@ mod tests {
 
         assert!(manager.list(None).is_empty(), "killed session still listed");
         assert_eq!(manager.session_count(), 0, "killed session not dropped");
+    }
+
+    #[test]
+    fn workspace_attribution_rides_the_summary_and_can_be_reassigned() {
+        let manager = SessionManager::new();
+        let id = TerminalId::from("workspace-test");
+        let mut spec = spec("workspace-test");
+        spec.workspace_id = Some("0a1b2c3d".to_owned());
+        let summary = manager.start(spec).unwrap();
+        assert_eq!(summary.workspace_id.as_deref(), Some("0a1b2c3d"));
+
+        // Reassignment is live — the session keeps running under a new owner.
+        manager
+            .assign_workspace(&id, Some("beefcafe".to_owned()))
+            .unwrap();
+        assert_eq!(
+            manager.list(None)[0].workspace_id.as_deref(),
+            Some("beefcafe")
+        );
+
+        manager.assign_workspace(&id, None).unwrap();
+        assert_eq!(manager.list(None)[0].workspace_id, None);
+
+        manager.kill(&id).unwrap();
+        // An unknown session errors rather than silently doing nothing.
+        assert!(manager.assign_workspace(&id, None).is_err());
     }
 
     #[test]

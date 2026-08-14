@@ -439,18 +439,6 @@ impl LocalGitSource {
         self.resolve_ref_or_self(arg)
     }
 
-    /// Unix-seconds timestamp of the last `git fetch`, derived from the
-    /// mtime of `.git/FETCH_HEAD`. Returns None if no fetch has run
-    /// (or the file is missing / not readable).
-    pub fn last_fetched_at(&self) -> Option<i64> {
-        let metadata = std::fs::metadata(self.repo_path.join(".git/FETCH_HEAD")).ok()?;
-        let modified = metadata.modified().ok()?;
-        modified
-            .duration_since(std::time::UNIX_EPOCH)
-            .ok()
-            .map(|d| d.as_secs() as i64)
-    }
-
     /// Run `git fetch --prune origin` to refresh remote-tracking refs.
     pub fn fetch_origin(&self) -> Result<(), LocalGitError> {
         self.run_git(&["fetch", "--prune", "origin"])?;
@@ -1971,7 +1959,7 @@ impl LocalGitSource {
         }
     }
 
-    fn get_changed_files(
+    pub fn get_changed_files(
         &self,
         comparison: &Comparison,
     ) -> Result<(HashMap<String, FileStatus>, HashMap<String, String>), LocalGitError> {
@@ -2042,6 +2030,55 @@ impl LocalGitSource {
         dir: &std::path::Path,
     ) -> Result<HashSet<String>, LocalGitError> {
         Ok(self.get_untracked_files(dir)?.into_iter().collect())
+    }
+
+    /// The comparison's diff, optionally narrowed to a pathspec.
+    ///
+    /// This is the one place the diff arguments live; [`DiffSource::get_diff`]
+    /// is the no-path and one-path case of it. An empty `paths` means the whole
+    /// comparison. Narrowing only omits other files' sections — git emits each
+    /// file's diff independently — so the hunks parsed out of a narrowed diff
+    /// are identical to the ones the full diff would yield for those files.
+    /// `service::files::files_delta` depends on that, and
+    /// `narrowed_diff_matches_full_diff` in this file is the test of it.
+    pub fn get_diff_for_paths(
+        &self,
+        comparison: &Comparison,
+        paths: &[&str],
+    ) -> Result<String, LocalGitError> {
+        let merge_base = self.diff_base_ref(comparison);
+        let working_tree = self.working_tree_dir(comparison);
+
+        // The revision argument outlives the `args` vec that borrows it.
+        let range;
+        let revision: &str = if working_tree.is_some() {
+            // Net diff: merge_base vs working tree (a single diff avoids phantom
+            // hunks when working-tree changes revert committed ones).
+            &merge_base
+        } else {
+            let resolved_head = self.resolve_ref_or_empty_tree(&comparison.head);
+            range = format!("{merge_base}..{resolved_head}");
+            &range
+        };
+
+        let mut args = vec![
+            "diff",
+            "--histogram",
+            "--no-renames",
+            "--src-prefix=a/",
+            "--dst-prefix=b/",
+            revision,
+        ];
+        if !paths.is_empty() {
+            args.push("--");
+            args.extend_from_slice(paths);
+        }
+
+        let output = match &working_tree {
+            Some(dir) => self.run_git_in(dir, &args),
+            None => self.run_git(&args),
+        };
+        Ok(output.unwrap_or_default())
     }
 
     /// Check if a file is tracked by git (in the index)
@@ -2888,49 +2925,10 @@ impl DiffSource for LocalGitSource {
         comparison: &Comparison,
         file_path: Option<&str>,
     ) -> Result<String, Self::Error> {
-        let mut all_diffs = String::new();
-        let merge_base = self.diff_base_ref(comparison);
-
-        if let Some(dir) = self.working_tree_dir(comparison) {
-            // Net diff: merge_base vs working tree (single diff avoids phantom hunks
-            // when working tree changes revert committed changes)
-            let mut args = vec![
-                "diff",
-                "--histogram",
-                "--no-renames",
-                "--src-prefix=a/",
-                "--dst-prefix=b/",
-                &merge_base,
-            ];
-            if let Some(path) = file_path {
-                args.push("--");
-                args.push(path);
-            }
-            if let Ok(output) = self.run_git_in(&dir, &args) {
-                all_diffs.push_str(&output);
-            }
-        } else {
-            // Committed diff between base and head refs
-            let resolved_head = self.resolve_ref_or_empty_tree(&comparison.head);
-            let range = format!("{merge_base}..{resolved_head}");
-            let mut args = vec![
-                "diff",
-                "--histogram",
-                "--no-renames",
-                "--src-prefix=a/",
-                "--dst-prefix=b/",
-                &range,
-            ];
-            if let Some(path) = file_path {
-                args.push("--");
-                args.push(path);
-            }
-            if let Ok(output) = self.run_git(&args) {
-                all_diffs.push_str(&output);
-            }
+        match file_path {
+            Some(path) => self.get_diff_for_paths(comparison, &[path]),
+            None => self.get_diff_for_paths(comparison, &[]),
         }
-
-        Ok(all_diffs)
     }
 }
 
@@ -3028,6 +3026,23 @@ fn unpushed_count(upstream: &str, track: &str, commits_ahead: u32) -> u32 {
         .filter_map(|part| part.trim().strip_prefix("ahead "))
         .find_map(|n| n.trim().parse::<u32>().ok())
         .unwrap_or(0)
+}
+
+/// The ref a working tree is "on": its current branch, or `HEAD` when that
+/// can't be named (a detached HEAD). `None` when `path` isn't a git repository.
+///
+/// The one answer to "what am I on?", shared by the CLI's spec auto-detection
+/// and the work router so a command and the workspace it routes to can't
+/// disagree about the branch. An unborn branch (fresh `git init`) is named
+/// correctly: [`LocalGitSource::get_current_branch`] falls back to
+/// `symbolic-ref` for exactly that case.
+pub fn current_branch_or_head(path: &std::path::Path) -> Option<String> {
+    let source = LocalGitSource::new(path.to_path_buf()).ok()?;
+    Some(
+        source
+            .get_current_branch()
+            .unwrap_or_else(|_| "HEAD".to_owned()),
+    )
 }
 
 /// Parse `git diff --shortstat` output into (files_changed, insertions, deletions).

@@ -1,11 +1,5 @@
-import {
-  PHASE_SEVERITY,
-  repoOfKey,
-  terminalSeverity,
-  type CheckoutIndex,
-} from "../../stores/slices/terminalSlice";
-import { basename } from "../TabRail/terminal-status-format";
-import { refFromReviewKey } from "../../utils/review-key";
+import { terminalSeverity } from "../../stores/slices/terminalSlice";
+import { basename } from "../Sidebar/terminal-status-format";
 import { collectLeafIds, type TerminalTab } from "./pane-tree";
 import type {
   TerminalPhase,
@@ -33,14 +27,6 @@ export interface TabGlance {
    * the most severe pane, falling back to the focused one.
    */
   primaryId: string;
-}
-
-/** A repo+ref's terminals, ordered for the overview grid. */
-export interface TerminalGroup {
-  key: string;
-  label: string;
-  severity: TerminalPhase | null;
-  ids: string[];
 }
 
 /** The name a session goes by everywhere it's listed. */
@@ -86,69 +72,6 @@ export function tabGlance(
     title: sessionTitle(statuses[tab.focused], sessions[tab.focused]),
     primaryId: primaryStatus(leafStatuses)?.id ?? tab.focused,
   };
-}
-
-/**
- * Sort weight for a phase, with "no phase at all" below every real one so
- * exited and unknown sessions land last wherever this orders things.
- */
-export function phaseRank(phase: TerminalPhase | null | undefined): number {
-  return phase ? PHASE_SEVERITY[phase] : -1;
-}
-
-/**
- * Every live-or-dead terminal, bucketed by the row it lives under and ordered
- * loudest-first within and between buckets. The overview grid's whole model —
- * kept here so the "who needs a human first" rule stays in one tested place.
- */
-export function overviewGroups(
-  sessionsByHomeKey: Record<string, string[]>,
-  sessions: Record<string, TerminalSessionInfo>,
-  statuses: Record<string, TerminalStatus>,
-  exited: Record<string, number | null>,
-  checkouts: CheckoutIndex,
-): TerminalGroup[] {
-  const rank = (id: string): number => {
-    if (id in exited) return -1; // corpses sort after everything
-    // A live session whose status hasn't arrived yet reads as idle, not as a
-    // corpse — only an actual exit drops below the phases.
-    const phase = statuses[id]?.phase;
-    return phase ? PHASE_SEVERITY[phase] : PHASE_SEVERITY.idle;
-  };
-
-  const groups = Object.entries(sessionsByHomeKey)
-    .filter(([, ids]) => ids.length > 0)
-    .map(([key, ids]) => {
-      const sorted = [...ids].sort(
-        (a, b) =>
-          rank(b) - rank(a) ||
-          (statuses[a]?.enteredStateAt ?? 0) -
-            (statuses[b]?.enteredStateAt ?? 0),
-      );
-      const live = sorted
-        .filter((id) => !(id in exited))
-        .map((id) => statuses[id])
-        .filter((s): s is TerminalStatus => s != null);
-      // The row's own repo, not the first session's: a terminal dragged onto
-      // another repo's row is grouped under that repo, and the label should
-      // name the row it sits on.
-      const repoPath =
-        repoOfKey(checkouts, key) ?? sessions[sorted[0]]?.repoPath ?? "";
-      const ref = refFromReviewKey(key, repoPath) ?? key;
-      return {
-        key,
-        label: ref ? `${basename(repoPath)} · ${ref}` : basename(repoPath),
-        severity: terminalSeverity(live),
-        ids: sorted,
-      };
-    });
-
-  groups.sort(
-    (a, b) =>
-      phaseRank(b.severity) - phaseRank(a.severity) ||
-      a.label.localeCompare(b.label),
-  );
-  return groups;
 }
 
 const NEEDS_YOU_RANK: Partial<Record<TerminalPhase, number>> = {

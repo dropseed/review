@@ -1,7 +1,17 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { TERMINAL_COMMANDS } from "./commands";
 import type { Command, CommandContext } from "../../commands";
 import { leaf, splitLeaf, type TerminalTab } from "./pane-tree";
+import type { Attachment, Workspace } from "../../types";
+import { attachment, workspace as makeWorkspace } from "../../test/fixtures";
+
+const opened = vi.hoisted(() => ({ calls: [] as (Workspace | null)[] }));
+vi.mock("./newTab", () => ({
+  openTerminalTab: (workspace?: Workspace | null) => {
+    opened.calls.push(workspace ?? null);
+    return Promise.resolve("term-1");
+  },
+}));
 
 /**
  * These commands answer "is there a pane to fold?" from the store rather than
@@ -45,6 +55,51 @@ const enabled = (id: string, store: Record<string, unknown>): boolean => {
   const cmd = command(id);
   return cmd.isEnabled ? cmd.isEnabled(context(store)) : true;
 };
+
+describe("⌘T", () => {
+  const workspace = (id: string, attachments: Attachment[]): Workspace =>
+    makeWorkspace(id, { title: id, attachments });
+
+  beforeEach(() => {
+    opened.calls = [];
+  });
+
+  const run = (store: Record<string, unknown>) =>
+    command("terminal.new").run(
+      context({
+        workspaces: [],
+        focusedWorkspaceId: null,
+        activeReviewKey: null,
+        ...store,
+      }),
+    );
+
+  it("starts in the focused workspace, asking nothing", () => {
+    const mine = workspace("ws-1", [attachment("/repo", "feature")]);
+    run({ workspaces: [mine], focusedWorkspaceId: "ws-1" });
+    expect(opened.calls).toEqual([mine]);
+  });
+
+  /**
+   * The same answer the stage reads: the repo on screen names the workspace
+   * showing it, so ⌘T lands there without anyone having clicked its card
+   * first.
+   */
+  it("finds the workspace showing the repo on screen", () => {
+    const mine = workspace("ws-1", [attachment("/repo", "feature")]);
+    run({
+      workspaces: [mine],
+      activeReviewKey: { repoPath: "/repo", ref: "feature" },
+    });
+    expect(opened.calls).toEqual([mine]);
+  });
+
+  /** No workspace is not a reason to refuse — the router places it. */
+  it("still starts a terminal with nothing focused", () => {
+    run({});
+    expect(opened.calls).toEqual([null]);
+  });
+});
 
 describe("fold/unfold commands", () => {
   const twoPanes = [tab("tabA", ["a", "b"])];

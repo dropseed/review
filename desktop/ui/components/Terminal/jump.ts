@@ -1,32 +1,50 @@
 import { useReviewStore } from "../../stores";
-import { findTabForTerminal } from "../../stores/slices/terminalSlice";
+import {
+  findTabForTerminal,
+  tabWorkspaceId,
+} from "../../stores/slices/terminalSlice";
+import { focusWorkspace } from "../../commands/workspaceCommands";
 import { focusedTerminalId } from "./close";
 import { needsYouQueue } from "./glance";
 import { setTerminalFocus } from "./registry";
 
 /**
- * Jumping to a terminal from anywhere — a sidebar row, an overview card, the
- * needs-you shortcut.
+ * Jumping to a terminal from anywhere — a queue card's child row, a ⌘K
+ * terminal row, the needs-you shortcut.
  *
- * There is one strip and it holds every tab, so this is only ever "show that
- * tab": no review to switch to first, and nothing that can be pointed at a tab
- * no view renders.
+ * The panel shows **one workspace's** tabs, not every tab, so "show that tab"
+ * is two steps and the first one is not optional: activating a tab that lives
+ * in a workspace the stage isn't showing left the panel rendering nothing — the
+ * active id pointed at a tab the strip had filtered out. Every jump therefore
+ * focuses the tab's workspace first.
  */
 
 /**
- * Bring `id`'s pane on screen and give it the keyboard: open the panel, leave
- * the overview, activate its tab and focus the pane within it.
+ * Bring `id`'s pane on screen and give it the keyboard: focus its workspace,
+ * open the panel, activate its tab and focus the pane within it.
  */
 export function jumpToTerminal(id: string): void {
   const store = useReviewStore.getState();
 
-  if (store.contentFocus === "code") store.toggleTerminalPanel();
-  if (store.terminalOverviewOpen) store.setTerminalOverviewOpen(false);
-
   const tab = findTabForTerminal(store.terminalTabs, id);
+
+  // Before the tab is activated, because focusing a workspace selects that
+  // workspace's own remembered tab — doing it after would immediately point
+  // the panel somewhere else.
+  const workspaceId = tab ? tabWorkspaceId(store, tab) : null;
+  if (workspaceId && workspaceId !== store.focusedWorkspaceId) {
+    const workspace = store.workspaces.find((w) => w.id === workspaceId);
+    if (workspace) focusWorkspace(workspace);
+  }
+
+  if (useReviewStore.getState().contentFocus === "code") {
+    useReviewStore.getState().toggleTerminalPanel();
+  }
+
   if (tab) {
-    store.setActiveTab(tab.id);
-    store.setFocusedTerminalPane(tab.id, id);
+    const latest = useReviewStore.getState();
+    latest.setActiveTab(tab.id);
+    latest.setFocusedTerminalPane(tab.id, id);
   }
 
   // After the panel/tab switches commit and the pane is mounted. A session

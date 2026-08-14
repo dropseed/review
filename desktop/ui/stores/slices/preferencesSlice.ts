@@ -203,15 +203,18 @@ const defaults = {
   // key stays on disk untouched — inert, and still there if the control ever
   // returns.
 
-  // Repos the user has opened in the repos list. Absent = collapsed, which
-  // is every repo's default: the list is a browse surface, and what needs you
-  // is answered above it. The old `collapsedRepos` key stays on disk, inert.
-  // Keyed by repo path, or by `owner/repo` for a repo that isn't cloned here.
-  expandedRepos: {} as Record<string, boolean>,
-  // Org headers the user has closed. Stored the other way round from
-  // `expandedRepos` because the default is the other way round: an org is the
-  // structure of the list rather than a thing to open, so it starts expanded.
-  collapsedOrgs: {} as Record<string, boolean>,
+  // No `expandedRepos` / `collapsedOrgs`: the repos list they belonged to is
+  // gone, and ⌘K is where its rows are read now. Both keys stay on disk,
+  // inert, like `collapsedRepos` before them.
+
+  // When the user last looked at each workspace, as epoch ms. What makes an
+  // attention signal *unseen*: a card that started waiting after the last time
+  // its owner looked at it wears an accent until they look again.
+  //
+  // A preference rather than anything in `work.json` on purpose — this is a
+  // fact about one pair of eyes, not about the work. A second machine
+  // reasonably has its own answer, and nothing here is worth a queue write.
+  workspaceSeenAt: {} as Record<string, number>,
   fileSortOrder: "name" as FileSortOrder,
   guideSideNavCollapsed: false,
   guideSideNavWidth: 240,
@@ -220,6 +223,11 @@ const defaults = {
   lspDisabledLanguages: [] as string[],
   // Split sizes. Side panels are absolute (rem, so they track the UI scale);
   // content splits are fractions. See utils/resize.ts for why.
+  //
+  // `tabRail*` is historical — the left sidebar was a tab rail before it was
+  // the workspace queue. The key is what the user's stored width is filed
+  // under, so it stays as it is: renaming it would silently reset everyone's
+  // sidebar to the default in exchange for nothing.
   tabRailWidth: SIDEBAR_LIMITS.left.defaultRem,
   filesPanelWidth: SIDEBAR_LIMITS.right.defaultRem,
   diffSplitFraction: 0.5,
@@ -283,11 +291,8 @@ export interface PreferencesSlice {
   // Files panel (right sidebar)
   filesPanelCollapsed: boolean;
 
-  // Repos list: the repos the user has expanded. Absent = collapsed.
-  expandedRepos: Record<string, boolean>;
-
-  // Org headers the user has closed. Absent = expanded.
-  collapsedOrgs: Record<string, boolean>;
+  // When each workspace was last focused, as epoch ms. Absent = never looked.
+  workspaceSeenAt: Record<string, number>;
 
   // File sort order (shared across browse + changes tabs)
   fileSortOrder: FileSortOrder;
@@ -368,9 +373,13 @@ export interface PreferencesSlice {
   setFilesPanelCollapsed: (collapsed: boolean) => void;
   toggleFilesPanel: () => void;
 
-  // Repos list actions
-  setRepoExpanded: (repoPath: string, expanded: boolean) => void;
-  setOrgCollapsed: (org: string, collapsed: boolean) => void;
+  /**
+   * Acknowledge a workspace: whatever it was signalling has now been seen.
+   *
+   * `live` is the queue as it stands, so entries for workspaces that no longer
+   * exist go with the write rather than accumulating forever.
+   */
+  markWorkspaceSeen: (workspaceId: string, live: readonly string[]) => void;
 
   // File sort order actions
   setFileSortOrder: (order: FileSortOrder) => void;
@@ -678,29 +687,14 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       get().setFilesPanelCollapsed(!get().filesPanelCollapsed);
     },
 
-    setRepoExpanded: (repoPath, expanded) => {
-      // Collapsed is the default, so a collapsed repo drops its entry rather
-      // than storing `false` — the record stays the size of what the user
-      // actually opened.
-      const current = get().expandedRepos;
-      if (!!current[repoPath] === expanded) return;
-      const next = { ...current };
-      if (expanded) next[repoPath] = true;
-      else delete next[repoPath];
-      set({ expandedRepos: next });
-      storage.set("expandedRepos", next);
-    },
-
-    setOrgCollapsed: (org, collapsed) => {
-      // Expanded is the default, so an expanded org drops its entry — the
-      // record stays the size of what the user actually closed.
-      const current = get().collapsedOrgs;
-      if (!!current[org] === collapsed) return;
-      const next = { ...current };
-      if (collapsed) next[org] = true;
-      else delete next[org];
-      set({ collapsedOrgs: next });
-      storage.set("collapsedOrgs", next);
+    markWorkspaceSeen: (workspaceId, live) => {
+      const keep = new Set(live);
+      const next: Record<string, number> = { [workspaceId]: Date.now() };
+      for (const [id, at] of Object.entries(get().workspaceSeenAt)) {
+        if (id !== workspaceId && keep.has(id)) next[id] = at;
+      }
+      set({ workspaceSeenAt: next });
+      storage.set("workspaceSeenAt", next);
     },
 
     setFileSortOrder: (order) => {

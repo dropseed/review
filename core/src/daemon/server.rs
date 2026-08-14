@@ -32,7 +32,28 @@ use crate::terminal::{SessionManager, SessionSpec, Subscription, TerminalId, Ter
 /// Serve terminal sessions on `socket` until Ctrl-C, SIGTERM, or [`Op::Quit`].
 ///
 /// Errors if another daemon is already listening on the same path.
+/// The identity this daemon *started* as, captured before the first connection.
+///
+/// `Op::Version` must report the running code's identity, not a fresh hash of
+/// the file at our path: cargo rebuilds that file underneath a live daemon, so
+/// a lazily-computed hash makes an outdated daemon impersonate the new build
+/// and silently defeats the version-mismatch respawn — in exactly the
+/// rebuild-heavy dev workflow the check exists for.
+static STARTUP_IDENTITY: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+fn startup_identity() -> &'static str {
+    STARTUP_IDENTITY.get_or_init(|| {
+        std::env::current_exe().map_or_else(
+            |_| env!("CARGO_PKG_VERSION").to_owned(),
+            |exe| super::build_identity(env!("CARGO_PKG_VERSION"), &exe),
+        )
+    })
+}
+
 pub async fn serve(socket: PathBuf) -> Result<()> {
+    // Capture the identity now, while the file on disk is still the code that
+    // is running — see `STARTUP_IDENTITY`.
+    let _ = startup_identity();
     let listener = bind(&socket)?;
     let pid_path = pid_path(&socket);
     if let Err(e) = std::fs::write(&pid_path, std::process::id().to_string()) {
@@ -208,6 +229,7 @@ async fn dispatch(op: Op, manager: &Arc<SessionManager>) -> OpResult {
             cols,
             rows,
             shell,
+            workspace_id,
         } => {
             // Build the spec exactly like the desktop does, so every front
             // door spawns identical sessions.
@@ -215,7 +237,15 @@ async fn dispatch(op: Op, manager: &Arc<SessionManager>) -> OpResult {
             spec.cols = cols;
             spec.rows = rows;
             spec.shell = shell.map(PathBuf::from);
+            spec.workspace_id = workspace_id;
             to_result(blocking(move || manager.start(spec)).await)
+        }
+        Op::AssignWorkspace {
+            terminal_id,
+            workspace_id,
+        } => {
+            let id = TerminalId::from(terminal_id);
+            to_result(blocking(move || manager.assign_workspace(&id, workspace_id)).await)
         }
         Op::Write {
             terminal_id,
@@ -267,15 +297,11 @@ async fn dispatch(op: Op, manager: &Arc<SessionManager>) -> OpResult {
         // an app built from newer daemon code respawns instead of silently
         // attaching to the old one. The fingerprint is unconditional on purpose
         // — gating it on the build profile would make the debug-built app and
-        // the release-built sidecar disagree forever. See `build_identity`.
-        Op::Version => OpResult::Ok(
-            std::env::current_exe()
-                .map_or_else(
-                    |_| env!("CARGO_PKG_VERSION").to_owned(),
-                    |exe| super::build_identity(env!("CARGO_PKG_VERSION"), &exe),
-                )
-                .into(),
-        ),
+        // the release-built sidecar disagree forever. Served from the identity
+        // captured at startup, never recomputed from disk: the file can be
+        // rebuilt under a running daemon, and the check exists to catch exactly
+        // that. See `STARTUP_IDENTITY` and `build_identity`.
+        Op::Version => OpResult::Ok(startup_identity().to_owned().into()),
         // `shutdown_all_sessions` kills every session but leaves the daemon
         // serving; `quit` does the same and then lets `serve` return (the
         // caller signals that once this response has been flushed).

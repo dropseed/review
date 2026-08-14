@@ -26,18 +26,15 @@ import {
 } from "../stores/slices/terminalSlice";
 import {
   applyWorkDrop,
-  draggedWorkItem,
-  draggedWorkRef,
+  draggedWorkspace,
   forgetWorkTargets,
   sessionsOfTab,
-  setDraggedWorkItem,
-  setDraggedWorkRef,
+  setDraggedWorkspace,
   setWorkDropTarget,
   workDragPayload,
   workDropTargetAt,
-  type WorkItemDrag,
-  type WorkRefDrag,
-} from "../components/TabRail/work-drag";
+  type WorkspaceDrag,
+} from "../components/Sidebar/workspace-drag";
 
 /**
  * Convert a drag-drop position to CSS pixels within the page's viewport.
@@ -282,16 +279,14 @@ export function useTerminalFileDrop(): void {
     let carried: string | null = null;
     let carriedTab: TabDragSource | null = null;
     let carriedTerminal: string | null = null;
-    let carriedWorkRef: WorkRefDrag | null = null;
-    let carriedWorkItem: WorkItemDrag | null = null;
+    let carriedWorkspace: WorkspaceDrag | null = null;
 
     /** Forget every drag this handler can be carrying. */
     const dropCarried = () => {
       carried = null;
       carriedTab = null;
       carriedTerminal = null;
-      carriedWorkRef = null;
-      carriedWorkItem = null;
+      carriedWorkspace = null;
       setWorkDropTarget(null);
       forgetWorkTargets();
     };
@@ -321,8 +316,7 @@ export function useTerminalFileDrop(): void {
             carried ??= draggedPane();
             carriedTab ??= draggedTabSource();
             carriedTerminal ??= draggedTerminal();
-            carriedWorkRef ??= draggedWorkRef();
-            carriedWorkItem ??= draggedWorkItem();
+            carriedWorkspace ??= draggedWorkspace();
             if (
               (carried || carriedTab || carriedTerminal) &&
               stale(stripMeasuredAt)
@@ -330,24 +324,22 @@ export function useTerminalFileDrop(): void {
               measureStrip();
             }
             const pt = toCssPixels(payload.position, scaled, insetY);
-            if (carriedWorkRef || carriedWorkItem) {
-              // A branch row or a work card in flight: only "Working on" takes
-              // either, so nothing else needs hit-testing.
-              setWorkDropTarget(
-                workDropTargetAt(pt.x, pt.y, carriedWorkRef ? "ref" : "item"),
-              );
+            if (carriedWorkspace) {
+              // A queue entry in flight: only the queue takes it, so nothing
+              // else needs hit-testing — and a reorder can only land in a gap.
+              setWorkDropTarget(workDropTargetAt(pt.x, pt.y, true));
               return;
             }
             if (carriedTerminal) {
               // A sidebar terminal row in flight: only a work card takes it.
-              setWorkDropTarget(workDropTargetAt(pt.x, pt.y, "terminal"));
+              setWorkDropTarget(workDropTargetAt(pt.x, pt.y, false));
               setTabDropTarget(null);
               return;
             }
             if (carriedTab) {
               // A tab in flight: a work card claims it first — attaching a
               // terminal to what it's for outranks moving it in the strip.
-              const work = workDropTargetAt(pt.x, pt.y, "terminal");
+              const work = workDropTargetAt(pt.x, pt.y, false);
               setWorkDropTarget(work);
               if (work) {
                 setTabDropTarget(null);
@@ -365,7 +357,7 @@ export function useTerminalFileDrop(): void {
               // A pane in flight: a work card takes it the same way it takes a
               // tab or a sidebar row — a pane is a session, and the sidebar is
               // where a session gets claimed.
-              const work = workDropTargetAt(pt.x, pt.y, "terminal");
+              const work = workDropTargetAt(pt.x, pt.y, false);
               setWorkDropTarget(work);
               if (work) {
                 setPaneDropTarget(null);
@@ -417,33 +409,15 @@ export function useTerminalFileDrop(): void {
           // highlight said it would. Every grip that carries a terminal asks —
           // a row, a pane, a tab — since "Working on" takes all three.
           const workTarget =
-            carriedWorkRef ||
-            carriedWorkItem ||
-            carriedTerminal ||
-            carried ||
-            carriedTab
-              ? workDropTargetAt(
-                  pt.x,
-                  pt.y,
-                  carriedWorkRef
-                    ? "ref"
-                    : carriedWorkItem
-                      ? "item"
-                      : "terminal",
-                )
+            carriedWorkspace || carriedTerminal || carried || carriedTab
+              ? workDropTargetAt(pt.x, pt.y, carriedWorkspace !== null)
               : null;
           setWorkDropTarget(null);
           forgetWorkTargets();
-          if (carriedWorkRef || carriedWorkItem) {
-            const payload = workDragPayload(
-              carriedWorkRef,
-              carriedWorkItem,
-              [],
-            );
-            carriedWorkRef = null;
-            carriedWorkItem = null;
-            setDraggedWorkRef(null);
-            setDraggedWorkItem(null);
+          if (carriedWorkspace) {
+            const payload = workDragPayload(carriedWorkspace, []);
+            carriedWorkspace = null;
+            setDraggedWorkspace(null);
             forgetStrip();
             if (workTarget && payload) void applyWorkDrop(workTarget, payload);
             return;

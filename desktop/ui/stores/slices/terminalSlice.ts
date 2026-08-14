@@ -6,10 +6,8 @@ import type {
   TerminalStatus,
   TerminalPhase,
   TerminalExit,
-  WorkItem,
 } from "../../types";
 import { makeReviewKey } from "../../utils/review-key";
-import { jsonEqual } from "../../utils/equality";
 import { notifyTerminalAttention } from "../../utils/terminal-notifications";
 import type { SliceCreatorWithClientAndStorage } from "../types";
 import {
@@ -76,17 +74,6 @@ export interface TerminalSlice {
    * same question the same way instead of agreeing by coincidence.
    */
   terminalCheckouts: CheckoutIndex;
-  /**
-   * Tab id → the work item it is attached to, as `item:<id>` (persisted). A tab
-   * with no entry is unclaimed, which the sidebar's band is the list of.
-   *
-   * Written under the tab's own id *and* under every session in it, because a
-   * tab id is window-local while a session id is not: a reload rebuilds the tab
-   * list from the daemon's session list, one tab per session, using the session
-   * id as the tab id (see `ingestTabs`). Recording both is what lets each of
-   * those rebuilt tabs find the attachment its old tab had.
-   */
-  terminalAttachments: Record<string, string>;
 
   /** Which surface holds the content region's focus (persisted). */
   contentFocus: ContentFocus;
@@ -94,12 +81,6 @@ export interface TerminalSlice {
   terminalPanelWidth: number;
   /** Which side of the content region the panel docks on (persisted). */
   terminalDockSide: TerminalDockSide;
-  /**
-   * Whether the panel is showing the all-terminals overview instead of the
-   * active tab's panes. Window-local, not persisted — the overview is a place
-   * you glance at, not a place you live.
-   */
-  terminalOverviewOpen: boolean;
   /** Whether the current backend can host terminals (probed on mount). */
   terminalsSupported: boolean;
 
@@ -120,6 +101,13 @@ export interface TerminalSlice {
     cols: number,
     rows: number,
     shell?: string,
+    /**
+     * The workspace to be born in, when the caller knows which. Without it the
+     * backend routes by cwd; with it, the workspace and the session land
+     * together. An empty `cwd` means "no directory of its own" — the backend
+     * starts in home.
+     */
+    workspaceId?: string,
   ) => Promise<string | null>;
 
   /**
@@ -142,26 +130,23 @@ export interface TerminalSlice {
   /** Show `tabId` in the panel, and record it as this tab's latest use. */
   setActiveTab: (tabId: string) => void;
   /**
-   * Show the work item's most recently used tab — what activating a card does.
-   * Selects; it never opens the panel or hides another item's tabs, because the
-   * strip is one list and every tab in it stays where it was.
+   * Show the workspace's most recently used tab — what activating a card does.
+   * Selects; it never opens the panel or hides another workspace's tabs, because
+   * the strip is one list and every tab in it stays where it was.
    */
-  selectItemTab: (itemId: string) => void;
+  selectWorkspaceTab: (workspaceId: string) => void;
   /**
-   * Attach the tab holding `terminalId` to a work item — the drag of a terminal
+   * Move the tab holding `terminalId` into a workspace — the drag of a terminal
    * onto a card, and the menu verb. Panes travel with their tab, so naming any
-   * one of them names the tab.
+   * one of them names the tab, and every session in it is reassigned.
+   *
+   * Attribution belongs to the daemon, so this is a round trip rather than a
+   * local write; the store's copy is patched to match so the row moves at once.
    */
-  attachTerminalToItem: (terminalId: string, itemId: string) => void;
-  /** Detach that tab from whatever item holds it; it returns to the band. */
-  detachTerminal: (terminalId: string) => void;
-  /**
-   * Fold the persisted attachments onto the current work items and tabs: keep
-   * what an item still claims, convert what older installs stored, and give a
-   * tab whose keys disagree one answer. Idempotent, so it can run whenever the
-   * item list is known rather than needing a one-shot flag.
-   */
-  migrateTerminalAttachments: (items: WorkItem[]) => void;
+  attachTerminalToWorkspace: (
+    terminalId: string,
+    workspaceId: string,
+  ) => Promise<void>;
   /** Publish the current checkout layout — what cwds are resolved against. */
   setTerminalCheckouts: (
     activity: RepoLocalActivity[],
@@ -211,10 +196,6 @@ export interface TerminalSlice {
   setContentFocus: (focus: ContentFocus) => void;
   /** ⌘`: focus code ↔ split — the terminal in and out of view. */
   toggleTerminalPanel: () => void;
-  /** Show/hide the all-terminals overview inside the panel. */
-  setTerminalOverviewOpen: (open: boolean) => void;
-  /** Toggle the overview, bringing the terminal into view if it's railed. */
-  toggleTerminalOverview: () => void;
   /** ⇧⌘↵: focus terminal ↔ split — full width from wherever it starts. */
   toggleTerminalFocus: () => void;
   setTerminalPanelWidth: (width: number) => void;
@@ -285,22 +266,10 @@ export function terminalDockPresent(state: {
 
 /** One repo's checkout layout, as terminals need to read it. */
 export interface RepoCheckouts {
-  /**
-   * The repo's main row — the row owning the repo root. Orphaned sessions are
-   * attributed here: their own directory is gone, but the shell is still alive
-   * and may hold work, so it needs a row that always exists.
-   *
-   * On a detached HEAD nothing owns the repo root (git reports no current
-   * branch), so this falls back to the row owning the repo's first checkout —
-   * see `buildCheckoutIndex`.
-   */
-  rootKey: string;
   /** Every checkout root in the repo, innermost-wins ordering applied later. */
   roots: string[];
   /** Checkout root → the review key whose row owns it. */
   owners: Record<string, string>;
-  /** Every review key this repo can show a row for. */
-  rows: Set<string>;
 }
 
 export type CheckoutIndex = Record<string, RepoCheckouts>;
@@ -324,12 +293,7 @@ export function buildCheckoutIndex(
     let repo = index[repoPath];
     if (!repo) {
       // A repo with no branch listing still anchors attribution at its root.
-      repo = {
-        rootKey: makeReviewKey(repoPath, ""),
-        roots: [repoPath],
-        owners: {},
-        rows: new Set(),
-      };
+      repo = { roots: [repoPath], owners: {} };
       index[repoPath] = repo;
     }
     return repo;
@@ -340,9 +304,6 @@ export function buildCheckoutIndex(
     path: string | null | undefined,
     key: string,
   ) => {
-    // Every key seen is a row, checkout or not: a row with no directory still
-    // exists in the sidebar, so a session attributed there is still nameable.
-    repo.rows.add(key);
     if (!path) return;
     if (!repo.roots.includes(path)) repo.roots.push(path);
     repo.owners[path] = key;
@@ -367,168 +328,7 @@ export function buildCheckoutIndex(
     add(repo, review.worktreePath, makeReviewKey(review.repoPath, review.ref));
   }
 
-  // Anchor each repo *after* every owner is known, so the answer doesn't depend
-  // on which listing happened to mention the repo root.
-  //
-  // Whatever owns the repo root is the main row, and normally that is the
-  // current branch. A detached HEAD has no current branch — git names no branch
-  // as checked out — so nothing owns the root, and the placeholder key
-  // `repoPath:""` would name a row no view draws. Fall back to the row owning
-  // the repo's first checkout instead. The placeholder survives only for a repo
-  // with no checkouts at all, which has no rows either way.
-  for (const [repoPath, repo] of Object.entries(index)) {
-    repo.rootKey =
-      repo.owners[repoPath] ??
-      repo.roots.map((root) => repo.owners[root]).find((key) => key != null) ??
-      makeReviewKey(repoPath, "");
-  }
-
   return index;
-}
-
-/**
- * The review key owning the innermost checkout a session's start cwd falls in.
- *
- * A cwd that matches no known checkout means the checkout was removed while the
- * shell kept running (see `isOrphanedSession`), so it is attributed to the
- * repo's root row rather than to nothing. `fallback` covers a repo the index has
- * not seen at all — nothing is known yet, so the caller's guess is the best
- * answer.
- */
-export function sessionReviewKey(
-  index: CheckoutIndex,
-  repoPath: string,
-  cwd: string,
-  fallback: string,
-): string {
-  const repo = index[repoPath];
-  if (!repo) return fallback;
-  const checkout = sessionCheckout(cwd, repo.roots);
-  return (checkout && repo.owners[checkout]) || repo.rootKey;
-}
-
-/**
- * `key` if a row can still show it, otherwise the repo's root key.
- *
- * A derived key outlives the row it names — the review gets marked done, the
- * branch is deleted — and a key no routed view reads is one a session would
- * disappear behind. Checked against every repo's rows, not just the session's
- * own. A repo the index has never seen returns the key untouched: an empty
- * index is not evidence that a row is gone.
- */
-export function reachableKey(
-  index: CheckoutIndex,
-  repoPath: string,
-  key: string,
-): string {
-  const repo = index[repoPath];
-  if (!repo) return key;
-  if (repo.rows.has(key)) return key;
-  return repoOfKey(index, key) ? key : repo.rootKey;
-}
-
-/**
- * The repo whose sidebar shows the row named by `key`, or null if no indexed
- * repo has that row. The key alone can't be split back into repo and ref (a
- * path may itself contain `:`), so ownership is found by asking each repo.
- */
-export function repoOfKey(index: CheckoutIndex, key: string): string | null {
-  for (const [repoPath, repo] of Object.entries(index)) {
-    if (repo.rows.has(key)) return repoPath;
-  }
-  return null;
-}
-
-/**
- * The row a session belongs to: the checkout its cwd falls in, rescued to a row
- * that still exists. What the overview groups by.
- */
-export function sessionHomeKey(
-  index: CheckoutIndex,
-  session: TerminalSessionInfo,
-  fallback: string,
-): string {
-  return reachableKey(
-    index,
-    session.repoPath,
-    sessionReviewKey(index, session.repoPath, session.cwd, fallback),
-  );
-}
-
-/**
- * Prefix marking an attachment value as a work item id.
- *
- * The map held review keys before work items existed, and both are opaque
- * strings — the prefix is what lets `migrateTabAttachments` tell a value it
- * wrote from one an older install did.
- */
-export const WORK_ITEM_HOME_PREFIX = "item:";
-
-/** The stored form of an attachment to `itemId`. */
-export function itemHome(itemId: string): string {
-  return `${WORK_ITEM_HOME_PREFIX}${itemId}`;
-}
-
-/** The item a stored attachment names, or null if it names something else. */
-export function homeItemId(value: string | undefined): string | null {
-  if (!value?.startsWith(WORK_ITEM_HOME_PREFIX)) return null;
-  return value.slice(WORK_ITEM_HOME_PREFIX.length);
-}
-
-/** Every key a tab's attachment is written under — see `terminalAttachments`. */
-function attachmentKeys(tab: TerminalTab): string[] {
-  return [tab.id, ...collectLeafIds(tab.root)];
-}
-
-/**
- * The attachments map as it should look given `tabs` and `items`.
- *
- * Three jobs, all of them "make the stored map mean what it says now":
- *
- * - an attachment naming an item the list no longer has is dropped, because an
- *   unclaimed terminal shows up in the band, which the user can see and act on,
- *   unlike an attachment pointing at nothing;
- * - a value from before work items existed named the sidebar row a terminal was
- *   dragged onto, so an item that has bound that same ref inherits it;
- * - a tab whose keys disagree — only reachable from the session-keyed map older
- *   installs wrote — takes its first pane's answer, and every one of its keys is
- *   brought into line behind it.
- */
-export function migrateTabAttachments(
-  attachments: Record<string, string>,
-  tabs: TerminalTab[],
-  items: WorkItem[],
-): Record<string, string> {
-  const byId = new Set(items.map((item) => item.id));
-  const byRefKey = new Map<string, string>();
-  for (const item of items) {
-    for (const ref of item.refs) {
-      byRefKey.set(makeReviewKey(ref.repoPath, ref.ref), item.id);
-    }
-  }
-
-  const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(attachments)) {
-    const attached = homeItemId(value);
-    if (attached != null) {
-      if (byId.has(attached)) out[key] = value;
-      continue;
-    }
-    const matched = byRefKey.get(value);
-    if (matched) out[key] = itemHome(matched);
-  }
-
-  for (const tab of tabs) {
-    const keys = attachmentKeys(tab);
-    // The tab's own id comes first, so its own answer wins over a pane's.
-    const value = keys.map((key) => out[key]).find((v) => v != null);
-    for (const key of keys) {
-      if (value) out[key] = value;
-      else delete out[key];
-    }
-  }
-
-  return out;
 }
 
 /**
@@ -705,6 +505,26 @@ export function mergeSessionList(
     terminalStatuses[session.id] ??= session.status;
   }
   return { terminalSessions, terminalStatuses };
+}
+
+/**
+ * The session map with `ids` re-attributed to `workspaceId`.
+ *
+ * The local half of an assignment the daemon has already accepted: without it
+ * the row would not move until the next `terminalList`, which is seconds away
+ * and looks like a drag that did nothing.
+ */
+export function withWorkspace(
+  state: Pick<TerminalSlice, "terminalSessions">,
+  ids: string[],
+  workspaceId: string,
+): Record<string, TerminalSessionInfo> {
+  const terminalSessions = { ...state.terminalSessions };
+  for (const id of ids) {
+    const session = terminalSessions[id];
+    if (session) terminalSessions[id] = { ...session, workspaceId };
+  }
+  return terminalSessions;
 }
 
 // ----- Pure tab reducers (exported for unit testing) -----
@@ -1012,8 +832,7 @@ export function resizeSplitInTab(
  * deliberately keeps it.
  *
  * The new tab's id is the session's own, which is what makes a reload rebuild
- * the same tabs — and what lets a rebuilt tab find the attachment its old tab
- * had (see `terminalAttachments`).
+ * the same tabs.
  */
 export function ingestTabs(
   state: TabState,
@@ -1065,50 +884,47 @@ export function sessionCheckout(
   return best;
 }
 
-type AttachState = Pick<TerminalSlice, "terminalTabs" | "terminalAttachments">;
+type TabAttribution = Pick<TerminalSlice, "terminalTabs" | "terminalSessions">;
 
-/** The work item a tab is attached to, or null. */
-export function tabItemId(
-  attachments: Record<string, string>,
-  tabId: string,
+/**
+ * The workspace a tab belongs to, or null while its sessions are unknown.
+ *
+ * A tab is one place of work, so it has one workspace even when it holds
+ * several panes: the first pane that has an answer speaks for the tab. Panes
+ * only disagree in flight — a pane dragged into another tab is reassigned to
+ * that tab's workspace right after it lands.
+ *
+ * The answer comes from the session, which is the daemon's record, not this
+ * window's: a reload, a second window, and the `review` CLI all read the same
+ * attribution instead of three copies that agree by habit.
+ */
+export function tabWorkspaceId(
+  state: Pick<TerminalSlice, "terminalSessions">,
+  tab: TerminalTab,
 ): string | null {
-  return homeItemId(attachments[tabId]);
+  for (const leafId of collectLeafIds(tab.root)) {
+    const workspaceId = state.terminalSessions[leafId]?.workspaceId;
+    if (workspaceId) return workspaceId;
+  }
+  return null;
 }
 
 /**
- * Tab ids grouped by the work item they're attached to, in strip order — what a
+ * Tab ids grouped by the workspace they belong to, in strip order — what a
  * card's terminal rows read.
  *
- * One pass for the whole section rather than one scan per card.
+ * One pass for the whole section rather than one scan per card. A tab whose
+ * workspace the queue has not caught up with yet simply lands in a bucket
+ * nothing is drawing, and appears when it has.
  */
-export function selectTabsByItemId(
-  state: AttachState,
+export function selectTabsByWorkspaceId(
+  state: TabAttribution,
 ): Record<string, string[]> {
   const out: Record<string, string[]> = {};
   for (const tab of state.terminalTabs) {
-    const itemId = tabItemId(state.terminalAttachments, tab.id);
-    if (itemId == null) continue;
-    (out[itemId] ??= []).push(tab.id);
-  }
-  return out;
-}
-
-/**
- * The tabs no work item accounts for — the band's membership rule.
- *
- * `itemIds` is what makes an attachment count: one naming an item that has been
- * removed would otherwise leave its terminal attached to nothing and invisible
- * in both places.
- */
-export function selectUnattachedTabIds(
-  state: AttachState,
-  itemIds: Set<string>,
-): string[] {
-  const out: string[] = [];
-  for (const tab of state.terminalTabs) {
-    const itemId = tabItemId(state.terminalAttachments, tab.id);
-    if (itemId != null && itemIds.has(itemId)) continue;
-    out.push(tab.id);
+    const workspaceId = tabWorkspaceId(state, tab);
+    if (workspaceId == null) continue;
+    (out[workspaceId] ??= []).push(tab.id);
   }
   return out;
 }
@@ -1125,31 +941,6 @@ export function mostRecentTabId(
     }
   }
   return best;
-}
-
-/**
- * Every session grouped by the checkout-derived row it sits in — what the
- * terminal overview groups by.
- *
- * One pass rather than one scan per group, and one rule: asking each consumer
- * to attribute sessions itself is what let two views disagree.
- *
- * Includes exited sessions, which still have a pane and still belong to a row
- * until they are closed.
- */
-export function selectSessionsByHomeKey(
-  state: Pick<TerminalSlice, "terminalSessions" | "terminalCheckouts">,
-): Record<string, string[]> {
-  const out: Record<string, string[]> = {};
-  for (const session of Object.values(state.terminalSessions)) {
-    const key = sessionHomeKey(
-      state.terminalCheckouts,
-      session,
-      makeReviewKey(session.repoPath, ""),
-    );
-    (out[key] ??= []).push(session.id);
-  }
-  return out;
 }
 
 export const createTerminalSlice: SliceCreatorWithClientAndStorage<
@@ -1213,64 +1004,46 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
     };
   }
 
-  /**
-   * Drop attachment keys for things that are gone, as the partial to spread.
-   *
-   * Attachments are persisted, so a key naming a tab or session that is never
-   * coming back would otherwise sit in the Tauri store forever — one entry per
-   * terminal ever closed, and per tab ever emptied by a pane being dragged out
-   * of it.
-   */
-  function forgetAttachments(keys: string[]): Partial<TerminalSlice> {
-    const current = get().terminalAttachments;
-    if (!keys.some((key) => key in current)) return {};
-    const terminalAttachments = { ...current };
-    for (const key of keys) delete terminalAttachments[key];
-    return writeAttachments(terminalAttachments);
-  }
-
   /** Drop a gone session from every map that holds it. */
   function teardownSession(id: string): void {
     unsubscribeSession(id);
     const g = get();
-    const tab = findTabForTerminal(g.terminalTabs, id);
     set({
       ...removeTerminalFromState(g, id),
       ...removeTerminalFromTabs(g, id),
-      // The tab goes with its last pane, and its id is window-local.
-      ...forgetAttachments(
-        tab && collectLeafIds(tab.root).length === 1 ? [id, tab.id] : [id],
-      ),
     });
   }
 
-  /** Persist an attachments map and publish it. The one way it is written. */
-  function writeAttachments(terminalAttachments: Record<string, string>): {
-    terminalAttachments: Record<string, string>;
-  } {
-    storage.set("terminalAttachments", terminalAttachments);
-    return { terminalAttachments };
+  /**
+   * Move `sessionIds` into `workspaceId`.
+   *
+   * The daemon is told first and the store patched after, because the daemon's
+   * copy is the real one — a local write that the round trip then failed to
+   * confirm would be a row sitting under a card it does not belong to.
+   */
+  async function assignSessions(
+    sessionIds: string[],
+    workspaceId: string,
+  ): Promise<void> {
+    try {
+      await Promise.all(
+        sessionIds.map((id) => client.terminalAssignWorkspace(id, workspaceId)),
+      );
+    } catch (err) {
+      console.error("[terminal] Failed to move terminal:", err);
+      toast.error("Failed to move terminal");
+      return;
+    }
+    set({ terminalSessions: withWorkspace(get(), sessionIds, workspaceId) });
   }
 
-  /**
-   * Record which item a tab is attached to, and persist it. A null item
-   * detaches it — "attached to nothing" is the absence of an entry, not an
-   * entry of its own.
-   */
-  function rememberAttachment(
-    tabId: string,
-    itemId: string | null,
-  ): Record<string, string> {
-    const g = get();
-    const tab = findTab(g.terminalTabs, tabId);
-    const keys = tab ? attachmentKeys(tab) : [tabId];
-    const terminalAttachments = { ...g.terminalAttachments };
-    for (const key of keys) {
-      if (itemId === null) delete terminalAttachments[key];
-      else terminalAttachments[key] = itemHome(itemId);
-    }
-    storage.set("terminalAttachments", terminalAttachments);
-    return terminalAttachments;
+  /** [`assignSessions`] for the whole tab holding `terminalId` — panes travel
+   *  together, so naming one of them names the tab. */
+  function assignTab(terminalId: string, workspaceId: string): Promise<void> {
+    return assignSessions(
+      tabSessionIds(get().terminalTabs, terminalId),
+      workspaceId,
+    );
   }
 
   return {
@@ -1282,37 +1055,23 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
     terminalTabUsedAt: {},
     freshTerminalIds: [],
     terminalCheckouts: {},
-    terminalAttachments: {},
     contentFocus: "code",
     terminalPanelWidth: TERMINAL_PANEL_WIDTH_DEFAULT,
     terminalDockSide: TERMINAL_DOCK_SIDE_DEFAULT,
-    terminalOverviewOpen: false,
     terminalsSupported: false,
 
     hydrateTerminalPrefs: async () => {
-      const [
-        focus,
-        legacyMode,
-        legacyOpen,
-        width,
-        dockSide,
-        attachments,
-        legacyHomes,
-      ] = await Promise.all([
-        storage.get<ContentFocus>("contentFocus"),
-        // Pre-focus installs persisted the same three states under the
-        // panel's own names; map them once so the layout survives upgrade.
-        storage.get<"closed" | "split" | "maximized">("terminalPanelMode"),
-        // And pre-mode installs persisted an open/closed boolean.
-        storage.get<boolean>("terminalPanelOpen"),
-        storage.get<number>("terminalPanelWidth"),
-        storage.get<TerminalDockSide>("terminalDockSide"),
-        storage.get<Record<string, string>>("terminalAttachments"),
-        // Pre-tab installs keyed attachments by session id. That is the same
-        // namespace a tab id lives in — a rebuilt tab takes its session's id
-        // — so the old map is a valid attachments map as it stands.
-        storage.get<Record<string, string>>("terminalHomes"),
-      ]);
+      const [focus, legacyMode, legacyOpen, width, dockSide] =
+        await Promise.all([
+          storage.get<ContentFocus>("contentFocus"),
+          // Pre-focus installs persisted the same three states under the
+          // panel's own names; map them once so the layout survives upgrade.
+          storage.get<"closed" | "split" | "maximized">("terminalPanelMode"),
+          // And pre-mode installs persisted an open/closed boolean.
+          storage.get<boolean>("terminalPanelOpen"),
+          storage.get<number>("terminalPanelWidth"),
+          storage.get<TerminalDockSide>("terminalDockSide"),
+        ]);
       const migrated: ContentFocus | null =
         legacyMode === "closed"
           ? "code"
@@ -1325,37 +1084,40 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
         contentFocus: focus ?? migrated ?? (legacyOpen ? "split" : "code"),
         terminalPanelWidth: width ?? TERMINAL_PANEL_WIDTH_DEFAULT,
         terminalDockSide: dockSide ?? TERMINAL_DOCK_SIDE_DEFAULT,
-        // Sessions outlive the app, so attachments written in an earlier run
-        // are still the answer for the tabs rebuilt from them.
-        terminalAttachments: attachments ?? legacyHomes ?? {},
       });
     },
 
     setTerminalsSupported: (supported) =>
       set({ terminalsSupported: supported }),
 
-    startTerminal: async (repoPath, cwd, cols, rows, shell) => {
+    startTerminal: async (repoPath, cwd, cols, rows, shell, workspaceId) => {
       const id = crypto.randomUUID();
       const tabId = crypto.randomUUID();
       // Subscribe BEFORE starting so the first status/exit can't race us.
       subscribeSession(id);
       try {
-        const session = await client.terminalStart({
+        // The backend routes: the session is born in the workspace its cwd
+        // belongs to, and says which one that is.
+        const { session, workspace } = await client.terminalStart({
           terminalId: id,
           repoPath,
           cwd,
           cols,
           rows,
           shell,
+          workspaceId,
         });
         const g = get();
-        // It starts attached to nothing: a new shell is one more live thing
-        // the band will surface until the user says which work it belongs to.
         set({
           ...addTerminalToState(g, session),
           ...addTabForTerminal(g, session.id, tabId),
           ...activateTab(tabId),
         });
+        // A workspace the router just invented is one the queue has never
+        // listed, and a terminal is drawn under its workspace or nowhere — so
+        // the list is re-read rather than waited for. (The work.json watcher
+        // would get there too; this makes the new card land with the shell.)
+        if (workspace.created) void get().loadWorkspaces();
         runLaunchCommand(session.id);
         return id;
       } catch (err) {
@@ -1372,13 +1134,22 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
       const id = crypto.randomUUID();
       subscribeSession(id);
       try {
-        const session = await client.terminalStart({
+        // A split joins the tab it was opened from, so it belongs to that
+        // tab's workspace — which is not always where its cwd would have
+        // routed it, because the tab may have been moved somewhere else since.
+        //
+        // Named up front rather than assigned afterwards. Starting first and
+        // moving second lets the router mint a workspace for the cwd that the
+        // session then walks away from, leaving an empty queue entry behind for
+        // cleanup to collect.
+        const { session, workspace } = await client.terminalStart({
           terminalId: id,
           repoPath: target.repoPath,
           // New pane inherits the split pane's cwd; it refits on mount.
           cwd: target.cwd,
           cols: 80,
           rows: 24,
+          workspaceId: target.workspaceId ?? undefined,
         });
         const g = get();
         set({
@@ -1391,14 +1162,10 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
             direction,
           ),
         });
-        // A split joins the tab it was opened from, so it takes on that tab's
-        // attachment — the two panes are one place of work, and leaving the new
-        // pane out of the record would cost it that attachment on the next
-        // reload, when the tab fragments back into one tab per session.
-        const itemId = tabItemId(get().terminalAttachments, tabId);
-        if (itemId) {
-          set({ terminalAttachments: rememberAttachment(tabId, itemId) });
-        }
+        // Same reason as `startTerminal`: a workspace the router just invented
+        // has never been listed, and a terminal is drawn under its workspace or
+        // nowhere.
+        if (workspace.created) void get().loadWorkspaces();
         runLaunchCommand(session.id);
         return id;
       } catch (err) {
@@ -1424,9 +1191,9 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
 
     setActiveTab: (tabId) => set(activateTab(tabId)),
 
-    selectItemTab: (itemId) => {
+    selectWorkspaceTab: (workspaceId) => {
       const g = get();
-      const tabIds = selectTabsByItemId(g)[itemId] ?? [];
+      const tabIds = selectTabsByWorkspaceId(g)[workspaceId] ?? [];
       const tabId = mostRecentTabId(tabIds, g.terminalTabUsedAt);
       if (tabId) set(activateTab(tabId));
     },
@@ -1434,28 +1201,8 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
     setTerminalCheckouts: (activity, reviews) =>
       set({ terminalCheckouts: buildCheckoutIndex(activity, reviews) }),
 
-    attachTerminalToItem: (terminalId, itemId) => {
-      const tab = findTabForTerminal(get().terminalTabs, terminalId);
-      if (!tab) return;
-      set({ terminalAttachments: rememberAttachment(tab.id, itemId) });
-    },
-
-    detachTerminal: (terminalId) => {
-      const tab = findTabForTerminal(get().terminalTabs, terminalId);
-      if (!tab) return;
-      set({ terminalAttachments: rememberAttachment(tab.id, null) });
-    },
-
-    migrateTerminalAttachments: (items) => {
-      const g = get();
-      const terminalAttachments = migrateTabAttachments(
-        g.terminalAttachments,
-        g.terminalTabs,
-        items,
-      );
-      if (jsonEqual(terminalAttachments, g.terminalAttachments)) return;
-      set(writeAttachments(terminalAttachments));
-    },
+    attachTerminalToWorkspace: (terminalId, workspaceId) =>
+      assignTab(terminalId, workspaceId),
 
     moveTab: (fromIndex, toIndex) => {
       const g = get();
@@ -1478,21 +1225,14 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
 
     movePaneToTab: (sourceTerminalId, targetTabId) => {
       const g = get();
-      const source = findTabForTerminal(g.terminalTabs, sourceTerminalId);
+      const target = findTab(g.terminalTabs, targetTabId);
       const next = movePaneToTabTree(g, sourceTerminalId, targetTabId);
-      if (!next.terminalTabs) return;
+      if (!next.terminalTabs || !target) return;
       set({ ...next, ...activateTab(targetTabId) });
       // The pane belongs to the tab it joined now, so it takes on that tab's
-      // attachment rather than keeping the one it arrived with — including
-      // "none", which is what makes a pane dragged onto an unclaimed tab
-      // unclaimed too.
-      const itemId = tabItemId(get().terminalAttachments, targetTabId);
-      set({ terminalAttachments: rememberAttachment(targetTabId, itemId) });
-      // The gesture is a merge when the pane was its old tab's only one, and
-      // that tab is gone now.
-      if (source && !findTab(get().terminalTabs, source.id)) {
-        set(forgetAttachments([source.id]));
-      }
+      // workspace rather than keeping the one it arrived with.
+      const workspaceId = tabWorkspaceId(g, target);
+      if (workspaceId) void assignSessions([sourceTerminalId], workspaceId);
     },
 
     movePaneToNewTab: (sourceTerminalId) => {
@@ -1503,12 +1243,8 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
       const next = extractPaneToTab(g, sourceTerminalId, tabId);
       if (!next.terminalTabs) return null;
       set({ ...next, ...activateTab(tabId) });
-      // A pane pulled out of an attached tab is still that item's work, so the
-      // tab it became carries the attachment too.
-      const itemId = tabItemId(g.terminalAttachments, source.id);
-      if (itemId) {
-        set({ terminalAttachments: rememberAttachment(tabId, itemId) });
-      }
+      // Nothing to reassign: the session is the same session, and its workspace
+      // came with it into the tab it now has to itself.
       return tabId;
     },
 
@@ -1526,18 +1262,6 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
       // a split so the code can't stay hidden behind a panel that isn't
       // showing.
       setFocus(get().contentFocus === "code" ? "split" : "code");
-    },
-
-    setTerminalOverviewOpen: (open) => set({ terminalOverviewOpen: open }),
-
-    toggleTerminalOverview: () => {
-      const g = get();
-      const open = !g.terminalOverviewOpen;
-      set({ terminalOverviewOpen: open });
-      // "Show me all my terminals" while the code has focus means bring the
-      // terminal into view too — an overview toggled on inside a railed panel
-      // would read as a no-op.
-      if (open && g.contentFocus === "code") setFocus("split");
     },
 
     toggleTerminalFocus: () => {

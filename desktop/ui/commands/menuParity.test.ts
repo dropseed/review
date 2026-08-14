@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { APP_COMMANDS } from "./appCommands";
+import { TERMINAL_COMMANDS } from "../components/Terminal/commands";
 import { toAccelerator } from "./shortcuts";
 import { MENU_COMMANDS } from "../hooks/useMenuEvents";
 
@@ -57,7 +58,14 @@ function parseMenuItems(source: string): MenuItem[] {
 
 const source = readFileSync(MOD_RS, "utf8");
 const menuItems = parseMenuItems(source);
-const commandsById = new Map(APP_COMMANDS.map((c) => [c.id, c]));
+/**
+ * Both statically-known command lists, because the menu can name either. The
+ * terminal contributes its own set (it owns the DOM probes behind them) and
+ * ⌘T — the app's most-used chord — lives there.
+ */
+const commandsById = new Map(
+  [...APP_COMMANDS, ...TERMINAL_COMMANDS].map((c) => [c.id, c]),
+);
 
 const commandForMenuId = new Map(
   Object.entries(MENU_COMMANDS).map(([menuId, { command }]) => [

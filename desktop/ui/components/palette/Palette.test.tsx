@@ -9,7 +9,7 @@ import type { PaletteMode } from "./modes";
 const input = () => screen.getByRole("combobox") as HTMLInputElement;
 
 /** The mode chip, which is the only place the current mode is spelled out. */
-const chip = () => screen.getByText(/^(Files|Commands|Symbols|In Files)$/);
+const chip = () => document.querySelector("[data-palette-mode]") as HTMLElement;
 
 function open(mode: PaletteMode) {
   useReviewStore.setState({ activeOverlay: "palette", paletteMode: mode });
@@ -76,20 +76,20 @@ describe("prefix modes", () => {
   });
 
   /**
-   * Files is the mode with no prefix, so there is no character that reaches
-   * it. Opening straight into another mode and finding Backspace inert would
-   * leave it unreachable without closing the palette entirely.
+   * Go is the mode with no prefix, so there is no character that reaches it.
+   * Opening straight into another mode and finding Backspace inert would leave
+   * it unreachable without closing the palette entirely.
    */
-  it("falls back to files when there is nothing to unwind", () => {
+  it("falls back to go when there is nothing to unwind", () => {
     open("commands");
     fireEvent.keyDown(input(), { key: "Backspace" });
-    expect(chip().textContent).toBe("Files");
+    expect(chip().textContent).toBe("Go");
   });
 
-  it("stops at files rather than unwinding past it", () => {
-    open("files");
+  it("stops at go rather than unwinding past it", () => {
+    open("go");
     fireEvent.keyDown(input(), { key: "Backspace" });
-    expect(chip().textContent).toBe("Files");
+    expect(chip().textContent).toBe("Go");
   });
 
   it("leaves Backspace alone while there is text to delete", () => {

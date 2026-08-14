@@ -42,7 +42,7 @@ export function FilesPanelDock(): ReactNode {
         aria-hidden={collapsed}
       >
         <div
-          className="flex flex-col flex-1 overflow-hidden bg-surface border-l border-edge"
+          className="flex flex-col flex-1 overflow-hidden border-l border-edge/60 bg-surface"
           style={{
             width: `${sidebarWidth}rem`,
             contentVisibility: collapsed ? "hidden" : "visible",

@@ -15,8 +15,8 @@ import type { ReviewScope } from "../../types/scope";
 import type { CommitRange } from "../../types/commitRange";
 import { sameRange } from "../../types/commitRange";
 import type { SliceCreatorWithClient } from "../types";
-import { flattenFiles, isChangedStatus } from "../types";
-import { getAllHunksFromState } from "../selectors/hunkData";
+import { createDebouncedFn, flattenFiles, isChangedStatus } from "../types";
+import { mergeDeltaHunks, patchFileTree } from "../filesDelta";
 import type { UndoEntry } from "./undoSlice";
 import { symbolsResetState, repoSymbolsResetState } from "./symbolsSlice";
 import { classificationResetState } from "./classificationSlice";
@@ -74,23 +74,42 @@ function groupHunksByPath(hunks: DiffHunk[]): Record<string, FileDiff> {
 }
 
 /**
- * Replace hunks with new move-pair annotations. detectMovePairs returns the
- * full set of hunks with `movePairId` set on paired entries. We regroup by
- * file path so `filesByPath` gains the annotations.
+ * Stamp `movePairId` onto the hunks named by a set of move pairs.
+ *
+ * The annotation is applied to whatever hunks the store currently holds rather
+ * than to a snapshot sent to the backend and handed back: detection runs
+ * deferred, so by the time it answers the diff may have moved on, and folding a
+ * stale copy of a file back in would undo an edit the user can see. Ids the
+ * store no longer knows are simply skipped — that file will be re-annotated by
+ * the pass the edit itself schedules.
  */
 function applyMovePairAnnotations(
-  annotated: DiffHunk[],
+  pairs: MovePair[],
   prevFilesByPath: Record<string, FileDiff>,
 ): Record<string, FileDiff> {
-  const nextByPath: Record<string, DiffHunk[]> = {};
-  for (const h of annotated) {
-    (nextByPath[h.filePath] ??= []).push(h);
+  const partnerById = new Map<string, string>();
+  for (const pair of pairs) {
+    partnerById.set(pair.sourceHunkId, pair.destHunkId);
+    partnerById.set(pair.destHunkId, pair.sourceHunkId);
   }
+
   const next: Record<string, FileDiff> = { ...prevFilesByPath };
-  for (const [path, pathHunks] of Object.entries(nextByPath)) {
-    next[path] = buildFileDiff(pathHunks);
+  let anyChanged = false;
+  for (const [path, diff] of Object.entries(prevFilesByPath)) {
+    let fileChanged = false;
+    const hunks = diff.hunks.map((hunk) => {
+      const movePairId = partnerById.get(hunk.id);
+      if (hunk.movePairId === movePairId) return hunk;
+      fileChanged = true;
+      return { ...hunk, movePairId };
+    });
+    if (fileChanged) {
+      next[path] = buildFileDiff(hunks);
+      anyChanged = true;
+    }
   }
-  return next;
+  // Same object back when nothing moved, so the caller can skip the write.
+  return anyChanged ? next : prevFilesByPath;
 }
 
 /** Order-sensitive equality on (sourceHunkId, destHunkId) tuples. */
@@ -192,16 +211,64 @@ export interface FilesSlice {
   loadCurrentBranch: () => Promise<void>;
   /** Load contents of a gitignored directory and merge into allFiles */
   loadDirectoryContents: (dirPath: string) => Promise<void>;
-  /** Surgical refresh: rewrites `filesByPath` for the given paths in one set(). */
-  refetchFileHunks: (paths: string[]) => Promise<void>;
+  /**
+   * Recompute the named paths and patch them into the loaded diff, leaving
+   * every other file's state — and object identity — alone.
+   */
+  applyFilesDelta: (paths: string[]) => Promise<WatcherPatch>;
+  /**
+   * Re-detect move pairs for the whole comparison, after a quiet moment.
+   *
+   * Deferred because it is display enrichment, not the diff: a hunk without
+   * its move annotation still renders correctly, so this must never sit
+   * between an edit and the updated diff appearing.
+   */
+  scheduleMovePairRefresh: () => void;
   /**
    * Apply a working-tree watcher event's file-level impact. In browse mode
-   * just triggers a re-fetch for any open viewer; in review mode either
-   * surgically refetches those paths, or falls back to a full `loadFiles`
-   * when any changed path isn't tracked yet (added/deleted files).
+   * just triggers a re-fetch for any open viewer; in review mode patches the
+   * changed paths in, falling back to a full reload for an implausibly large
+   * batch or a failed delta.
    */
-  applyFileWatcherEvent: (changedPaths: string[]) => Promise<void>;
+  applyFileWatcherEvent: (changedPaths: string[]) => Promise<WatcherPatch>;
 }
+
+/**
+ * What a watcher event actually did, for the caller that has to decide what
+ * else to recompute.
+ *
+ * The distinction that matters is `scope`: after an incremental patch only
+ * `addedHunkIds` can need classifying and only `paths` can need reconciling,
+ * while a full reload leaves nothing scoped and has to be treated as new.
+ */
+export interface WatcherPatch {
+  scope: "incremental" | "full";
+  /** Whether any hunks actually changed — nothing downstream is due if not. */
+  hunksChanged: boolean;
+  /** Hunk ids new to the diff. Meaningful only for an incremental patch. */
+  addedHunkIds: string[];
+  /** The paths the patch covered. */
+  paths: string[];
+}
+
+const NO_PATCH: WatcherPatch = {
+  scope: "incremental",
+  hunksChanged: false,
+  addedHunkIds: [],
+  paths: [],
+};
+
+/**
+ * Above this many paths in one debounce window, patching file by file stops
+ * being the cheaper answer — and the event has stopped looking like someone
+ * editing code. A branch switch or a `git stash` lands here, where a full
+ * reload is both faster and the only thing that can be right.
+ */
+const MAX_INCREMENTAL_PATHS = 20;
+
+/** How long the diff has to sit still before move detection re-runs. */
+const MOVE_PAIR_DEBOUNCE_MS = 1000;
+const movePairRefresh = createDebouncedFn(MOVE_PAIR_DEBOUNCE_MS);
 
 /**
  * Everything derived from one `base..head` diff. Cleared whenever the diff
@@ -624,30 +691,10 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
           `[perf] Total loadFiles: ${(performance.now() - loadStart).toFixed(0)}ms`,
         );
 
-        // Fire-and-forget: detect move pairs in background. Only re-run when
-        // file contents actually changed; on no-op refreshes, skip the
-        // Rust IPC round trip entirely.
+        // Detect move pairs in the background. Only re-run when file contents
+        // actually changed; on no-op refreshes, skip the round trip entirely.
         if (anyFileChanged) {
-          const phase3Start = performance.now();
-          client
-            .detectMovePairs(allHunks)
-            .then((result) => {
-              if (isStale()) return;
-              if (!movePairsChanged(get().movePairs, result.pairs)) return;
-              set({
-                filesByPath: applyMovePairAnnotations(
-                  result.hunks,
-                  get().filesByPath,
-                ),
-                movePairs: result.pairs,
-              });
-              console.log(
-                `[perf] Phase 3 (move detection, background): ${(performance.now() - phase3Start).toFixed(0)}ms`,
-              );
-            })
-            .catch((err) => {
-              console.error("Failed to detect move pairs:", err);
-            });
+          get().scheduleMovePairRefresh();
         }
       } catch (err) {
         console.error("Failed to load files:", err);
@@ -776,103 +823,129 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
       }
     },
 
-    refetchFileHunks: async (paths: string[]) => {
+    applyFilesDelta: async (paths: string[]) => {
       const { repoPath, comparison } = get();
-      if (!repoPath || !comparison || paths.length === 0) return;
+      if (!repoPath || !comparison || paths.length === 0) return NO_PATCH;
 
       const comparisonKey = comparison.key;
       const isStale = () => get().comparison?.key !== comparisonKey;
+      const t0 = performance.now();
 
-      // Filter out binary/build artifacts we never diff.
-      const filtered = paths.filter((p) => !shouldSkipFile(p));
-      if (filtered.length === 0) return;
-
-      // Fetch all paths in parallel, then write in one batched set().
-      const results = await Promise.all(
-        filtered.map(async (path) => {
-          try {
-            const content = await client.getFileContent(
-              repoPath,
-              path,
-              comparison,
-            );
-            return { path, diff: buildFileDiff(content.hunks) };
-          } catch (err) {
-            console.warn(`[refetchFileHunks] failed for ${path}:`, err);
-            return null;
-          }
-        }),
-      );
-
-      if (isStale()) return;
+      let delta;
+      try {
+        delta = await client.getFilesDelta(repoPath, comparison, paths);
+      } catch (err) {
+        // Incremental is an optimization, never a different answer — anything
+        // unexpected goes back to the pipeline that can't be wrong.
+        console.warn(
+          "[watcher] delta failed, falling back to full reload:",
+          err,
+        );
+        await Promise.all([get().loadFiles(true), get().loadAllFiles(true)]);
+        return { scope: "full", hunksChanged: true, addedHunkIds: [], paths };
+      }
+      if (isStale()) return NO_PATCH;
 
       const prev = get();
-      let anyChanged = false;
-      const nextFilesByPath = { ...prev.filesByPath };
-      for (const r of results) {
-        if (!r) continue;
-        const existing = nextFilesByPath[r.path];
-        if (existing && existing.contentHash === r.diff.contentHash) continue;
-        nextFilesByPath[r.path] = r.diff;
-        anyChanged = true;
+      const merged = mergeDeltaHunks(prev.filesByPath, delta);
+      const tree = patchFileTree(prev.files, delta.files);
+      // The file finder's whole-repo listing has the same shape and the same
+      // three things can happen to it, but it is loaded separately — patching
+      // an empty one would invent a tree out of the handful of changed paths.
+      const allTree =
+        prev.allFiles.length > 0
+          ? patchFileTree(prev.allFiles, delta.files)
+          : { entries: prev.allFiles, changed: false };
+
+      if (merged.changed || tree.changed || allTree.changed) {
+        set({
+          ...(merged.changed ? { filesByPath: merged.filesByPath } : {}),
+          ...(tree.changed
+            ? { files: tree.entries, flatFileList: flattenFiles(tree.entries) }
+            : {}),
+          ...(allTree.changed ? { allFiles: allTree.entries } : {}),
+        });
       }
 
-      if (!anyChanged) return;
+      console.log(
+        `[perf] files delta: ${paths.length} paths, ${delta.hunks.length} hunks in ${(
+          performance.now() - t0
+        ).toFixed(0)}ms (hunks ${merged.changed ? "changed" : "unchanged"}, ${
+          merged.addedHunkIds.length
+        } new)`,
+      );
 
-      set({ filesByPath: nextFilesByPath });
+      if (merged.changed) get().scheduleMovePairRefresh();
 
-      // Defer the IPC so the save-induced render completes first.
-      setTimeout(() => {
-        if (isStale()) return;
-        client
-          .detectMovePairs(getAllHunksFromState(get()))
-          .then((result) => {
-            if (isStale()) return;
-            if (!movePairsChanged(get().movePairs, result.pairs)) return;
-            set({
-              filesByPath: applyMovePairAnnotations(
-                result.hunks,
-                get().filesByPath,
-              ),
-              movePairs: result.pairs,
-            });
-          })
-          .catch((err) => {
-            console.error("Failed to detect move pairs:", err);
-          });
-      }, 0);
+      return {
+        scope: "incremental",
+        hunksChanged: merged.changed,
+        addedHunkIds: merged.addedHunkIds,
+        paths,
+      };
+    },
+
+    scheduleMovePairRefresh: () => {
+      const comparisonKey = get().comparison?.key;
+      if (!comparisonKey) return;
+
+      movePairRefresh(async () => {
+        const { repoPath, comparison } = get();
+        if (!repoPath || comparison?.key !== comparisonKey) return;
+
+        const t0 = performance.now();
+        try {
+          const pairs = await client.getComparisonMovePairs(
+            repoPath,
+            comparison,
+          );
+          if (get().comparison?.key !== comparisonKey) return;
+
+          const filesByPath = applyMovePairAnnotations(
+            pairs,
+            get().filesByPath,
+          );
+          if (
+            filesByPath === get().filesByPath &&
+            !movePairsChanged(get().movePairs, pairs)
+          ) {
+            return;
+          }
+          set({ filesByPath, movePairs: pairs });
+          console.log(
+            `[perf] move detection (deferred): ${(performance.now() - t0).toFixed(0)}ms, ${pairs.length} pairs`,
+          );
+        } catch (err) {
+          console.error("Failed to detect move pairs:", err);
+        }
+      });
     },
 
     applyFileWatcherEvent: async (changedPaths) => {
-      const {
-        comparison,
-        flatFileList,
-        refetchFileHunks,
-        loadFiles,
-        loadAllFiles,
-      } = get();
+      const { comparison, applyFilesDelta, loadFiles, loadAllFiles } = get();
 
       // Browse mode: no diff to invalidate, so bump per-path versions in one
       // set() — raw-content viewers refetch via their fileVersion subscription.
       if (!comparison) {
-        if (changedPaths.length === 0) return;
+        if (changedPaths.length === 0) return NO_PATCH;
         const prev = get().fileVersions;
         const next = { ...prev };
         for (const path of changedPaths) {
           next[path] = (next[path] ?? 0) + 1;
         }
         set({ fileVersions: next });
-        return;
+        return NO_PATCH;
       }
 
-      // Review mode: `filesByPath[path]` reference change invalidates viewers
-      // directly. If any changed path is new/deleted, fall back to a full
-      // listFiles + hunk reload; otherwise surgically refetch.
-      const known = new Set(flatFileList);
-      if (changedPaths.some((p) => !known.has(p))) {
+      // Filter out binary/build artifacts we never diff.
+      const paths = changedPaths.filter((p) => !shouldSkipFile(p));
+      if (paths.length === 0) return NO_PATCH;
+
+      if (paths.length > MAX_INCREMENTAL_PATHS) {
         await Promise.all([loadFiles(true), loadAllFiles(true)]);
-      } else {
-        await refetchFileHunks(changedPaths);
+        return { scope: "full", hunksChanged: true, addedHunkIds: [], paths };
       }
+
+      return applyFilesDelta(paths);
     },
   });

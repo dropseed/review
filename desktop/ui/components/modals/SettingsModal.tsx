@@ -25,7 +25,7 @@ import { SimpleTooltip } from "../ui/tooltip";
 import { Switch } from "../ui/switch";
 import { getAllUiThemes } from "../../lib/ui-themes";
 import { getApiClient } from "../../api";
-import { phaseDotClass } from "../TabRail/terminal-status-format";
+import { phaseDotClass } from "../Sidebar/terminal-status-format";
 import {
   toBackgroundSessionRow,
   type BackgroundSessionRow,

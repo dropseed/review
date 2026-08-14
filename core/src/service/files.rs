@@ -23,6 +23,7 @@ use super::util::{
 };
 use super::ExpandedContextResult;
 use super::FileContent;
+use super::{FileDeltaEntry, FilesDelta};
 
 /// List files with changes in the comparison.
 pub fn list_files(repo_path: &Path, comparison: &Comparison) -> anyhow::Result<Vec<FileEntry>> {
@@ -401,6 +402,32 @@ pub fn comparison_hunks(
     get_all_hunks(repo_path, comparison, &paths)
 }
 
+/// Detect the comparison's move pairs, reading the diff here rather than being
+/// handed one.
+///
+/// Moves are the one enrichment that can't be scoped to the files an edit
+/// touched — a block cut from one file and pasted into another is a fact about
+/// the pair — so this always runs over the whole comparison. Taking the repo
+/// and comparison instead of a hunk list is what keeps that affordable from the
+/// UI: a several-hundred-file diff is megabytes of hunks in each direction
+/// across the IPC boundary, and the answer that comes back is a handful of id
+/// pairs. Callers apply those pairs to the hunks they already hold.
+pub fn comparison_move_pairs(
+    repo_path: &Path,
+    comparison: &Comparison,
+) -> anyhow::Result<Vec<crate::diff::parser::MovePair>> {
+    let t0 = Instant::now();
+    let mut hunks = comparison_hunks(repo_path, comparison)?;
+    let pairs = crate::diff::parser::detect_move_pairs(&mut hunks);
+    info!(
+        "[comparison_move_pairs] SUCCESS: {} pairs from {} hunks in {:?}",
+        pairs.len(),
+        hunks.len(),
+        t0.elapsed()
+    );
+    Ok(pairs)
+}
+
 /// Flatten a `FileEntry` tree into the paths the comparison actually touched.
 ///
 /// `list_files` returns the whole working tree with the changed entries marked,
@@ -457,7 +484,7 @@ pub fn get_all_hunks(
 
     // Try hunk cache before parsing
     let diff_hash = crate::diff::cache::compute_hash(&full_diff);
-    let mut all_hunks =
+    let all_hunks =
         if let Ok(Some(cached)) = crate::diff::cache::load(repo_path, comparison, &diff_hash) {
             debug!("[get_all_hunks] hunk cache HIT");
             cached
@@ -475,20 +502,55 @@ pub fn get_all_hunks(
         };
     drop(full_diff);
 
-    // Build a set of file paths that got hunks from the diff
-    let files_with_hunks: HashSet<String> = all_hunks.iter().map(|h| h.file_path.clone()).collect();
+    let mut untracked = None;
+    let all_hunks = select_requested_hunks(
+        &source,
+        &content_root,
+        all_hunks,
+        file_paths,
+        &mut untracked,
+    );
 
-    // For requested files that have no diff hunks, check if they're
-    // untracked (new) and create untracked hunks for them. The untracked set
-    // is fetched once for the whole batch — probing paths one at a time cost a
-    // git subprocess each, so a caller passing a repo-sized path list (see
+    info!(
+        "[get_all_hunks] SUCCESS: {} hunks from {} files in {:?}",
+        all_hunks.len(),
+        file_paths.len(),
+        t0.elapsed()
+    );
+    Ok(all_hunks)
+}
+
+/// Narrow parsed hunks to the requested files, synthesizing the untracked ones.
+///
+/// The two callers differ only in how much diff they parsed —
+/// [`get_all_hunks`] parses the whole comparison, [`files_delta`] a
+/// pathspec-narrowed slice of it — and share this so a file's hunks (and so
+/// its `filepath:hash` ids) can't depend on which of them asked.
+///
+/// `untracked` is the caller's memo cell for `git ls-files --others`: it is
+/// filled at most once, and only when some requested file has no diff hunks,
+/// so the common "every requested file changed" case spawns no extra process.
+fn select_requested_hunks(
+    source: &LocalGitSource,
+    content_root: &Path,
+    mut hunks: Vec<DiffHunk>,
+    file_paths: &[String],
+    untracked: &mut Option<HashSet<String>>,
+) -> Vec<DiffHunk> {
+    let files_with_hunks: HashSet<&str> = hunks.iter().map(|h| h.file_path.as_str()).collect();
+
+    // For requested files that have no diff hunks, check if they're untracked
+    // (new) and create untracked hunks for them. The untracked set is fetched
+    // once for the whole batch — probing paths one at a time cost a git
+    // subprocess each, so a caller passing a repo-sized path list (see
     // `comparison_hunks`) paid thousands of spawns to find a handful of files.
-    let mut unhunked = file_paths
+    let unhunked: Vec<&String> = file_paths
         .iter()
         .filter(|fp| !files_with_hunks.contains(fp.as_str()))
-        .peekable();
-    if unhunked.peek().is_some() {
-        let untracked = source.untracked_file_set(&content_root).unwrap_or_default();
+        .collect();
+    if !unhunked.is_empty() {
+        let untracked = untracked
+            .get_or_insert_with(|| source.untracked_file_set(content_root).unwrap_or_default());
         for fp in unhunked {
             if !untracked.contains(fp) {
                 continue;
@@ -501,7 +563,7 @@ pub fn get_all_hunks(
                     (hash, text)
                 })
                 .unwrap_or_else(|_| ("00000000".to_owned(), None));
-            all_hunks.push(create_untracked_hunk(
+            hunks.push(create_untracked_hunk(
                 fp,
                 &content_hash,
                 text_content.as_deref(),
@@ -511,15 +573,90 @@ pub fn get_all_hunks(
 
     // Filter to only include hunks for the requested files
     let requested: HashSet<&str> = file_paths.iter().map(|s| s.as_str()).collect();
-    all_hunks.retain(|h| requested.contains(h.file_path.as_str()));
+    hunks.retain(|h| requested.contains(h.file_path.as_str()));
+    hunks
+}
+
+/// Recompute just the named files of a comparison: their current hunks, and
+/// enough of their file-list identity to place them in (or drop them from) a
+/// diff the caller already holds.
+///
+/// This is the file watcher's path. A working-tree edit names the handful of
+/// paths it touched, and re-running the whole comparison to learn what two of
+/// them now look like is the difference between a diff that keeps up with an
+/// agent writing code and one that doesn't. The narrowing is in the `git diff`
+/// pathspec and in what crosses the IPC boundary — both of which dominate on a
+/// several-hundred-file comparison.
+///
+/// A requested path with `status: None` is no longer part of the comparison
+/// (the edit reverted it); the caller drops whatever it holds for it.
+pub fn files_delta(
+    repo_path: &Path,
+    comparison: &Comparison,
+    file_paths: &[String],
+) -> anyhow::Result<FilesDelta> {
+    let t0 = Instant::now();
+    debug!(
+        "[files_delta] repo_path={}, {} files",
+        repo_path.display(),
+        file_paths.len()
+    );
+
+    file_paths
+        .iter()
+        .try_for_each(|fp| reject_path_traversal(fp))?;
+
+    let source = LocalGitSource::new(repo_path.to_path_buf()).context("Failed to open repo")?;
+    let content_root = source
+        .working_tree_dir(comparison)
+        .unwrap_or_else(|| repo_path.to_path_buf());
+
+    let diff_start = Instant::now();
+    let path_refs: Vec<&str> = file_paths.iter().map(String::as_str).collect();
+    let narrowed = source
+        .get_diff_for_paths(comparison, &path_refs)
+        .context("Failed to get diff")?;
+    let diff_elapsed = diff_start.elapsed();
+
+    let mut untracked = None;
+    let hunks = select_requested_hunks(
+        &source,
+        &content_root,
+        parse_multi_file_diff(&narrowed),
+        file_paths,
+        &mut untracked,
+    );
+
+    // Statuses come from the comparison's own name-status pass rather than
+    // being inferred from the diff, so an entry the watcher adds to the file
+    // tree is the same entry `list_files` would have produced for it.
+    let (status_map, rename_map) = source.get_changed_files(comparison).unwrap_or_default();
+    let files = file_paths
+        .iter()
+        .map(|path| {
+            let status = status_map.get(path).cloned().or_else(|| {
+                let untracked = untracked.get_or_insert_with(|| {
+                    source.untracked_file_set(&content_root).unwrap_or_default()
+                });
+                untracked.contains(path).then_some(FileStatus::Untracked)
+            });
+            FileDeltaEntry {
+                path: path.clone(),
+                status,
+                renamed_from: rename_map.get(path).cloned(),
+                exists: content_root.join(path).exists(),
+            }
+        })
+        .collect();
 
     info!(
-        "[get_all_hunks] SUCCESS: {} hunks from {} files in {:?}",
-        all_hunks.len(),
+        "[files_delta] SUCCESS: {} hunks from {} files in {:?} (git diff {:?})",
+        hunks.len(),
         file_paths.len(),
-        t0.elapsed()
+        t0.elapsed(),
+        diff_elapsed
     );
-    Ok(all_hunks)
+    Ok(FilesDelta { files, hunks })
 }
 
 /// Get file content for working tree diff (staged or unstaged).
@@ -908,36 +1045,36 @@ mod tests {
     /// The diff view renders from `old_content` vs the new content, so when the
     /// head is behind its base, `old_content` must come from the merge-base —
     /// otherwise the base's newer, unrelated changes show up as diff noise.
+    fn git(dir: &Path, args: &[&str]) {
+        let ok = std::process::Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .status()
+            .unwrap()
+            .success();
+        assert!(ok, "git {args:?} failed");
+    }
+
+    fn git_out(dir: &Path, args: &[&str]) -> String {
+        let out = std::process::Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    }
+
     #[test]
     fn get_file_content_old_side_uses_merge_base_not_base_tip() {
         use crate::sources::traits::Comparison;
-        use std::process::Command as Cmd;
-
-        fn git(dir: &Path, args: &[&str]) {
-            let ok = Cmd::new("git")
-                .args(args)
-                .current_dir(dir)
-                .env("GIT_AUTHOR_NAME", "t")
-                .env("GIT_AUTHOR_EMAIL", "t@t")
-                .env("GIT_COMMITTER_NAME", "t")
-                .env("GIT_COMMITTER_EMAIL", "t@t")
-                .env("GIT_CONFIG_GLOBAL", "/dev/null")
-                .env("GIT_CONFIG_SYSTEM", "/dev/null")
-                .status()
-                .unwrap()
-                .success();
-            assert!(ok, "git {args:?} failed");
-        }
-        fn git_out(dir: &Path, args: &[&str]) -> String {
-            let out = Cmd::new("git")
-                .args(args)
-                .current_dir(dir)
-                .env("GIT_CONFIG_GLOBAL", "/dev/null")
-                .env("GIT_CONFIG_SYSTEM", "/dev/null")
-                .output()
-                .unwrap();
-            String::from_utf8_lossy(&out.stdout).trim().to_owned()
-        }
 
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path();
@@ -971,6 +1108,176 @@ mod tests {
             fc.old_content.as_deref(),
             Some("line1\nline2\n"),
             "old content should come from the merge-base, not the default branch tip"
+        );
+    }
+
+    /// A working-tree comparison with one file of every shape the watcher can
+    /// hand back: edited, added-and-committed, deleted, untracked, and one it
+    /// never touched.
+    fn delta_fixture() -> (tempfile::TempDir, crate::sources::traits::Comparison) {
+        use crate::sources::traits::Comparison;
+
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path();
+        git(p, &["init", "-q"]);
+
+        std::fs::create_dir_all(p.join("src")).unwrap();
+        std::fs::write(p.join("src/edited.txt"), "a\nb\nc\nd\ne\n").unwrap();
+        std::fs::write(p.join("src/doomed.txt"), "gone soon\n").unwrap();
+        std::fs::write(p.join("src/untouched.txt"), "steady\n").unwrap();
+        git(p, &["add", "."]);
+        git(p, &["commit", "-qm", "base"]);
+        let base = git_out(p, &["rev-parse", "--abbrev-ref", "HEAD"]);
+
+        git(p, &["checkout", "-q", "-b", "feat"]);
+        std::fs::write(p.join("src/added.txt"), "brand new\n").unwrap();
+        git(p, &["add", "."]);
+        git(p, &["commit", "-qm", "add a file"]);
+
+        // Uncommitted working-tree state on top: an edit, a deletion, and a
+        // file git has never seen.
+        std::fs::write(p.join("src/edited.txt"), "a\nB!\nc\nd\nE!\n").unwrap();
+        std::fs::remove_file(p.join("src/doomed.txt")).unwrap();
+        std::fs::write(p.join("src/untracked.txt"), "not yet added\n").unwrap();
+
+        let comparison = Comparison::new(&base, "feat");
+        (dir, comparison)
+    }
+
+    fn all_changed_paths() -> Vec<String> {
+        [
+            "src/edited.txt",
+            "src/added.txt",
+            "src/doomed.txt",
+            "src/untracked.txt",
+            "src/untouched.txt",
+        ]
+        .iter()
+        .map(|s| (*s).to_owned())
+        .collect()
+    }
+
+    /// The watcher's narrowed recompute is an optimization, never a different
+    /// answer: for any file, the hunks it produces must be indistinguishable
+    /// from the ones the whole-comparison pipeline produces — ids included,
+    /// since `filepath:hash` is what every recorded review decision is keyed by.
+    #[test]
+    fn files_delta_matches_the_full_pipeline_hunk_for_hunk() {
+        let (dir, comparison) = delta_fixture();
+        let p = dir.path();
+
+        let full = get_all_hunks(p, &comparison, &all_changed_paths()).unwrap();
+        assert!(
+            full.iter().any(|h| h.file_path == "src/edited.txt"),
+            "fixture should produce hunks to compare"
+        );
+
+        for path in all_changed_paths() {
+            let delta = files_delta(p, &comparison, std::slice::from_ref(&path)).unwrap();
+
+            let expected: Vec<&DiffHunk> = full.iter().filter(|h| h.file_path == path).collect();
+            assert_eq!(
+                delta.hunks.len(),
+                expected.len(),
+                "{path}: hunk count differs between the narrowed and full diffs"
+            );
+            for (got, want) in delta.hunks.iter().zip(expected) {
+                assert_eq!(got.id, want.id, "{path}: hunk id differs");
+                assert_eq!(
+                    serde_json::to_value(got).unwrap(),
+                    serde_json::to_value(want).unwrap(),
+                    "{path}: hunk body differs"
+                );
+            }
+        }
+    }
+
+    /// Asking for several paths at once is the same answer as asking for each
+    /// alone — the watcher batches whatever the debounce window collected.
+    #[test]
+    fn files_delta_batches_without_changing_the_answer() {
+        let (dir, comparison) = delta_fixture();
+        let p = dir.path();
+
+        let paths = all_changed_paths();
+        let batched = files_delta(p, &comparison, &paths).unwrap();
+        let one_at_a_time: Vec<DiffHunk> = paths
+            .iter()
+            .flat_map(|path| {
+                files_delta(p, &comparison, std::slice::from_ref(path))
+                    .unwrap()
+                    .hunks
+            })
+            .collect();
+
+        let ids = |hunks: &[DiffHunk]| {
+            let mut ids: Vec<String> = hunks.iter().map(|h| h.id.clone()).collect();
+            ids.sort();
+            ids
+        };
+        assert_eq!(ids(&batched.hunks), ids(&one_at_a_time));
+    }
+
+    #[test]
+    fn files_delta_reports_each_paths_place_in_the_comparison() {
+        let (dir, comparison) = delta_fixture();
+        let p = dir.path();
+
+        let delta = files_delta(p, &comparison, &all_changed_paths()).unwrap();
+        let entry = |path: &str| {
+            delta
+                .files
+                .iter()
+                .find(|f| f.path == path)
+                .unwrap_or_else(|| panic!("{path} missing from delta"))
+        };
+
+        assert!(matches!(
+            entry("src/edited.txt").status,
+            Some(FileStatus::Modified)
+        ));
+        assert!(matches!(
+            entry("src/added.txt").status,
+            Some(FileStatus::Added)
+        ));
+        assert!(matches!(
+            entry("src/doomed.txt").status,
+            Some(FileStatus::Deleted)
+        ));
+        assert!(matches!(
+            entry("src/untracked.txt").status,
+            Some(FileStatus::Untracked)
+        ));
+
+        // The file the branch never touched is the signal that a caller should
+        // drop what it holds — it is in the working tree but not in the diff.
+        assert!(entry("src/untouched.txt").status.is_none());
+        assert!(entry("src/untouched.txt").exists);
+
+        // The deleted one is gone from disk *and* still part of the comparison.
+        assert!(!entry("src/doomed.txt").exists);
+    }
+
+    /// The reverting case the watcher exists to handle: an edit that puts a
+    /// file back the way the base has it has to leave nothing behind.
+    #[test]
+    fn files_delta_drops_a_file_edited_back_to_its_base_content() {
+        let (dir, comparison) = delta_fixture();
+        let p = dir.path();
+
+        let path = "src/edited.txt".to_owned();
+        assert!(!files_delta(p, &comparison, std::slice::from_ref(&path))
+            .unwrap()
+            .hunks
+            .is_empty());
+
+        std::fs::write(p.join(&path), "a\nb\nc\nd\ne\n").unwrap();
+
+        let delta = files_delta(p, &comparison, std::slice::from_ref(&path)).unwrap();
+        assert!(delta.hunks.is_empty(), "reverted file should have no hunks");
+        assert!(
+            delta.files[0].status.is_none(),
+            "reverted file should no longer be part of the comparison"
         );
     }
 }

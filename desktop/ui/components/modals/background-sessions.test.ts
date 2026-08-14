@@ -13,6 +13,7 @@ function makeSession(
   return {
     id: "t1",
     repoPath: "/Users/dave/Developer/dropseed/review",
+    workspaceId: null,
     cwd: "/Users/dave/Developer/dropseed/review",
     title: null,
     cols: 80,

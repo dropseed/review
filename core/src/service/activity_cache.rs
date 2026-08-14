@@ -127,14 +127,12 @@ fn build_activity(entry: &RepoIndexEntry) -> Option<RepoLocalActivity> {
     let recent_remote_branches = source
         .list_recent_remote_branches(&default_branch, &local_branch_names, 14, 8)
         .unwrap_or_default();
-    let last_fetched_at = source.last_fetched_at();
     Some(RepoLocalActivity {
         repo_path: entry.path.clone(),
         repo_name: entry.name.clone(),
         default_branch,
         branches,
         recent_remote_branches,
-        last_fetched_at,
     })
 }
 

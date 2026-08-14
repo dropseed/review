@@ -24,7 +24,7 @@ import type { WorktreeSlice } from "./slices/worktreeSlice";
 import type { TierSlice } from "./slices/tierSlice";
 import type { TerminalSlice } from "./slices/terminalSlice";
 import type { ViewerPrsSlice } from "./slices/viewerPrsSlice";
-import type { WorkSlice } from "./slices/workSlice";
+import type { WorkspaceSlice } from "./slices/workspaceSlice";
 // Combined store type
 export type ReviewStore = PreferencesSlice &
   NavigationSlice &
@@ -46,7 +46,7 @@ export type ReviewStore = PreferencesSlice &
   TierSlice &
   TerminalSlice &
   ViewerPrsSlice &
-  WorkSlice;
+  WorkspaceSlice;
 
 // Helper type for creating slices (no dependencies)
 export type SliceCreator<T> = StateCreator<ReviewStore, [], [], T>;

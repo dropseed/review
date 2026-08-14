@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { useReviewStore } from "../../stores";
-import type { FileSymbolDiff, HunkGroup } from "../../types";
+import type { HunkGroup } from "../../types";
 import type { FileHunkStatus } from "./types";
 import {
   EMPTY_SELECTION,
@@ -37,7 +37,6 @@ interface FilesPanelContextValue {
   hunkStatusMap: Map<string, FileHunkStatus>;
   fileStatusMap: Map<string, string>;
   symlinkMap: Map<string, string | undefined>;
-  symbolDiffMap: Map<string, FileSymbolDiff>;
   expandAll: (dirPaths: Set<string>, excludePaths?: Set<string>) => void;
   collapseAll: () => void;
   grayscaleIcons?: boolean;

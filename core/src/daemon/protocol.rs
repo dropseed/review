@@ -67,6 +67,11 @@ pub struct Request {
 #[serde(tag = "op", rename_all = "snake_case", rename_all_fields = "camelCase")]
 pub enum Op {
     /// Spawn a session. Ok payload: `TerminalSummary`.
+    ///
+    /// `workspace_id` is the workspace this session belongs to, decided by the
+    /// caller's router (`work::router`). The daemon only carries it: it never
+    /// reads or writes `work.json`, so there is exactly one writer of the queue
+    /// and attribution can't drift from a second source of truth.
     Start {
         terminal_id: String,
         repo_path: String,
@@ -74,6 +79,7 @@ pub enum Op {
         cols: u16,
         rows: u16,
         shell: Option<String>,
+        workspace_id: Option<String>,
     },
     /// Write stdin bytes, base64-encoded (the control channel is JSON, and PTY
     /// input is arbitrary bytes). Ok payload: `null`.
@@ -86,6 +92,11 @@ pub enum Op {
         terminal_id: String,
         cols: u16,
         rows: u16,
+    },
+    /// Move a session to another workspace (or to none). Ok payload: `null`.
+    AssignWorkspace {
+        terminal_id: String,
+        workspace_id: Option<String>,
     },
     /// Terminate a session. Ok payload: `null`.
     Kill { terminal_id: String },
@@ -310,6 +321,7 @@ mod tests {
                 cols: 120,
                 rows: 40,
                 shell: Some("/bin/sh".into()),
+                workspace_id: Some("0a1b2c3d".into()),
             },
         };
         let value = serde_json::to_value(&request).unwrap();
@@ -318,6 +330,7 @@ mod tests {
         assert_eq!(value["terminalId"], "t1");
         assert_eq!(value["repoPath"], "/repo");
         assert_eq!(value["cols"], 120);
+        assert_eq!(value["workspaceId"], "0a1b2c3d");
         assert!(value.get("terminal_id").is_none());
 
         assert_eq!(serde_json::from_value::<Request>(value).unwrap(), request);

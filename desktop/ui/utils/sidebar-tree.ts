@@ -1,5 +1,6 @@
 /**
- * The sidebar tree — the repos layer, grouped into orgs by `groupReposByOrg`.
+ * The tree of everything the app can navigate to: every repo, and every branch,
+ * worktree, review and PR under it.
  *
  * One structure, repo-rooted: a repo's row *is* its repo-root checkout, and
  * everything in that repo — linked worktrees, PRs, reviews, plain branches —
@@ -14,9 +15,10 @@
  *
  * Building the rows and deciding which of them to *show* are separate jobs, and
  * only the first one happens here. Every branch, review and PR the app knows
- * becomes a row, because ⌘K searches this list and activating a row from it is
- * how you reach a branch the sidebar has no reason to display. What gets
- * displayed is `visibleRows`, a filter over the same list — see `RowFact`.
+ * becomes a row, because this list is what ⌘K searches — which is now the whole
+ * of how it is read, the sidebar having become the workspace queue. `RowFact`
+ * is the surviving notion of "worth showing", and it is `tabRailSlice`'s to
+ * apply.
  *
  * There is no clock in this file. Nothing about a row depends on how long ago
  * anything happened, so the tree is a pure function of git state, review state
@@ -31,7 +33,6 @@ import {
   type ViewerPr,
 } from "../types";
 import { makeReviewKey } from "./review-key";
-import { LOCAL_ORG, orgAvatarUrl, splitRoutePrefix } from "./repo-identity";
 
 /** What a row is, for the row components that render it. */
 export type SidebarItemKind =
@@ -113,9 +114,8 @@ export type SidebarEntry =
  * fortnight, a PR updated recently — and those rules answer "was something
  * happening here" rather than "is something here", so the list drifted between
  * sessions on its own and needed a per-row dismiss to argue with. A fact you
- * can act on needs no dismiss: commit the changes, push the commits, close the
- * PR, or claim the row in "Working on", and the row goes away because the
- * reason did.
+ * can act on needs no dismiss: commit the changes, push the commits, or close
+ * the PR, and the row goes away because the reason did.
  *
  * `materialized` means a *deliberate* checkout — a linked or review-managed
  * worktree, which someone had to create on purpose. It excludes the branch that
@@ -128,7 +128,8 @@ export type SidebarEntry =
  *
  * There is no `terminal` fact, though a running shell is certainly a fact. A
  * shell runs in a checkout, so its row is `materialized` (or is the repo row)
- * and already shows; unclaimed terminals get their own band above this one.
+ * and already shows; and every terminal belongs to a workspace, so the queue
+ * above this tree is where one is listed.
  */
 export type RowFact = "materialized" | "dirty" | "unpushed" | "open-pr";
 
@@ -153,7 +154,7 @@ export interface SidebarRow {
   facts: RowFact[];
 }
 
-/** Whether anything about this row is worth a line. See [`visibleRows`]. */
+/** Whether anything about this row is worth a line. See [`RowFact`]. */
 export function rowHasFacts(row: SidebarRow): boolean {
   return row.facts.length > 0;
 }
@@ -170,34 +171,11 @@ export interface RepoNode {
   head: SidebarRow | null;
   /**
    * Every other row in the repo — worktrees, branches, reviews, remote refs and
-   * PRs alike, `head` excluded. Not a display list: `visibleRows` decides what
-   * the sidebar draws, and ⌘K reads all of it. Ordered materialized-first, then
-   * by ref, so a row keeps its place whatever happens in the repo.
+   * PRs alike, `head` excluded. Every one of them, whether or not anything
+   * would draw it: ⌘K reads the lot. Ordered materialized-first, then by ref,
+   * so a row keeps its place whatever happens in the repo.
    */
   rows: SidebarRow[];
-  lastFetchedAt: number | null;
-}
-
-/**
- * The rows a repo actually draws.
- *
- * A row shows when it has a fact and the user has not claimed it: a work item
- * bound to this ref already reports its branch, its PR and its uncommitted
- * changes on the card above, so drawing the row again would be the same news
- * twice. The head row is not filtered here because it is not in `rows` — the
- * repo row always renders.
- *
- * Kept a filter rather than a field on the row because the claim is store
- * state, and `buildSidebarTree` has no business reading the work queue to
- * decide what a branch is.
- */
-export function visibleRows(
-  node: RepoNode,
-  workCoveredKeys: ReadonlySet<string>,
-): SidebarRow[] {
-  return node.rows.filter(
-    (row) => rowHasFacts(row) && !workCoveredKeys.has(row.reviewKey),
-  );
 }
 
 function parseTime(iso: string | null | undefined): number {
@@ -244,7 +222,7 @@ export function prNeedsAttention(pr: ViewerPr): boolean {
  * It only governs the row. A draft still badges a row that exists for its own
  * reasons (`openPr` is set either way), and ⌘K still finds it.
  */
-export function prEarnsRow(pr: ViewerPr): boolean {
+function prEarnsRow(pr: ViewerPr): boolean {
   return !pr.isDraft;
 }
 
@@ -255,9 +233,8 @@ export function buildSidebarTree(
   globalReviewsByKey: Record<string, GlobalReviewSummary>,
   /**
    * The viewer's open PRs. Only the ones the backend matched to a registered
-   * repo (`repoPath != null`) reach the tree; the rest are the sidebar's
-   * "elsewhere" bucket, which is a flat list rather than part of any repo — see
-   * `groupPrsElsewhere`.
+   * repo (`repoPath != null`) reach the tree — every row here promises a local
+   * path, and a PR in a repo that was never cloned has none.
    */
   viewerPrs: readonly ViewerPr[] = [],
 ): RepoNode[] {
@@ -268,7 +245,6 @@ export function buildSidebarTree(
     head: SidebarRow | null;
     rows: SidebarRow[];
     recentRemote: RecentRemoteBranch[];
-    lastFetchedAt: number | null;
   }
 
   const buckets = new Map<string, Bucket>();
@@ -288,7 +264,6 @@ export function buildSidebarTree(
         head: null,
         rows: [],
         recentRemote: [],
-        lastFetchedAt: null,
       };
       buckets.set(repoPath, bucket);
     }
@@ -300,7 +275,6 @@ export function buildSidebarTree(
   for (const repo of localActivity) {
     const bucket = bucketFor(repo.repoPath, repo.repoName, repo.defaultBranch);
     bucket.recentRemote = repo.recentRemoteBranches ?? [];
-    bucket.lastFetchedAt = repo.lastFetchedAt ?? null;
 
     for (const branch of repo.branches) {
       const key = makeReviewKey(repo.repoPath, branch.name);
@@ -504,7 +478,6 @@ export function buildSidebarTree(
       defaultBranch: bucket.defaultBranch,
       head: bucket.head,
       rows: bucket.rows.sort(byRow),
-      lastFetchedAt: bucket.lastFetchedAt,
     });
   }
 
@@ -576,163 +549,4 @@ export function activateSidebarRow(
       entry.repo.defaultBranch,
     );
   }
-}
-
-/** One repo's worth of open PRs in a repo Review doesn't have locally. */
-export interface ElsewhereRepoPrs {
-  repoNameWithOwner: string;
-  repoUrl: string;
-  prs: ViewerPr[];
-}
-
-/**
- * The open PRs that belong to no repo in the tree, grouped by their GitHub
- * repo.
- *
- * These are deliberately *outside* the tree rather than repos in it: every row
- * in `RepoNode` promises a local path — that promise is what
- * lets terminals, LSP and staging read `checkoutPath` instead of re-deriving
- * it — and a PR in a repo that was never cloned here has none. Keeping them in
- * their own list means the tree's invariant needs no exception, and the rows
- * can behave like what they are: links out. `groupReposByOrg` files them under
- * their org alongside the cloned repos, which is a display join, not a promise
- * that they have a checkout.
- *
- * Repos and PRs are both ordered most-recently-updated first, so the bucket
- * reads as a single recency list once expanded.
- */
-export function groupPrsElsewhere(
-  viewerPrs: readonly ViewerPr[],
-): ElsewhereRepoPrs[] {
-  const groups = new Map<string, ElsewhereRepoPrs>();
-  for (const pr of viewerPrs) {
-    if (pr.repoPath != null) continue;
-    let group = groups.get(pr.repoNameWithOwner);
-    if (!group) {
-      group = {
-        repoNameWithOwner: pr.repoNameWithOwner,
-        repoUrl: pr.repoUrl,
-        prs: [],
-      };
-      groups.set(pr.repoNameWithOwner, group);
-    }
-    group.prs.push(pr);
-  }
-
-  const byUpdated = (a: ViewerPr, b: ViewerPr): number =>
-    parseTime(b.updatedAt) - parseTime(a.updatedAt);
-
-  const out = [...groups.values()];
-  for (const group of out) group.prs.sort(byUpdated);
-  out.sort((a, b) => byUpdated(a.prs[0], b.prs[0]));
-  return out;
-}
-
-/** One repo under an org header — cloned here, or known only through its PRs. */
-export interface OrgRepo {
-  /** Its path when it's cloned here, else `owner/repo`. Unique either way. */
-  key: string;
-  /** The repo half; the org header carries the owner half. */
-  name: string;
-  /** The tree node, or null for a repo this machine doesn't have. */
-  node: RepoNode | null;
-  /** A not-cloned repo's open PRs, newest first. Empty for a cloned one. */
-  prs: ViewerPr[];
-}
-
-export interface OrgGroup {
-  /** The owner half of `owner/repo`, or `local` for repos with no remote. */
-  org: string;
-  avatarUrl: string | null;
-  repos: OrgRepo[];
-}
-
-/** What `groupReposByOrg` reads off each repo's resolved metadata. */
-export interface RepoIdentityMetadata {
-  routePrefix: string;
-  avatarUrl: string | null;
-}
-
-/**
- * The repos layer: every repo the sidebar knows, filed under its GitHub org.
- *
- * The org is the repo's identity, so it is read off the same `routePrefix` the
- * route and the display name come from rather than guessed from the path.
- * Anything with no resolvable remote — a repo that was never pushed, one whose
- * metadata hasn't come back yet — falls into one trailing `local` group, which
- * is also the org half `splitRoutePrefix` invents for a `local/dirname` prefix.
- *
- * Repos this machine doesn't have are folded in here rather than listed apart:
- * an open PR in one is still that org's work, and the only thing that makes it
- * different is that there is no checkout under it to expand — so it carries its
- * PRs instead of a `RepoNode`. That is the whole of the difference, and it is
- * why the tree's "every row has a path" invariant survives: those PRs never
- * become rows in it.
- *
- * Orgs sort alphabetically with `local` last, repos alphabetically within an
- * org — the same fixed order the tree itself is built in, for the same reason.
- */
-export function groupReposByOrg(
-  nodes: RepoNode[],
-  metadata: Record<string, RepoIdentityMetadata>,
-  viewerPrs: readonly ViewerPr[],
-): OrgGroup[] {
-  const groups = new Map<string, OrgGroup>();
-
-  function groupFor(org: string): OrgGroup {
-    let group = groups.get(org);
-    if (!group) {
-      group = { org, avatarUrl: null, repos: [] };
-      groups.set(org, group);
-    }
-    return group;
-  }
-
-  for (const node of nodes) {
-    const meta = metadata[node.repoPath];
-    const { org, repo } = meta
-      ? splitRoutePrefix(meta.routePrefix)
-      : { org: LOCAL_ORG, repo: node.repoName };
-    const group = groupFor(org);
-    // The org's own picture, taken from whichever of its repos resolved one —
-    // they all point at the same `host/org.png`.
-    group.avatarUrl ??= meta?.avatarUrl ?? null;
-    group.repos.push({
-      key: node.repoPath,
-      name: repo || node.repoName,
-      node,
-      prs: [],
-    });
-  }
-
-  for (const elsewhere of groupPrsElsewhere(viewerPrs)) {
-    const { org, repo } = splitRoutePrefix(elsewhere.repoNameWithOwner);
-    const group = groupFor(org);
-    group.avatarUrl ??= orgAvatarUrl(elsewhere.repoUrl);
-    group.repos.push({
-      key: elsewhere.repoNameWithOwner,
-      name: repo || elsewhere.repoNameWithOwner,
-      node: null,
-      prs: elsewhere.prs,
-    });
-  }
-
-  const out = [...groups.values()];
-  for (const group of out) {
-    group.repos.sort((a, b) => {
-      const byName = a.name.localeCompare(b.name);
-      return byName !== 0 ? byName : a.key.localeCompare(b.key);
-    });
-  }
-  out.sort((a, b) => {
-    // `local` is the bucket for everything with no org, so it goes last
-    // whatever it sorts as — an org actually named "local" lands there too,
-    // which is the same row either way.
-    if (a.org !== b.org) {
-      if (a.org === LOCAL_ORG) return 1;
-      if (b.org === LOCAL_ORG) return -1;
-    }
-    return a.org.localeCompare(b.org);
-  });
-  return out;
 }

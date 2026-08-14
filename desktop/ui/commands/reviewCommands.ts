@@ -14,7 +14,7 @@ import type { Command } from "./types";
  * One command per row in the repos layer.
  *
  * Every row, not just the ones currently on screen: the digits belong to the
- * "Working on" queue now (see `workCommands`), so this list exists purely to be
+ * "Working on" queue now (see `workspaceCommands`), so this list exists purely to be
  * typed at, and a review you have to expand a repo to find is exactly the one
  * worth being able to find by name.
  */

@@ -60,5 +60,6 @@ pub(crate) fn start_op(id: &str, repo: &Path) -> Op {
         cols: 80,
         rows: 24,
         shell: Some("/bin/sh".into()),
+        workspace_id: None,
     }
 }

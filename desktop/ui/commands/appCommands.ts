@@ -7,8 +7,9 @@ import {
   CODE_FONT_SIZE_MAX,
   CODE_FONT_SIZE_STEP,
 } from "../utils/preferences";
+import { getApiClient } from "../api";
+import { getPlatformServices } from "../platform";
 import type { Command, CommandContext } from "./types";
-import { openTerminalTab } from "../components/Terminal/newTab";
 
 /** A repository is open. */
 function hasRepo(ctx: CommandContext): boolean {
@@ -54,6 +55,19 @@ function hasFocusedHunk(ctx: CommandContext): boolean {
  */
 export const APP_COMMANDS: readonly Command[] = [
   // ----- Go -----
+  {
+    id: "go.workspace",
+    title: "Go to…",
+    category: "Go",
+    keywords: ["workspace", "branch", "repo", "terminal", "switch", "jump"],
+    // ⌘K is navigation now, not the command list: the app has one axis, and
+    // the thing you press most often is moving along it. `>` inside the dialog
+    // is still the way to the commands (as is ⇧⌘P).
+    shortcut: { code: "KeyK", mod: true },
+    allowInInput: true,
+    allowInTerminal: true,
+    run: (ctx) => ctx.ui.openPalette("go"),
+  },
   {
     id: "go.file",
     title: "Go to File…",
@@ -280,7 +294,7 @@ export const APP_COMMANDS: readonly Command[] = [
     title: "Command Palette…",
     category: "Application",
     keywords: ["commands", "actions", "run"],
-    shortcut: { code: "KeyK", mod: true },
+    shortcut: { code: "KeyP", mod: true, shift: true },
     // One shortcut, available everywhere, no exceptions — including from
     // inside a search field or a terminal pane.
     allowInInput: true,
@@ -299,21 +313,10 @@ export const APP_COMMANDS: readonly Command[] = [
     id: "app.newTab",
     title: "New Tab",
     category: "Application",
-    shortcut: { code: "KeyT", mod: true },
-    // "A new tab of what I'm looking at" — a focused terminal gets a terminal
-    // tab, everything else an app tab. The same rule `view.splitSideBySide`
-    // follows, and the reason this opts into `allowInTerminal`: without it the
-    // dispatcher hands ⌘T to the terminal, and only the native menu's
-    // accelerator would reach this command — which is how ⌘T in a terminal came
-    // to open an app tab, since the menu path knows nothing about focus.
-    allowInTerminal: true,
-    run: (ctx) => {
-      if (ctx.keys.terminalFocused) {
-        void openTerminalTab();
-        return;
-      }
-      ctx.ui.newTab();
-    },
+    // ⌘T belongs to `terminal.new` now: opening a shell is the gesture this
+    // app is asked for constantly, and an app tab is not.
+    shortcut: { code: "KeyT", mod: true, shift: true },
+    run: (ctx) => ctx.ui.newTab(),
   },
   {
     id: "app.newWindow",
@@ -344,6 +347,47 @@ export const APP_COMMANDS: readonly Command[] = [
     keywords: ["diagnostics", "state"],
     run: (ctx) => ctx.ui.openOverlay("debug"),
   },
+  // ----- Repository -----
+  //
+  // Both of these belonged to the sidebar's repo tree, which is gone. They are
+  // repo-level rather than review-level, and the app has exactly one repo in
+  // view at a time — whichever repo tab is active — so ⌘K is
+  // where they live now rather than a menu on a list that no longer exists.
+  {
+    id: "repo.fetch",
+    title: "Fetch from Origin",
+    category: "Repository",
+    keywords: ["git", "pull", "remote", "refresh", "update", "origin"],
+    isEnabled: hasRepo,
+    run: async ({ store }) => {
+      const repoPath = store.repoPath;
+      if (!repoPath) return;
+      await getApiClient().fetchOrigin(repoPath);
+      await store.loadLocalActivity();
+    },
+  },
+  {
+    id: "repo.forget",
+    title: "Forget Repository…",
+    category: "Repository",
+    keywords: ["remove", "unregister", "hide", "sidebar", "browse"],
+    isEnabled: hasRepo,
+    // Unregistering is what decides whether ⌘K can find a repo's branches at
+    // all — the registry behind `listAllLocalActivity` is every list the app
+    // builds. Nothing on disk is touched: the reviews stay, and opening the
+    // repo again re-registers it.
+    run: async ({ store }) => {
+      const repoPath = store.repoPath;
+      if (!repoPath) return;
+      const ok = await getPlatformServices().dialogs.confirm(
+        `Stop listing ${repoPath} in Review?\n\nIts reviews stay on disk, and opening it again brings it back.`,
+        "Forget repository",
+      );
+      if (!ok) return;
+      await store.unregisterRepo(repoPath);
+    },
+  },
+
   {
     id: "app.restartLsp",
     title: "Restart Language Servers",

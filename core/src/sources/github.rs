@@ -496,6 +496,55 @@ impl GhCliProvider {
             serde_json::from_slice(&output.stdout).map_err(|e| GhError::Parse(e.to_string()))?;
         Ok(status)
     }
+
+    /// How a pull request ended, for a caller that watched it leave the open
+    /// set.
+    ///
+    /// Separate from [`Self::get_pr_status`] because the questions differ:
+    /// freshness wants the head SHA of a PR it expects to be open, and this
+    /// wants the merge that [`fetch_viewer_open_prs`] can never report — that
+    /// query filters to `states: OPEN`, so a merged PR does not change in the
+    /// snapshot, it disappears from it.
+    pub fn get_pr_outcome(&self, number: u32) -> Result<PrOutcome, GhError> {
+        let mut cmd = Command::new("gh");
+        cmd.args([
+            "pr",
+            "view",
+            &number.to_string(),
+            "--json",
+            "state,mergedAt,url,title",
+        ])
+        .current_dir(&self.repo_path);
+        let output = gh_output(&mut cmd, QUERY_TIMEOUT, "gh pr view")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(GhError::Command(stderr.into_owned()));
+        }
+
+        serde_json::from_slice(&output.stdout).map_err(|e| GhError::Parse(e.to_string()))
+    }
+}
+
+/// How a pull request ended — the answer to "did it ship?".
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrOutcome {
+    /// OPEN, MERGED, or CLOSED.
+    pub state: String,
+    /// When it merged; absent for every other state.
+    pub merged_at: Option<String>,
+    pub url: String,
+    pub title: String,
+}
+
+impl PrOutcome {
+    /// Whether this is a final answer. A merged or closed PR stays that way, so
+    /// the answer can be cached forever; an open one is just a snapshot that
+    /// hadn't caught up yet, and caching it would freeze a PR as unshipped.
+    pub fn is_settled(&self) -> bool {
+        self.state == "MERGED" || self.state == "CLOSED"
+    }
 }
 
 #[cfg(test)]

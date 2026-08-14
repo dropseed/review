@@ -160,7 +160,28 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
     },
 
     setActiveReviewKey: (key) => {
-      set({ activeReviewKey: key });
+      // Opening a comparison decides which workspace the stage is in — the
+      // explicit focus is only there for workspaces derivation cannot reach
+      // (no attachment, or one whose repo nothing on screen names). So a
+      // comparison in a repo the focused workspace isn't showing drops that
+      // pick and lets `useFocusedWorkspace` derive instead. Without this the
+      // two disagree: ⌘K to another workspace's branch left the first
+      // workspace's header and terminals over the second one's diff.
+      //
+      // Matched by repo, not by ref: the tab stays the tab while you walk that
+      // repo's branches, and the ref an attachment carries is only a hint.
+      const { focusedWorkspaceId, workspaces } = get();
+      const stale =
+        focusedWorkspaceId !== null &&
+        key !== null &&
+        !workspaces
+          .find((workspace) => workspace.id === focusedWorkspaceId)
+          ?.attachments.some((attachment) => attachment.path === key.repoPath);
+
+      set({
+        activeReviewKey: key,
+        ...(stale ? { focusedWorkspaceId: null } : {}),
+      });
     },
 
     ensureReviewExists: async (repoPath, ref, baseOverride, githubPr) => {

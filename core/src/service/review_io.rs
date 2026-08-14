@@ -145,6 +145,21 @@ mod tests {
         );
     }
 
+    /// Saving a review is review state and nothing else: the work queue has no
+    /// seam here, and a review of a branch nobody is working on stays a review.
+    #[test]
+    fn saving_a_review_never_touches_the_work_queue() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _home, repo) = setup_test();
+
+        let a = hunk(DIFF_A);
+        let mut state = ReviewState::new(TEST_REF, None);
+        state.hunks.insert(a.id.clone(), approved_with_key(None));
+
+        save_review(repo.path(), state, Some(&[a])).unwrap();
+        assert!(crate::work::list().unwrap().workspaces.is_empty());
+    }
+
     #[test]
     fn save_review_without_hunks_persists_unreconciled() {
         let _lock = ENV_LOCK.lock().unwrap();

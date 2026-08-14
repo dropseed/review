@@ -13,7 +13,6 @@
 //! connection — status transitions and raw output frames — so the daemon
 //! needed no new ops.
 
-use std::path::Path;
 use std::sync::LazyLock;
 use std::time::Duration;
 
@@ -23,8 +22,9 @@ use serde_json::json;
 
 use crate::daemon::{socket_path, DaemonClient, Op, StreamFrame};
 use crate::terminal::{Phase, SessionStatus, TerminalSummary};
+use crate::work::router;
 
-use super::common::{new_id_suffix, print_json};
+use super::common::{new_id_suffix, print_json, resolve_cwd_arg};
 
 /// Message shown when the control socket can't be reached. The daemon is
 /// spawned by the desktop app (and outlives it); the CLI only ever attaches.
@@ -86,6 +86,10 @@ pub struct StartArgs {
     /// Shell to run (defaults to the daemon's default shell)
     #[arg(long)]
     pub shell: Option<String>,
+    /// Workspace to start the session in (a unique id prefix); defaults to
+    /// whatever the working directory routes to
+    #[arg(long, value_name = "ID")]
+    pub workspace: Option<String>,
     /// Output the session summary as JSON
     #[arg(long)]
     pub json: bool,
@@ -284,16 +288,29 @@ async fn run_list(client: &DaemonClient, args: ListArgs) -> Result<(), String> {
 }
 
 async fn run_start(client: &DaemonClient, args: StartArgs) -> Result<(), String> {
-    let repo_path = super::get_repo_path(&args.repo)?;
-    let cwd = match args.cwd {
-        Some(cwd) => super::resolve_absolute(Path::new(&cwd))?
-            .to_string_lossy()
-            .into_owned(),
+    // One filesystem resolution feeds all three answers: which working tree the
+    // session belongs to, where its shell starts, and which workspace owns it.
+    let start = resolve_cwd_arg(args.cwd.clone().or_else(|| args.repo.clone()))?;
+    let location = router::locate(&start);
+    let repo_path = match &args.repo {
+        // An explicit --repo is kept verbatim, because `terminal list --repo`
+        // filters on the string the session was started with.
+        Some(repo) => repo.clone(),
+        None => location.working_tree.to_string_lossy().into_owned(),
+    };
+    // The shell starts where --cwd asked, or at the repo root.
+    let cwd = match &args.cwd {
+        Some(_) => start.to_string_lossy().into_owned(),
         None => repo_path.clone(),
     };
     let terminal_id = args
         .id
         .unwrap_or_else(|| format!("cli-{}", new_id_suffix()));
+
+    // Every session belongs to a workspace from birth — the router places it,
+    // and `--workspace` names one explicitly (which attaches nothing: naming
+    // where a shell goes is not saying what the workspace is about).
+    let landing = router::land(&location, args.workspace.as_deref()).map_err(|e| e.to_string())?;
 
     let summary: TerminalSummary = request(
         client,
@@ -304,14 +321,34 @@ async fn run_start(client: &DaemonClient, args: StartArgs) -> Result<(), String>
             cols: args.cols,
             rows: args.rows,
             shell: args.shell,
+            workspace_id: Some(landing.workspace.id.clone()),
         },
     )
     .await?;
 
-    if args.json {
-        print_json(&summary);
+    let verb = if landing.created {
+        "new workspace"
     } else {
-        println!("Started terminal {} in {}.", summary.id, summary.cwd);
+        "joined"
+    };
+    if args.json {
+        // The landing rides along with the session, so an agent gets one answer
+        // to "what did I just start, and where did it land?".
+        let mut payload = serde_json::to_value(&summary).map_err(|e| e.to_string())?;
+        payload["workspace"] = json!({
+            "id": landing.workspace.id,
+            "title": landing.workspace.display_title(None),
+            "created": landing.created,
+        });
+        print_json(&payload);
+    } else {
+        println!(
+            "Started terminal {} in {} · {verb} \"{}\" ({}).",
+            summary.id,
+            summary.cwd,
+            landing.workspace.display_title(None),
+            landing.workspace.id
+        );
     }
     Ok(())
 }

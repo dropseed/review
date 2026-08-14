@@ -11,7 +11,7 @@
 //! *next to* the error, rather than an empty list that reads as "nothing to do".
 //! An empty sidebar has to mean empty.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use crate::process::output_with_timeout;
 use crate::review::central;
 use crate::review::state::{iso8601_from_system_time, now_iso8601};
+use crate::service::shipped;
 use crate::sources::github::{self, GhAuth, ViewerPr};
 use crate::sources::local_git;
 
@@ -45,6 +46,14 @@ pub struct ViewerPrSnapshot {
     /// snapshot's data, which may be empty.
     #[serde(default)]
     pub error: Option<String>,
+    /// Recently confirmed merges, newest first — see [`super::shipped`].
+    ///
+    /// Rides along here because it answers the question this snapshot raises
+    /// and cannot: a PR that was in `prs` last time and isn't now either
+    /// merged, closed, or is between refreshes, and only the first of those is
+    /// worth a card saying so.
+    #[serde(default)]
+    pub shipped: Vec<shipped::ShippedPr>,
     /// Whether GitHub tooling is usable on this machine at all.
     ///
     /// `false` means `gh` is missing or logged out — this user doesn't do
@@ -77,6 +86,7 @@ impl ViewerPrSnapshot {
             prs: Vec::new(),
             truncated: false,
             error: None,
+            shipped: Vec::new(),
             available: true,
         }
     }
@@ -134,8 +144,17 @@ fn cached_or_empty() -> ViewerPrSnapshot {
 /// Query GitHub, cache the result, and fall back to the last good snapshot when
 /// the query fails. Called with [`REFRESH_LOCK`] held.
 fn refresh_now() -> ViewerPrSnapshot {
+    let before = load_cached_snapshot();
     match fetch_and_join() {
-        Ok(snapshot) => {
+        Ok(mut snapshot) => {
+            if let Some(before) = before {
+                // The one moment a merge is visible: the query filters to open
+                // PRs, so a PR that landed is *absent* here rather than
+                // changed. Whoever notices the absence has to ask, because the
+                // next refresh will have forgotten the PR existed.
+                shipped::record_departed(&departed(&before, &snapshot));
+            }
+            snapshot.shipped = shipped::recent_shipped();
             if let Err(e) = save_snapshot(&snapshot) {
                 log::warn!("[viewer_prs] failed to cache snapshot: {e}");
             }
@@ -166,8 +185,44 @@ fn fetch_and_join() -> Result<ViewerPrSnapshot, FetchFailure> {
         prs,
         truncated,
         error: None,
+        // Filled in by `refresh_now`, which is the only caller that knows what
+        // left the open set.
+        shipped: Vec::new(),
         available: true,
     })
+}
+
+/// PRs that were open last time and are not now.
+///
+/// Deliberately not "PRs whose branch is gone" or any other proxy: this is the
+/// exact set the snapshot stopped being able to speak for, which is the set
+/// worth one `gh` call each.
+///
+/// **A truncated snapshot on either side answers nothing.** The query returns
+/// the first 100 open PRs, so above that a PR can leave the window without
+/// leaving the open set — it was pushed out by newer ones. Every such PR would
+/// read as departed, costing a `gh pr view` that comes back OPEN (never cached,
+/// so re-paid on every refresh, serially, under the refresh lock), and a PR
+/// evicted while open would never record its eventual merge because by then it
+/// is in neither snapshot. So a viewer with more than a page of open PRs simply
+/// gets no shipped detection: nothing shown beats something invented.
+fn departed(before: &ViewerPrSnapshot, now: &ViewerPrSnapshot) -> Vec<ViewerPr> {
+    if before.truncated || now.truncated {
+        return Vec::new();
+    }
+    // Keyed by repo *and* number: PR numbers are per-repository, so `#7` alone
+    // would let one repo's open PR mask another's merge.
+    let open: HashSet<(&str, u32)> = now
+        .prs
+        .iter()
+        .map(|pr| (pr.repo_name_with_owner.as_str(), pr.number))
+        .collect();
+    before
+        .prs
+        .iter()
+        .filter(|pr| !open.contains(&(pr.repo_name_with_owner.as_str(), pr.number)))
+        .cloned()
+        .collect()
 }
 
 /// What a failed viewer query means, given what `gh auth status` says about the
@@ -454,6 +509,68 @@ mod tests {
         }
     }
 
+    /// A snapshot carrying `prs`, complete unless said otherwise.
+    fn snap(prs: Vec<ViewerPr>, truncated: bool) -> ViewerPrSnapshot {
+        ViewerPrSnapshot {
+            fetched_at: "2026-08-10T15:06:30.000Z".to_owned(),
+            prs,
+            truncated,
+            error: None,
+            shipped: Vec::new(),
+            available: true,
+        }
+    }
+
+    #[test]
+    fn departure_is_leaving_the_open_set_in_the_same_repo() {
+        let before = snap(
+            vec![
+                pr(7, "dropseed/review", Some("dropseed/review")),
+                pr(9, "dropseed/plain", Some("dropseed/plain")),
+            ],
+            false,
+        );
+        // #9 is still open; #7 is gone — and another repo's #7 must not stand
+        // in for it, because PR numbers are per-repository.
+        let now = snap(
+            vec![
+                pr(9, "dropseed/plain", Some("dropseed/plain")),
+                pr(7, "dropseed/plain", Some("dropseed/plain")),
+            ],
+            false,
+        );
+
+        let gone = departed(&before, &now);
+        assert_eq!(gone.len(), 1);
+        assert_eq!(gone[0].number, 7);
+        assert_eq!(gone[0].repo_name_with_owner, "dropseed/review");
+
+        // A first-ever refresh has nothing to compare against, so nothing has
+        // departed — every PR being new must not read as every PR merging.
+        assert!(departed(&snap(vec![], false), &now).is_empty());
+    }
+
+    /// Above the query's page of 100, a PR can leave the *window* without
+    /// leaving the open set. Every one of those would otherwise read as
+    /// departed and cost a `gh` call that comes back OPEN.
+    #[test]
+    fn a_truncated_snapshot_on_either_side_reports_no_departures() {
+        let before = snap(
+            vec![pr(7, "dropseed/review", Some("dropseed/review"))],
+            false,
+        );
+        let now = snap(vec![], false);
+        assert_eq!(
+            departed(&before, &now).len(),
+            1,
+            "the complete case still works"
+        );
+
+        let truncated_before = snap(before.prs.clone(), true);
+        assert!(departed(&truncated_before, &now).is_empty());
+        assert!(departed(&before, &snap(vec![], true)).is_empty());
+    }
+
     fn git(repo: &Path, args: &[&str]) {
         let output = Command::new("git")
             .args(["-C", &repo.to_string_lossy()])
@@ -481,6 +598,7 @@ mod tests {
             prs: vec![only],
             truncated: true,
             error: None,
+            shipped: Vec::new(),
             available: true,
         };
         save_snapshot(&saved).unwrap();
@@ -511,6 +629,7 @@ mod tests {
             prs: vec![gone],
             truncated: false,
             error: None,
+            shipped: Vec::new(),
             available: true,
         })
         .unwrap();

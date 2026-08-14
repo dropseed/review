@@ -88,7 +88,7 @@ export function GroupHeader({
   );
 
   return (
-    <div className="border-t border-t-edge/40">
+    <div className="border-t border-edge/60">
       <div className="group/header flex items-center gap-1.5 pl-1.5 pr-2 py-1.5 transition-colors hover:bg-surface-raised/50">
         <button
           type="button"

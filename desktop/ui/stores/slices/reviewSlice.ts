@@ -78,7 +78,12 @@ export interface ReviewSlice {
   loadReviewState: () => Promise<void>;
   // Carry persisted decisions forward onto the loaded diff (call after the
   // hunks are loaded); updates carriedForward for the banner.
-  reconcileReviewState: () => Promise<void>;
+  /**
+   * Carry recorded decisions onto the current hunk ids. With `paths`, only
+   * those files' hunks are examined — the narrow question the file watcher
+   * asks after an edit.
+   */
+  reconcileReviewState: (paths?: string[]) => Promise<void>;
   saveReviewState: () => Promise<void>;
   loadSavedReviews: () => Promise<void>;
   deleteReview: (ref: string) => Promise<void>;
@@ -151,8 +156,8 @@ export interface ReviewSlice {
   /**
    * Handle a watcher-emitted change. For git-state changes (commits, branch
    * switches, staging) delegates to `refresh()`. For pure working-tree edits,
-   * surgically refetches only the changed files' `filesByPath` entries so
-   * viewers subscribed via `useFileHunks(path)` update in place.
+   * recomputes only the changed files and patches them into the loaded diff,
+   * so viewers subscribed via `useFileHunks(path)` update in place.
    */
   applyWatcherEvent: (event: {
     changedPaths: string[];
@@ -411,12 +416,18 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       }
     },
 
-    reconcileReviewState: async () => {
+    reconcileReviewState: async (paths) => {
       const { repoPath, comparison, reviewState } = get();
       if (!repoPath || !comparison || !reviewState) return;
       // Nothing to carry forward without recorded decisions or a loaded diff.
       if (Object.keys(reviewState.hunks).length === 0) return;
-      const hunks = getAllHunksFromState(get());
+      // A decision whose hunk isn't in the set given is retained, not dropped
+      // (see `reconcile_review` in core), so narrowing to the files that
+      // changed is a smaller question with the same answer.
+      const all = getAllHunksFromState(get());
+      const hunks = paths
+        ? all.filter((hunk) => paths.includes(hunk.filePath))
+        : all;
       if (hunks.length === 0) return;
 
       const comparisonKey = comparison.key;
@@ -957,6 +968,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         applyFileWatcherEvent,
         loadGitStatus,
         classifyStaticHunks,
+        reconcileReviewState,
         invalidateAttribution,
       } = get();
 
@@ -983,8 +995,40 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       // so refetching them here was producing re-renders for no gain.
       // Freshness for working-tree comparisons still runs via the
       // watcher's separately-debounced `checkReviewsFreshness` trigger.
-      await Promise.all([applyFileWatcherEvent(changedPaths), loadGitStatus()]);
+      const t0 = performance.now();
+      const [patch] = await Promise.all([
+        applyFileWatcherEvent(changedPaths),
+        loadGitStatus(),
+      ]);
 
-      classifyStaticHunks();
+      if (!patch.hunksChanged) {
+        console.log(
+          `[perf] watcher event (${patch.scope}): no hunk change in ${(
+            performance.now() - t0
+          ).toFixed(0)}ms`,
+        );
+        return;
+      }
+
+      // Editing a hunk changes its content and so its `filepath:hash` id,
+      // which is what a decision is filed under. Carry those decisions onto
+      // the new ids now rather than leaving them stranded until something
+      // forces a full refresh. Reconciliation retains decisions whose hunks
+      // aren't in the set it's given, so handing it just the patched files is
+      // both correct and the difference between sending a few hunks and the
+      // entire diff.
+      if (patch.scope === "incremental") {
+        await reconcileReviewState(patch.paths);
+        await classifyStaticHunks(patch.addedHunkIds);
+      } else {
+        await reconcileReviewState();
+        await classifyStaticHunks();
+      }
+
+      console.log(
+        `[perf] watcher event (${patch.scope}): ${patch.paths.length} paths, ${
+          patch.addedHunkIds.length
+        } new hunks in ${(performance.now() - t0).toFixed(0)}ms`,
+      );
     },
   });

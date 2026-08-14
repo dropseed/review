@@ -1,15 +1,15 @@
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
 import { useReviewStore } from "../../stores";
-import { PhaseDot } from "../TabRail/PhaseDot";
-import { phaseSummary } from "../TabRail/terminal-status-format";
+import { PhaseDot } from "../Sidebar/PhaseDot";
+import { phaseSummary } from "../Sidebar/terminal-status-format";
 import { RICH_TOOLTIP_CLASS, SimpleTooltip } from "../ui/tooltip";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuTrigger,
 } from "../ui/context-menu";
-import { TerminalMenuItems } from "../TabRail/ActionMenu";
+import { TerminalMenuItems } from "../Sidebar/ActionMenu";
 import { sessionTitle } from "./glance";
 import type { SplitDirection } from "./pane-tree";
 import { TerminalGlanceCard } from "./TerminalGlanceCard";

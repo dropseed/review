@@ -47,7 +47,7 @@ export function ReviewActionBar(): ReactNode {
         : `${progress.reviewedHunks}/${progress.totalHunks} hunks reviewed`;
 
   return (
-    <div className="shrink-0 border-t border-edge/40 bg-surface-panel px-3 py-2.5">
+    <div className="shrink-0 border-t border-edge/60 px-3 py-2.5">
       <button
         type="button"
         disabled={!hasReviewContent}

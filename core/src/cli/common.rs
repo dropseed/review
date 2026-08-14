@@ -119,6 +119,16 @@ pub fn resolve_review_arg(repo: &Path, spec: Option<&str>) -> Result<ResolvedRev
     targets::resolve(repo, &ref_name, base_override.as_deref()).map_err(|e| e.to_string())
 }
 
+/// Resolve an optional directory argument: the given path made absolute, or the
+/// current directory when it's absent. The shared spelling of "[DIR], defaulting
+/// to here" — `review [path]`, `review work resolve`, `review terminal start`.
+pub fn resolve_cwd_arg(dir: Option<String>) -> Result<std::path::PathBuf, String> {
+    match dir {
+        Some(dir) => super::resolve_absolute(Path::new(&dir)),
+        None => std::env::current_dir().map_err(|e| e.to_string()),
+    }
+}
+
 /// Trim `s` and return it as an owned string, unless it's blank.
 pub(crate) fn non_blank(s: &str) -> Option<String> {
     let s = s.trim();

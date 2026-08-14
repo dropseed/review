@@ -9,6 +9,7 @@ function snapshot(overrides: Partial<ViewerPrSnapshot> = {}): ViewerPrSnapshot {
     prs: [],
     truncated: false,
     error: null,
+    shipped: [],
     available: true,
     ...overrides,
   };
