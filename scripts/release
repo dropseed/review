@@ -128,7 +128,10 @@ git push origin "$BRANCH"
 
 echo ""
 echo "Dispatching the Release workflow..."
-gh workflow run release.yml --ref "$BRANCH" -f tag="v$VERSION"
+# The exact SHA rides along because the dispatch resolves the branch
+# server-side, and that resolution can race the push above — the workflow
+# checks out this SHA rather than whatever the branch answers with.
+gh workflow run release.yml --ref "$BRANCH" -f tag="v$VERSION" -f sha="$(git rev-parse HEAD)"
 
 # The dispatch API is async; give the run a moment to exist before looking it up.
 sleep 3

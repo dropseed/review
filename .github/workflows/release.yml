@@ -12,7 +12,11 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (e.g. v0.1.2) — must match the version-bump commit at HEAD"
+        description: "Release tag (e.g. v0.1.2) — must match the version-bump commit"
+        required: true
+        type: string
+      sha:
+        description: "SHA of the version-bump commit to release. Checked out exactly, so the dispatch can never race the push of the bump commit."
         required: true
         type: string
 
@@ -29,14 +33,21 @@ jobs:
     timeout-minutes: 120
     env:
       TAG: ${{ inputs.tag }}
+      SHA: ${{ inputs.sha }}
     steps:
+      # The explicit SHA, not the branch: resolving the branch here is what
+      # once raced the push of the bump commit. Full history so the verify
+      # step can prove the SHA is on the default branch.
       - uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
           submodules: true
 
       # Everything below is expensive, so fail here if this isn't the commit
-      # the tag claims: HEAD must be the "Release vX.Y.Z" bump commit, the
-      # bumped files must agree with the tag, and the tag must not exist yet.
+      # the tag claims: it must be the "Release vX.Y.Z" bump commit on the
+      # default branch, the bumped files must agree with the tag, and the tag
+      # must not exist yet.
       - name: Verify release commit
         run: |
           if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -55,8 +66,13 @@ jobs:
 
           SUBJECT=$(git log -1 --format=%s)
           if [ "$SUBJECT" != "Release v$VERSION" ]; then
-            echo "error: HEAD is '$SUBJECT', expected 'Release v$VERSION'."
-            echo "Master moved past the bump commit — cut a new release instead."
+            echo "error: checked-out commit is '$SUBJECT', expected 'Release v$VERSION'."
+            exit 1
+          fi
+
+          # Tagging a commit users' updaters don't track would ship it anyway.
+          if ! git merge-base --is-ancestor "$SHA" "origin/${GITHUB_REF_NAME}"; then
+            echo "error: $SHA is not on ${GITHUB_REF_NAME}."
             exit 1
           fi
 
@@ -70,7 +86,7 @@ jobs:
             exit 1
           fi
 
-          echo "Releasing $TAG from $GITHUB_SHA"
+          echo "Releasing $TAG from $SHA"
 
       - uses: actions/setup-node@v4
         with:
@@ -149,4 +165,4 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git log -1 --format=%b > "$RUNNER_TEMP/notes.md"
-          scripts/gh-release "${TAG#v}" "$RUNNER_TEMP/notes.md" "$GITHUB_SHA"
+          scripts/gh-release "${TAG#v}" "$RUNNER_TEMP/notes.md" "$SHA"

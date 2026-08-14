@@ -54,7 +54,7 @@ and the workflow publishes that body verbatim as the release notes.
 
    On failure: nothing was tagged or published. Diagnose the run
    (`gh run view --log-failed`), fix, and re-dispatch — if the fix needs no
-   new commit, `gh workflow run release.yml -f tag=v<version>` reuses the
-   existing bump commit; if it needs a commit, master has moved past the bump
-   commit, so cut a fresh release (the workflow enforces HEAD being the bump
-   commit).
+   new commit, `gh workflow run release.yml -f tag=v<version> -f sha=<bump-sha>`
+   reuses the existing bump commit (the workflow checks out that exact SHA,
+   so this works even after master has moved past it); if the fix needs a
+   commit, that commit isn't in the bump, so cut a fresh release.
