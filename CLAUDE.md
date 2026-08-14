@@ -12,6 +12,8 @@ Review is a desktop app (built with Tauri) that helps humans review diffs more e
 # Setup
 scripts/install          # Install dependencies (npm + cargo + submodule + pre-commit hook)
                          # Requires Zig 0.16+ — see "Terminal VT engine" below
+scripts/remote-setup     # Same, for cloud/remote Claude containers (proxy-safe
+                         # Zig install + dependency prefetch) — see below
 
 # Desktop Development
 scripts/dev              # Run in development mode with hot reload
@@ -30,6 +32,27 @@ scripts/pre-commit       # Check only: prettier --check + cargo fmt --check
 # Build
 scripts/build            # Build production app (outputs to target/release/)
 ```
+
+### Remote Claude sessions (cloud containers)
+
+Cloud sessions build everything — `review-daemon` and libghostty-vt included —
+but the container's egress proxy breaks Zig's fetcher twice over: `zig build`
+does not honor `$HTTPS_PROXY`, and GitHub *archive* downloads are refused even
+though anonymous `git clone` of any public repo is allowed. Run
+`scripts/remote-setup` once per container; it installs Zig, fetches the
+`vendor/ghostty` submodule, and pre-fetches every Zig package dependency into
+Zig's global cache (curl for plain tarballs; git-clone + `git archive` for
+git deps — `git archive` reproduces GitHub's codeload tarball, so the pinned
+hashes match). It is idempotent and fetches transitive deps to fixpoint, so
+re-run it after any submodule bump.
+
+Browser testing works in the container: headless Chromium is pre-installed
+(`PLAYWRIGHT_BROWSERS_PATH` points Playwright at it — never run
+`playwright install`). Start the daemon under an isolated home
+(`REVIEW_HOME=~/.review-dev target/debug/review-daemon &`), run
+`scripts/dev-web`, and drive `http://localhost:1420` headlessly — screenshots,
+mobile-viewport emulation, and real terminal round-trips all work. The `review`
+CLI (`--home ~/.review-dev`) is handy for poking sessions from the outside.
 
 ### Isolated dev instance (`$REVIEW_HOME`)
 
