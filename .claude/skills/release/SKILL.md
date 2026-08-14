@@ -14,23 +14,31 @@ and GitHub release only after everything succeeds (`gh release create
 Release notes are written **first**: they ride in the release commit's body,
 and the workflow publishes that body verbatim as the release notes.
 
+**Run the whole thing without stopping.** Asking to release *is* the approval —
+for the bump size, for the notes, and for publishing. Don't ask which bump, and
+don't present the notes for sign-off; write them as well as you can and ship.
+Say what you released and what the notes said afterward, not before.
+
 ## Steps
 
-1. **Ask the user**: Should this be a `patch` or `minor` release?
+1. **Pick the bump.** `patch` unless the invocation said `minor`.
 
 2. **Draft release notes** from the commits since the last release:
 
    ```bash
+   git fetch --tags --quiet
    git log --oneline $(git describe --tags --abbrev=0)..HEAD
    ```
+
+   Fetch first: a local tag list can lag behind what is actually published, and
+   a stale one silently widens the range into changes that already shipped.
+   Cross-check against `gh release list --limit 5` when the newest tag and the
+   newest `Release vX.Y.Z` commit disagree.
 
    Write concise, user-facing notes — new features, fixes, improvements from
    the user's perspective. Skip internal/build changes. Save to a temp file.
 
-3. **Show the notes to the user for approval** (this is the one human
-   decision — everything after is automated). Edit until approved.
-
-4. **Run the release script**:
+3. **Run the release script**:
 
    ```bash
    scripts/release <patch|minor> <notes-file>
@@ -40,16 +48,17 @@ and the workflow publishes that body verbatim as the release notes.
    versions, commits `Release vX.Y.Z` with the notes as the body, pushes, and
    dispatches `.github/workflows/release.yml`.
 
-5. **Watch the run** (takes ~30–60 minutes; builds, signs, notarizes, then
+4. **Watch the run** (takes ~30–60 minutes; builds, signs, notarizes, then
    publishes):
 
    ```bash
    gh run watch --exit-status
    ```
 
-   The user doesn't need to stay for this — the workflow needs nothing further.
+   Run this in the background — it outlives the turn, and the user doesn't need
+   to stay for it either; the workflow needs nothing further.
 
-6. **On success, print the release URL**:
+5. **On success, print the release URL**:
    `https://github.com/dropseed/review/releases/tag/v<version>`
 
    On failure: nothing was tagged or published. Diagnose the run
