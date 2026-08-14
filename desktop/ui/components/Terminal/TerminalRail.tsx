@@ -31,7 +31,6 @@ export function TerminalRail(): ReactNode {
   // rail is the panel, narrow, and the two must not list different terminals.
   const focusedWorkspace = useFocusedWorkspace();
   const tabs = useWorkspaceTabs(focusedWorkspace?.id ?? null);
-  const terminalDockSide = useReviewStore((s) => s.terminalDockSide);
   const toggleTerminalPanel = useReviewStore((s) => s.toggleTerminalPanel);
   const setActiveTab = useReviewStore((s) => s.setActiveTab);
 
@@ -62,7 +61,7 @@ export function TerminalRail(): ReactNode {
               key={tab.id}
               text={title}
               label={label}
-              edge={terminalDockSide}
+              edge="left"
               active={tab.id === activeTabId}
               onClick={() => showTab(tab)}
               marker={<PhaseDot phase={phase} dead={allDead} />}

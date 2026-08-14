@@ -25,8 +25,8 @@ import {
 import { useTerminalDockPresent } from "../../stores/selectors/terminals";
 
 /**
- * The terminal's place in the window: a resizable pane docked left or right of
- * whatever the app is showing, with that content as `children`.
+ * The terminal's place in the window: a resizable pane on the left of whatever
+ * the app is showing, with that content as `children`.
  *
  * Mounted at the app shell rather than inside the review screen, because tabs
  * are global — a shell you started is still yours on the home screen, and a
@@ -35,14 +35,13 @@ import { useTerminalDockPresent } from "../../stores/selectors/terminals";
  * The dock therefore owns the gutter between the two: a terminal pane drops its
  * padding on the side facing the content, so the two cards share one gutter
  * instead of stacking theirs. Content keeps its own padding and never has to
- * know which side the terminal is on — or whether it is there at all.
+ * know whether the terminal is there at all.
  */
 export function TerminalDock({ children }: { children: ReactNode }): ReactNode {
   const contentFocus = useReviewStore((s) => s.contentFocus);
   const terminalOverview = useReviewStore((s) => s.terminalOverview);
   const terminalPanelWidth = useReviewStore((s) => s.terminalPanelWidth);
   const setTerminalPanelWidth = useReviewStore((s) => s.setTerminalPanelWidth);
-  const terminalDockSide = useReviewStore((s) => s.terminalDockSide);
   const contentRowRef = useRef<HTMLDivElement | null>(null);
 
   // A workspace showing a repo keeps its dock whether or not it is running
@@ -53,21 +52,16 @@ export function TerminalDock({ children }: { children: ReactNode }): ReactNode {
   // Focusing the code still leaves the terminal on its dock edge — as a
   // narrow rail, not nothing, so there's a way back besides remembering ⌘`.
   const railed = docked && focus === "code";
-  const dockLeft = docked && terminalDockSide === "left";
-  const dockRight = docked && terminalDockSide === "right";
 
-  // ResizeHandle reports a fraction of the content row from its left edge. The
-  // width is always the terminal pane's own width, measured from whichever side
-  // it's docked on — so a right dock measures from the right edge (1 - fraction).
+  // ResizeHandle reports a fraction of the content row from its left edge, and
+  // the terminal is that edge — so the fraction *is* the panel's own width.
   const handleTerminalResize = useCallback(
     (fraction: number) => {
       const rowWidth = contentRowRef.current?.clientWidth ?? 0;
       if (rowWidth === 0) return;
-      const sideFraction =
-        terminalDockSide === "right" ? 1 - fraction : fraction;
-      setTerminalPanelWidth(Math.round(sideFraction * rowWidth));
+      setTerminalPanelWidth(Math.round(fraction * rowWidth));
     },
-    [setTerminalPanelWidth, terminalDockSide],
+    [setTerminalPanelWidth],
   );
 
   // The panel's stored width is px, and a width picked on an ultrawide is most
@@ -128,16 +122,14 @@ export function TerminalDock({ children }: { children: ReactNode }): ReactNode {
   // Padding on the side the content is on is dropped throughout: whichever
   // shape the terminal takes, the gutter between it and the content is the
   // content's own.
-  const facing = terminalDockSide === "left" ? "pr-0" : "pl-0";
   const terminalPane = !docked ? null : railed ? (
-    <div className={clsx("w-12 shrink-0 overflow-hidden p-2", facing)}>
+    <div className="w-12 shrink-0 overflow-hidden p-2 pr-0">
       <TerminalRail />
     </div>
   ) : (
     <div
       className={clsx(
-        "overflow-hidden p-2",
-        facing,
+        "overflow-hidden p-2 pr-0",
         terminalFocused ? "min-w-0 flex-1" : "shrink-0",
       )}
       style={terminalFocused ? undefined : { width: appliedTerminalWidth }}
@@ -203,7 +195,7 @@ export function TerminalDock({ children }: { children: ReactNode }): ReactNode {
       ref={contentRowRef}
       className="relative flex flex-1 flex-row overflow-hidden bg-surface"
     >
-      {dockLeft && (
+      {docked && (
         <>
           {terminalPane}
           {terminalResize}
@@ -211,13 +203,6 @@ export function TerminalDock({ children }: { children: ReactNode }): ReactNode {
         </>
       )}
       {content}
-      {dockRight && (
-        <>
-          {contentRail}
-          {terminalResize}
-          {terminalPane}
-        </>
-      )}
     </div>
   );
 }

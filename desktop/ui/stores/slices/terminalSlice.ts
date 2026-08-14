@@ -89,8 +89,6 @@ export interface TerminalSlice {
   terminalOverview: boolean;
   /** Panel width in px (persisted) — the vertical pane's own width. */
   terminalPanelWidth: number;
-  /** Which side of the content region the panel docks on (persisted). */
-  terminalDockSide: TerminalDockSide;
   /** Whether the current backend can host terminals (probed on mount). */
   terminalsSupported: boolean;
 
@@ -213,9 +211,6 @@ export interface TerminalSlice {
   /** ⇧⌘↵: focus terminal ↔ split — full width from wherever it starts. */
   toggleTerminalFocus: () => void;
   setTerminalPanelWidth: (width: number) => void;
-  setTerminalDockSide: (side: TerminalDockSide) => void;
-  /** Flip the panel between the left and right of the content region. */
-  toggleTerminalDockSide: () => void;
 
   /** Mark a fresh id as consumed (pane has mounted it). */
   consumeFreshTerminal: (id: string) => void;
@@ -238,8 +233,6 @@ export interface TerminalSlice {
   ingestTerminalList: (sessions: TerminalSessionInfo[]) => void;
 }
 
-export type TerminalDockSide = "left" | "right";
-
 /**
  * Which surface holds the content region: the code (terminal collapses to its
  * rail), the terminal (code collapses to its rail), or neither — "split", the
@@ -255,7 +248,6 @@ export type ContentFocus = "code" | "split" | "terminal";
 export const TERMINAL_PANEL_WIDTH_DEFAULT = 480;
 export const TERMINAL_PANEL_WIDTH_MIN = 320;
 export const TERMINAL_PANEL_WIDTH_MAX = 1000;
-export const TERMINAL_DOCK_SIDE_DEFAULT: TerminalDockSide = "left";
 
 /**
  * Whether the app has a terminal dock at all — the one rule every surface that
@@ -1072,21 +1064,18 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
     contentFocus: "code",
     terminalOverview: false,
     terminalPanelWidth: TERMINAL_PANEL_WIDTH_DEFAULT,
-    terminalDockSide: TERMINAL_DOCK_SIDE_DEFAULT,
     terminalsSupported: false,
 
     hydrateTerminalPrefs: async () => {
-      const [focus, legacyMode, legacyOpen, width, dockSide] =
-        await Promise.all([
-          storage.get<ContentFocus>("contentFocus"),
-          // Pre-focus installs persisted the same three states under the
-          // panel's own names; map them once so the layout survives upgrade.
-          storage.get<"closed" | "split" | "maximized">("terminalPanelMode"),
-          // And pre-mode installs persisted an open/closed boolean.
-          storage.get<boolean>("terminalPanelOpen"),
-          storage.get<number>("terminalPanelWidth"),
-          storage.get<TerminalDockSide>("terminalDockSide"),
-        ]);
+      const [focus, legacyMode, legacyOpen, width] = await Promise.all([
+        storage.get<ContentFocus>("contentFocus"),
+        // Pre-focus installs persisted the same three states under the
+        // panel's own names; map them once so the layout survives upgrade.
+        storage.get<"closed" | "split" | "maximized">("terminalPanelMode"),
+        // And pre-mode installs persisted an open/closed boolean.
+        storage.get<boolean>("terminalPanelOpen"),
+        storage.get<number>("terminalPanelWidth"),
+      ]);
       const migrated: ContentFocus | null =
         legacyMode === "closed"
           ? "code"
@@ -1098,7 +1087,6 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
       set({
         contentFocus: focus ?? migrated ?? (legacyOpen ? "split" : "code"),
         terminalPanelWidth: width ?? TERMINAL_PANEL_WIDTH_DEFAULT,
-        terminalDockSide: dockSide ?? TERMINAL_DOCK_SIDE_DEFAULT,
       });
     },
 
@@ -1299,18 +1287,6 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
       );
       set({ terminalPanelWidth: clamped });
       storage.set("terminalPanelWidth", clamped);
-    },
-
-    setTerminalDockSide: (side) => {
-      set({ terminalDockSide: side });
-      storage.set("terminalDockSide", side);
-    },
-
-    toggleTerminalDockSide: () => {
-      const side: TerminalDockSide =
-        get().terminalDockSide === "left" ? "right" : "left";
-      set({ terminalDockSide: side });
-      storage.set("terminalDockSide", side);
     },
 
     consumeFreshTerminal: (id) =>

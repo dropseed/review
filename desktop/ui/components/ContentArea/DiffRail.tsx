@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import { useReviewStore } from "../../stores";
 import { useReviewProgress } from "../../hooks/useReviewProgress";
 import { SimpleTooltip } from "../ui/tooltip";
 import { ProgressRing } from "../ui/progress-ring";
@@ -15,11 +14,10 @@ import { Rail, railTooltipSide, type RailEdge } from "../ui/rail";
  * one whenever this rail is drawn.
  */
 export function DiffRail(): ReactNode {
-  const terminalDockSide = useReviewStore((s) => s.terminalDockSide);
   const progress = useReviewProgress();
 
-  // The code is pushed to whichever edge the terminal isn't docked to.
-  const edge: RailEdge = terminalDockSide === "left" ? "right" : "left";
+  // The terminal takes the left edge, so the code is pushed to the right.
+  const edge: RailEdge = "right";
   const remaining = progress.pendingHunks + progress.savedForLaterHunks;
 
   return (

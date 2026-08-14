@@ -653,7 +653,6 @@ describe("slice actions", () => {
 
   it("defaults dock side to left and width to the default", () => {
     const { get } = makeSlice();
-    expect(get().terminalDockSide).toBe("left");
     expect(get().terminalPanelWidth).toBe(TERMINAL_PANEL_WIDTH_DEFAULT);
   });
 
@@ -881,16 +880,6 @@ describe("slice actions", () => {
     expect(loads).toBe(1);
   });
 
-  it("toggleTerminalDockSide flips the side and persists it", () => {
-    const { get, writes } = makeSlice();
-    get().toggleTerminalDockSide();
-    expect(get().terminalDockSide).toBe("right");
-    expect(writes.terminalDockSide).toBe("right");
-    get().toggleTerminalDockSide();
-    expect(get().terminalDockSide).toBe("left");
-    expect(writes.terminalDockSide).toBe("left");
-  });
-
   it("terminalOverview starts off and toggles both ways", () => {
     const { get } = makeSlice();
     expect(get().terminalOverview).toBe(false);
@@ -911,20 +900,11 @@ describe("slice actions", () => {
     expect(writes).toEqual({});
   });
 
-  it("setTerminalDockSide sets and persists the given side", () => {
-    const { get, writes } = makeSlice();
-    get().setTerminalDockSide("right");
-    expect(get().terminalDockSide).toBe("right");
-    expect(writes.terminalDockSide).toBe("right");
-  });
-
-  it("hydrateTerminalPrefs restores the persisted dock side", async () => {
+  it("hydrateTerminalPrefs restores the persisted layout", async () => {
     const { get, reads } = makeSlice();
-    reads.terminalDockSide = "right";
     reads.contentFocus = "terminal";
     reads.terminalPanelWidth = 640;
     await get().hydrateTerminalPrefs();
-    expect(get().terminalDockSide).toBe("right");
     expect(get().contentFocus).toBe("terminal");
     expect(get().terminalPanelWidth).toBe(640);
   });
