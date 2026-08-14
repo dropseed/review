@@ -37,7 +37,7 @@ scripts/build            # Build production app (outputs to target/release/)
 
 Cloud sessions build everything — `review-daemon` and libghostty-vt included —
 but the container's egress proxy breaks Zig's fetcher twice over: `zig build`
-does not honor `$HTTPS_PROXY`, and GitHub *archive* downloads are refused even
+does not honor `$HTTPS_PROXY`, and GitHub _archive_ downloads are refused even
 though anonymous `git clone` of any public repo is allowed. Run
 `scripts/remote-setup` once per container; it installs Zig, fetches the
 `vendor/ghostty` submodule, and pre-fetches every Zig package dependency into
