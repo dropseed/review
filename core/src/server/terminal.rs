@@ -25,22 +25,34 @@
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, State};
-use axum::response::Response;
+use axum::http::{HeaderMap, StatusCode};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{any, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use super::handlers::{internal_err, ApiResult};
-use crate::daemon::{DaemonClient, Op, StreamFrame, StreamHandle};
+use super::origin_allowed;
+use crate::daemon::{
+    DaemonClient, Op, StreamFrame, StreamHandle, ERR_CLOSED, ERR_CONNECTING, ERR_SENDING,
+};
 
 /// Close code meaning "this session no longer exists" — the one close the
 /// frontend must not retry (`SESSION_GONE_CODE` in `terminal-socket.ts`).
 const SESSION_GONE: u16 = 4404;
+
+/// How often an idle socket is pinged.
+const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(30);
+
+/// How long a socket may go without *any* inbound frame — a pong included —
+/// before it is treated as half-open and dropped. Two and a half intervals, so
+/// one lost ping is not a disconnect.
+const KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(75);
 
 // ============================================================
 // Shared state
@@ -119,10 +131,23 @@ impl TerminalBridge {
         Fut: Future<Output = anyhow::Result<T>>,
     {
         let client = self.client().await?;
-        match call(client).await {
+        match call(client.clone()).await {
             Err(e) if is_disconnected(&e) => {
                 log::warn!("[terminal] daemon connection lost ({e:#}); reconnecting");
-                self.inner.client.lock().await.take();
+                // Only discard the connection *this* call failed on. Several
+                // requests fail together when a daemon goes away, and without
+                // this check the second one to notice would evict the healthy
+                // connection the first already reconnected — a stampede where
+                // each reconnect is undone by the next.
+                {
+                    let mut slot = self.inner.client.lock().await;
+                    if slot
+                        .as_ref()
+                        .is_some_and(|cached| cached.is_same_connection(&client))
+                    {
+                        slot.take();
+                    }
+                }
                 let client = self.client().await?;
                 call(client).await
             }
@@ -149,12 +174,14 @@ impl TerminalBridge {
 /// Whether this failure means the connection is gone rather than the op is bad.
 ///
 /// A daemon-side "no such terminal t9" travels as a plain message and must not
-/// cost a reconnect; the three ways a *transport* dies all name themselves.
+/// cost a reconnect; the three ways a *transport* dies all name themselves. The
+/// names are the client's own consts, so a reworded error there breaks this
+/// build rather than quietly turning reconnection off.
 fn is_disconnected(e: &anyhow::Error) -> bool {
     let text = format!("{e:#}");
-    text.contains("daemon connection closed")
-        || text.contains("sending request to daemon")
-        || text.contains("connecting to daemon")
+    [ERR_CLOSED, ERR_SENDING, ERR_CONNECTING]
+        .iter()
+        .any(|marker| text.contains(marker))
 }
 
 // ============================================================
@@ -433,11 +460,24 @@ async fn peek(
 // The WebSocket
 // ============================================================
 
+/// The one route CORS cannot protect: a WebSocket handshake is not a
+/// cross-origin *fetch*, so no preflight ever runs and the browser will happily
+/// open a socket from any page to this server. Without this check any site the
+/// user visits could type into their shells. Same rule as the CORS predicate,
+/// applied before the upgrade rather than after it.
 async fn ws(
     State(bridge): State<TerminalBridge>,
     Path(terminal_id): Path<String>,
+    headers: HeaderMap,
     upgrade: WebSocketUpgrade,
 ) -> Response {
+    if !origin_allowed(headers.get(axum::http::header::ORIGIN), &headers) {
+        log::warn!(
+            "[terminal_ws] refused an upgrade for {terminal_id} from origin {:?}",
+            headers.get(axum::http::header::ORIGIN)
+        );
+        return StatusCode::FORBIDDEN.into_response();
+    }
     upgrade.on_upgrade(move |socket| attach(bridge, socket, terminal_id))
 }
 
@@ -480,9 +520,43 @@ async fn attach(bridge: TerminalBridge, mut socket: WebSocket, terminal_id: Stri
 /// bridge's reconnect path: if the daemon restarted, this stream is dead too, so
 /// the honest answer is to let the socket close and let the frontend's backoff
 /// reconnect re-attach through [`TerminalBridge::with_client`].
+///
+/// Two things end the pump besides the session itself:
+///
+/// - **Input that cannot be delivered.** A stream can outlive the control
+///   connection it was opened on (they are separate sockets), and a pump that
+///   logged the failure and kept going would leave the pane *looking* connected
+///   while every keystroke fell on the floor. Closing puts the frontend back on
+///   its `POST /api/terminal/write` fallback until its backoff re-attaches.
+/// - **Silence.** A tab that goes away without a close frame — laptop lid, lost
+///   Wi-Fi, a proxy giving up — leaves this task, its daemon connection and its
+///   subscriber alive forever. A ping every [`KEEPALIVE_INTERVAL`] costs
+///   nothing (browsers pong automatically, so an idle tab is not disturbed) and
+///   a half-open socket stops answering and is reaped within ~2 ticks.
 async fn pump(mut socket: WebSocket, client: DaemonClient, mut stream: StreamHandle, id: &str) {
+    let mut keepalive = tokio::time::interval(KEEPALIVE_INTERVAL);
+    // A burst of catch-up pings after a busy stretch would say nothing the
+    // first one didn't; space them instead.
+    keepalive.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    // The first tick is immediate; skip it so a socket is not pinged the
+    // instant it opens.
+    keepalive.tick().await;
+    let mut last_inbound = Instant::now();
+
     loop {
         tokio::select! {
+            _ = keepalive.tick() => {
+                if last_inbound.elapsed() > KEEPALIVE_TIMEOUT {
+                    log::debug!(
+                        "[terminal_ws] {id} silent for {:?}; closing a half-open socket",
+                        last_inbound.elapsed()
+                    );
+                    return;
+                }
+                if socket.send(Message::Ping(Default::default())).await.is_err() {
+                    return; // client went away
+                }
+            }
             frame = stream.recv() => {
                 let Some(frame) = frame else {
                     // The daemon ended the stream without an exit or an error:
@@ -513,10 +587,16 @@ async fn pump(mut socket: WebSocket, client: DaemonClient, mut stream: StreamHan
                 let Some(Ok(message)) = incoming else {
                     return; // closed, or a transport error
                 };
+                // Any frame at all proves the peer is there — a pong most of
+                // the time, since an attached-but-idle pane sends nothing else.
+                last_inbound = Instant::now();
                 match translate_inbound(&message) {
                     Inbound::Input(bytes) => {
                         if let Err(e) = client.write(id, bytes).await {
                             log::warn!("[terminal_ws] input to {id} failed: {e:#}");
+                            if is_disconnected(&e) {
+                                return; // a read-only socket is worse than a closed one
+                            }
                         }
                     }
                     Inbound::Resize { cols, rows } => {
@@ -527,6 +607,9 @@ async fn pump(mut socket: WebSocket, client: DaemonClient, mut stream: StreamHan
                         });
                         if let Err(e) = resize.await {
                             log::warn!("[terminal_ws] resize of {id} failed: {e:#}");
+                            if is_disconnected(&e) {
+                                return;
+                            }
                         }
                     }
                     Inbound::Close => return,
@@ -777,6 +860,20 @@ mod tests {
             "connecting to daemon at /tmp/daemon.sock"
         )));
     }
+
+    /// The literals above are the *client's*, not this module's. Asserting on
+    /// the consts as well means a reworded error there cannot pass this file's
+    /// tests while silently disabling reconnection in production.
+    #[test]
+    fn the_transport_markers_come_from_the_client() {
+        assert!(is_disconnected(&anyhow::anyhow!(ERR_CLOSED)));
+        assert!(is_disconnected(
+            &anyhow::anyhow!("broken pipe").context(ERR_SENDING)
+        ));
+        assert!(is_disconnected(&anyhow::anyhow!(
+            "{ERR_CONNECTING} at /tmp/daemon.sock"
+        )));
+    }
 }
 
 /// The bridge against a real daemon: routes, the WebSocket, and a round trip
@@ -789,6 +886,7 @@ mod daemon_tests {
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use futures::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
     use tokio_tungstenite::tungstenite::Message as WsMessage;
     use tower::ServiceExt as _;
 
@@ -1049,6 +1147,59 @@ mod daemon_tests {
             "a dead cached connection must be replaced, not returned"
         );
         second.abort();
+    }
+
+    /// A WebSocket handshake is exempt from CORS — no preflight, and the
+    /// browser sends it happily from any page — so the origin has to be checked
+    /// by hand or every site the user visits can type into their shells. A
+    /// refused upgrade is a plain 403: there is no socket to close.
+    #[tokio::test]
+    async fn a_foreign_origin_cannot_open_a_socket() {
+        let harness = Harness::start().await;
+        let served = Served::start(&harness).await;
+
+        let mut request = served.ws_url("anything").into_client_request().unwrap();
+        request
+            .headers_mut()
+            .insert("origin", "https://evil.example".parse().unwrap());
+
+        let refused = tokio_tungstenite::connect_async(request)
+            .await
+            .expect_err("a cross-origin upgrade must not succeed");
+        let tokio_tungstenite::tungstenite::Error::Http(response) = refused else {
+            panic!("expected an HTTP refusal, got {refused:?}");
+        };
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    /// The app itself, in a browser on this machine — the origin the check
+    /// exists to keep working.
+    #[tokio::test]
+    async fn a_loopback_origin_still_attaches() {
+        let harness = Harness::start().await;
+        let served = Served::start(&harness).await;
+
+        let mut request = served.ws_url("ghost").into_client_request().unwrap();
+        request
+            .headers_mut()
+            .insert("origin", "http://localhost:1420".parse().unwrap());
+
+        // The session does not exist, so this closes 4404 — but the *upgrade*
+        // is what is under test, and a refusal would have failed it instead.
+        let (mut socket, _) = tokio_tungstenite::connect_async(request)
+            .await
+            .expect("a loopback origin is this server's own front end");
+        let closed = tokio::time::timeout(TIMEOUT, async {
+            while let Some(Ok(message)) = socket.next().await {
+                if let WsMessage::Close(frame) = message {
+                    return frame;
+                }
+            }
+            None
+        })
+        .await
+        .expect("the server should answer");
+        assert_eq!(u16::from(closed.expect("a close frame").code), SESSION_GONE);
     }
 
     async fn wait_for(socket: &std::path::Path) {

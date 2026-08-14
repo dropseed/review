@@ -94,7 +94,9 @@ pub(crate) mod test_support;
 pub use protocol::{Hello, Op, OpResult, ReplayPayload, Request, Response, StreamFrame, B64};
 
 #[cfg(feature = "daemon-client")]
-pub use client::{DaemonClient, LiveWorkspaces, StreamHandle};
+pub use client::{
+    DaemonClient, LiveWorkspaces, StreamHandle, ERR_CLOSED, ERR_CONNECTING, ERR_SENDING,
+};
 #[cfg(feature = "daemon")]
 pub use server::serve;
 
