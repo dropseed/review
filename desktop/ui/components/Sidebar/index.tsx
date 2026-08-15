@@ -10,6 +10,7 @@ import { Spinner } from "../ui/spinner";
 import { LspStatusIndicator } from "../LspStatusIndicator";
 import { AgentUsageIndicator } from "../AgentUsageIndicator";
 import { SidebarRail } from "./SidebarRail";
+import { PullRequestsDrawer } from "./PullRequestsDrawer";
 import { WorkspaceQueue } from "./WorkspaceQueue";
 
 const GITHUB_REPO_URL = "https://github.com/dropseed/review";
@@ -178,8 +179,11 @@ function SidebarHeader({ onToggle }: { onToggle: () => void }): ReactNode {
 /**
  * The sidebar: the app's chrome, and the whole of its navigation.
  *
- * It holds exactly two things — the workspace queue, and the app-level bits at
- * the foot (agent usage, LSP, version). No repo list: repos and branches are
+ * It holds the workspace queue, the pull-requests drawer under it, and the
+ * app-level bits at the foot (agent usage, LSP, version). The drawer is the one
+ * list here that isn't the queue, and it earns that by answering a different
+ * question — what is out on GitHub that the queue *hasn't* picked up — and by
+ * subtracting everything the queue already shows. No repo list: repos and branches are
  * reached through ⌘K, which searches the same tree the list used to draw, and a
  * repo you are actually working in is a workspace in the queue by definition.
  * Nothing here is a second place to look.
@@ -239,6 +243,8 @@ export const Sidebar = memo(function Sidebar() {
           <SidebarHeader onToggle={toggleSidebar} />
 
           <WorkspaceQueue />
+
+          <PullRequestsDrawer />
 
           <AgentUsageIndicator />
 

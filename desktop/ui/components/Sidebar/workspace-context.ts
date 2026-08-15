@@ -2,6 +2,7 @@ import { useReviewStore } from "../../stores";
 import {
   getSidebarTree,
   sidebarRowsByKey,
+  sidebarRowsByRepoRef,
 } from "../../stores/selectors/sidebar";
 import { repoDisplayName } from "../../utils/repo-identity";
 import { makeReviewKey } from "../../utils/review-key";
@@ -84,6 +85,7 @@ export function getWorkspaceContext(state: {
     heads,
     reviews: state.globalReviewsByKey,
     shipped,
+    rowsByRepoRef: sidebarRowsByRepoRef(tree),
   };
   cache = { deps, ctx };
   return ctx;

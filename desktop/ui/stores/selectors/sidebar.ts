@@ -10,6 +10,7 @@ import type {
   ViewerPr,
   ViewerPrSnapshot,
 } from "../../types";
+import { makeReviewKey } from "../../utils/review-key";
 
 /** Everything `buildSidebarTree` needs that lives in the store. */
 export interface SidebarTreeState {
@@ -24,6 +25,23 @@ export interface SidebarTreeState {
  * on input identity and a fresh `[]` per call would miss it every time.
  */
 const NO_PRS: ViewerPr[] = [];
+
+/**
+ * The PRs a snapshot may actually be read for.
+ *
+ * `available: false` means `gh` is gone or logged out, and the backend hands
+ * back the *last cached* PRs alongside it rather than an empty list. Every
+ * reader has to drop those: the sidebar deliberately shows no warning in that
+ * state, so anything built from that cache would be stale indefinitely with
+ * nothing on screen saying so — the exact failure this feature exists to avoid.
+ *
+ * One accessor rather than the same two-line guard at each call site, because
+ * the guard being applied in three places and forgotten in a fourth is how a
+ * card ends up badging a PR the row beneath it has already discarded.
+ */
+export function availablePrs(snapshot: ViewerPrSnapshot | null): ViewerPr[] {
+  return snapshot == null || !snapshot.available ? NO_PRS : snapshot.prs;
+}
 
 interface CacheEntry {
   /** Compared positionally against a freshly built list — see `deps` below. */
@@ -47,15 +65,7 @@ let cache: CacheEntry | null = null;
  * review state or the PR snapshot changes, and at no other time.
  */
 export function getSidebarTree(state: SidebarTreeState): RepoNode[] {
-  // `available: false` means `gh` is gone or logged out, and the backend hands
-  // back the *last cached* PRs alongside it rather than an empty list. Those
-  // have to be dropped here, at the one place the tree reads them: the sidebar
-  // deliberately shows no warning in that state, so badges and PR rows built
-  // from that cache would be stale indefinitely with nothing on screen saying
-  // so — the exact failure this feature exists to avoid.
-  const snapshot = state.viewerPrs;
-  const viewerPrs =
-    snapshot == null || !snapshot.available ? NO_PRS : snapshot.prs;
+  const viewerPrs = availablePrs(state.viewerPrs);
 
   // Everything the build reads, in one list: adding an input to the tree means
   // one edit here rather than three matching ones. Compared by identity.
@@ -98,6 +108,70 @@ export function sidebarRowsByKey(tree: RepoNode[]): Map<string, SidebarRow> {
   if (rowsCache?.tree === tree) return rowsCache.rows;
   const rows = new Map(allSidebarRows(tree).map((row) => [row.reviewKey, row]));
   rowsCache = { tree, rows };
+  return rows;
+}
+
+let byRefCache: { tree: RepoNode[]; rows: Map<string, SidebarRow> } | null =
+  null;
+
+/**
+ * The tree's rows indexed by repo path and **branch**, which is not the same
+ * index as [`sidebarRowsByKey`].
+ *
+ * A row's review key and its ref agree for everything except an `open-pr` row,
+ * which is keyed `pr/N` (two PRs can share a head branch) while naming the head
+ * branch as its ref. So this is the index that answers "is there anything at
+ * this repo and branch" for a PR whose head has never been fetched — the state
+ * a PR just picked up out of the drawer is in, and the reason its workspace
+ * must not be told its branch is gone.
+ *
+ * Going through the tree rather than through the PR snapshot is what keeps the
+ * answer honest: it inherits the availability gate, and it inherits the tree's
+ * claim-once join, so a card can only badge the PR the row beneath it badges.
+ * On the one collision the tree allows — two open PRs on one head branch, with
+ * no local branch to claim either — the more recently updated wins, matching
+ * the order the tree hands the rows out in.
+ */
+export function sidebarRowsByRepoRef(
+  tree: RepoNode[],
+): Map<string, SidebarRow> {
+  if (byRefCache?.tree === tree) return byRefCache.rows;
+  const rows = new Map<string, SidebarRow>();
+  for (const row of allSidebarRows(tree)) {
+    const key = makeReviewKey(row.repoPath, row.ref);
+    const held = rows.get(key);
+    if (!held || newerPr(row, held)) rows.set(key, row);
+  }
+  byRefCache = { tree, rows };
+  return rows;
+}
+
+/** Whether `row` carries a more recently updated PR than `held` does. */
+function newerPr(row: SidebarRow, held: SidebarRow): boolean {
+  if (!row.openPr) return false;
+  if (!held.openPr) return true;
+  return Date.parse(row.openPr.updatedAt) > Date.parse(held.openPr.updatedAt);
+}
+
+let byPrCache: { tree: RepoNode[]; rows: Map<string, SidebarRow> } | null =
+  null;
+
+/**
+ * The tree's rows indexed by the PR they stand for, `repoPath#number`.
+ *
+ * The tree decides which row a PR belongs to — by number when a review was
+ * started from it, by head branch otherwise, and a synthesized `pr/N` row when
+ * nothing local knows it at all — and then throws the mapping away. Anything
+ * that starts from a PR and needs its row (the pull-requests drawer) would
+ * otherwise re-derive that join and get a third answer.
+ */
+export function sidebarRowsByPr(tree: RepoNode[]): Map<string, SidebarRow> {
+  if (byPrCache?.tree === tree) return byPrCache.rows;
+  const rows = new Map<string, SidebarRow>();
+  for (const row of allSidebarRows(tree)) {
+    if (row.openPr) rows.set(`${row.repoPath}#${row.openPr.number}`, row);
+  }
+  byPrCache = { tree, rows };
   return rows;
 }
 

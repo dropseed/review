@@ -1,7 +1,9 @@
 import { useReviewStore } from "../stores";
 import { findSidebarRow, getSidebarTree } from "../stores/selectors/sidebar";
 import type { ReviewTarget } from "../stores/selectors/workspaceData";
-import { makeReviewKey } from "../utils/review-key";
+import { makeReviewKey, refFromReviewKey } from "../utils/review-key";
+import type { SidebarRow } from "../utils/sidebar-tree";
+import { openTerminalTab } from "../components/Terminal/newTab";
 import { getCommandUi } from "./host";
 import type { Attachment, Workspace } from "../types";
 import type { Command } from "./types";
@@ -107,6 +109,41 @@ export function focusWorkspace(
   if (!opening || !activateReviewTarget(opening)) getCommandUi().navigate("/");
 
   store.selectWorkspaceTab(workspace.id);
+}
+
+/**
+ * Land a sidebar row in a workspace and show it there — ⌘K's Enter, and the
+ * pull-requests drawer's click.
+ *
+ * One verb because the two halves have to agree: the workspace is routed by
+ * the row's **branch** (`row.ref`, which is what an attachment names and what a
+ * card joins its PR badge on), while the comparison is opened by the row's
+ * **key**, which is not the same string for an `open-pr` row — that one is
+ * keyed `pr/N`, and opening it by branch finds no row at all, so the stage
+ * would fall through to the empty state on a row that clearly named something.
+ * Splitting those two apart is exactly the mistake this function exists to stop
+ * anyone making twice.
+ *
+ * Resolves once the routing has committed, so a caller can await the landing.
+ */
+export async function openRowInWorkspace(
+  row: SidebarRow,
+  options: { withTerminal?: boolean } = {},
+): Promise<Workspace | null> {
+  const workspace = await useReviewStore
+    .getState()
+    .routeWorkspace(row.repoPath, row.ref);
+  if (!workspace) return null;
+
+  const target: ReviewTarget = {
+    repoPath: row.repoPath,
+    ref: refFromReviewKey(row.reviewKey, row.repoPath) ?? row.ref,
+  };
+  focusWorkspace(workspace, target);
+  // On the branch that was named, not on whichever repo the workspace happens
+  // to list first.
+  if (options.withTerminal) void openTerminalTab(workspace, target);
+  return workspace;
 }
 
 /**

@@ -212,6 +212,15 @@ const defaults = {
   terminalNotificationsEnabled: true,
   tabRailCollapsed: false,
   filesPanelCollapsed: false,
+  // The pull-requests drawer at the foot of the sidebar. Open by default: it
+  // is the list you check before deciding what to work on, and a shut drawer
+  // is one nobody remembers to open.
+  pullRequestsOpen: true,
+  // Repos whose PRs the drawer leaves out, as GitHub spells them
+  // (`owner/name`). By repo rather than by local path: the list includes PRs
+  // in repos that aren't cloned here, and those are exactly the ones most
+  // worth being able to quiet.
+  hiddenPrRepos: [] as string[],
   // No `reviewSortOrder`: the sort menu is gone, and a stored "size" would
   // otherwise keep reordering rows with nothing left to change it back. The
   // key stays on disk untouched — inert, and still there if the control ever
@@ -305,6 +314,10 @@ export interface PreferencesSlice {
   // Files panel (right sidebar)
   filesPanelCollapsed: boolean;
 
+  // The sidebar's pull-requests drawer
+  pullRequestsOpen: boolean;
+  hiddenPrRepos: string[];
+
   // When each workspace was last focused, as epoch ms. Absent = never looked.
   workspaceSeenAt: Record<string, number>;
 
@@ -397,6 +410,14 @@ export interface PreferencesSlice {
 
   // File sort order actions
   setFileSortOrder: (order: FileSortOrder) => void;
+
+  // Pull-requests drawer actions
+  setPullRequestsOpen: (open: boolean) => void;
+  togglePullRequests: () => void;
+  /** Add or remove one repo from the drawer's filter. */
+  togglePrRepoHidden: (repo: string) => void;
+  /** Unfilter everything — the one gesture back from a list you've narrowed. */
+  showAllPrRepos: () => void;
 
   // Guide side nav actions
   setGuideSideNavCollapsed: (collapsed: boolean) => void;
@@ -712,6 +733,29 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     setFileSortOrder: (order) => {
       set({ fileSortOrder: order });
       storage.set("fileSortOrder", order);
+    },
+
+    setPullRequestsOpen: (open) => {
+      set({ pullRequestsOpen: open });
+      storage.set("pullRequestsOpen", open);
+    },
+
+    togglePullRequests: () => {
+      get().setPullRequestsOpen(!get().pullRequestsOpen);
+    },
+
+    togglePrRepoHidden: (repo) => {
+      const hidden = get().hiddenPrRepos;
+      const next = hidden.includes(repo)
+        ? hidden.filter((name) => name !== repo)
+        : [...hidden, repo];
+      set({ hiddenPrRepos: next });
+      storage.set("hiddenPrRepos", next);
+    },
+
+    showAllPrRepos: () => {
+      set({ hiddenPrRepos: [] });
+      storage.set("hiddenPrRepos", []);
     },
 
     setGuideSideNavCollapsed: (collapsed) => {

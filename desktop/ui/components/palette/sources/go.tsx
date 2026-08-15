@@ -11,7 +11,10 @@ import { allSidebarRows, type SidebarRow } from "../../../utils/sidebar-tree";
 import { tabGlance } from "../../Terminal/glance";
 import { jumpToTab } from "../../Terminal/jump";
 import { openTerminalTab } from "../../Terminal/newTab";
-import { focusWorkspace } from "../../../commands/workspaceCommands";
+import {
+  focusWorkspace,
+  openRowInWorkspace,
+} from "../../../commands/workspaceCommands";
 import {
   scoreCandidate,
   indicesFor,
@@ -112,7 +115,6 @@ export function useGoSource(
   active: boolean,
 ): PaletteSource<Scored> {
   const closeOverlay = useReviewStore((s) => s.closeOverlay);
-  const routeWorkspace = useReviewStore((s) => s.routeWorkspace);
   const workspaces = useWorkspaces();
   const ctx = useWorkspaceContext();
   const tree = useSidebarTree();
@@ -263,17 +265,9 @@ export function useGoSource(
       // way to keep that promise is to commit the same routing decision the
       // preview mirrored, then focus what it returned. Opening the comparison
       // alone would leave the promised workspace uncreated.
-      const { repoPath, ref } = entry.row;
-      void routeWorkspace(repoPath, ref).then((workspace) => {
-        if (!workspace) return;
-        const target = { repoPath, ref };
-        focusWorkspace(workspace, target);
-        // On the branch that was named, not on whichever repo the workspace
-        // happens to list first.
-        if (withTerminal) void openTerminalTab(workspace, target);
-      });
+      void openRowInWorkspace(entry.row, { withTerminal });
     },
-    [closeOverlay, routeWorkspace],
+    [closeOverlay],
   );
 
   const onActivate = useCallback(

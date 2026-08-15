@@ -51,6 +51,7 @@ function item(
 
 const EMPTY_CONTEXT: WorkspaceContext = {
   rows: new Map(),
+  rowsByRepoRef: new Map(),
   repoNames: new Map(),
   knownRepos: new Set(),
   heads: new Map(),

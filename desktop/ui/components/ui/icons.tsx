@@ -356,6 +356,48 @@ export function PinIcon({
   );
 }
 
+/**
+ * The disclosure chevron, pointing right — add `rotate-90` for open.
+ *
+ * The one caller so far is the sidebar's pull-requests drawer; the other
+ * collapsibles in the app each draw this path inline, and are worth folding in
+ * here whenever one of them is next touched.
+ */
+export function ChevronRightIcon({ className = "h-3 w-3" }: IconProps) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M9 5l7 7-7 7" />
+    </svg>
+  );
+}
+
+/** A funnel — what is being left out of a list. */
+export function FilterIcon({ className = "h-3 w-3" }: IconProps) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3 5h18l-7 8v6l-4 2v-8Z" />
+    </svg>
+  );
+}
+
 /** Circular arrow, for re-reading something on demand. */
 export function RefreshIcon({ className = "h-3 w-3" }: IconProps) {
   return (

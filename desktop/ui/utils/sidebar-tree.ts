@@ -184,6 +184,18 @@ function parseTime(iso: string | null | undefined): number {
   return Number.isNaN(t) ? 0 : t;
 }
 
+/**
+ * Most recently updated first — the tie-break for "which PR gets the row", and
+ * the same order the drawer lists them in.
+ *
+ * Shared so the two can't disagree, `parseTime`'s tolerance of a malformed
+ * date included: a PR whose `updatedAt` doesn't parse sorts last here rather
+ * than sorting differently in each list that claims to match this one.
+ */
+export function byPrRecency(a: ViewerPr, b: ViewerPr): number {
+  return parseTime(b.updatedAt) - parseTime(a.updatedAt);
+}
+
 function branchItemKind(
   branch: LocalBranchInfo,
   hasReview: boolean,
@@ -194,20 +206,22 @@ function branchItemKind(
 }
 
 /**
- * Whether a PR is blocked on something: changes requested, or CI that failed
- * or couldn't run.
+ * Whether a PR is blocked on *you*: a reviewer has asked for changes.
  *
  * The one definition, because this is also exactly when the badge goes red
  * (`prBadgeClass` imports it) and when a work card leads with the PR rather
  * than the review progress (`work-status.ts`). Three places asking "is this PR
  * blocked" and getting three answers is three chances to disagree on screen.
+ *
+ * CI deliberately isn't in it, though it used to be. Red CI is common and
+ * often not yours to fix — a fork whose workflows never ran, a flake, a branch
+ * you already know about — so counting it made most of a long-lived PR list
+ * red, and a colour that is usually on says nothing. The state is still
+ * reported in words (`prSummary`, and the card's phrase), where it informs
+ * without alarming.
  */
 export function prNeedsAttention(pr: ViewerPr): boolean {
-  return (
-    pr.reviewDecision === "CHANGES_REQUESTED" ||
-    pr.checksState === "FAILURE" ||
-    pr.checksState === "ERROR"
-  );
+  return pr.reviewDecision === "CHANGES_REQUESTED";
 }
 
 /**
@@ -391,9 +405,7 @@ export function buildSidebarTree(
   //    it takes the row and the others get rows of their own. Every PR ends up
   //    somewhere — dropping the loser would hide an open PR entirely.
   const claimed = new Set<SidebarRow>();
-  const prsByRecency = [...viewerPrs].sort(
-    (a, b) => parseTime(b.updatedAt) - parseTime(a.updatedAt),
-  );
+  const prsByRecency = [...viewerPrs].sort(byPrRecency);
 
   for (const pr of prsByRecency) {
     const repoPath = pr.repoPath;

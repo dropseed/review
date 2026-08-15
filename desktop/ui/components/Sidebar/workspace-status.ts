@@ -53,6 +53,50 @@ export interface WorkspaceContext {
   reviews: Record<string, GlobalReviewSummary>;
   /** Confirmed merges by review key — the branches whose PR has landed. */
   shipped: Map<string, ShippedPr>;
+  /**
+   * The same rows, indexed by repo path and *branch* — `sidebarRowsByRepoRef`.
+   *
+   * An attachment names a branch, and for one case that is not the same
+   * question as its review key: a PR whose head has never been fetched has no
+   * row at `repo:branch` in `rows`, only a synthesized `pr/N` one. That is the
+   * state a PR just picked up out of the drawer is in, and reading it here is
+   * what stops the card calling the branch *gone* while the fetch runs.
+   */
+  rowsByRepoRef: Map<string, SidebarRow>;
+}
+
+/**
+ * The review key an attachment joins on — its ref, or the repo's checkout when
+ * it names none.
+ */
+function attachmentReviewKey(
+  attachment: Attachment,
+  ctx: WorkspaceContext,
+): string {
+  const { path, refName } = attachment;
+  return makeReviewKey(path, refName ?? ctx.heads.get(path) ?? "");
+}
+
+/**
+ * The row an attachment stands for, by branch.
+ *
+ * One rule, because two surfaces ask: the card describing the attachment, and
+ * the drawer deciding whether a PR has already been picked up. A second copy
+ * would let the drawer keep listing a PR whose card is already badging it.
+ */
+export function attachmentRow(
+  attachment: Attachment,
+  ctx: WorkspaceContext,
+): SidebarRow | null {
+  return ctx.rowsByRepoRef.get(attachmentReviewKey(attachment, ctx)) ?? null;
+}
+
+/** The open PR an attachment stands for — whatever the tree gave its row. */
+export function attachmentPr(
+  attachment: Attachment,
+  ctx: WorkspaceContext,
+): ViewerPr | undefined {
+  return attachmentRow(attachment, ctx)?.openPr;
 }
 
 /**
@@ -187,9 +231,10 @@ function describeAttachment(
   attachment: Attachment,
   ctx: WorkspaceContext,
 ): AttachmentStatus {
-  const { path, refName } = attachment;
-  const reviewKey = makeReviewKey(path, refName ?? ctx.heads.get(path) ?? "");
-  const row = ctx.rows.get(reviewKey) ?? null;
+  const { path } = attachment;
+  const reviewKey = attachmentReviewKey(attachment, ctx);
+  const row = attachmentRow(attachment, ctx);
+  const openPr = row?.openPr;
   const repoName = repoLabel(ctx, path);
   const branch =
     row?.entry.kind === "working-tree" ||
@@ -202,12 +247,15 @@ function describeAttachment(
   return {
     attachment,
     reviewKey,
-    // An attachment with no ref names no branch, so nothing can have deleted it.
+    // An attachment with no ref names no branch, so nothing can have deleted
+    // it. And an open PR's head is a row here (`rowsByRepoRef`) whether or not
+    // it has been fetched, so a PR just picked up out of the drawer is never
+    // mistaken for a branch someone deleted.
     gone: hasRef(attachment) && row === null && ctx.knownRepos.has(path),
-    openPr: row?.openPr,
+    openPr,
     // A branch with a PR open again after an earlier one merged is being
     // worked on, not shipped — the open PR is the newer fact either way.
-    shipped: row?.openPr ? undefined : ctx.shipped.get(reviewKey),
+    shipped: openPr ? undefined : ctx.shipped.get(reviewKey),
     hasChanges: branch?.hasWorkingTreeChanges ?? false,
     workingTreeStats: branch?.workingTreeStats ?? null,
     repoName,
@@ -239,6 +287,21 @@ function progressFor(
 }
 
 /**
+ * What a card says after `#47` when the PR isn't asking for anything: draft,
+ * red CI, or nothing at all.
+ *
+ * Draft first — it is a statement by the author, where the CI state is a
+ * statement about a commit, and a red draft is still parked work.
+ */
+function openPrSuffix(pr: ViewerPr): string {
+  if (pr.isDraft) return " draft";
+  if (pr.checksState === "FAILURE" || pr.checksState === "ERROR") {
+    return " CI failing";
+  }
+  return "";
+}
+
+/**
  * The short status phrase, at most two clauses.
  *
  * Ordered by what would make you look: something is waiting on you, then
@@ -266,19 +329,13 @@ function phraseFor(
 
   const pr = repos.find((c) => c.openPr && prNeedsAttention(c.openPr))?.openPr;
   if (pr) {
-    parts.push(
-      text(
-        pr.reviewDecision === "CHANGES_REQUESTED"
-          ? `#${pr.number} changes requested`
-          : `#${pr.number} CI failing`,
-      ),
-    );
+    parts.push(text(`#${pr.number} changes requested`));
   } else {
     const open = repos.find((c) => c.openPr)?.openPr;
-    if (open)
-      parts.push(
-        text(open.isDraft ? `#${open.number} draft` : `#${open.number}`),
-      );
+    // Red CI is not an attention signal (see `prNeedsAttention`), but it is
+    // still worth saying: the card reports it in the same quiet type as
+    // everything else here rather than leading with it.
+    if (open) parts.push(text(`#${open.number}${openPrSuffix(open)}`));
   }
 
   // The size when it is known, the adjective when it isn't. Only a repo that

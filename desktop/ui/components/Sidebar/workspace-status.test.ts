@@ -5,13 +5,17 @@ import {
   isUnseen,
   type WorkspaceContext,
 } from "./workspace-status";
-import { buildSidebarTree, allSidebarRows } from "../../utils/sidebar-tree";
 import { makeReviewKey } from "../../utils/review-key";
-import { attachment, workspace as makeWorkspace } from "../../test/fixtures";
+import {
+  attachment,
+  localBranch as branch,
+  viewerPr,
+  workspace as makeWorkspace,
+  workspaceContext,
+} from "../../test/fixtures";
 import type {
   GlobalReviewSummary,
   LocalBranchInfo,
-  RepoLocalActivity,
   ShippedPr,
   ViewerPr,
   Workspace,
@@ -20,55 +24,9 @@ import type {
 const NOW = Date.UTC(2026, 0, 15);
 const REPO = "/repo";
 
-function branch(
-  name: string,
-  overrides: Partial<LocalBranchInfo> = {},
-): LocalBranchInfo {
-  return {
-    name,
-    isCurrent: false,
-    commitsAhead: 0,
-    unpushedCommits: 0,
-    behindUpstream: 0,
-    hasWorkingTreeChanges: false,
-    lastCommitDate: new Date(NOW).toISOString(),
-    lastCommitMessage: "x",
-    lastCommitByUser: false,
-    worktreePath: null,
-    lastModifiedAt: null,
-    workingTreeStats: null,
-    ...overrides,
-  };
-}
-
-function activity(branches: LocalBranchInfo[]): RepoLocalActivity[] {
-  return [
-    {
-      repoPath: REPO,
-      repoName: "repo",
-      defaultBranch: "main",
-      branches,
-      recentRemoteBranches: [],
-    },
-  ];
-}
-
+/** This suite's PR: `#12` on `feature`, in the repo every fixture here uses. */
 function pr(overrides: Partial<ViewerPr> = {}): ViewerPr {
-  return {
-    number: 12,
-    title: "A change",
-    url: "https://github.com/o/repo/pull/12",
-    repoNameWithOwner: "o/repo",
-    repoUrl: "https://github.com/o/repo",
-    repoPath: REPO,
-    headRefName: "feature",
-    baseRefName: "main",
-    isDraft: false,
-    reviewDecision: null,
-    checksState: null,
-    updatedAt: new Date(NOW).toISOString(),
-    ...overrides,
-  } as ViewerPr;
+  return viewerPr({ repoPath: REPO, ...overrides });
 }
 
 /** A context built from the real tree, so the join can't drift from the rows. */
@@ -77,20 +35,7 @@ function context(
   prs: ViewerPr[] = [],
   reviews: Record<string, GlobalReviewSummary> = {},
 ): WorkspaceContext {
-  const tree = buildSidebarTree(
-    activity(branches),
-    Object.values(reviews),
-    reviews,
-    prs,
-  );
-  return {
-    rows: new Map(allSidebarRows(tree).map((row) => [row.reviewKey, row])),
-    repoNames: new Map([[REPO, "repo"]]),
-    knownRepos: new Set([REPO]),
-    heads: new Map(),
-    reviews,
-    shipped: new Map(),
-  };
+  return workspaceContext({ repoPath: REPO, branches, prs, reviews });
 }
 
 function item(overrides: Partial<Workspace> = {}): Workspace {
@@ -124,6 +69,20 @@ describe("describeWorkspace", () => {
     const status = describeWorkspace(item(), context([branch("main")]));
     expect(status.resolved).toBe(true);
     expect(status.phrase).toBe("branch gone");
+  });
+
+  /**
+   * What picking a PR up out of the drawer looks like for the second or two
+   * the head is being fetched: the branch is attached and nothing local knows
+   * it yet. Calling that "gone" would resolve a workspace the user just made.
+   */
+  it("does not call an unfetched PR's head branch gone", () => {
+    const ctx = context([branch("main")], [pr({ headRefName: "feature" })]);
+    const status = describeWorkspace(item(), ctx);
+    expect(status.resolved).toBe(false);
+    expect(status.repos[0].gone).toBe(false);
+    // And it badges the PR straight away, from the same join.
+    expect(status.openPr?.number).toBe(12);
   });
 
   it("does not resolve a repo nothing is known about", () => {
@@ -411,13 +370,13 @@ describe("attention markers", () => {
         [branch("feature")],
         [
           pr({
-            checksState: "FAILURE",
+            reviewDecision: "CHANGES_REQUESTED",
             updatedAt: new Date(NOW).toISOString(),
           }),
         ],
       ),
     );
-    // A terminal that stopped after the PR failed is the newer thing.
+    // A terminal that stopped after the review landed is the newer thing.
     expect(attentionSignalAt(blocked, NOW + 5000)).toBe(NOW + 5000);
     expect(attentionSignalAt(blocked, null)).toBe(NOW);
   });

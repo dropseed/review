@@ -22,25 +22,29 @@ function pr(overrides: Partial<ViewerPr> = {}): ViewerPr {
 }
 
 describe("prBadgeClass", () => {
-  it("goes red for requested changes or a CI failure", () => {
+  it("goes red for requested changes", () => {
     expect(prBadgeClass(pr({ reviewDecision: "CHANGES_REQUESTED" }))).toBe(
       "text-pr-attention",
     );
-    expect(prBadgeClass(pr({ checksState: "FAILURE" }))).toBe(
-      "text-pr-attention",
-    );
-    // A check that couldn't run is not a check that passed.
-    expect(prBadgeClass(pr({ checksState: "ERROR" }))).toBe(
-      "text-pr-attention",
+  });
+
+  it("leaves CI out of the colour entirely", () => {
+    // Red CI is common and often not yours to fix, so counting it made most of
+    // a long-lived PR list red. It is still reported in words — see
+    // `prSummary` below — where it informs without alarming.
+    expect(prBadgeClass(pr({ checksState: "FAILURE" }))).toBe("text-pr-open");
+    expect(prBadgeClass(pr({ checksState: "ERROR" }))).toBe("text-pr-open");
+    expect(prBadgeClass(pr({ isDraft: true, checksState: "FAILURE" }))).toBe(
+      "text-pr-draft",
     );
   });
 
   it("keeps a red draft red", () => {
     // The draft colour is the quiet one, so applying it first would hide
     // exactly the drafts worth noticing.
-    expect(prBadgeClass(pr({ isDraft: true, checksState: "FAILURE" }))).toBe(
-      "text-pr-attention",
-    );
+    expect(
+      prBadgeClass(pr({ isDraft: true, reviewDecision: "CHANGES_REQUESTED" })),
+    ).toBe("text-pr-attention");
   });
 
   it("greys a draft and greens everything else", () => {
@@ -52,10 +56,9 @@ describe("prBadgeClass", () => {
     expect(prBadgeClass(pr({ reviewDecision: "APPROVED" }))).toBe(
       "text-pr-open",
     );
-    // …but a green review decision never outranks red CI.
     expect(
       prBadgeClass(pr({ reviewDecision: "APPROVED", checksState: "FAILURE" })),
-    ).toBe("text-pr-attention");
+    ).toBe("text-pr-open");
   });
 
   it("still says open when checks are merely pending or unreported", () => {
