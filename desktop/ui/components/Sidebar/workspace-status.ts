@@ -190,7 +190,7 @@ function changeStatFor(repos: AttachmentStatus[]): DiffShortStat | null {
 
 export interface WorkspaceStatus {
   repos: AttachmentStatus[];
-  /** The card's first line — the backend's derived title, or the human's. */
+  /** The card's first line — see `describeWorkspace`'s `soleTerminal`. */
   title: string;
   /** The card's second line, after the repo names. */
   phrase: string;
@@ -359,10 +359,30 @@ function phraseFor(
   return parts.slice(0, 2);
 }
 
+/** Whether a human ever typed a name for this workspace. */
+export function isNamed(workspace: Workspace): boolean {
+  return !!workspace.title?.trim();
+}
+
 /** Everything a queue entry and the repo tab strip render, for one workspace. */
 export function describeWorkspace(
   workspace: Workspace,
   ctx: WorkspaceContext,
+  /**
+   * The title of this workspace's *only* terminal, when it has exactly one.
+   *
+   * It outranks the backend's derived title, which is the first attachment's
+   * label: a workspace running one agent is that agent, and "review · master"
+   * names the repo every other card in the queue could also be showing while
+   * the terminal says what is actually going on in this one. The repo is still
+   * on the card — it moves down to the chip line, which is where the details
+   * that vary between cards live anyway.
+   *
+   * Only when nobody typed a title, and only for one terminal: with two, no
+   * single one speaks for the workspace, and the derived repo label is the
+   * honest summary again.
+   */
+  soleTerminal?: string | null,
 ): WorkspaceStatus {
   const repos = workspace.attachments.map((attachment) =>
     describeAttachment(attachment, ctx),
@@ -377,7 +397,10 @@ export function describeWorkspace(
 
   return {
     repos,
-    title: workspace.displayTitle,
+    title:
+      !isNamed(workspace) && soleTerminal?.trim()
+        ? soleTerminal
+        : workspace.displayTitle,
     phrase,
     clauses,
     subtitle: [names.join(", "), phrase].filter(Boolean).join(" · "),

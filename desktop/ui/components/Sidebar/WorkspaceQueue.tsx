@@ -15,6 +15,7 @@ import {
   useWorkspaces,
 } from "../../stores/selectors/workspaces";
 import {
+  useTabGlance,
   useTabsByWorkspaceId,
   useTerminalsByWorkspaceId,
   workspaceTerminals,
@@ -34,6 +35,7 @@ import { CheckIcon } from "../ui/icons";
 import { ContextActionItems } from "./ActionMenu";
 import { WorkspaceTitleInput } from "./WorkspaceTitleInput";
 import { PrBadge } from "./PrBadge";
+import { PhaseDot } from "./PhaseDot";
 import { workspaceState } from "./StatusDot";
 import { TerminalRow } from "./TerminalRow";
 import { activateOnKey } from "./row-chrome";
@@ -43,6 +45,7 @@ import {
   attentionSignalAt,
   fileCountLabel,
   describeWorkspace,
+  isNamed,
   isUnseen,
   type PhraseClause,
   type WorkspaceContext,
@@ -260,16 +263,23 @@ const QueueEntry = memo(function QueueEntry({
     ),
   );
 
+  // The card's own terminal, when one terminal is all there is. It supplies
+  // the title of an unnamed workspace (see `describeWorkspace`), and then the
+  // card *is* that terminal: it wears the phase marker and the pane count, and
+  // draws no row below for the thing it just named. `useTabGlance("")` is the
+  // no-terminal answer — a hook can't be skipped, and no tab has that id.
+  const soleGlance = useTabGlance(tabIds.length === 1 ? tabIds[0]! : "");
+  const titleTerminal = isNamed(workspace) ? null : soleGlance;
+
   const status = useMemo(
-    () => describeWorkspace(workspace, ctx),
-    [workspace, ctx],
+    () => describeWorkspace(workspace, ctx, titleTerminal?.title),
+    [workspace, ctx, titleTerminal?.title],
   );
   const state = workspaceState(terminals.phase, terminals.tabs > 0);
   const live = state !== "dormant";
-  const detailRepos =
-    workspace.title === null
-      ? status.repos.filter((repo) => repo.chipLabel !== status.title)
-      : status.repos;
+  const detailRepos = isNamed(workspace)
+    ? status.repos
+    : status.repos.filter((repo) => repo.chipLabel !== status.title);
   // Two ways a queue entry is finished with: its branches are gone, or its PR
   // landed. Both keep their place and offer removal — the app changes what a
   // workspace *says*, and only the user takes one out of the queue.
@@ -349,6 +359,16 @@ const QueueEntry = memo(function QueueEntry({
                 {index + 1}
               </span>
             )}
+            {/* The title is this terminal's, so the terminal's marker belongs
+                beside it — the phase is the one thing the collapsed row was
+                carrying that the title doesn't say. */}
+            {titleTerminal && !renaming && (
+              <PhaseDot
+                phase={titleTerminal.severity ?? "idle"}
+                dead={titleTerminal.allDead}
+                className="-mr-0.5"
+              />
+            )}
             {renaming ? (
               <WorkspaceTitleInput
                 workspaceId={workspace.id}
@@ -376,6 +396,13 @@ const QueueEntry = memo(function QueueEntry({
               </span>
             )}
             <span className="flex shrink-0 items-center gap-1">
+              {/* The strip's vocabulary for a split tab, kept with the title
+                  that stands for it. */}
+              {titleTerminal && titleTerminal.leafIds.length > 1 && (
+                <span className="text-xxs text-fg-faint tabular-nums">
+                  {titleTerminal.leafIds.length}
+                </span>
+              )}
               {done ? (
                 <CheckIcon
                   className={clsx(
@@ -456,8 +483,10 @@ const QueueEntry = memo(function QueueEntry({
               agents working and a third asking for a password read as "asking"
               and say nothing about the other two. Nothing is drawn for a
               workspace running nothing — a heading over an empty list is the
-              queue claiming space for something that isn't there. */}
-          {tabIds.length > 0 && (
+              queue claiming space for something that isn't there — and nothing
+              for the terminal the title above already is, which would be the
+              same string twice with a marker between them. */}
+          {tabIds.length > 0 && !titleTerminal && (
             <div className="mt-1 pl-[15px]">
               {tabIds.map((tabId) => (
                 <TerminalRow key={tabId} tabId={tabId} />
@@ -465,9 +494,11 @@ const QueueEntry = memo(function QueueEntry({
             </div>
           )}
 
-          {/* The signature line: what a stopped agent is stopped on, on the
-              card, so the queue answers "what needs me" without opening
-              anything. At most one, and only while something is waiting. */}
+          {/* The signature line: what a stopped agent is stopped on, in its
+              own words, so the queue answers "what needs me" without opening
+              anything. At most one, and only when something waiting actually
+              said something — that a terminal is waiting is what its phase
+              marker is for. */}
           {terminals.waitingOn && (
             <p className="mt-1 truncate pl-[15px] text-[10px] leading-4 text-status-saved/90">
               {terminals.waitingOn}

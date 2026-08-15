@@ -91,6 +91,8 @@ A workspace's title is `null` until someone types one. `Workspace::display_title
 
 The terminal rung is the daemon's answer, so only the two liveness reads (`review work list`, the app's `work_list`) can supply it. Every other surface derives without it.
 
+The **queue card** raises that rung above the attachment when a workspace has exactly one terminal and no typed title (`describeWorkspace`'s `soleTerminal`): a workspace running one agent is that agent, where the repo label names something half the queue could equally be showing. The repo is still on the card, as a chip; the terminal's own row is not, because the title is now that row — it wears the phase marker and the pane count instead. This is the card's rule alone and nothing is stored: two terminals, or a name someone typed, and the derived label is back.
+
 ## Cleanup, not endorsement
 
 `autoCreated` is set by the router alone and cleared by **every** mutation in `core/src/work/` (rename, move, attach, detach) — so it means, precisely, "nothing but the router has ever touched this". `work::cleanup` drops a workspace that is `autoCreated`, has no live terminal, and is past a 60s creation grace. Nothing else ever removes one, and reviewing a comparison has no effect on the queue at all.

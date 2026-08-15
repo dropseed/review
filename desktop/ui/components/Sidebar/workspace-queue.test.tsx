@@ -125,6 +125,19 @@ describe("what every entry shows", () => {
     expect(blocked.textContent).toContain("Continue? (y/n)");
     expect(busy.textContent).not.toContain("Continue?");
   });
+
+  /**
+   * The snippet is the session's *words*, never its name: it used to fall back
+   * to the title, which put the row's own string on a second line under it.
+   */
+  it("says nothing for a terminal that stopped without saying why", () => {
+    useReviewStore.setState({ workspaces: [workspace("blocked")] });
+    session("s1", "waiting_for_input", "blocked");
+    render(<WorkspaceQueue />);
+
+    // Once: the row. The card does not restate it as the waiting line.
+    expect(entries()[0].textContent?.match(/sh s1/g)).toHaveLength(1);
+  });
 });
 
 describe("the terminals on a card", () => {
@@ -236,6 +249,53 @@ describe("what a card says about itself", () => {
     });
     render(<WorkspaceQueue />);
     expect(entries()[0].textContent).toBe("repo · feature");
+  });
+
+  /**
+   * One terminal and no name of its own: the terminal is what this workspace
+   * is, and the repo label it would otherwise wear drops to the chip line.
+   * The row for that terminal goes — the title is now that row.
+   */
+  it("takes an unnamed workspace's title from its only terminal", () => {
+    useReviewStore.setState({
+      workspaces: [
+        makeWorkspace("u", { attachments: [attachment(REPO, "feature")] }),
+      ],
+    });
+    session("s1", "working", "u");
+    render(<WorkspaceQueue />);
+
+    const card = entries()[0];
+    expect(card.textContent?.match(/sh s1/g)).toHaveLength(1);
+    expect(card.textContent).toContain("repo · feature");
+    expect(within(card).queryByTitle("sh s1")).toBeNull();
+  });
+
+  /** Two terminals: neither speaks for the workspace, so the repo does. */
+  it("keeps the derived title when a workspace runs two terminals", () => {
+    useReviewStore.setState({
+      workspaces: [
+        makeWorkspace("u", { attachments: [attachment(REPO, "feature")] }),
+      ],
+    });
+    session("s1", "working", "u");
+    session("s2", "working", "u");
+    render(<WorkspaceQueue />);
+
+    const card = entries()[0];
+    expect(card.textContent).toMatch(/^repo · feature/);
+    expect(within(card).getByTitle("sh s1")).toBeTruthy();
+  });
+
+  /** A name the human typed outranks any terminal. */
+  it("never overrides a title someone typed", () => {
+    useReviewStore.setState({ workspaces: [workspace("named")] });
+    session("s1", "working", "named");
+    render(<WorkspaceQueue />);
+
+    const card = entries()[0];
+    expect(card.textContent).toMatch(/^work named/);
+    expect(within(card).getByTitle("sh s1")).toBeTruthy();
   });
 });
 

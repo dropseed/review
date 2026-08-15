@@ -34,10 +34,10 @@ export interface WorkspaceTerminals {
   /** The loudest phase among them, or null when it holds none. */
   phase: TerminalPhase | null;
   /**
-   * The one line a blocked terminal is blocked on: what the escape that raised
-   * the attention said, else the title of the session that is waiting. Null
-   * unless something is actually waiting — the snippet is the card's loudest
-   * element and it must not appear for a workspace that is merely busy.
+   * The one line a blocked terminal is blocked on — what the escape that
+   * raised the attention actually said. Null unless something is waiting *and*
+   * said something: the snippet is the card's loudest element, and it must not
+   * appear for a workspace that is merely busy.
    */
   waitingOn: string | null;
   /**
@@ -216,19 +216,23 @@ export function wantsAHuman(phase: TerminalPhase | null): boolean {
 }
 
 /**
- * The blocked session's own words, else its title.
+ * The blocked session's own words, and nothing else.
  *
- * Broader than `attentionText`, deliberately: that answers "what raised this
- * attention", which is a question only `needs_attention` has. A shell that has
- * stopped at a prompt is waiting on a person just as much, and if it said what
- * it is waiting for, that sentence is the most useful thing the card can carry.
+ * Broader than `attentionText` in which phases it will take them from — a shell
+ * stopped at a prompt is waiting on a person just as much as an agent that
+ * raised an attention — but not in what it will say. It used to fall back to
+ * the session's *title*, which is the string the card already draws on that
+ * terminal's own row: the line meant to say what is being asked instead said
+ * "Claude Code" under a row reading "Claude Code". A terminal that stopped
+ * without saying why is reported by its phase, which its row is already
+ * wearing.
  */
 function waitingLine(statuses: TerminalStatus[]): string | null {
-  const blocked = statuses.filter((s) => wantsAHuman(s.phase));
   return (
-    blocked.map((s) => s.attentionMessage).find((text) => !!text) ??
-    blocked.map((s) => s.title).find((title) => !!title) ??
-    null
+    statuses
+      .filter((s) => wantsAHuman(s.phase))
+      .map((s) => s.attentionMessage)
+      .find((text) => !!text) ?? null
   );
 }
 
