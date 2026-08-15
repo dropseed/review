@@ -49,14 +49,28 @@ function applyWindowBackgroundColor(surfaceHex: string): void {
   }
 }
 
+/**
+ * Apply a theme to every surface that wears it: the CSS variables, the live
+ * terminals, and the native window background.
+ *
+ * That last one is not decoration. The macOS title bar is `Transparent`, so it
+ * draws in the window's background color rather than system chrome — setting it
+ * is what keeps the top edge of the window part of the app instead of a strip
+ * bolted above it. Every path that changes the theme goes through here, because
+ * a path that forgets leaves the bar showing the previous theme's color.
+ */
+function applyTheme(theme: UiTheme): void {
+  applyUiTheme(theme);
+  refreshAllTerminalThemes();
+  applyWindowBackgroundColor(theme.tokens.surface);
+}
+
 /** Apply a resolved VS Code theme: set CSS variables, window background, and persist code theme. */
 function applyResolvedVscodeTheme(
   theme: UiTheme,
   storage: StorageService,
 ): void {
-  applyUiTheme(theme);
-  refreshAllTerminalThemes();
-  applyWindowBackgroundColor(theme.tokens.surface);
+  applyTheme(theme);
   storage.set("codeTheme", theme.codeTheme);
   console.log(
     `[preferences] Applied VS Code theme "${theme.label}" → "${theme.id}"`,
@@ -489,8 +503,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       storage.set("uiTheme", themeId);
       storage.set("codeTheme", theme.codeTheme);
       storage.set("matchVscodeTheme", false);
-      applyUiTheme(theme);
-      refreshAllTerminalThemes();
+      applyTheme(theme);
     },
 
     setDiffLineDiffType: (type) => {
@@ -596,8 +609,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       if (resolvedVscode) {
         applyResolvedVscodeTheme(resolvedVscode, storage);
       } else {
-        applyUiTheme(getUiTheme(loaded.uiTheme));
-        refreshAllTerminalThemes();
+        applyTheme(getUiTheme(loaded.uiTheme));
       }
 
       set({ preferencesLoaded: true });
@@ -726,8 +738,7 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
         const theme = getUiTheme(get().uiTheme);
         set({ resolvedVscodeTheme: null, codeTheme: theme.codeTheme });
         storage.set("codeTheme", theme.codeTheme);
-        applyUiTheme(theme);
-        refreshAllTerminalThemes();
+        applyTheme(theme);
       }
     },
 

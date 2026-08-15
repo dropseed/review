@@ -1158,16 +1158,19 @@ pub struct CliOpenRequest {
     pub focused_hunk_hash: Option<String>,
 }
 
-/// Give a runtime-created window the same overlay title bar the main window
-/// declares in tauri.conf.json: the webview extends under the title bar so the
-/// app can draw its own header there, and the OS title text is hidden. A no-op
-/// off macOS, where the style doesn't exist.
-fn overlay_title_bar<'a, R: tauri::Runtime, M: tauri::Manager<R>>(
+/// Give a runtime-created window the same title bar the main window declares in
+/// tauri.conf.json: the system bar still owns dragging and the traffic lights,
+/// but it draws in the window's background color instead of system chrome, and
+/// the OS title text is hidden. The frontend keeps that background in step with
+/// the active theme (`set_window_background_color`), so the bar reads as the
+/// top of the app rather than a strip bolted above it. A no-op off macOS, where
+/// the style doesn't exist.
+fn transparent_title_bar<'a, R: tauri::Runtime, M: tauri::Manager<R>>(
     builder: tauri::webview::WebviewWindowBuilder<'a, R, M>,
 ) -> tauri::webview::WebviewWindowBuilder<'a, R, M> {
     #[cfg(target_os = "macos")]
     return builder
-        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .title_bar_style(tauri::TitleBarStyle::Transparent)
         .hidden_title(true);
     #[cfg(not(target_os = "macos"))]
     return builder;
@@ -1216,7 +1219,7 @@ pub async fn open_repo_window(
             .inner_size(width, height)
             .min_inner_size(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
             .tabbing_identifier("review-main");
-        overlay_title_bar(builder)
+        transparent_title_bar(builder)
             .build()
             .map_err(|e: tauri::Error| e.to_string())?;
 
@@ -1276,7 +1279,7 @@ pub async fn open_repo_window(
         .inner_size(width, height)
         .min_inner_size(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
         .tabbing_identifier("review-main");
-    let window = overlay_title_bar(builder)
+    let window = transparent_title_bar(builder)
         .build()
         .map_err(|e: tauri::Error| e.to_string())?;
 
