@@ -229,7 +229,17 @@ export function CommitRangePicker(): ReactNode {
   // common screen, so it is worth getting right rather than leaving a chevron
   // that opens onto a single tick. It still has to *say* what it is showing:
   // being unable to see that is what sent us here.
-  if (!unpinRow && !unpushedSlice && !uncommittedRow && commits.length === 0) {
+  //
+  // A stale base survives this collapse, though: it's the one thing a trunk
+  // review can still be wrong about, and the warning below is the only place
+  // that says so.
+  if (
+    !unpinRow &&
+    !unpushedSlice &&
+    !uncommittedRow &&
+    baseBehind === 0 &&
+    commits.length === 0
+  ) {
     return (
       <div className="shrink-0 border-b border-edge/60 px-3 py-1.5 text-xs text-fg-muted">
         {label}

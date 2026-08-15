@@ -289,4 +289,22 @@ describe("uncommitted work", () => {
     expect(screen.queryByText(/Uncommitted work is included/)).toBeNull();
     expect(screen.queryByText("Uncommitted")).toBeNull();
   });
+
+  /**
+   * A trunk review collapses to the static line above — but a stale base is
+   * the one thing still wrong about it, and that collapse must not swallow
+   * the warning that says so.
+   */
+  it("still reports a stale base once collapsed to a static line", () => {
+    seed([branch("master", { isCurrent: true, behindUpstream: 12 })]);
+    useReviewStore.setState({
+      baseReason: "trunkWorkingTree",
+      currentBranch: "master",
+      reviewComparison: makeComparison("master", "master"),
+      attribution: { commits: [], hunks: {} } as never,
+    });
+    openMenu();
+
+    expect(screen.getByText(/commits behind on master/)).toBeDefined();
+  });
 });
