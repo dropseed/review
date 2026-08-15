@@ -153,11 +153,4 @@ Top-level components: `ReviewView.tsx` (main review screen), `ComparisonPickerMo
 
 ## Hooks
 
-Custom hooks in `hooks/` handle lifecycle and cross-cutting concerns:
-
-- `useComparisonLoader` — Loads comparison data when selection changes
-- `useFileWatcher` — Starts/stops Tauri file system watcher
-- `useKeyboardNavigation` — Keyboard shortcuts for file/hunk navigation
-- `useScrollHunkTracking` — Tracks which hunk is visible during scroll
-- `useGlobalShortcut` — Global OS-level shortcuts
-- `useAutoUpdater` — App update checking
+`hooks/` holds the lifecycle and cross-cutting concerns — loading a comparison, watching files, keyboard navigation, scroll tracking, the poll-while-visible syncs. Named for what they do; read the directory rather than a list here, which only ever named a tenth of them.
