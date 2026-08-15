@@ -30,6 +30,16 @@ import { AnnotationDock } from "./AnnotationDock";
 import { ReviewActionBar } from "./ReviewActionBar";
 import { SORT_LABELS, SELECTED_CHECK } from "./PanelToolbar";
 import { visibleFilesPanelTabs } from "./tabs";
+import { BrowseRefBar } from "./BrowseRefBar";
+import { CommitLog } from "./CommitLog";
+import { useBrowseRefTree } from "./useBrowseRefTree";
+import { collectDirPaths, processTree } from "./FileTree.utils";
+import { browseRef } from "../../stores/selectors/browse";
+import { ephemeralView } from "../../stores/selectors/ephemeral";
+import type { FileHunkStatus } from "./types";
+
+/** No file at a ref has a review status — there is nothing to compare it to. */
+const NO_HUNK_STATUS: Map<string, FileHunkStatus> = new Map();
 
 /**
  * How much is waiting behind a tab, so you don't have to open it to find out.
@@ -60,8 +70,11 @@ export function FilesPanel() {
   const comparison = useReviewStore((s) => s.comparison);
   const guideMode = useReviewStore((s) => s.guideMode);
 
-  // Browse-tab section collapse
+  // Browse-tab section collapse. History starts closed: Browse is a file tree,
+  // and a log unfolding above it every time would push the tree off screen to
+  // answer a question that wasn't asked.
   const [browseFilesOpen, setBrowseFilesOpen] = useState(true);
+  const [browseHistoryOpen, setBrowseHistoryOpen] = useState(false);
 
   // Review-tab section collapse — owned here (not in StatusGroupList) so the
   // user's expand/collapse choices survive switching to another tab and back.
@@ -148,6 +161,30 @@ export function FilesPanel() {
     focusedPane,
     panesOnScreen,
   );
+
+  // Browse-as-of: while pinned, the tree comes from the object database at that
+  // ref instead of from `allFiles`, which describes the working tree. Sorting
+  // is shared with the unpinned tree; hunk status is not, because a revision
+  // that isn't being compared to anything has none.
+  const pinnedRef = useReviewStore(browseRef);
+  const viewingCommit = useReviewStore(ephemeralView) !== null;
+  const refTree = useBrowseRefTree();
+  const pinnedFilesTree = useMemo(
+    () => processTree(refTree.entries, NO_HUNK_STATUS, "browse", fileSortOrder),
+    [refTree.entries, fileSortOrder],
+  );
+  const browseTree = pinnedRef ? pinnedFilesTree : allFilesTree;
+
+  // Expand-all needs the directories of the tree on screen. `allDirPaths` is
+  // the working tree's, and offering those against a pinned tree would expand
+  // paths that revision doesn't have. The walk is memoized on the pinned tree
+  // alone — folding `allDirPaths` into its deps would re-walk it on every hunk
+  // status change, which cannot move a revision's directories.
+  const pinnedDirPaths = useMemo(
+    () => collectDirPaths(pinnedFilesTree),
+    [pinnedFilesTree],
+  );
+  const browseDirPaths = pinnedRef ? pinnedDirPaths : allDirPaths;
 
   // Sort menu items shared across tabs
   const sortMenuItems = useMemo(
@@ -306,8 +343,17 @@ export function FilesPanel() {
                 <>
                   <CarryForwardRow />
                   <GuideBanner />
-                  <CommitRangePicker />
-                  <CommitRangeHeader />
+                  {/* A narrowing survives a peek at a commit (leaving one
+                      returns to it), so while one is up these two would
+                      describe the review's own comparison over a diff of a
+                      different commit entirely. The banner above the diff
+                      owns the way back. */}
+                  {!viewingCommit && (
+                    <>
+                      <CommitRangePicker />
+                      <CommitRangeHeader />
+                    </>
+                  )}
                   <StatusGroupList
                     sectionedFiles={sectionedFiles}
                     flatSectionedFiles={flatSectionedFiles}
@@ -329,55 +375,96 @@ export function FilesPanel() {
                 </>
               )}
               <AnnotationDock />
-              <ReviewActionBar />
+              {/* A peek has no review to act on or copy out, and this bar's
+                  idle line ("Approve, reject, or comment to start your
+                  review") would be instructions for something that isn't
+                  possible here. */}
+              {!viewingCommit && <ReviewActionBar />}
             </>
           ) : (
-            <div className="flex-1 overflow-y-auto scrollbar-thin">
-              <CollapsibleSection
-                title="Files"
-                isOpen={browseFilesOpen}
-                onToggle={() => setBrowseFilesOpen(!browseFilesOpen)}
-                menuContent={
-                  allDirPaths.size > 0 ? (
-                    <>
-                      {sortMenuItems}
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onClick={() => expandAll(allDirPaths, renamedDirPaths)}
-                      >
-                        Expand all
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={collapseAll}>
-                        Collapse all
-                      </DropdownMenuItem>
-                    </>
-                  ) : undefined
-                }
-              >
-                <div className="py-1">
-                  {allFilesTree.length > 0 ? (
-                    allFilesTree.map((entry) => (
-                      <FileNode
-                        key={entry.path}
-                        entry={entry}
-                        depth={0}
-                        onToggle={togglePath}
-                        selectedFile={browsePanes.activePath}
-                        companionFile={browsePanes.companionPath}
-                        onSelectFile={handleSelectFile}
-                        repoPath={repoPath}
-                        onOpenInSplit={openInSplit}
-                        registerRef={registerRef}
-                        showSizeBar
-                      />
-                    ))
-                  ) : (
-                    <div className="py-4 text-center">
-                      <p className="text-xs text-fg-muted">No files</p>
-                    </div>
-                  )}
-                </div>
-              </CollapsibleSection>
+            <div className="flex flex-1 flex-col overflow-hidden">
+              <BrowseRefBar
+                description={refTree.description}
+                loading={refTree.loading}
+                error={refTree.error}
+              />
+              <div className="flex-1 overflow-y-auto scrollbar-thin">
+                {/* The log for whatever revision Browse is showing — the pin
+                    when there is one, the working tree's HEAD otherwise — so
+                    the two sections never describe different revisions.
+
+                    Withheld without a comparison: viewing a commit works by
+                    swapping the one being diffed, and a tab that is only
+                    browsing has none to swap or to give back. */}
+                {comparison !== null && (
+                  <CollapsibleSection
+                    title="History"
+                    isOpen={browseHistoryOpen}
+                    onToggle={() => setBrowseHistoryOpen(!browseHistoryOpen)}
+                    statusBadge={
+                      <span className="truncate text-xxs font-normal text-fg-faint">
+                        {pinnedRef ?? "HEAD"}
+                      </span>
+                    }
+                  >
+                    {/* Mounted only while open: the log is a `git log` per ref,
+                      and Browse's job is the tree. */}
+                    {browseHistoryOpen && <CommitLog gitRef={pinnedRef} />}
+                  </CollapsibleSection>
+                )}
+
+                <CollapsibleSection
+                  title="Files"
+                  isOpen={browseFilesOpen}
+                  onToggle={() => setBrowseFilesOpen(!browseFilesOpen)}
+                  menuContent={
+                    browseDirPaths.size > 0 ? (
+                      <>
+                        {sortMenuItems}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onClick={() =>
+                            expandAll(browseDirPaths, renamedDirPaths)
+                          }
+                        >
+                          Expand all
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={collapseAll}>
+                          Collapse all
+                        </DropdownMenuItem>
+                      </>
+                    ) : undefined
+                  }
+                >
+                  <div className="py-1">
+                    {refTree.loading ? (
+                      <div className="flex justify-center py-6">
+                        <Spinner className="size-5 border-2 border-edge-default border-t-status-modified" />
+                      </div>
+                    ) : browseTree.length > 0 ? (
+                      browseTree.map((entry) => (
+                        <FileNode
+                          key={entry.path}
+                          entry={entry}
+                          depth={0}
+                          onToggle={togglePath}
+                          selectedFile={browsePanes.activePath}
+                          companionFile={browsePanes.companionPath}
+                          onSelectFile={handleSelectFile}
+                          repoPath={repoPath}
+                          onOpenInSplit={openInSplit}
+                          registerRef={registerRef}
+                          showSizeBar
+                        />
+                      ))
+                    ) : (
+                      <div className="py-4 text-center">
+                        <p className="text-xs text-fg-muted">No files</p>
+                      </div>
+                    )}
+                  </div>
+                </CollapsibleSection>
+              </div>
             </div>
           )}
         </div>

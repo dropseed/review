@@ -16,8 +16,11 @@ import type {
 } from "./client";
 import type {
   BranchList,
+  RefEntry,
+  RefDescription,
   ClassifyResponse,
   Comparison,
+  CommitComparison,
   CommitDetail,
   CommitEntry,
   HunkAttribution,
@@ -56,6 +59,8 @@ import type {
   RouteLanding,
   Attachment,
   WorktreeInfo,
+  WorktreeCheckout,
+  RepoWorktrees,
   TerminalSessionInfo,
   TerminalStarted,
   TerminalStatus,
@@ -103,6 +108,14 @@ export class TauriClient implements ApiClient {
 
   async listBranches(repoPath: string): Promise<BranchList> {
     return invoke<BranchList>("list_branches", { repoPath });
+  }
+
+  async listRefs(repoPath: string): Promise<RefEntry[]> {
+    return invoke<RefEntry[]>("list_refs", { repoPath });
+  }
+
+  async describeRef(repoPath: string, gitRef: string): Promise<RefDescription> {
+    return invoke<RefDescription>("describe_ref", { repoPath, gitRef });
   }
 
   async getGitStatus(repoPath: string): Promise<GitStatusSummary> {
@@ -181,6 +194,13 @@ export class TauriClient implements ApiClient {
     return invoke<CommitDetail>("get_commit_detail", { repoPath, hash });
   }
 
+  async getCommitComparison(
+    repoPath: string,
+    gitRef: string,
+  ): Promise<CommitComparison> {
+    return invoke<CommitComparison>("commit_comparison", { repoPath, gitRef });
+  }
+
   async getHunkAttribution(
     repoPath: string,
     base: string,
@@ -257,15 +277,23 @@ export class TauriClient implements ApiClient {
     return invoke<void>("remove_review_worktree", { repoPath, worktreePath });
   }
 
-  async resolveRef(repoPath: string, gitRef: string): Promise<string> {
-    return invoke<string>("resolve_ref", { repoPath, gitRef });
+  async listWorktreeStatus(repoPaths: string[]): Promise<RepoWorktrees[]> {
+    return invoke<RepoWorktrees[]>("list_worktree_status", { repoPaths });
   }
 
-  async hasWorktreeChanges(
+  async createWorktree(
     repoPath: string,
-    worktreePath: string,
-  ): Promise<boolean> {
-    return invoke<boolean>("has_worktree_changes", { repoPath, worktreePath });
+    branch: string,
+  ): Promise<WorktreeCheckout> {
+    return invoke<WorktreeCheckout>("create_worktree", { repoPath, branch });
+  }
+
+  async removeWorktree(repoPath: string, worktreePath: string): Promise<void> {
+    return invoke<void>("remove_worktree", { repoPath, worktreePath });
+  }
+
+  async resolveRef(repoPath: string, gitRef: string): Promise<string> {
+    return invoke<string>("resolve_ref", { repoPath, gitRef });
   }
 
   async updateWorktreeHead(
@@ -298,6 +326,10 @@ export class TauriClient implements ApiClient {
 
   async listRepoFiles(repoPath: string): Promise<FileEntry[]> {
     return invoke<FileEntry[]>("list_repo_files", { repoPath });
+  }
+
+  async listFilesAtRef(repoPath: string, gitRef: string): Promise<FileEntry[]> {
+    return invoke<FileEntry[]>("list_files_at_ref", { repoPath, gitRef });
   }
 
   async listDirectoryContents(
@@ -736,11 +768,16 @@ export class TauriClient implements ApiClient {
     return invoke<FileContent>("read_raw_file", { path });
   }
 
-  async getFileRawContent(
+  async getFileContentAtRef(
     repoPath: string,
     filePath: string,
+    gitRef: string,
   ): Promise<FileContent> {
-    return invoke<FileContent>("get_file_raw_content", { repoPath, filePath });
+    return invoke<FileContent>("get_file_content_at_ref", {
+      repoPath,
+      filePath,
+      gitRef,
+    });
   }
 
   async listDirectoryPlain(dirPath: string): Promise<FileEntry[]> {

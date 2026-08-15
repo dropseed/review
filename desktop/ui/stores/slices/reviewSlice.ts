@@ -20,6 +20,7 @@ import {
 import { computeReviewProgress } from "../../hooks/useReviewProgress";
 import { makeReviewKey } from "./groupingSlice";
 import { getAllHunksFromState } from "../selectors/hunkData";
+import { ephemeralView } from "../selectors/ephemeral";
 
 // Debounced save operation (exported so cancelPendingSaves can cancel it)
 export const debouncedSave = createDebouncedFn(500);
@@ -377,6 +378,14 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     loadReviewState: async () => {
       const { repoPath, comparison, reviewRef, reviewBaseOverride } = get();
       if (!repoPath || !comparison || !reviewRef) return;
+      // A commit being peeked at is view-only, and the way that is enforced is
+      // that its review state stays null — which is what makes every write
+      // path below (`saveReviewState`, `updateHunkStatuses`,
+      // `classifyStaticHunks`, `syncTotalDiffHunks`, `reconcileReviewState`)
+      // return on its own null check. Refilling it here would reopen all of
+      // them at once, and the comparison it would be reconciled against isn't
+      // the review's. Reloaded on the way out, when this guard lifts.
+      if (ephemeralView(get())) return;
 
       // Diff-currency guard: discard the load if the resolved comparison
       // changed (ref switch or base-override) while it was in flight.
@@ -456,6 +465,10 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
         readOnlyPreview,
       } = get();
       if (readOnlyPreview) return;
+      // Belt to `loadReviewState`'s braces: a null review state already stops
+      // every caller, but a save is the one thing that must never slip through
+      // on a comparison the review isn't of.
+      if (ephemeralView(get())) return;
       if (!repoPath || !reviewState || !comparison || !reviewRef) return;
 
       // Skip saving if the review file hasn't been created yet and the state

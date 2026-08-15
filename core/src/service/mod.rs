@@ -19,6 +19,7 @@ pub mod util;
 pub mod viewer_prs;
 pub mod vscode;
 pub mod watcher_events;
+pub mod worktrees;
 
 use crate::diff::parser::DiffHunk;
 use crate::symbols::Symbol;

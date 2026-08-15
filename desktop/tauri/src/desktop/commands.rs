@@ -20,14 +20,15 @@ use review::review::storage::{self, GlobalReviewSummary};
 use review::service::pr::ReviewTierInfo;
 use review::service::usage::AgentUsage;
 use review::service::viewer_prs::ViewerPrSnapshot;
+use review::service::worktrees::RepoWorktrees;
 use review::service::{
     CommitOutputLine, CommitResult, ExpandedContextResult, FileContent, RepoFileSymbols,
     RepoLocalActivity, ReviewFreshnessInput, ReviewFreshnessResult, VscodeThemeDetection,
 };
 use review::sources::github::{GhCliProvider, GitHubPrRef, GitHubProvider, PullRequest};
 use review::sources::local_git::{
-    DiffShortStat, HunkAttribution, LocalBranchInfo, LocalGitSource, RemoteInfo, SearchMatch,
-    WorktreeInfo,
+    CommitComparison, DiffShortStat, HunkAttribution, LocalBranchInfo, LocalGitSource,
+    RefDescription, RefEntry, RemoteInfo, SearchMatch, WorktreeCheckout, WorktreeInfo,
 };
 use review::sources::traits::{
     BranchList, CommitDetail, CommitEntry, Comparison, DiffSource, FileEntry, GitStatusSummary,
@@ -221,6 +222,20 @@ pub async fn list_repo_files(repo_path: String) -> Result<Vec<FileEntry>, String
 /// Synchronous implementation of `list_repo_files`, callable from blocking contexts.
 pub fn list_repo_files_sync(repo_path: String) -> Result<Vec<FileEntry>, String> {
     review::service::files::list_repo_files(&PathBuf::from(&repo_path)).map_err(|e| e.to_string())
+}
+
+/// List the repository's files as of a ref — a read-only peek, no checkout.
+#[tauri::command]
+pub async fn list_files_at_ref(
+    repo_path: String,
+    git_ref: String,
+) -> Result<Vec<FileEntry>, String> {
+    tokio::task::spawn_blocking(move || {
+        review::service::files::list_files_at_ref(&PathBuf::from(&repo_path), &git_ref)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -736,6 +751,66 @@ pub fn remove_review_worktree(repo_path: String, worktree_path: String) -> Resul
     Ok(())
 }
 
+/// Every named repo's worktrees, each with its dirty flag — the picker's
+/// situational awareness, batched so listing twenty repos is one call.
+#[tauri::command]
+pub async fn list_worktree_status(repo_paths: Vec<String>) -> Result<Vec<RepoWorktrees>, String> {
+    tokio::task::spawn_blocking(move || {
+        let t0 = std::time::Instant::now();
+        let result = review::service::worktrees::status(&repo_paths);
+        info!(
+            "list_worktree_status {} repos in {:?}",
+            result.len(),
+            t0.elapsed()
+        );
+        Ok(result)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Give a branch a worktree, or report the one it already has.
+#[tauri::command]
+pub async fn create_worktree(
+    repo_path: String,
+    branch: String,
+) -> Result<WorktreeCheckout, String> {
+    tokio::task::spawn_blocking(move || {
+        let t0 = std::time::Instant::now();
+        let result = review::service::worktrees::create(&PathBuf::from(&repo_path), &branch)
+            .map_err(|e| e.to_string())?;
+        info!(
+            "create_worktree branch={} path={} created={} in {:?}",
+            branch,
+            result.path,
+            result.created,
+            t0.elapsed()
+        );
+        Ok(result)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Remove a worktree. Refuses the main checkout, a path outside this repo, and
+/// anything holding uncommitted work — see `LocalGitSource::remove_worktree`.
+#[tauri::command]
+pub async fn remove_worktree(repo_path: String, worktree_path: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let t0 = std::time::Instant::now();
+        review::service::worktrees::remove(&PathBuf::from(&repo_path), &worktree_path)
+            .map_err(|e| e.to_string())?;
+        info!(
+            "remove_worktree path={} in {:?}",
+            worktree_path,
+            t0.elapsed()
+        );
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 pub fn get_review_tier(repo_path: String, r#ref: String) -> Result<ReviewTierInfo, String> {
     review::service::pr::tier(&PathBuf::from(&repo_path), &r#ref).map_err(|e| e.to_string())
@@ -815,14 +890,6 @@ pub fn resolve_ref(repo_path: String, git_ref: String) -> Result<String, String>
 }
 
 #[tauri::command]
-pub fn has_worktree_changes(repo_path: String, worktree_path: String) -> Result<bool, String> {
-    let source = LocalGitSource::new(repo_path.into()).map_err(|e| e.to_string())?;
-    source
-        .has_worktree_changes(&worktree_path)
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
 pub fn update_worktree_head(
     repo_path: String,
     worktree_path: String,
@@ -871,6 +938,32 @@ pub fn unregister_repo(repo_path: String) -> Result<(), String> {
 pub fn list_branches(repo_path: String) -> Result<BranchList, String> {
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
     source.list_branches().map_err(|e| e.to_string())
+}
+
+/// Every ref already known locally — what Browse can be pinned to. Nothing is
+/// fetched.
+#[tauri::command]
+pub fn list_refs(repo_path: String) -> Result<Vec<RefEntry>, String> {
+    let t0 = Instant::now();
+    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
+    let refs = source.list_refs().map_err(|e| e.to_string())?;
+    info!("list_refs: {} refs in {:?}", refs.len(), t0.elapsed());
+    Ok(refs)
+}
+
+/// Resolve what a ref names, erroring when nothing does — this is what turns
+/// something the user typed or pasted into a ref Browse can pin to.
+#[tauri::command]
+pub fn describe_ref(repo_path: String, git_ref: String) -> Result<RefDescription, String> {
+    let t0 = Instant::now();
+    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
+    let described = source.describe_ref(&git_ref).map_err(|e| e.to_string())?;
+    info!(
+        "describe_ref: {git_ref} -> {} in {:?}",
+        described.short_sha,
+        t0.elapsed()
+    );
+    Ok(described)
 }
 
 #[tauri::command]
@@ -1015,6 +1108,23 @@ pub fn list_commits(
 pub fn get_commit_detail(repo_path: String, hash: String) -> Result<CommitDetail, String> {
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
     source.get_commit_detail(&hash).map_err(|e| e.to_string())
+}
+
+/// Resolve a commit into the comparison that shows it — `parent..sha`, taking a
+/// merge's first parent and the empty tree for a root commit.
+#[tauri::command]
+pub fn commit_comparison(repo_path: String, git_ref: String) -> Result<CommitComparison, String> {
+    let t0 = Instant::now();
+    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
+    let resolved = source
+        .commit_comparison(&git_ref)
+        .map_err(|e| e.to_string())?;
+    info!(
+        "commit_comparison: {git_ref} -> {} in {:?}",
+        resolved.comparison.key,
+        t0.elapsed()
+    );
+    Ok(resolved)
 }
 
 #[tauri::command]
@@ -1426,15 +1536,20 @@ pub async fn read_raw_file(path: String) -> Result<FileContent, String> {
     .map_err(|e| e.to_string())?
 }
 
-/// Get raw file content at HEAD from a git repo (no diff, no comparison needed).
+/// Get a file's content as of a ref (no diff, no working-tree read).
 #[tauri::command]
-pub async fn get_file_raw_content(
+pub async fn get_file_content_at_ref(
     repo_path: String,
     file_path: String,
+    git_ref: String,
 ) -> Result<FileContent, String> {
     tokio::task::spawn_blocking(move || {
-        review::service::files::get_file_raw_content(&PathBuf::from(&repo_path), &file_path)
-            .map_err(|e| e.to_string())
+        review::service::files::get_file_content_at_ref(
+            &PathBuf::from(&repo_path),
+            &file_path,
+            &git_ref,
+        )
+        .map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?

@@ -8,6 +8,7 @@ import {
 } from "react";
 import type { DiffLineAnnotation, TokenEventBase } from "@pierre/diffs";
 import { useReviewStore } from "../../stores";
+import { viewOnly } from "../../stores/selectors/ephemeral";
 import { useAllHunks, useHunkById } from "../../stores/selectors/hunks";
 import { getPlatformServices } from "../../platform";
 import { countLines } from "../../utils/count-lines";
@@ -213,7 +214,7 @@ export function useDiffAnnotationModel({
   const pendingCommentHunkId = useReviewStore((s) => s.pendingCommentHunkId);
   const workingTreeDiffMode = useReviewStore((s) => s.workingTreeDiffMode);
   const workingTreeDiffFile = useReviewStore((s) => s.workingTreeDiffFile);
-  const readOnlyPreview = useReviewStore((s) => s.readOnlyPreview);
+  const isViewOnly = useReviewStore(viewOnly);
   const attribution = useReviewStore((s) => s.attribution);
   const scope = useReviewStore((s) => s.scope);
 
@@ -490,7 +491,7 @@ export function useDiffAnnotationModel({
     newAnnotationLine: typeof newAnnotationLine;
     workingTreeDiffMode: typeof workingTreeDiffMode;
     isWorkingTreeFile: boolean;
-    readOnlyPreview: boolean;
+    isViewOnly: boolean;
     attribution: typeof attribution;
     commitByHash: typeof commitByHash;
     outOfScopeHunkIds: typeof outOfScopeHunkIds;
@@ -513,7 +514,7 @@ export function useDiffAnnotationModel({
     newAnnotationLine,
     workingTreeDiffMode,
     isWorkingTreeFile: workingTreeDiffFile === fileName,
-    readOnlyPreview,
+    isViewOnly,
     attribution,
     commitByHash,
     outOfScopeHunkIds,
@@ -570,8 +571,8 @@ export function useDiffAnnotationModel({
           const { hunk, hunkState, pairedHunk, isSource } = meta.data;
           const hunkIndex = deps.hunks.findIndex((h) => h.id === hunk.id);
 
-          // Read-only preview: skip hunk action panels entirely
-          if (deps.readOnlyPreview) {
+          // Nothing to decide on this surface: skip hunk action panels entirely
+          if (deps.isViewOnly) {
             return null;
           }
 
@@ -864,7 +865,7 @@ export function useDiffAnnotationModel({
       workingTreeDiffMode,
       workingTreeDiffFile,
       fileName,
-      readOnlyPreview,
+      isViewOnly,
       attribution,
       outOfScopeHunkIds,
       expandedHunkIds,

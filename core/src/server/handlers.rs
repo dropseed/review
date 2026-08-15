@@ -18,7 +18,8 @@ use crate::service::watcher_events::{categorize_change, ChangeKind, GitChangedPa
 use crate::service::*;
 use crate::sources::github::{GhCliProvider, GitHubPrRef, GitHubProvider, PullRequest};
 use crate::sources::local_git::{
-    DiffShortStat, LocalGitSource, RemoteInfo, SearchMatch, WorktreeInfo,
+    CommitComparison, DiffShortStat, LocalGitSource, RefDescription, RefEntry, RemoteInfo,
+    SearchMatch, WorktreeInfo,
 };
 use crate::sources::traits::{
     BranchList, CommitDetail, CommitEntry, Comparison, DiffSource, FileEntry, GitStatusSummary,
@@ -55,6 +56,8 @@ pub fn build_api_router() -> Router {
         .route("/api/git/fetch-origin", post(git_fetch_origin))
         .route("/api/git/default-branch", post(git_default_branch))
         .route("/api/git/branches", post(git_branches))
+        .route("/api/git/refs", post(git_refs))
+        .route("/api/git/describe-ref", post(git_describe_ref))
         .route("/api/git/status", post(git_status))
         .route("/api/git/status-raw", post(git_status_raw))
         .route("/api/git/stage-file", post(git_stage_file))
@@ -64,6 +67,7 @@ pub fn build_api_router() -> Router {
         .route("/api/git/unstage-hunks", post(git_unstage_hunks))
         .route("/api/git/commits", post(git_commits))
         .route("/api/git/commit-detail", post(git_commit_detail))
+        .route("/api/git/commit-comparison", post(git_commit_comparison))
         .route("/api/git/hunk-attribution", post(git_hunk_attribution))
         .route("/api/git/diff", post(git_diff))
         .route("/api/git/diff-shortstat", post(git_diff_shortstat))
@@ -74,7 +78,9 @@ pub fn build_api_router() -> Router {
         // Worktrees
         .route("/api/worktree/create", post(worktree_create))
         .route("/api/worktree/remove", post(worktree_remove))
-        .route("/api/worktree/has-changes", post(worktree_has_changes))
+        .route("/api/worktree/status", post(worktree_status))
+        .route("/api/worktree/for-branch", post(worktree_for_branch))
+        .route("/api/worktree/delete", post(worktree_delete))
         .route("/api/worktree/update-head", post(worktree_update_head))
         // Git (continued)
         .route("/api/git/resolve-ref", post(git_resolve_ref))
@@ -97,6 +103,8 @@ pub fn build_api_router() -> Router {
         .route("/api/files/list", post(files_list))
         .route("/api/files/list-all", post(files_list_all))
         .route("/api/files/list-repo", post(files_list_repo))
+        .route("/api/files/list-at-ref", post(files_list_at_ref))
+        .route("/api/files/content-at-ref", post(files_content_at_ref))
         .route(
             "/api/files/directory-contents",
             post(files_directory_contents),
@@ -107,7 +115,6 @@ pub fn build_api_router() -> Router {
         .route("/api/files/expanded-context", post(files_expanded_context))
         .route("/api/files/search", post(files_search))
         .route("/api/files/read-raw", post(files_read_raw))
-        .route("/api/files/raw-content", post(files_raw_content))
         .route("/api/files/directory-plain", post(files_directory_plain))
         // Review
         .route("/api/review/resolve", post(review_resolve))
@@ -186,9 +193,10 @@ struct FilePathRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct RepoFileRequest {
+struct RepoFileAtRefRequest {
     repo_path: String,
     file_path: String,
+    git_ref: String,
 }
 
 #[derive(Deserialize)]
@@ -434,6 +442,19 @@ struct WorktreePathRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct WorktreeStatusRequest {
+    repo_paths: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WorktreeBranchRequest {
+    repo_path: String,
+    branch: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct WorktreeUpdateHeadRequest {
     repo_path: String,
     worktree_path: String,
@@ -513,6 +534,22 @@ async fn git_branches(Json(req): Json<RepoPathRequest>) -> ApiResult<BranchList>
     blocking(move || {
         let source = LocalGitSource::new(PathBuf::from(&req.repo_path))?;
         source.list_branches().map_err(Into::into)
+    })
+    .await
+}
+
+async fn git_refs(Json(req): Json<RepoPathRequest>) -> ApiResult<Vec<RefEntry>> {
+    blocking(move || {
+        let source = LocalGitSource::new(PathBuf::from(&req.repo_path))?;
+        source.list_refs().map_err(Into::into)
+    })
+    .await
+}
+
+async fn git_describe_ref(Json(req): Json<ResolveRefRequest>) -> ApiResult<RefDescription> {
+    blocking(move || {
+        let source = LocalGitSource::new(PathBuf::from(&req.repo_path))?;
+        source.describe_ref(&req.git_ref).map_err(Into::into)
     })
     .await
 }
@@ -608,6 +645,14 @@ async fn git_commit_detail(Json(req): Json<CommitDetailRequest>) -> ApiResult<Co
     .await
 }
 
+async fn git_commit_comparison(Json(req): Json<ResolveRefRequest>) -> ApiResult<CommitComparison> {
+    blocking(move || {
+        let source = LocalGitSource::new(PathBuf::from(&req.repo_path))?;
+        source.commit_comparison(&req.git_ref).map_err(Into::into)
+    })
+    .await
+}
+
 async fn git_diff(Json(req): Json<DiffRequest>) -> ApiResult<String> {
     blocking(move || {
         let source = LocalGitSource::new(PathBuf::from(&req.repo_path))?;
@@ -663,12 +708,22 @@ async fn worktree_remove(Json(req): Json<WorktreePathRequest>) -> ApiResult<()> 
     .await
 }
 
-async fn worktree_has_changes(Json(req): Json<WorktreePathRequest>) -> ApiResult<bool> {
+async fn worktree_status(
+    Json(req): Json<WorktreeStatusRequest>,
+) -> ApiResult<Vec<crate::service::worktrees::RepoWorktrees>> {
+    blocking(move || Ok(crate::service::worktrees::status(&req.repo_paths))).await
+}
+
+async fn worktree_for_branch(
+    Json(req): Json<WorktreeBranchRequest>,
+) -> ApiResult<crate::sources::local_git::WorktreeCheckout> {
+    blocking(move || crate::service::worktrees::create(&PathBuf::from(&req.repo_path), &req.branch))
+        .await
+}
+
+async fn worktree_delete(Json(req): Json<WorktreePathRequest>) -> ApiResult<()> {
     blocking(move || {
-        let source = LocalGitSource::new(PathBuf::from(&req.repo_path))?;
-        source
-            .has_worktree_changes(&req.worktree_path)
-            .map_err(Into::into)
+        crate::service::worktrees::remove(&PathBuf::from(&req.repo_path), &req.worktree_path)
     })
     .await
 }
@@ -775,6 +830,24 @@ async fn files_list_repo(Json(req): Json<RepoPathRequest>) -> ApiResult<Vec<File
     blocking(move || crate::service::files::list_repo_files(&PathBuf::from(&req.repo_path))).await
 }
 
+async fn files_list_at_ref(Json(req): Json<ResolveRefRequest>) -> ApiResult<Vec<FileEntry>> {
+    blocking(move || {
+        crate::service::files::list_files_at_ref(&PathBuf::from(&req.repo_path), &req.git_ref)
+    })
+    .await
+}
+
+async fn files_content_at_ref(Json(req): Json<RepoFileAtRefRequest>) -> ApiResult<FileContent> {
+    blocking(move || {
+        crate::service::files::get_file_content_at_ref(
+            &PathBuf::from(&req.repo_path),
+            &req.file_path,
+            &req.git_ref,
+        )
+    })
+    .await
+}
+
 async fn files_directory_contents(
     Json(req): Json<DirContentsRequest>,
 ) -> ApiResult<Vec<FileEntry>> {
@@ -861,13 +934,6 @@ async fn files_search(Json(req): Json<SearchRequest>) -> ApiResult<Vec<SearchMat
 
 async fn files_read_raw(Json(req): Json<FilePathRequest>) -> ApiResult<FileContent> {
     blocking(move || crate::service::files::read_raw_file(std::path::Path::new(&req.path))).await
-}
-
-async fn files_raw_content(Json(req): Json<RepoFileRequest>) -> ApiResult<FileContent> {
-    blocking(move || {
-        crate::service::files::get_file_raw_content(&PathBuf::from(&req.repo_path), &req.file_path)
-    })
-    .await
 }
 
 async fn files_directory_plain(Json(req): Json<FilePathRequest>) -> ApiResult<Vec<FileEntry>> {

@@ -1,5 +1,6 @@
 import { memo, useMemo, type JSX } from "react";
 import { useReviewStore } from "../../stores";
+import { viewOnly } from "../../stores/selectors/ephemeral";
 import { useAllHunks } from "../../stores/selectors/hunks";
 import type { DiffViewMode } from "../../stores/slices/preferencesSlice";
 import { useNavigate } from "react-router-dom";
@@ -387,7 +388,7 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
   const rejectAllFileHunks = useReviewStore((s) => s.rejectAllFileHunks);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
   const revealInBrowse = useReviewStore((s) => s.revealInBrowse);
-  const readOnlyPreview = useReviewStore((s) => s.readOnlyPreview);
+  const isViewOnly = useReviewStore(viewOnly);
 
   const revealLabel = REVEAL_LABEL;
 
@@ -479,7 +480,7 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
       );
     }
 
-    if (!hasChanges || !reviewProgress || readOnlyPreview) {
+    if (!hasChanges || !reviewProgress || isViewOnly) {
       return null;
     }
 

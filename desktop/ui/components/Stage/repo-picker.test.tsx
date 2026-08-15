@@ -2,7 +2,12 @@ import { vi, describe, it, expect, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { repoChoiceKey, type RepoChoice } from "./repo-choices";
 
-const { choices } = vi.hoisted(() => ({ choices: { current: [] as never[] } }));
+const { choices, status, inUse, removeWorktreeAt } = vi.hoisted(() => ({
+  choices: { current: [] as never[] },
+  status: { current: new Map<string, unknown>() },
+  inUse: { current: false },
+  removeWorktreeAt: vi.fn(async () => true),
+}));
 
 // The picker's job is the search, the ordering and the keyboard; where the
 // repos come from is the sidebar tree's, and it has its own tests.
@@ -11,7 +16,26 @@ vi.mock("./repo-choices", async (importOriginal) => ({
   useRepoChoices: () => choices.current,
 }));
 
+// The two halves of a worktree row's facts: what git says about the checkout,
+// and whether anything in the app is pointed at it. Both are joins with their
+// own homes; the picker only draws them.
+vi.mock("./worktree-facts", () => ({
+  useWorktreeStatus: () => ({ byPath: status.current, refresh: vi.fn() }),
+  useWorktreeInUse: () => () => inUse.current,
+}));
+
+vi.mock("./worktree-actions", () => ({ removeWorktreeAt }));
+
+// The create form suggests branches; where they come from is not this file's
+// subject, and an unstubbed client reaches for a server no test is running.
+vi.mock("../../api", () => ({
+  getApiClient: () => ({
+    listBranches: async () => ({ local: [], remote: [], stashes: [] }),
+  }),
+}));
+
 import { RepoPicker } from "./RepoPicker";
+import type { WorktreeStatus } from "../../types";
 
 function seed(next: RepoChoice[]): void {
   choices.current = next as never[];
@@ -41,11 +65,38 @@ function worktree(
   };
 }
 
-/** The rows, as `basename` + whatever second column they chose to show. */
+/** What `list_worktree_status` said about a checkout on disk. */
+function seedStatus(...worktrees: WorktreeStatus[]): void {
+  status.current = new Map(worktrees.map((wt) => [wt.path, wt]));
+}
+
+function statusOf(
+  path: string,
+  branch: string,
+  extra: Partial<WorktreeStatus> = {},
+): WorktreeStatus {
+  return {
+    path,
+    branch,
+    isMain: false,
+    commitHash: "abc123",
+    isDetached: false,
+    isReviewManaged: true,
+    hasChanges: false,
+    ...extra,
+  };
+}
+
+/**
+ * The rows, as `basename` + whatever second column they chose to show.
+ *
+ * The row's own button, not every button in the list: a row also carries the
+ * verb at its end, which is a control on the row rather than part of it.
+ */
 function rows(): string[] {
   return screen
-    .getAllByRole("button")
-    .map((button) => button.textContent ?? "");
+    .getAllByRole("listitem")
+    .map((item) => item.querySelector("button")?.textContent ?? "");
 }
 
 function input(): HTMLInputElement {
@@ -55,6 +106,8 @@ function input(): HTMLInputElement {
 afterEach(() => {
   cleanup();
   choices.current = [];
+  status.current = new Map();
+  inUse.current = false;
   vi.clearAllMocks();
 });
 
@@ -207,5 +260,92 @@ describe("picking one by keyboard", () => {
 
     fireEvent.keyDown(input(), { key: "Escape" });
     expect(document.activeElement).not.toBe(input());
+  });
+});
+
+describe("managing worktrees", () => {
+  const repoRow = repo("/src/review", "review", "main");
+  const worktreeRow = worktree(
+    "/src/review",
+    "review",
+    "fix-the-parser",
+    "/wt/fix-the-parser",
+  );
+
+  /** Every repo can be given one; only a checkout on disk can be removed. */
+  it("offers create on a repo row and remove on a worktree row", () => {
+    seed([repoRow, worktreeRow]);
+    seedStatus(statusOf("/wt/fix-the-parser", "fix-the-parser"));
+    render(<RepoPicker attached={new Set()} onPick={() => {}} />);
+
+    expect(screen.getByLabelText("New worktree in review")).toBeTruthy();
+    expect(
+      screen.getByLabelText("Remove worktree fix-the-parser"),
+    ).toBeTruthy();
+  });
+
+  /**
+   * A row whose repo the status read couldn't answer for is still somewhere to
+   * go — but nothing offers to delete a checkout it never managed to look at.
+   */
+  it("offers no remove when the status read said nothing", () => {
+    seed([repoRow, worktreeRow]);
+    render(<RepoPicker attached={new Set()} onPick={() => {}} />);
+
+    expect(screen.queryByLabelText(/^Remove worktree/)).toBeNull();
+    expect(rows()).toEqual(["reviewmain", "reviewfix-the-parser"]);
+  });
+
+  it("reports uncommitted work, who made it, and that nobody is in it", () => {
+    seed([repoRow, worktreeRow]);
+    seedStatus(
+      statusOf("/wt/fix-the-parser", "fix-the-parser", { hasChanges: true }),
+    );
+    render(<RepoPicker attached={new Set()} onPick={() => {}} />);
+
+    expect(rows()[1]).toContain("review");
+    expect(rows()[1]).toContain("unused");
+    expect(screen.getByTitle("Uncommitted changes")).toBeTruthy();
+  });
+
+  /** "Unused" is a fact about the queue, so a workspace showing it silences it. */
+  it("drops the unused hint once something is pointed at it", () => {
+    seed([repoRow, worktreeRow]);
+    seedStatus(
+      statusOf("/wt/fix-the-parser", "fix-the-parser", {
+        isReviewManaged: false,
+      }),
+    );
+    inUse.current = true;
+    render(<RepoPicker attached={new Set()} onPick={() => {}} />);
+
+    expect(rows()[1]).not.toContain("unused");
+    // A worktree the user made themselves says nothing about who made it.
+    expect(rows()[1]).toBe("reviewfix-the-parser");
+  });
+
+  it("hands the remove to the one place that asks first", () => {
+    seed([repoRow, worktreeRow]);
+    const wt = statusOf("/wt/fix-the-parser", "fix-the-parser");
+    seedStatus(wt);
+    render(<RepoPicker attached={new Set()} onPick={() => {}} />);
+
+    fireEvent.click(screen.getByLabelText("Remove worktree fix-the-parser"));
+
+    expect(removeWorktreeAt).toHaveBeenCalledWith("/src/review", wt);
+  });
+
+  /** The create form replaces the list: one popover, one question at a time. */
+  it("swaps the list for the branch field, and back on Cancel", () => {
+    seed([repoRow, worktreeRow]);
+    render(<RepoPicker attached={new Set()} onPick={() => {}} />);
+
+    fireEvent.click(screen.getByLabelText("New worktree in review"));
+
+    expect(screen.getByLabelText("Branch for the new worktree")).toBeTruthy();
+    expect(screen.queryByLabelText("Find a repo")).toBeNull();
+
+    fireEvent.click(screen.getByText("Cancel"));
+    expect(screen.getByLabelText("Find a repo")).toBeTruthy();
   });
 });

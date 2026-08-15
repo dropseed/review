@@ -12,6 +12,7 @@ import { FlatFileNode } from "./FlatFileNode";
 import { RollingDiffButton } from "../ui/rolling-diff-button";
 import {
   buildFileTreeFromPaths,
+  collectDirPaths,
   processTree,
   EMPTY_HUNK_STATUS,
 } from "./FileTree.utils";
@@ -237,33 +238,17 @@ export function GitStatusPanel({
   );
 
   // Per-section dir paths for expand/collapse
-  const collectDirPaths = useCallback(
-    (entries: ReturnType<typeof processTree>) => {
-      const paths = new Set<string>();
-      function walk(items: typeof entries) {
-        for (const entry of items) {
-          if (entry.isDirectory) {
-            for (const p of entry.compactedPaths) paths.add(p);
-            if (entry.children) walk(entry.children);
-          }
-        }
-      }
-      walk(entries);
-      return paths;
-    },
-    [],
-  );
   const stagedDirPaths = useMemo(
     () => collectDirPaths(stagedTree),
-    [collectDirPaths, stagedTree],
+    [stagedTree],
   );
   const unstagedDirPaths = useMemo(
     () => collectDirPaths(unstagedTree),
-    [collectDirPaths, unstagedTree],
+    [unstagedTree],
   );
   const untrackedDirPaths = useMemo(
     () => collectDirPaths(untrackedTree),
-    [collectDirPaths, untrackedTree],
+    [untrackedTree],
   );
 
   if (!gitStatus) {

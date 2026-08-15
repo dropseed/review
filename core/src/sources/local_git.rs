@@ -5,7 +5,7 @@ use super::traits::{
 use crate::diff::parser::{parse_diff, LineType};
 use crate::review::central;
 use log::info;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::path::PathBuf;
@@ -126,6 +126,62 @@ pub struct RecentRemoteBranch {
     pub last_commit_date: String,
 }
 
+/// What sort of ref a [`RefEntry`] names — the browse picker groups by it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RefKind {
+    LocalBranch,
+    RemoteBranch,
+    Tag,
+}
+
+/// A ref already present locally, offered as somewhere to browse as-of.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RefEntry {
+    /// Short name, e.g. "main", "origin/feature-x", "v1.2.0".
+    pub name: String,
+    pub kind: RefKind,
+    /// ISO-8601 creation date, absent when git reported none.
+    pub date: Option<String>,
+}
+
+/// What a ref resolves to, for the pinned banner and for validating something
+/// the user typed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RefDescription {
+    /// The ref as asked for, not as resolved — this is what the banner says.
+    pub name: String,
+    pub sha: String,
+    pub short_sha: String,
+    pub subject: String,
+    /// Committer date, ISO-8601 strict.
+    pub date: String,
+}
+
+/// One commit, resolved into something diffable — what "view this commit"
+/// renders.
+///
+/// The comparison carries resolved SHAs rather than the `<hash>^` expression,
+/// because that expression is wrong in exactly the two cases worth being
+/// careful about: a root commit has no parent to name, and a merge has several.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitComparison {
+    pub hash: String,
+    pub short_hash: String,
+    pub subject: String,
+    pub author: String,
+    /// Author date, ISO-8601 strict.
+    pub date: String,
+    /// How many parents the commit has: 0 for a root commit, more than 1 for a
+    /// merge. The caller says so on screen; this does not decide for it.
+    pub parent_count: usize,
+    /// `parent..commit`.
+    pub comparison: Comparison,
+}
+
 /// Information about a git worktree.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -138,6 +194,29 @@ pub struct WorktreeInfo {
     pub is_detached: bool,
     /// True when the worktree path is under `~/.review/worktrees/` (managed by Review).
     pub is_review_managed: bool,
+}
+
+/// A worktree plus the facts a git client would show beside it.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeStatus {
+    #[serde(flatten)]
+    pub worktree: WorktreeInfo,
+    /// Uncommitted work — modified, staged, or untracked. Asked only of linked
+    /// worktrees: the main checkout's dirt is already a fact on its branch row,
+    /// and a `git status` of every registered repo is the expensive half of
+    /// listing them.
+    pub has_changes: bool,
+}
+
+/// Where a branch's checkout lives, and whether this call is what made it.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeCheckout {
+    pub path: String,
+    pub branch: String,
+    /// False when the branch already had a checkout and we routed to it.
+    pub created: bool,
 }
 
 /// Tracked + untracked files and change statuses for a comparison, gathered
@@ -158,6 +237,8 @@ pub enum LocalGitError {
     Git(String),
     #[error("WORKTREE_EXISTS:{0}")]
     WorktreeExists(String),
+    #[error("{0} has uncommitted changes — commit, stash, or discard them first")]
+    WorktreeDirty(String),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
     #[error("Not a git repository")]
@@ -829,6 +910,12 @@ impl LocalGitSource {
             }
         }
 
+        // One `git status` per checkout, asked once per *directory* and fanned
+        // out, rather than once per branch row inside the loops below. This
+        // whole listing is rebuilt on every debounced working-tree save, and
+        // run in a row it put a serial process per branch on that path.
+        let dirty_by_worktree = self.worktree_dirt(&worktree_map, &current_branch);
+
         // Try batch approach first using %(ahead-behind:<ref>) (Git 2.36+)
         // This gets all ahead counts in a single git call instead of N+1
         // `%(upstream)` and its track summary ride along on the same call: an
@@ -849,6 +936,7 @@ impl LocalGitSource {
                 &wt_stats,
                 &wt_last_modified,
                 &worktree_map,
+                &dirty_by_worktree,
             ),
             Err(_) => {
                 // Fall back to N+1 approach for older Git versions
@@ -859,6 +947,7 @@ impl LocalGitSource {
                     &wt_stats,
                     &wt_last_modified,
                     &worktree_map,
+                    &dirty_by_worktree,
                 )?
             }
         };
@@ -884,6 +973,7 @@ impl LocalGitSource {
                 &wt_stats,
                 &wt_last_modified,
                 &worktree_map,
+                &dirty_by_worktree,
             ));
         }
 
@@ -898,6 +988,39 @@ impl LocalGitSource {
         Ok(branches)
     }
 
+    /// Whether each checkout in a branch→worktree map holds uncommitted work,
+    /// asked once per distinct directory and fanned out.
+    ///
+    /// Per *directory*, not per branch: the map's review-managed half can point
+    /// two refs at one path, and a `git status` is a process. The current branch
+    /// is left out entirely — its dirtiness is the repo's own status, which
+    /// `list_branches_ahead` has already read.
+    fn worktree_dirt(
+        &self,
+        worktree_map: &HashMap<String, String>,
+        current_branch: &str,
+    ) -> HashMap<String, bool> {
+        let mut paths: Vec<String> = worktree_map
+            .iter()
+            .filter(|(branch, _)| branch.as_str() != current_branch)
+            .map(|(_, path)| path.clone())
+            .collect();
+        paths.sort();
+        paths.dedup();
+
+        std::thread::scope(|s| {
+            let handles: Vec<_> = paths
+                .iter()
+                .map(|path| s.spawn(move || self.worktree_dirty(path).unwrap_or(false)))
+                .collect();
+            paths
+                .iter()
+                .zip(handles)
+                .map(|(path, handle)| (path.clone(), handle.join().unwrap_or(false)))
+                .collect()
+        })
+    }
+
     /// Parse branch info from batch `for-each-ref` output that includes `%(ahead-behind:)`.
     fn parse_branches_batch(
         &self,
@@ -908,6 +1031,7 @@ impl LocalGitSource {
         wt_stats: &Option<DiffShortStat>,
         wt_last_modified: &Option<u64>,
         worktree_map: &HashMap<String, String>,
+        dirty_by_worktree: &HashMap<String, bool>,
     ) -> Vec<LocalBranchInfo> {
         let mut branches = Vec::new();
 
@@ -970,6 +1094,7 @@ impl LocalGitSource {
                 wt_stats,
                 wt_last_modified,
                 worktree_map,
+                dirty_by_worktree,
             ));
         }
 
@@ -991,12 +1116,16 @@ impl LocalGitSource {
         wt_stats: &Option<DiffShortStat>,
         wt_last_modified: &Option<u64>,
         worktree_map: &HashMap<String, String>,
+        dirty_by_worktree: &HashMap<String, bool>,
     ) -> LocalBranchInfo {
         let wt_path = worktree_map.get(&name);
         let (has_changes, last_mod, stats) = if is_current {
             (has_wt_changes, *wt_last_modified, wt_stats.clone())
         } else if let Some(path) = wt_path {
-            let changed = self.has_worktree_changes(path).unwrap_or(false);
+            // Read off the map resolved once per checkout by `worktree_dirt`,
+            // which asks git directly so worktrees the user made themselves
+            // report their dirt too — not just review-managed ones.
+            let changed = dirty_by_worktree.get(path).copied().unwrap_or(false);
             (changed, None, None)
         } else {
             (false, None, None)
@@ -1028,6 +1157,7 @@ impl LocalGitSource {
         wt_stats: &Option<DiffShortStat>,
         wt_last_modified: &Option<u64>,
         worktree_map: &HashMap<String, String>,
+        dirty_by_worktree: &HashMap<String, bool>,
     ) -> Result<Vec<LocalBranchInfo>, LocalGitError> {
         let output = self.run_git(&[
             "for-each-ref",
@@ -1081,7 +1211,7 @@ impl LocalGitSource {
             let (has_changes, last_mod, stats) = if is_current {
                 (has_wt_changes, *wt_last_modified, wt_stats.clone())
             } else if let Some(path) = wt_path {
-                let changed = self.has_worktree_changes(path).unwrap_or(false);
+                let changed = dirty_by_worktree.get(path).copied().unwrap_or(false);
                 (changed, None, None)
             } else {
                 (false, None, None)
@@ -1246,6 +1376,138 @@ impl LocalGitSource {
             .collect()
     }
 
+    /// Every worktree of this repo, each with the facts the picker draws on its
+    /// row. One `git worktree list` plus one `git status` per linked worktree.
+    ///
+    /// The status calls are fanned out: they are independent processes against
+    /// separate directories, and run in a row they made the picker's open cost
+    /// the sum of every checkout on disk.
+    pub fn list_worktree_status(&self) -> Result<Vec<WorktreeStatus>, LocalGitError> {
+        let worktrees = self.list_worktrees()?;
+        let dirty: Vec<bool> = std::thread::scope(|s| {
+            let handles: Vec<_> = worktrees
+                .iter()
+                .map(|wt| {
+                    (!wt.is_main)
+                        .then(|| s.spawn(|| self.worktree_dirty(&wt.path).unwrap_or(false)))
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|handle| handle.map(|h| h.join().unwrap_or(false)).unwrap_or(false))
+                .collect()
+        });
+        Ok(worktrees
+            .into_iter()
+            .zip(dirty)
+            .map(|(worktree, has_changes)| WorktreeStatus {
+                worktree,
+                has_changes,
+            })
+            .collect())
+    }
+
+    /// Uncommitted work in a directory git already told us is a worktree —
+    /// staged, unstaged, and untracked alike, which is exactly the set
+    /// `git worktree remove` refuses to discard without `--force`.
+    ///
+    /// Unvalidated, so callers must have resolved the path through
+    /// [`Self::list_worktrees`] (or been handed it by git) rather than from a
+    /// request body.
+    fn worktree_dirty(&self, worktree_path: &str) -> Result<bool, LocalGitError> {
+        let output = self.run_git_in(
+            std::path::Path::new(worktree_path),
+            &["status", "--porcelain"],
+        )?;
+        Ok(!output.trim().is_empty())
+    }
+
+    /// Resolve a path against this repo's own worktrees — the check that a
+    /// destructive call is aimed at a checkout of *this* repository and not at
+    /// an arbitrary directory.
+    fn find_worktree(&self, worktree_path: &str) -> Result<WorktreeInfo, LocalGitError> {
+        let canonical = canonical_or_self(worktree_path);
+        self.list_worktrees()?
+            .into_iter()
+            .find(|wt| canonical_or_self(&wt.path) == canonical)
+            .ok_or_else(|| {
+                LocalGitError::Git(format!(
+                    "Not a worktree of this repository: {worktree_path}"
+                ))
+            })
+    }
+
+    /// The worktree holding `branch`, creating one under the managed root when
+    /// the branch has no checkout yet.
+    ///
+    /// Git refuses to check the same branch out twice, so a branch that already
+    /// lives somewhere is *answered with that place* rather than reported as a
+    /// conflict — asking for a worktree and being sent to the one that exists is
+    /// what the person meant either way. A branch name git doesn't know is
+    /// created at the repo's current HEAD.
+    pub fn worktree_for_branch(&self, branch: &str) -> Result<WorktreeCheckout, LocalGitError> {
+        let branch = branch.trim();
+        if branch.is_empty() {
+            return Err(LocalGitError::Git("A branch name is required".to_owned()));
+        }
+
+        if let Some(existing) = self
+            .list_worktrees()?
+            .into_iter()
+            .find(|wt| wt.branch.as_deref() == Some(branch))
+        {
+            return Ok(WorktreeCheckout {
+                path: existing.path,
+                branch: branch.to_owned(),
+                created: false,
+            });
+        }
+
+        let base_dir = central::get_worktree_base_dir(&self.repo_path)
+            .map_err(|e| LocalGitError::Git(format!("Failed to compute worktree base dir: {e}")))?;
+        std::fs::create_dir_all(&base_dir)?;
+        let path = free_worktree_path(&base_dir, &central::sanitize_path_component(branch));
+        let path_str = path.to_string_lossy().to_string();
+
+        let branch_ref = format!("refs/heads/{branch}");
+        let exists = self
+            .run_git(&["rev-parse", "--verify", "--quiet", &branch_ref])
+            .is_ok();
+        if exists {
+            self.run_git(&["worktree", "add", &path_str, branch])?;
+        } else {
+            self.run_git(&["worktree", "add", "-b", branch, &path_str, "HEAD"])?;
+        }
+
+        Ok(WorktreeCheckout {
+            path: canonical_or_self(&path_str).to_string_lossy().to_string(),
+            branch: branch.to_owned(),
+            created: true,
+        })
+    }
+
+    /// Remove a worktree of this repo, refusing anything that would lose work.
+    ///
+    /// Three refusals, all server-side because a UI flag is a stale answer by
+    /// the time the click lands: the path must be one of this repo's worktrees,
+    /// it must not be the main checkout, and it must be clean. No `--force`
+    /// anywhere in the path — uncommitted work is the user's to resolve.
+    pub fn remove_worktree(&self, worktree_path: &str) -> Result<(), LocalGitError> {
+        let target = self.find_worktree(worktree_path)?;
+        if target.is_main {
+            return Err(LocalGitError::Git(format!(
+                "{} is the repository's main checkout",
+                target.path
+            )));
+        }
+        if self.worktree_dirty(&target.path)? {
+            return Err(LocalGitError::WorktreeDirty(target.path.clone()));
+        }
+        let _ = self.run_git(&["worktree", "prune"]);
+        self.run_git(&["worktree", "remove", &target.path])?;
+        Ok(())
+    }
+
     /// Create a review-managed worktree at `~/.review/worktrees/<repo-hash>/<name>/`.
     ///
     /// Uses `--detach` to avoid "branch already checked out" conflicts.
@@ -1276,9 +1538,7 @@ impl LocalGitSource {
             })?;
 
         // Canonicalize the path after creation so it matches what git reports
-        let canonical_path = worktree_path
-            .canonicalize()
-            .unwrap_or(worktree_path)
+        let canonical_path = canonical_or_self(worktree_path)
             .to_string_lossy()
             .to_string();
 
@@ -1300,10 +1560,8 @@ impl LocalGitSource {
     fn validate_review_worktree_path(&self, worktree_path: &str) -> Result<(), LocalGitError> {
         let base_dir = central::get_worktree_base_dir(&self.repo_path)
             .map_err(|e| LocalGitError::Git(format!("Failed to compute worktree base dir: {e}")))?;
-        let canonical_base = base_dir.canonicalize().unwrap_or(base_dir);
-        let canonical_wt = std::path::Path::new(worktree_path)
-            .canonicalize()
-            .unwrap_or_else(|_| PathBuf::from(worktree_path));
+        let canonical_base = canonical_or_self(base_dir);
+        let canonical_wt = canonical_or_self(worktree_path);
         if !canonical_wt.starts_with(&canonical_base) {
             return Err(LocalGitError::Git(format!(
                 "Path is not a review-managed worktree: {worktree_path}"
@@ -1317,16 +1575,6 @@ impl LocalGitSource {
         let _ = self.run_git(&["worktree", "prune"]);
         self.run_git(&["worktree", "remove", "--force", worktree_path])?;
         Ok(())
-    }
-
-    /// Check if a worktree has uncommitted changes.
-    pub fn has_worktree_changes(&self, worktree_path: &str) -> Result<bool, LocalGitError> {
-        self.validate_review_worktree_path(worktree_path)?;
-        let output = self.run_git_in(
-            std::path::Path::new(worktree_path),
-            &["status", "--porcelain"],
-        )?;
-        Ok(!output.is_empty())
     }
 
     /// Update a worktree's HEAD to a new commit (detached).
@@ -1519,6 +1767,54 @@ impl LocalGitSource {
             );
         }
         Ok(map)
+    }
+
+    /// Resolve one commit into the comparison that shows it.
+    ///
+    /// A merge is diffed against its **first** parent — the mainline view, the
+    /// one that answers "what did landing this change?" — and a root commit
+    /// against the empty tree, so every file in it reads as added. Both are
+    /// reported through `parent_count` rather than being silently normal.
+    pub fn commit_comparison(&self, git_ref: &str) -> Result<CommitComparison, LocalGitError> {
+        let fields = self.log_one(git_ref, "%H%x00%h%x00%s%x00%an%x00%aI%x00%P", 6)?;
+        let parents: Vec<&str> = fields[5].split_whitespace().collect();
+        let base = parents.first().copied().unwrap_or(Self::EMPTY_TREE);
+
+        Ok(CommitComparison {
+            comparison: Comparison::new(base, fields[0].as_str()),
+            hash: fields[0].clone(),
+            short_hash: fields[1].clone(),
+            subject: fields[2].clone(),
+            author: fields[3].clone(),
+            date: fields[4].clone(),
+            parent_count: parents.len(),
+        })
+    }
+
+    /// The one commit `git_ref` names, as the NUL-separated fields `format`
+    /// asked for.
+    ///
+    /// `fields` is how many of them the caller is about to read positionally:
+    /// git resolving the ref does not by itself guarantee the record came back
+    /// whole, and indexing short of it would panic rather than report.
+    fn log_one(
+        &self,
+        git_ref: &str,
+        format: &str,
+        fields: usize,
+    ) -> Result<Vec<String>, LocalGitError> {
+        let output = self.run_git(&["log", "-1", &format!("--format={format}"), git_ref, "--"])?;
+        let parsed: Vec<String> = output
+            .trim_end_matches('\n')
+            .split('\0')
+            .map(str::to_owned)
+            .collect();
+        if parsed.len() < fields {
+            return Err(LocalGitError::Git(format!(
+                "Could not describe ref: {git_ref}"
+            )));
+        }
+        Ok(parsed)
     }
 
     /// Get detailed information about a specific commit
@@ -2191,7 +2487,7 @@ impl LocalGitSource {
             all_files,
             &file_status,
             &gitignored_dirs,
-            Some(&root),
+            &TreeMeta::WorkingTree(&root),
             &rename_map,
         ))
     }
@@ -2212,9 +2508,127 @@ impl LocalGitSource {
             all_files,
             &file_status,
             &gitignored_dirs,
-            Some(&self.repo_path),
+            &TreeMeta::WorkingTree(&self.repo_path),
             &rename_map,
         ))
+    }
+
+    /// List every file in the tree at `git_ref`, as a browsable tree.
+    ///
+    /// Reads only the object database (`git ls-tree`) — nothing is checked out
+    /// and the working tree is never consulted, so this answers "what did the
+    /// repo look like then?" while the checkout stays where the user left it.
+    ///
+    /// Sizes come from the blob headers. Submodules (gitlink entries) are left
+    /// out: their contents live in another repository, which this listing has
+    /// no way to descend into.
+    pub fn list_files_at_ref(&self, git_ref: &str) -> Result<Vec<FileEntry>, LocalGitError> {
+        let resolved = self.resolve_ref_or_self(git_ref);
+        // -z, so a path with a quote, a newline or a non-UTF-8 byte in it
+        // arrives verbatim instead of in git's C-quoted form.
+        let output = self.run_git_bytes(&["ls-tree", "-r", "-l", "-z", &resolved])?;
+        let output = String::from_utf8_lossy(&output);
+
+        let mut all_files: HashSet<String> = HashSet::new();
+        let mut object_meta: HashMap<String, SymlinkInfo> = HashMap::new();
+
+        for record in output.split('\0') {
+            let Some((meta, path)) = record.split_once('\t') else {
+                continue;
+            };
+            let mut fields = meta.split_whitespace();
+            let (Some(mode), Some(kind), Some(_oid), Some(size)) =
+                (fields.next(), fields.next(), fields.next(), fields.next())
+            else {
+                continue;
+            };
+            if kind != "blob" {
+                continue;
+            }
+
+            all_files.insert(path.to_owned());
+            object_meta.insert(
+                path.to_owned(),
+                SymlinkInfo {
+                    is_symlink: mode == "120000",
+                    size: size.parse().ok(),
+                    ..SymlinkInfo::default()
+                },
+            );
+        }
+
+        Ok(build_file_tree(
+            all_files,
+            &HashMap::new(),
+            &HashSet::new(),
+            &TreeMeta::Objects(object_meta),
+            &HashMap::new(),
+        ))
+    }
+
+    /// Every ref this repo already knows locally: branches, remote-tracking
+    /// branches and tags, newest first.
+    ///
+    /// Nothing is fetched. A remote branch appears here because a previous
+    /// fetch wrote it, which is exactly the set a read-only peek can serve.
+    pub fn list_refs(&self) -> Result<Vec<RefEntry>, LocalGitError> {
+        let output = self.run_git(&[
+            "for-each-ref",
+            "--sort=-creatordate",
+            // creatordate, not committerdate: an annotated tag's ref points at
+            // a tag object, which has no committer.
+            "--format=%(refname)\t%(refname:short)\t%(creatordate:iso-strict)",
+            "refs/heads/",
+            "refs/remotes/",
+            "refs/tags/",
+        ])?;
+
+        let mut refs = Vec::new();
+        for line in output.lines() {
+            let mut parts = line.trim_end().splitn(3, '\t');
+            let (Some(full), Some(short)) = (parts.next(), parts.next()) else {
+                continue;
+            };
+            let kind = if let Some(rest) = full.strip_prefix("refs/heads/") {
+                if rest.is_empty() {
+                    continue;
+                }
+                RefKind::LocalBranch
+            } else if full.strip_prefix("refs/remotes/").is_some() {
+                // `origin/HEAD` is a symbolic alias for a branch already listed.
+                if full.ends_with("/HEAD") {
+                    continue;
+                }
+                RefKind::RemoteBranch
+            } else if full.strip_prefix("refs/tags/").is_some() {
+                RefKind::Tag
+            } else {
+                continue;
+            };
+
+            refs.push(RefEntry {
+                name: short.to_owned(),
+                kind,
+                date: parts.next().map(str::to_owned).filter(|d| !d.is_empty()),
+            });
+        }
+
+        Ok(refs)
+    }
+
+    /// Name what `git_ref` points at, erroring when nothing does.
+    ///
+    /// This is what turns a pasted string into a ref the browse pane can pin
+    /// to: a SHA prefix, a tag, `HEAD~3` — anything `git log` accepts.
+    pub fn describe_ref(&self, git_ref: &str) -> Result<RefDescription, LocalGitError> {
+        let fields = self.log_one(git_ref, "%H%x00%h%x00%s%x00%cI", 4)?;
+        Ok(RefDescription {
+            name: git_ref.to_owned(),
+            sha: fields[0].clone(),
+            short_sha: fields[1].clone(),
+            subject: fields[2].clone(),
+            date: fields[3].clone(),
+        })
     }
 
     /// List contents of a directory (used for lazy-loading gitignored directories).
@@ -2632,8 +3046,22 @@ impl LocalGitSource {
     }
 }
 
+/// Where a listing's per-entry metadata — size, mtime, symlink target — comes
+/// from.
+///
+/// A listing at a ref must never consult the checkout: the working tree is a
+/// different revision, so its sizes and mtimes would describe files the caller
+/// isn't looking at, and a path that only exists at the ref would be dropped as
+/// a broken symlink.
+enum TreeMeta<'a> {
+    /// Stat the checkout at this root. Broken symlinks are filtered out.
+    WorkingTree(&'a std::path::Path),
+    /// Metadata already read out of the object database, keyed by path.
+    Objects(HashMap<String, SymlinkInfo>),
+}
+
 /// Symlink info for a file path
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct SymlinkInfo {
     is_symlink: bool,
     target: Option<String>,
@@ -2647,7 +3075,7 @@ struct SymlinkInfo {
 
 /// Build a file tree from file paths and statuses.
 /// Shared helper used by both `list_files()` and `list_all_files()`.
-/// When repo_path is provided, symlinks are detected and broken symlinks are filtered out.
+/// With [`TreeMeta::WorkingTree`], symlinks are detected and broken symlinks are filtered out.
 #[expect(
     clippy::needless_pass_by_value,
     reason = "takes ownership for consistency with callers that build and pass the set"
@@ -2656,16 +3084,16 @@ fn build_file_tree(
     all_files: HashSet<String>,
     file_status: &HashMap<String, FileStatus>,
     gitignored_dirs: &HashSet<String>,
-    repo_path: Option<&std::path::Path>,
+    meta: &TreeMeta<'_>,
     rename_map: &HashMap<String, String>,
 ) -> Vec<FileEntry> {
     use std::fs;
 
     let mut entries: HashMap<String, FileEntry> = HashMap::new();
 
-    // Pre-compute symlink info for all files if repo_path is provided
-    let symlink_info: HashMap<String, SymlinkInfo> = if let Some(repo) = repo_path {
-        all_files
+    // Pre-compute symlink info for all files
+    let symlink_info: HashMap<String, SymlinkInfo> = match meta {
+        TreeMeta::WorkingTree(repo) => all_files
             .iter()
             .map(|path| {
                 let full_path = repo.join(path);
@@ -2702,13 +3130,11 @@ fn build_file_tree(
                 };
                 (path.clone(), info)
             })
-            .collect()
-    } else {
-        // No repo path — no symlink detection or metadata
-        all_files
+            .collect(),
+        TreeMeta::Objects(by_path) => all_files
             .iter()
-            .map(|path| (path.clone(), SymlinkInfo::default()))
-            .collect()
+            .map(|path| (path.clone(), by_path.get(path).cloned().unwrap_or_default()))
+            .collect(),
     };
 
     // Filter all_files to only include files that passed symlink check
@@ -2741,8 +3167,8 @@ fn build_file_tree(
         }
     }
 
-    // Pre-compute symlink info for directories if repo_path is provided
-    let dir_symlink_info: HashMap<String, SymlinkInfo> = if let Some(repo) = repo_path {
+    // Pre-compute symlink info for directories
+    let dir_symlink_info: HashMap<String, SymlinkInfo> = if let TreeMeta::WorkingTree(repo) = meta {
         all_dirs
             .iter()
             .filter_map(|path| {
@@ -2933,7 +3359,7 @@ impl DiffSource for LocalGitSource {
             all_files,
             &file_status,
             &HashSet::new(),
-            Some(&root),
+            &TreeMeta::WorkingTree(&root),
             &rename_map,
         ))
     }
@@ -2961,6 +3387,32 @@ fn run_git_cmd(dir: &std::path::Path, args: &[&str]) -> Result<String, LocalGitE
             String::from_utf8_lossy(&output.stderr).to_string(),
         ))
     }
+}
+
+/// A path as the filesystem reports it, falling back to the path itself when it
+/// doesn't resolve. Comparing worktree paths needs this on macOS, where
+/// `/tmp` is a symlink and git reports the resolved side.
+fn canonical_or_self(path: impl Into<PathBuf>) -> PathBuf {
+    let path = path.into();
+    path.canonicalize().unwrap_or(path)
+}
+
+/// A directory under `base_dir` that nothing occupies yet: `<name>`, else
+/// `<name>-2`, `<name>-3`…
+///
+/// Two branches can sanitize to one directory name (`fix/a` and `fix_a`), and a
+/// directory left behind by a worktree git has since forgotten is not an error
+/// worth showing anyone — either way the answer is the next free name rather
+/// than a failed create.
+fn free_worktree_path(base_dir: &std::path::Path, name: &str) -> PathBuf {
+    let first = base_dir.join(name);
+    if !first.exists() {
+        return first;
+    }
+    (2..)
+        .map(|n| base_dir.join(format!("{name}-{n}")))
+        .find(|candidate| !candidate.exists())
+        .expect("the range is unbounded")
 }
 
 /// Split a git remote URL into `(host, org/repo)`, with any `.git` suffix and
@@ -3221,6 +3673,243 @@ mod tests {
         (env, review_home, repo_dir, source, head_sha)
     }
 
+    /// A repo with one commit on `main`, a `v1` tag on it, then a second
+    /// commit on `feature` that adds a file and deletes another. Nothing here
+    /// touches `$REVIEW_HOME`, so no lock is needed.
+    fn setup_ref_browse_repo() -> (tempfile::TempDir, LocalGitSource) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path();
+        let git = |args: &[&str]| run_git_cmd(path, args).unwrap();
+
+        git(&["init", "--initial-branch=main"]);
+        git(&["config", "user.email", "t@example.com"]);
+        git(&["config", "user.name", "T"]);
+
+        std::fs::write(path.join("keep.txt"), "first\n").unwrap();
+        std::fs::write(path.join("gone.txt"), "doomed\n").unwrap();
+        std::fs::create_dir(path.join("src")).unwrap();
+        std::fs::write(path.join("src/lib.rs"), "// lib\n").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-m", "first"]);
+        // update-ref rather than `git tag`: the tag config in the ambient
+        // environment (forceSignAnnotated, gpgSign) must not reach in here.
+        git(&["update-ref", "refs/tags/v1", "HEAD"]);
+
+        git(&["checkout", "-b", "feature"]);
+        std::fs::remove_file(path.join("gone.txt")).unwrap();
+        std::fs::write(path.join("src/added.rs"), "// added\n").unwrap();
+        std::fs::write(path.join("keep.txt"), "second\n").unwrap();
+        git(&["add", "-A"]);
+        git(&["commit", "-m", "second"]);
+
+        let source = LocalGitSource::new(path.to_path_buf()).unwrap();
+        (dir, source)
+    }
+
+    /// Flatten a file tree into `path -> size` for assertions.
+    fn flatten(entries: &[FileEntry], out: &mut HashMap<String, Option<u64>>) {
+        for entry in entries {
+            if entry.is_directory {
+                if let Some(children) = &entry.children {
+                    flatten(children, out);
+                }
+            } else {
+                out.insert(entry.path.clone(), entry.size);
+            }
+        }
+    }
+
+    /// A listing at a ref reports that ref's tree — not the checkout's — and
+    /// leaves the working tree exactly where it was.
+    #[test]
+    fn list_files_at_ref_reads_the_object_database() {
+        let (dir, source) = setup_ref_browse_repo();
+
+        let mut at_v1 = HashMap::new();
+        flatten(&source.list_files_at_ref("v1").unwrap(), &mut at_v1);
+        assert!(at_v1.contains_key("gone.txt"), "got {at_v1:?}");
+        assert!(!at_v1.contains_key("src/added.rs"), "got {at_v1:?}");
+        assert_eq!(
+            at_v1.get("keep.txt").copied().flatten(),
+            Some("first\n".len() as u64),
+            "blob sizes come from the tag's tree, not the checkout"
+        );
+
+        let mut at_feature = HashMap::new();
+        flatten(
+            &source.list_files_at_ref("feature").unwrap(),
+            &mut at_feature,
+        );
+        assert!(!at_feature.contains_key("gone.txt"), "got {at_feature:?}");
+        assert!(
+            at_feature.contains_key("src/added.rs"),
+            "got {at_feature:?}"
+        );
+
+        // The peek is read-only: the checkout is still on `feature`.
+        assert_eq!(source.get_current_branch().unwrap(), "feature");
+        assert!(!dir.path().join("gone.txt").exists());
+    }
+
+    /// Reading a blob at a ref answers with that revision's bytes, including
+    /// for a path the working tree no longer has.
+    #[test]
+    fn get_file_bytes_reads_the_revision_asked_for() {
+        let (_dir, source) = setup_ref_browse_repo();
+
+        assert_eq!(source.get_file_bytes("keep.txt", "v1").unwrap(), b"first\n");
+        assert_eq!(
+            source.get_file_bytes("keep.txt", "feature").unwrap(),
+            b"second\n"
+        );
+        assert_eq!(
+            source.get_file_bytes("gone.txt", "v1").unwrap(),
+            b"doomed\n",
+            "a file deleted since is still readable at the ref that has it"
+        );
+        assert!(source.get_file_bytes("gone.txt", "feature").is_err());
+    }
+
+    /// Every locally known ref is offered, each tagged with what it is, and
+    /// nothing is fetched to produce the list.
+    #[test]
+    fn list_refs_offers_branches_tags_and_remotes() {
+        let (dir, source) = setup_ref_browse_repo();
+        // Stand in for a fetch: a remote-tracking ref is just a ref on disk.
+        run_git_cmd(
+            dir.path(),
+            &["update-ref", "refs/remotes/origin/main", "main"],
+        )
+        .unwrap();
+        run_git_cmd(
+            dir.path(),
+            &[
+                "symbolic-ref",
+                "refs/remotes/origin/HEAD",
+                "refs/remotes/origin/main",
+            ],
+        )
+        .unwrap();
+
+        let refs = source.list_refs().unwrap();
+        let by_name: HashMap<&str, RefKind> =
+            refs.iter().map(|r| (r.name.as_str(), r.kind)).collect();
+
+        assert_eq!(by_name.get("main"), Some(&RefKind::LocalBranch));
+        assert_eq!(by_name.get("feature"), Some(&RefKind::LocalBranch));
+        assert_eq!(by_name.get("v1"), Some(&RefKind::Tag));
+        assert_eq!(by_name.get("origin/main"), Some(&RefKind::RemoteBranch));
+        // `refs/remotes/origin/HEAD` shortens to plain "origin" — an alias for
+        // a branch already listed, and not a ref anyone means to browse at.
+        assert!(
+            !by_name.contains_key("origin") && !by_name.contains_key("origin/HEAD"),
+            "the remote HEAD alias must not be offered, got {by_name:?}"
+        );
+    }
+
+    /// `describe_ref` accepts anything git can resolve and refuses what it
+    /// cannot — which is what makes it usable as the validator for a pasted SHA.
+    #[test]
+    fn describe_ref_resolves_what_git_resolves() {
+        let (_dir, source) = setup_ref_browse_repo();
+
+        let tag = source.describe_ref("v1").unwrap();
+        assert_eq!(tag.name, "v1");
+        assert_eq!(tag.subject, "first");
+        assert!(tag.sha.starts_with(&tag.short_sha));
+
+        // A raw SHA, and a revision expression, both land on the same commit.
+        assert_eq!(source.describe_ref(&tag.sha).unwrap().sha, tag.sha);
+        assert_eq!(source.describe_ref("feature~1").unwrap().sha, tag.sha);
+
+        assert!(source.describe_ref("no-such-ref").is_err());
+    }
+
+    /// A root commit, a plain commit on top of it, and a merge of a side
+    /// branch — the three shapes `commit_comparison` has to tell apart.
+    fn setup_commit_shapes_repo() -> (tempfile::TempDir, LocalGitSource) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path();
+        let git = |args: &[&str]| run_git_cmd(path, args).unwrap();
+
+        git(&["init", "--initial-branch=main"]);
+        git(&["config", "user.email", "t@example.com"]);
+        git(&["config", "user.name", "T"]);
+
+        std::fs::write(path.join("a.txt"), "one\n").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-m", "root"]);
+
+        git(&["checkout", "-b", "side"]);
+        std::fs::write(path.join("b.txt"), "side\n").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-m", "on side"]);
+
+        git(&["checkout", "main"]);
+        std::fs::write(path.join("a.txt"), "two\n").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-m", "on main"]);
+
+        git(&["merge", "--no-ff", "--no-edit", "-m", "merge side", "side"]);
+
+        let source = LocalGitSource::new(path.to_path_buf()).unwrap();
+        (dir, source)
+    }
+
+    /// An ordinary commit is `parent..commit`, resolved to SHAs on both sides.
+    #[test]
+    fn commit_comparison_diffs_against_the_parent() {
+        let (_dir, source) = setup_commit_shapes_repo();
+
+        let commit = source.commit_comparison("main^").unwrap();
+        assert_eq!(commit.subject, "on main");
+        assert_eq!(commit.parent_count, 1);
+        assert_eq!(commit.comparison.head, commit.hash);
+        assert_eq!(
+            commit.comparison.base,
+            source.describe_ref("main^^").unwrap().sha,
+            "the base is the parent's SHA, not the `^` expression"
+        );
+    }
+
+    /// A root commit has nothing before it, so it is diffed against the empty
+    /// tree — which is what makes every file in it read as added.
+    #[test]
+    fn commit_comparison_reads_a_root_commit_against_the_empty_tree() {
+        let (_dir, source) = setup_commit_shapes_repo();
+
+        let root = source.commit_comparison("main^^").unwrap();
+        assert_eq!(root.subject, "root");
+        assert_eq!(root.parent_count, 0);
+        assert_eq!(root.comparison.base, LocalGitSource::EMPTY_TREE);
+        assert_eq!(root.comparison.head, root.hash);
+    }
+
+    /// A merge takes its first parent — the mainline diff — and reports the
+    /// parent count so the caller can say that is what it did.
+    #[test]
+    fn commit_comparison_takes_a_merges_first_parent() {
+        let (_dir, source) = setup_commit_shapes_repo();
+
+        let merge = source.commit_comparison("main").unwrap();
+        assert_eq!(merge.subject, "merge side");
+        assert_eq!(merge.parent_count, 2);
+        assert_eq!(
+            merge.comparison.base,
+            source.describe_ref("main^1").unwrap().sha
+        );
+        assert_ne!(
+            merge.comparison.base,
+            source.describe_ref("main^2").unwrap().sha
+        );
+    }
+
+    #[test]
+    fn commit_comparison_refuses_what_git_cannot_resolve() {
+        let (_dir, source) = setup_commit_shapes_repo();
+        assert!(source.commit_comparison("no-such-commit").is_err());
+    }
+
     #[test]
     fn split_remote_url_handles_every_form_git_hands_out() {
         for url in [
@@ -3409,6 +4098,160 @@ mod tests {
             .unwrap_err()
             .to_string()
             .starts_with("WORKTREE_EXISTS:"));
+    }
+
+    /// The status wire shape is one flat camelCase object — the UI's
+    /// `WorktreeStatus extends WorktreeInfo`, which a nested field would break
+    /// silently on every row at once.
+    #[test]
+    fn worktree_status_serializes_flat() {
+        let status = WorktreeStatus {
+            worktree: WorktreeInfo {
+                path: "/wt/fix".to_owned(),
+                branch: Some("fix".to_owned()),
+                is_main: false,
+                commit_hash: "abc123".to_owned(),
+                is_detached: false,
+                is_review_managed: true,
+            },
+            has_changes: true,
+        };
+
+        let json = serde_json::to_value(&status).unwrap();
+        assert_eq!(json["path"], "/wt/fix");
+        assert_eq!(json["branch"], "fix");
+        assert_eq!(json["isMain"], false);
+        assert_eq!(json["isReviewManaged"], true);
+        assert_eq!(json["hasChanges"], true);
+    }
+
+    /// A name git doesn't know yet becomes a branch at the repo's HEAD, in a
+    /// worktree of its own.
+    #[test]
+    fn worktree_for_branch_creates_a_new_branch() {
+        use crate::review::central::tests::ENV_LOCK;
+
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _review_home, _repo_dir, source, head_sha) = setup_worktree_test();
+
+        let checkout = source.worktree_for_branch("feature/new-thing").unwrap();
+        assert!(checkout.created);
+        assert_eq!(checkout.branch, "feature/new-thing");
+        assert!(std::path::Path::new(&checkout.path).exists());
+
+        let listed = source.list_worktrees().unwrap();
+        let made = listed
+            .iter()
+            .find(|wt| canonical_or_self(&wt.path) == canonical_or_self(&checkout.path))
+            .expect("the new worktree should be listed");
+        assert_eq!(made.branch.as_deref(), Some("feature/new-thing"));
+        assert!(!made.is_detached);
+        assert!(made.is_review_managed);
+        // Branched from where the repo stood, not from an unborn ref.
+        assert_eq!(made.commit_hash, head_sha);
+    }
+
+    /// A branch that exists but is checked out nowhere gets checked out.
+    #[test]
+    fn worktree_for_branch_checks_out_an_existing_branch() {
+        use crate::review::central::tests::ENV_LOCK;
+
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _review_home, repo_dir, source, _head_sha) = setup_worktree_test();
+        run_git_cmd(repo_dir.path(), &["branch", "already-here"]).unwrap();
+
+        let checkout = source.worktree_for_branch("already-here").unwrap();
+        assert!(checkout.created);
+
+        let listed = source.list_worktrees().unwrap();
+        assert!(listed
+            .iter()
+            .any(|wt| wt.branch.as_deref() == Some("already-here") && !wt.is_main));
+    }
+
+    /// Git refuses one branch in two worktrees, so asking for one it already
+    /// has is answered with that place — including when the place is the repo
+    /// root itself.
+    #[test]
+    fn worktree_for_branch_routes_to_an_existing_checkout() {
+        use crate::review::central::tests::ENV_LOCK;
+
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _review_home, repo_dir, source, _head_sha) = setup_worktree_test();
+
+        let first = source.worktree_for_branch("shared").unwrap();
+        assert!(first.created);
+        let again = source.worktree_for_branch("shared").unwrap();
+        assert!(!again.created);
+        assert_eq!(
+            canonical_or_self(&again.path),
+            canonical_or_self(&first.path)
+        );
+
+        let current = source.get_current_branch().unwrap();
+        let main = source.worktree_for_branch(&current).unwrap();
+        assert!(!main.created);
+        assert_eq!(
+            canonical_or_self(&main.path),
+            canonical_or_self(repo_dir.path())
+        );
+    }
+
+    #[test]
+    fn remove_worktree_refuses_uncommitted_changes() {
+        use crate::review::central::tests::ENV_LOCK;
+
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _review_home, _repo_dir, source, _head_sha) = setup_worktree_test();
+
+        let checkout = source.worktree_for_branch("dirty-one").unwrap();
+        let stray = std::path::Path::new(&checkout.path).join("scratch.txt");
+        std::fs::write(&stray, "work in progress\n").unwrap();
+
+        // Untracked counts: it is exactly what `git worktree remove` would
+        // refuse to discard without --force, which the UI never offers.
+        let status = source.list_worktree_status().unwrap();
+        assert!(status.iter().any(|s| canonical_or_self(&s.worktree.path)
+            == canonical_or_self(&checkout.path)
+            && s.has_changes));
+
+        let err = source.remove_worktree(&checkout.path).unwrap_err();
+        assert!(
+            err.to_string().contains("uncommitted changes"),
+            "unexpected error: {err}"
+        );
+        assert!(std::path::Path::new(&checkout.path).exists());
+
+        std::fs::remove_file(&stray).unwrap();
+        source.remove_worktree(&checkout.path).unwrap();
+        assert!(!std::path::Path::new(&checkout.path).exists());
+    }
+
+    #[test]
+    fn remove_worktree_refuses_the_main_checkout_and_foreign_paths() {
+        use crate::review::central::tests::ENV_LOCK;
+
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _review_home, repo_dir, source, _head_sha) = setup_worktree_test();
+
+        let main = repo_dir.path().to_string_lossy().to_string();
+        let err = source.remove_worktree(&main).unwrap_err();
+        assert!(
+            err.to_string().contains("main checkout"),
+            "unexpected error: {err}"
+        );
+        assert!(repo_dir.path().exists());
+
+        let elsewhere = tempfile::tempdir().unwrap();
+        let err = source
+            .remove_worktree(&elsewhere.path().to_string_lossy())
+            .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("Not a worktree of this repository"),
+            "unexpected error: {err}"
+        );
+        assert!(elsewhere.path().exists());
     }
 
     /// A remote-tracking branch (e.g. `origin/feature`) should be reviewable

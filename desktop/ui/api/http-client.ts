@@ -13,8 +13,11 @@ import type {
 import { TerminalSocket } from "./terminal-socket";
 import type {
   BranchList,
+  RefEntry,
+  RefDescription,
   ClassifyResponse,
   Comparison,
+  CommitComparison,
   CommitDetail,
   CommitEntry,
   HunkAttribution,
@@ -53,6 +56,8 @@ import type {
   RouteLanding,
   Attachment,
   WorktreeInfo,
+  WorktreeCheckout,
+  RepoWorktrees,
   TerminalSessionInfo,
   TerminalStarted,
   TerminalStatus,
@@ -200,6 +205,14 @@ export class HttpClient implements ApiClient {
     return this.post("/api/git/branches", { repoPath });
   }
 
+  async listRefs(repoPath: string): Promise<RefEntry[]> {
+    return this.post("/api/git/refs", { repoPath });
+  }
+
+  async describeRef(repoPath: string, gitRef: string): Promise<RefDescription> {
+    return this.post("/api/git/describe-ref", { repoPath, gitRef });
+  }
+
   async getGitStatus(repoPath: string): Promise<GitStatusSummary> {
     return this.post("/api/git/status", { repoPath });
   }
@@ -281,6 +294,13 @@ export class HttpClient implements ApiClient {
     return this.post("/api/git/commit-detail", { repoPath, hash });
   }
 
+  async getCommitComparison(
+    repoPath: string,
+    gitRef: string,
+  ): Promise<CommitComparison> {
+    return this.post("/api/git/commit-comparison", { repoPath, gitRef });
+  }
+
   async getHunkAttribution(
     repoPath: string,
     base: string,
@@ -353,15 +373,23 @@ export class HttpClient implements ApiClient {
     return this.post("/api/worktree/remove", { repoPath, worktreePath });
   }
 
-  async resolveRef(repoPath: string, gitRef: string): Promise<string> {
-    return this.post("/api/git/resolve-ref", { repoPath, gitRef });
+  async listWorktreeStatus(repoPaths: string[]): Promise<RepoWorktrees[]> {
+    return this.post("/api/worktree/status", { repoPaths });
   }
 
-  async hasWorktreeChanges(
+  async createWorktree(
     repoPath: string,
-    worktreePath: string,
-  ): Promise<boolean> {
-    return this.post("/api/worktree/has-changes", { repoPath, worktreePath });
+    branch: string,
+  ): Promise<WorktreeCheckout> {
+    return this.post("/api/worktree/for-branch", { repoPath, branch });
+  }
+
+  async removeWorktree(repoPath: string, worktreePath: string): Promise<void> {
+    return this.post("/api/worktree/delete", { repoPath, worktreePath });
+  }
+
+  async resolveRef(repoPath: string, gitRef: string): Promise<string> {
+    return this.post("/api/git/resolve-ref", { repoPath, gitRef });
   }
 
   async updateWorktreeHead(
@@ -397,6 +425,10 @@ export class HttpClient implements ApiClient {
 
   async listRepoFiles(repoPath: string): Promise<FileEntry[]> {
     return this.post("/api/files/list-repo", { repoPath });
+  }
+
+  async listFilesAtRef(repoPath: string, gitRef: string): Promise<FileEntry[]> {
+    return this.post("/api/files/list-at-ref", { repoPath, gitRef });
   }
 
   async listDirectoryContents(
@@ -891,11 +923,16 @@ export class HttpClient implements ApiClient {
     return this.post("/api/files/read-raw", { path });
   }
 
-  async getFileRawContent(
+  async getFileContentAtRef(
     repoPath: string,
     filePath: string,
+    gitRef: string,
   ): Promise<FileContent> {
-    return this.post("/api/files/raw-content", { repoPath, filePath });
+    return this.post("/api/files/content-at-ref", {
+      repoPath,
+      filePath,
+      gitRef,
+    });
   }
 
   async listDirectoryPlain(dirPath: string): Promise<FileEntry[]> {

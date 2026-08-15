@@ -25,6 +25,7 @@ import type {
 } from "@pierre/diffs";
 import type { CodeViewOptions } from "@pierre/diffs";
 import { useReviewStore } from "../../stores";
+import { viewOnly } from "../../stores/selectors/ephemeral";
 import { stringHash } from "../../utils/string-hash";
 import type { DiffHunk, LineAnnotation } from "../../types";
 import type { SupportedLanguages } from "./languageMap";
@@ -152,6 +153,10 @@ export function FileCodeView({
   shape,
 }: FileCodeViewProps): ReactNode {
   const diffOverflow = useReviewStore((s) => s.diffOverflow);
+  // No comment gutter and no comments rendered when the content on screen
+  // isn't something a decision can be filed against. Degrade visibly: the
+  // affordance is gone, not present-but-broken.
+  const readOnly = useReviewStore(viewOnly);
 
   const isDiff = content.kind === "diff";
   // Only ever set for a plain file — a diff has its own notion of elision.
@@ -236,11 +241,12 @@ export function FileCodeView({
   // Shape mode is a reading posture, not an editing surface: comments and
   // their editors stay out of the synthesized document, whose line numbers
   // wouldn't line up with the real file anyway.
-  const annotations = shapeMode
-    ? EMPTY_ANNOTATIONS
-    : isDiff
-      ? diffModel.lineAnnotations
-      : plainModel.lineAnnotations;
+  const annotations =
+    shapeMode || readOnly
+      ? EMPTY_ANNOTATIONS
+      : isDiff
+        ? diffModel.lineAnnotations
+        : plainModel.lineAnnotations;
   const renderRevision = isDiff
     ? diffModel.renderRevision
     : plainModel.renderRevision;
@@ -341,7 +347,7 @@ export function FileCodeView({
       // Shape mode reads a synthesized document: pierre's 1..N numbering would
       // be wrong, so it is switched off and ShapeGutter draws the real numbers.
       disableLineNumbers: shapeMode,
-      enableGutterUtility: !shapeMode,
+      enableGutterUtility: !shapeMode && !readOnly,
       enableLineSelection: isDiff,
       onGutterUtilityClick: handleGutterUtilityClick,
       onLineSelectionEnd: diffModel.handleLineSelectionEnd,

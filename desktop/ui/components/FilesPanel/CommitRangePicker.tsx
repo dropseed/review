@@ -3,10 +3,12 @@ import {
   type ReactNode,
   useMemo,
   useRef,
+  useState,
   useEffect,
 } from "react";
 import { toast } from "sonner";
 import { useReviewStore } from "../../stores";
+import { openCommitView } from "./openCommit";
 import {
   commitRangeFor,
   uncommittedRange,
@@ -78,6 +80,11 @@ export function CommitRangePicker(): ReactNode {
   const baseReason = useReviewStore((s) => s.baseReason);
   const reviewRef = useReviewStore((s) => s.reviewRef);
   const setBaseOverride = useReviewStore((s) => s.setBaseOverride);
+
+  // Controlled so a row's "View" can close the menu itself: that button stops
+  // the click before Radix sees it (otherwise the row would also narrow the
+  // range), which takes the automatic dismissal with it.
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // What git already knows about the two branches this comparison spans: how
   // much of the head is unpublished, and how far the *base* has fallen behind
@@ -249,7 +256,7 @@ export function CommitRangePicker(): ReactNode {
 
   return (
     <div className="shrink-0 border-b border-edge/60">
-      <DropdownMenu>
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
@@ -376,7 +383,7 @@ export function CommitRangePicker(): ReactNode {
                   onSelect={(e: Event) => {
                     if (shiftRef.current) e.preventDefault();
                   }}
-                  className={selected ? "bg-focus-ring/10" : undefined}
+                  className={`group/commit ${selected ? "bg-focus-ring/10" : ""}`}
                 >
                   <span className="w-6 shrink-0 text-right font-mono text-xxs text-fg-faint">
                     #{ordinal}
@@ -387,6 +394,23 @@ export function CommitRangePicker(): ReactNode {
                   <span className="min-w-0 flex-1 truncate">
                     {truncateSubject(c.message, 40)}
                   </span>
+                  {/* The row's second verb. Clicking the row narrows the
+                      review to this commit — a decision about what you are
+                      reviewing; this just shows it, and persists nothing. */}
+                  <button
+                    type="button"
+                    aria-label={`View commit ${c.shortHash}`}
+                    onClick={(e: MouseEvent) => {
+                      e.stopPropagation();
+                      setMenuOpen(false);
+                      void openCommitView(c.hash);
+                    }}
+                    className="shrink-0 rounded px-1 py-0.5 text-xxs font-medium text-fg-faint
+                               opacity-0 hover:bg-fg/[0.08] hover:text-fg-secondary
+                               focus-visible:opacity-100 group-hover/commit:opacity-100"
+                  >
+                    View
+                  </button>
                   {selected && SELECTED_CHECK}
                 </DropdownMenuItem>
               );

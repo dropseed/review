@@ -80,6 +80,27 @@ pub fn list_repo_files(repo_path: &Path) -> anyhow::Result<Vec<FileEntry>> {
     Ok(result)
 }
 
+/// List every file in the repository as of `git_ref` (browse-as-of).
+///
+/// Object-database reads only — the checkout is neither changed nor consulted.
+pub fn list_files_at_ref(repo_path: &Path, git_ref: &str) -> anyhow::Result<Vec<FileEntry>> {
+    let t0 = Instant::now();
+    debug!(
+        "[list_files_at_ref] repo_path={}, git_ref={git_ref}",
+        repo_path.display()
+    );
+    let source = LocalGitSource::new(repo_path.to_path_buf()).context("Failed to open repo")?;
+    let result = source
+        .list_files_at_ref(git_ref)
+        .with_context(|| format!("Failed to list files at {git_ref}"))?;
+    info!(
+        "[list_files_at_ref] SUCCESS: {} entries at {git_ref} in {:?}",
+        result.len(),
+        t0.elapsed()
+    );
+    Ok(result)
+}
+
 /// List contents of a directory (for lazy-loading gitignored directories).
 pub fn list_directory_contents(repo_path: &Path, dir_path: &str) -> anyhow::Result<Vec<FileEntry>> {
     debug!(
@@ -777,11 +798,18 @@ pub fn read_raw_file(path: &Path) -> anyhow::Result<FileContent> {
     Ok(result)
 }
 
-/// Get raw file content at HEAD from a git repo (no diff, browse mode).
-pub fn get_file_raw_content(repo_path: &Path, file_path: &str) -> anyhow::Result<FileContent> {
+/// Get a file's content as of `git_ref` — no diff, no working-tree read.
+///
+/// The returned [`FileContent`] carries no hunks and no old side: at a ref
+/// there is nothing to compare against, and the viewer renders it plain.
+pub fn get_file_content_at_ref(
+    repo_path: &Path,
+    file_path: &str,
+    git_ref: &str,
+) -> anyhow::Result<FileContent> {
     let t0 = Instant::now();
     debug!(
-        "[get_file_raw_content] repo_path={}, file_path={file_path}",
+        "[get_file_content_at_ref] repo_path={}, file_path={file_path}, git_ref={git_ref}",
         repo_path.display()
     );
 
@@ -791,12 +819,12 @@ pub fn get_file_raw_content(repo_path: &Path, file_path: &str) -> anyhow::Result
     let source = LocalGitSource::new(repo_path.to_path_buf()).context("Failed to open repo")?;
 
     let bytes = source
-        .get_file_bytes(file_path, "HEAD")
-        .context("Failed to get file at HEAD")?;
+        .get_file_bytes(file_path, git_ref)
+        .with_context(|| format!("Failed to get {file_path} at {git_ref}"))?;
 
     let result = bytes_to_file_content(bytes, file_path)?;
     info!(
-        "[get_file_raw_content] SUCCESS file={file_path} in {:?}",
+        "[get_file_content_at_ref] SUCCESS file={file_path} at {git_ref} in {:?}",
         t0.elapsed()
     );
     Ok(result)

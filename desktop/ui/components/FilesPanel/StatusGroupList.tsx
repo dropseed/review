@@ -25,6 +25,7 @@ import { FileSelectionProvider } from "./FilesPanelContext";
 import { FilenameModal } from "./FilenameModal";
 import { SORT_LABELS, SELECTED_CHECK } from "./PanelToolbar";
 import type { ProcessedFileEntry } from "./types";
+import { collectDirPaths } from "./FileTree.utils";
 
 const TRUST_ICON = (
   <svg
@@ -112,19 +113,8 @@ const UNDO_ICON = (
   </svg>
 );
 
-function collectDirPaths(entries: ProcessedFileEntry[]): Set<string> {
-  const paths = new Set<string>();
-  function walk(items: ProcessedFileEntry[]) {
-    for (const entry of items) {
-      if (entry.isDirectory && entry.matchesFilter) {
-        for (const p of entry.compactedPaths) paths.add(p);
-        if (entry.children) walk(entry.children);
-      }
-    }
-  }
-  walk(entries);
-  return paths;
-}
+const matchesFilter = (entry: ProcessedFileEntry): boolean =>
+  entry.matchesFilter;
 
 interface QuickActionItem {
   label: string;
@@ -529,19 +519,19 @@ export function StatusGroupList({
 
   // Per-section dir paths for expand/collapse (only needed in tree mode)
   const needsReviewDirPaths = useMemo(
-    () => collectDirPaths(sectionedFiles.needsReview),
+    () => collectDirPaths(sectionedFiles.needsReview, matchesFilter),
     [sectionedFiles.needsReview],
   );
   const savedForLaterDirPaths = useMemo(
-    () => collectDirPaths(sectionedFiles.savedForLater),
+    () => collectDirPaths(sectionedFiles.savedForLater, matchesFilter),
     [sectionedFiles.savedForLater],
   );
   const reviewedDirPaths = useMemo(
-    () => collectDirPaths(sectionedFiles.reviewed),
+    () => collectDirPaths(sectionedFiles.reviewed, matchesFilter),
     [sectionedFiles.reviewed],
   );
   const trustedDirPaths = useMemo(
-    () => collectDirPaths(sectionedFiles.trusted),
+    () => collectDirPaths(sectionedFiles.trusted, matchesFilter),
     [sectionedFiles.trusted],
   );
 

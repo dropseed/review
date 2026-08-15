@@ -7,6 +7,8 @@ import {
   useRef,
 } from "react";
 import { useReviewStore } from "../../stores";
+import { browseRef } from "../../stores/selectors/browse";
+import { viewOnly } from "../../stores/selectors/ephemeral";
 import { getApiClient } from "../../api";
 import { useFileViewerState } from "./hooks/useFileViewerState";
 import type { DiffHunk, FileContent, FileEntry } from "../../types";
@@ -104,6 +106,24 @@ export function FileViewer({
   const isWorkingTreeMode = workingTreeDiffFile === filePath;
   const workingTreeDiffMode = useReviewStore((s) => s.workingTreeDiffMode);
   const isStandaloneFile = useReviewStore((s) => s.isStandaloneFile);
+
+  // The ref this file is being *read at*, when that isn't the working tree's
+  // revision. Kept apart from `viewOnly` below because this one names a ref and
+  // has to exclude the three modes that read a file off disk regardless of the
+  // pin — what to fetch, and what to fetch it from, is a per-file question.
+  const browsePin = useReviewStore(browseRef);
+  const filesPanelTab = useReviewStore((s) => s.filesPanelTab);
+  const pinnedRef =
+    filesPanelTab === "browse" &&
+    !isExternalFile &&
+    !isStandaloneFile &&
+    !isWorkingTreeMode
+      ? browsePin
+      : null;
+
+  // Nothing here can be decided on or annotated — see `viewOnly` for the three
+  // ways to get there. The affordance goes rather than half-working.
+  const isViewOnly = useReviewStore(viewOnly);
   const isSplitActive = useReviewStore((s) => s.secondaryFile) !== null;
   const splitOrientation = useReviewStore((s) => s.splitOrientation);
   const showOutline = useReviewStore((s) => s.showOutline);
@@ -399,9 +419,13 @@ export function FileViewer({
         filePath,
         workingTreeDiffMode === "staged",
       );
+    } else if (pinnedRef) {
+      // Browsing as of a ref: read the blob out of the object database. No
+      // diff, and nothing on disk is consulted.
+      contentPromise = api.getFileContentAtRef(repoPath, filePath, pinnedRef);
     } else if (comparison === null) {
       // Browse mode: get raw file content at HEAD (no diff needed)
-      contentPromise = api.getFileRawContent(repoPath, filePath);
+      contentPromise = api.getFileContentAtRef(repoPath, filePath, "HEAD");
     } else {
       const effectiveComparison =
         isWorkingTreeMode && gitStatus
@@ -438,8 +462,15 @@ export function FileViewer({
         setLoading(false);
         // Sync store hunks with fresh per-file data so the sidebar
         // stays consistent with what the diff view actually renders.
-        // Skip sync for working tree diffs, standalone files, and external files.
-        if (!isWorkingTreeMode && !isStandaloneFile && !isExternalFile) {
+        // Skip sync for working tree diffs, standalone files, external files,
+        // and a pinned ref — that read carries no hunks, and syncing its empty
+        // list would erase the comparison's hunks for this file.
+        if (
+          !isWorkingTreeMode &&
+          !isStandaloneFile &&
+          !isExternalFile &&
+          !pinnedRef
+        ) {
           useReviewStore.getState().syncFileHunks(filePath, result.hunks);
         }
       })
@@ -465,6 +496,7 @@ export function FileViewer({
     isStandaloneFile,
     isExternalFile,
     externalFilePath,
+    pinnedRef,
   ]);
 
   // Symbols must describe the revision the content above was fetched from:
@@ -474,7 +506,7 @@ export function FileViewer({
   const symbolsRef =
     isExternalFile || isStandaloneFile || isWorkingTreeMode
       ? undefined
-      : (comparison?.head ?? "HEAD");
+      : (pinnedRef ?? comparison?.head ?? "HEAD");
   // workingTreePath, not repoPath: the no-ref branch reads the file off disk,
   // and for a materialized review the disk copy being rendered lives in the
   // worktree. The ref branch resolves identically from either root.
@@ -767,7 +799,9 @@ export function FileViewer({
         contentMode={contentMode}
         hasChanges={hasChanges}
         isNewFile={isNewFile}
-        reviewProgress={isWorkingTreeMode ? undefined : reviewProgress}
+        reviewProgress={
+          isWorkingTreeMode || pinnedRef !== null ? undefined : reviewProgress
+        }
         effectiveLanguage={effectiveLanguage}
         detectedLanguage={detectedLanguage}
         isLanguageOverridden={languageOverride !== undefined}
@@ -779,7 +813,7 @@ export function FileViewer({
         onMarkdownViewModeChange={setMarkdownViewMode}
         onSvgViewModeChange={setSvgViewMode}
         onClearHighlight={handleClearHighlight}
-        onAddFileComment={handleAddFileComment}
+        onAddFileComment={isViewOnly ? undefined : handleAddFileComment}
         onSplitOrRotate={handleSplitOrRotate}
         isSplitActive={isSplitActive}
         splitOrientation={splitOrientation}
@@ -804,8 +838,10 @@ export function FileViewer({
         }
       />
 
-      {/* File-level annotations */}
-      {(fileAnnotations.length > 0 || fileCommentEditorOpen) && (
+      {/* File-level annotations. Hidden on a view-only surface for the same
+          reason the gutter is: they were written against the review's own
+          revision, not the one on screen. */}
+      {!isViewOnly && (fileAnnotations.length > 0 || fileCommentEditorOpen) && (
         <div className="border-b border-edge/50">
           {fileAnnotations.map((annotation) => {
             const isEditing = editingFileCommentId === annotation.id;

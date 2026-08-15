@@ -148,6 +148,33 @@ function computeRolledUpRenamedFrom(
   return undefined;
 }
 
+/**
+ * Every directory path in a processed tree — what expand-all has to name.
+ *
+ * Compaction is why this can't be read off the entries directly: a run of
+ * single-child directories renders as one row carrying all of their paths, and
+ * expanding it has to open every one.
+ *
+ * `include` decides which directories count *and* where descent stops, which is
+ * the same thing: a directory the caller has filtered out isn't on screen, so
+ * neither are its children.
+ */
+export function collectDirPaths(
+  entries: ProcessedFileEntry[],
+  include: (entry: ProcessedFileEntry) => boolean = () => true,
+): Set<string> {
+  const paths = new Set<string>();
+  function walk(items: ProcessedFileEntry[]): void {
+    for (const entry of items) {
+      if (!entry.isDirectory || !include(entry)) continue;
+      for (const p of entry.compactedPaths) paths.add(p);
+      if (entry.children) walk(entry.children);
+    }
+  }
+  walk(entries);
+  return paths;
+}
+
 export function processTree(
   entries: FileEntry[],
   hunkStatusMap: Map<string, FileHunkStatus>,

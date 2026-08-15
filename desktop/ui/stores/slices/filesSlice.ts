@@ -14,10 +14,11 @@ import { buildFileDiff } from "../../types";
 import type { ReviewScope } from "../../types/scope";
 import type { CommitRange } from "../../types/commitRange";
 import { sameRange } from "../../types/commitRange";
-import type { SliceCreatorWithClient } from "../types";
+import type { ReviewStore, SliceCreatorWithClient } from "../types";
 import { createDebouncedFn, flattenFiles, isChangedStatus } from "../types";
 import { mergeDeltaHunks, patchFileTree } from "../filesDelta";
 import type { UndoEntry } from "./undoSlice";
+import { ephemeralResetState } from "./ephemeralSlice";
 import { symbolsResetState, repoSymbolsResetState } from "./symbolsSlice";
 import { classificationResetState } from "./classificationSlice";
 import { EMPTY_STAGED_SET } from "./gitSlice";
@@ -28,6 +29,29 @@ import { debouncedUndoSave } from "./undoSlice";
 export function cancelPendingSaves(): void {
   debouncedSave.cancel();
   debouncedUndoSave.cancel();
+}
+
+/**
+ * Settle what the outgoing diff still owes, before the reset below throws its
+ * state away: sidebar progress written, debounced saves cancelled, activities
+ * cleared.
+ *
+ * `snapshot` records where the user was so the swap can be stepped back out of.
+ * It is off for a swap that is *itself* the way back — leaving a commit peek
+ * restores the file the peek interrupted, and snapshotting there would
+ * overwrite that with the commit's own.
+ */
+export function beginDiffSwap(
+  state: Pick<
+    ReviewStore,
+    "flushSidebarProgress" | "saveNavigationSnapshot" | "clearAllActivities"
+  >,
+  { snapshot }: { snapshot: boolean },
+): void {
+  state.flushSidebarProgress();
+  cancelPendingSaves();
+  if (snapshot) state.saveNavigationSnapshot();
+  state.clearAllActivities();
 }
 
 // IMPORTANT: These patterns MUST stay in sync with the Rust implementation
@@ -274,7 +298,7 @@ const movePairRefresh = createDebouncedFn(MOVE_PAIR_DEBOUNCE_MS);
  * Everything derived from one `base..head` diff. Cleared whenever the diff
  * being shown changes — including a commit-range narrowing, which re-diffs.
  */
-const diffDataResetState = {
+export const diffDataResetState = {
   // Files
   files: [] as FileEntry[],
   allFiles: [] as FileEntry[],
@@ -322,6 +346,7 @@ const reviewIdentityResetState = {
   reviewComparison: null as Comparison | null,
   commitRange: null as CommitRange | null,
   reviewState: null,
+  ...ephemeralResetState,
   // History
   attribution: null as HunkAttribution | null,
   attributionLoading: false,
@@ -396,10 +421,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
     },
 
     setComparison: (resolved) => {
-      get().flushSidebarProgress();
-      cancelPendingSaves();
-      get().saveNavigationSnapshot();
-      get().clearAllActivities();
+      beginDiffSwap(get(), { snapshot: true });
       // Clear stale data and signal that new data is loading. Identity fields
       // are set after the reset spread so they win.
       set({
@@ -417,10 +439,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
       if (!reviewComparison) return;
       if (sameRange(range, commitRange)) return;
 
-      get().flushSidebarProgress();
-      cancelPendingSaves();
-      get().saveNavigationSnapshot();
-      get().clearAllActivities();
+      beginDiffSwap(get(), { snapshot: true });
 
       // Only the diff data resets. The review's identity — and with it the
       // branch's commit list, which is what the picker offers ranges from —
@@ -433,10 +452,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
     },
 
     switchReview: (path, resolved) => {
-      get().flushSidebarProgress();
-      cancelPendingSaves();
-      get().saveNavigationSnapshot();
-      get().clearAllActivities();
+      beginDiffSwap(get(), { snapshot: true });
 
       // Atomic update: sets repoPath and the active review together with the
       // union of resets from setRepoPath and setComparison, preventing the

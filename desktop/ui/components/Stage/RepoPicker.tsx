@@ -1,12 +1,16 @@
 import { type ReactNode, useMemo, useRef, useState } from "react";
 import { clsx } from "clsx";
-import { scoreCandidate } from "../../lib/fuzzy";
+import { rankCandidates } from "../../lib/fuzzy";
+import type { WorktreeStatus } from "../../types";
 import {
   repoChoiceKey,
   shortPath,
   useRepoChoices,
   type RepoChoice,
 } from "./repo-choices";
+import { NewWorktreeForm } from "./NewWorktreeForm";
+import { removeWorktreeAt } from "./worktree-actions";
+import { useWorktreeInUse, useWorktreeStatus } from "./worktree-facts";
 
 /**
  * How many checkouts a pick is ever chosen from. The list is a shortlist, not
@@ -26,6 +30,13 @@ const MAX_ROWS = 10;
  * right half — because "which repo" is one question and two answers to it would
  * drift on ordering and on what counts as a repo. The caller supplies the frame
  * (a popover, or a panel) and what happens on a pick.
+ *
+ * It is also where worktrees are made and removed, for the same reason it is
+ * where they are opened: the moment you are choosing which checkout to work in
+ * is the moment you can see that one is missing, or that four are stale. The
+ * facts on a row are the ones a git client would show — the branch, whether it
+ * holds uncommitted work, whether Review made it, and whether anything in the
+ * app is currently pointed at it.
  */
 export function RepoPicker({
   attached,
@@ -44,29 +55,35 @@ export function RepoPicker({
   const choices = useRepoChoices();
   const [query, setQuery] = useState("");
   const [highlight, setHighlight] = useState(0);
+  const [creatingIn, setCreatingIn] = useState<RepoChoice | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const shown = useMemo(() => {
-    const trimmed = query.trim();
-    if (!trimmed) return choices.slice(0, MAX_ROWS);
-    return choices
-      .map((choice) => ({
-        choice,
-        score:
-          scoreCandidate(trimmed, [
-            { key: "name", text: choice.name, weight: 1 },
-            // Nearly as heavily as the name: a worktree is reached for by the
-            // branch it holds, which is the only thing distinguishing its row
-            // from the repo's own.
-            { key: "ref", text: choice.refName ?? "", weight: 0.9 },
-            { key: "path", text: choice.path, weight: 0.6 },
-          ])?.score ?? 0,
-      }))
-      .filter((scored) => scored.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, MAX_ROWS)
-      .map((scored) => scored.choice);
-  }, [choices, query]);
+  // Distinct repos, in list order: a repo contributes a row per worktree, and
+  // the status call takes each repository once.
+  const repoPaths = useMemo(
+    () => [...new Set(choices.map((choice) => choice.path))],
+    [choices],
+  );
+  const { byPath, refresh } = useWorktreeStatus(repoPaths);
+  const inUse = useWorktreeInUse();
+
+  const shown = useMemo(
+    () =>
+      rankCandidates(
+        query,
+        choices,
+        (choice) => [
+          { key: "name", text: choice.name, weight: 1 },
+          // Nearly as heavily as the name: a worktree is reached for by the
+          // branch it holds, which is the only thing distinguishing its row
+          // from the repo's own.
+          { key: "ref", text: choice.refName ?? "", weight: 0.9 },
+          { key: "path", text: choice.path, weight: 0.6 },
+        ],
+        MAX_ROWS,
+      ),
+    [choices, query],
+  );
 
   // Two repos called the same thing are told apart by where they are. Counted
   // over distinct *paths* rather than over rows: a repo and its worktrees are
@@ -113,6 +130,21 @@ export function RepoPicker({
     }
   }
 
+  // The form takes the whole body: one popover, one question at a time.
+  if (creatingIn) {
+    return (
+      <NewWorktreeForm
+        repo={creatingIn}
+        onCancel={() => setCreatingIn(null)}
+        onCreated={(choice) => {
+          setCreatingIn(null);
+          void refresh();
+          onPick(choice);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="flex min-h-0 flex-col">
       <input
@@ -143,63 +175,175 @@ export function RepoPicker({
           shown.map((choice, index) => {
             const key = repoChoiceKey(choice.path, choice.refName);
             const isOpen = attached.has(key);
+            // Only rows standing for a directory on disk have a worktree to
+            // report on, and only when the status read for that repo landed —
+            // with no answer, a row is what it always was: somewhere to go.
+            const worktree = choice.worktreePath
+              ? (byPath.get(choice.worktreePath) ?? null)
+              : null;
             return (
-              <button
+              <div
                 key={key}
-                type="button"
-                onClick={() => onPick(choice)}
+                role="listitem"
                 onMouseMove={() => setHighlight(index)}
-                title={choice.worktreePath ?? choice.path}
                 className={clsx(
-                  `flex w-full items-baseline gap-2 rounded-md px-2.5 py-1.5
-                 text-left text-sm outline-none hover:bg-fg/[0.06]
-                 focus-visible:ring-1 focus-visible:ring-focus-ring/70`,
+                  "group/row flex items-center rounded-md hover:bg-fg/[0.06]",
                   index === at && "bg-fg/[0.06]",
                 )}
               >
-                {/* The repo name is capped rather than flexible, so it gives
+                <button
+                  type="button"
+                  onClick={() => onPick(choice)}
+                  title={choice.worktreePath ?? choice.path}
+                  className={`flex min-w-0 flex-1 items-baseline gap-2 rounded-md
+                            px-2.5 py-1.5 text-left text-sm outline-none
+                            focus-visible:ring-1 focus-visible:ring-focus-ring/70`}
+                >
+                  {/* The repo name is capped rather than flexible, so it gives
                     up its space before it gives up its identity: with six
                     worktrees of one repo listed, an evenly-shrinking row
                     truncated every column at once and left a column of
                     "pullapp…" against "pulla…" — six rows that looked
                     identical and differed only in the part that had been
                     truncated away. */}
-                <span
-                  className={clsx(
-                    "max-w-[45%] shrink-0 truncate",
-                    isOpen ? "text-fg-muted" : "text-fg-secondary",
-                  )}
-                >
-                  {choice.name}
-                </span>
-                {/* The ref takes what's left, because on a list of one repo's
+                  <span
+                    className={clsx(
+                      "max-w-[45%] shrink-0 truncate",
+                      isOpen ? "text-fg-muted" : "text-fg-secondary",
+                    )}
+                  >
+                    {choice.name}
+                  </span>
+                  {/* The ref takes what's left, because on a list of one repo's
                     checkouts it is the only thing telling them apart — the
                     name is the same word six times. */}
-                {choice.refName && (
-                  <span className="min-w-0 flex-1 truncate text-xs text-fg-faint">
-                    {choice.refName}
-                  </span>
-                )}
-                {/* Last in the shrink order and last on the row: the path only
+                  {choice.refName && (
+                    <span className="min-w-0 flex-1 truncate text-xs text-fg-faint">
+                      {choice.refName}
+                    </span>
+                  )}
+                  {/* Last in the shrink order and last on the row: the path only
                     ever separates two *repos* of the same name, so on a list of
                     one repo's branches it repeats itself and is worth nothing.
                     `ml-auto` on it alone keeps the trailing edge stable whether
                     or not the row has a ref. */}
-                {ambiguous.has(choice.name) && (
-                  <span className="ml-auto max-w-[45%] shrink truncate text-xs text-fg-faint/70">
-                    {shortPath(choice.path)}
-                  </span>
+                  {ambiguous.has(choice.name) && (
+                    <span className="ml-auto max-w-[45%] shrink truncate text-xs text-fg-faint/70">
+                      {shortPath(choice.path)}
+                    </span>
+                  )}
+                  {worktree && (
+                    <WorktreeFacts
+                      worktree={worktree}
+                      unused={!isOpen && !inUse(choice.path, worktree)}
+                    />
+                  )}
+                  {isOpen && (
+                    <span className="ml-auto shrink-0 text-xs text-fg-faint">
+                      open
+                    </span>
+                  )}
+                </button>
+                {/* The repo's own row makes worktrees; a worktree's row
+                    removes itself. A worktree row with no status read is
+                    neither — offering to delete a checkout we could not look
+                    at is how a UI flag becomes a lost afternoon. */}
+                {choice.worktreePath === null ? (
+                  <RowAction
+                    label={`New worktree in ${choice.name}`}
+                    glyph="+"
+                    onClick={() => setCreatingIn(choice)}
+                  />
+                ) : (
+                  worktree && (
+                    <RowAction
+                      label={`Remove worktree ${worktree.branch ?? worktree.path}`}
+                      glyph="×"
+                      onClick={() => {
+                        void removeWorktreeAt(choice.path, worktree).then(
+                          (removed) => {
+                            if (removed) void refresh();
+                          },
+                        );
+                      }}
+                    />
+                  )
                 )}
-                {isOpen && (
-                  <span className="ml-auto shrink-0 text-xs text-fg-faint">
-                    open
-                  </span>
-                )}
-              </button>
+              </div>
             );
           })
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * What a git client would tell you about a checkout at a glance: whether it
+ * holds uncommitted work, whether Review made it, and whether anything in the
+ * app is pointed at it.
+ *
+ * Deliberately quiet. A worktree row is still just "this repo, at this branch",
+ * and these are the states worth interrupting that for — the two that decide
+ * whether a row can be deleted, and the one that says who it belongs to.
+ */
+function WorktreeFacts({
+  worktree,
+  unused,
+}: {
+  worktree: WorktreeStatus;
+  unused: boolean;
+}): ReactNode {
+  return (
+    <span className="ml-auto flex shrink-0 items-baseline gap-1.5 text-xs">
+      {worktree.hasChanges && (
+        <span className="text-status-modified" title="Uncommitted changes">
+          ●
+        </span>
+      )}
+      {worktree.isReviewManaged && (
+        <span className="text-fg-faint/70" title="Review made this worktree">
+          review
+        </span>
+      )}
+      {unused && (
+        <span
+          className="text-fg-faint/70"
+          title="No workspace or terminal is using this worktree"
+        >
+          unused
+        </span>
+      )}
+    </span>
+  );
+}
+
+/**
+ * The verb at the end of a row, revealed by hovering it.
+ *
+ * A sibling of the row button rather than a child: a button inside a button is
+ * invalid, and the row's own click must stay "open this".
+ */
+function RowAction({
+  label,
+  glyph,
+  onClick,
+}: {
+  label: string;
+  glyph: string;
+  onClick: () => void;
+}): ReactNode {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className="shrink-0 rounded-md px-2 py-1.5 text-sm leading-none text-fg-faint
+                 opacity-0 transition-opacity duration-100 hover:text-fg-secondary
+                 focus-visible:opacity-100 group-hover/row:opacity-100"
+    >
+      {glyph}
+    </button>
   );
 }

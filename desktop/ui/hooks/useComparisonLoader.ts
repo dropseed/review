@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { getApiClient } from "../api";
 import { useReviewStore } from "../stores";
+import { ephemeralView } from "../stores/selectors/ephemeral";
 import { flattenFiles } from "../stores/types";
 
 /**
@@ -115,6 +116,17 @@ export function useComparisonLoader(
 
     async function loadData(): Promise<void> {
       try {
+        // A commit being peeked at: load the diff and stop. Everything below
+        // this either reads or writes review state, and a peek has none by
+        // construction (`setEphemeralView` clears it, `loadReviewState`
+        // refuses to refill it) — so running any of it would at best do
+        // nothing and at worst reconcile the review's decisions against a
+        // comparison the review isn't of.
+        if (ephemeralView(useReviewStore.getState())) {
+          await Promise.all([loadFiles(), loadAllFiles(), loadGitStatus()]);
+          return;
+        }
+
         // Load review state and files in parallel
         // (review state is only needed by classifyStaticHunks, which runs after both complete)
         startActivity("load-state", "Loading review state", 10);

@@ -25,6 +25,10 @@ const COALESCED_READS = new Set<keyof ApiClient>([
   // at once, and kicked off from more than one place on startup.
   "getRemoteInfo",
   "getDefaultBranch",
+  // A `git status` per worktree across every repo, asked for by both picker
+  // front doors — the tab strip's `+` and the empty stage — which can be
+  // mounted at the same moment.
+  "listWorktreeStatus",
 ]);
 
 /**

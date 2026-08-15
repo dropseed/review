@@ -8,6 +8,8 @@
 
 import type {
   BranchList,
+  RefEntry,
+  RefDescription,
   GitStatusSummary,
   Comparison,
   GitHubPrRef,
@@ -16,6 +18,7 @@ import type {
   PullRequest,
   ViewerPrSnapshot,
   CommitEntry,
+  CommitComparison,
   CommitDetail,
   HunkAttribution,
   CommitOutputLine,
@@ -48,6 +51,8 @@ import type {
   RouteLanding,
   Attachment,
   WorktreeInfo,
+  WorktreeCheckout,
+  RepoWorktrees,
   TerminalSessionInfo,
   TerminalStarted,
   TerminalStatus,
@@ -105,6 +110,15 @@ export interface ApiClient {
   /** List all branches (local and remote) */
   listBranches(repoPath: string): Promise<BranchList>;
 
+  /**
+   * Every ref git already knows locally — branches, remote-tracking branches
+   * and tags. Nothing is fetched: this is the set a read-only peek can serve.
+   */
+  listRefs(repoPath: string): Promise<RefEntry[]>;
+
+  /** Resolve what a ref names, rejecting anything git can't resolve. */
+  describeRef(repoPath: string, gitRef: string): Promise<RefDescription>;
+
   /** Get git status (staged, unstaged, untracked files) */
   getGitStatus(repoPath: string): Promise<GitStatusSummary>;
 
@@ -157,6 +171,15 @@ export interface ApiClient {
 
   /** Get detailed information about a specific commit */
   getCommitDetail(repoPath: string, hash: string): Promise<CommitDetail>;
+
+  /**
+   * Resolve a commit into the comparison that shows it — `parent..sha`, taking
+   * a merge's first parent and the empty tree for a root commit.
+   */
+  getCommitComparison(
+    repoPath: string,
+    gitRef: string,
+  ): Promise<CommitComparison>;
 
   /** Attribute a comparison's net-diff hunks to the commits that introduced them */
   getHunkAttribution(
@@ -215,11 +238,27 @@ export interface ApiClient {
   /** Remove a review-managed worktree */
   removeReviewWorktree(repoPath: string, worktreePath: string): Promise<void>;
 
+  /**
+   * Every named repo's worktrees, each with its dirty flag. Batched: the picker
+   * asks about every repo it lists at once.
+   */
+  listWorktreeStatus(repoPaths: string[]): Promise<RepoWorktrees[]>;
+
+  /**
+   * Give a branch a worktree, creating the branch at HEAD if git doesn't know
+   * it. A branch that already has a checkout is answered with that one
+   * (`created: false`) rather than refused.
+   */
+  createWorktree(repoPath: string, branch: string): Promise<WorktreeCheckout>;
+
+  /**
+   * Remove a worktree. Rejects the main checkout, a path that isn't one of this
+   * repo's worktrees, and anything holding uncommitted work — there is no force.
+   */
+  removeWorktree(repoPath: string, worktreePath: string): Promise<void>;
+
   /** Resolve a git ref to a commit SHA */
   resolveRef(repoPath: string, gitRef: string): Promise<string>;
-
-  /** Check if a worktree has uncommitted changes */
-  hasWorktreeChanges(repoPath: string, worktreePath: string): Promise<boolean>;
 
   /** Update a worktree's HEAD to a new commit SHA */
   updateWorktreeHead(
@@ -238,6 +277,9 @@ export interface ApiClient {
 
   /** List all tracked files in the repository (no comparison needed, for browse mode) */
   listRepoFiles(repoPath: string): Promise<FileEntry[]>;
+
+  /** List the repository's files as of a ref. Read-only — nothing is checked out. */
+  listFilesAtRef(repoPath: string, gitRef: string): Promise<FileEntry[]>;
 
   /** List contents of a directory (for lazy-loading gitignored directories) */
   listDirectoryContents(
@@ -570,8 +612,13 @@ export interface ApiClient {
   /** Read a raw file from disk (no git needed, for standalone file viewing) */
   readRawFile(path: string): Promise<FileContent>;
 
-  /** Get raw file content at HEAD from a git repo (no diff, browse mode) */
-  getFileRawContent(repoPath: string, filePath: string): Promise<FileContent>;
+  /** Get a file's content as of a ref. Carries no hunks — at a ref there is
+   *  nothing to compare against. */
+  getFileContentAtRef(
+    repoPath: string,
+    filePath: string,
+    gitRef: string,
+  ): Promise<FileContent>;
 
   /** List files in a plain directory (no git needed, for Layer 0 browsing) */
   listDirectoryPlain(dirPath: string): Promise<FileEntry[]>;

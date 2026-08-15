@@ -146,6 +146,49 @@ export interface BranchList {
   dates?: Record<string, string>;
 }
 
+/** What sort of ref a {@link RefEntry} names. */
+export type RefKind = "localBranch" | "remoteBranch" | "tag";
+
+/** A ref git already knows locally — somewhere Browse can be pinned to. */
+export interface RefEntry {
+  /** Short name, e.g. "main", "origin/feature-x", "v1.2.0". */
+  name: string;
+  kind: RefKind;
+  /** ISO-8601 creation date, absent when git reported none. */
+  date?: string | null;
+}
+
+/** What a ref resolves to — the pinned banner's subtitle, and the check that
+ *  something the user typed is a ref at all. */
+export interface RefDescription {
+  /** The ref as asked for, not as resolved. */
+  name: string;
+  sha: string;
+  shortSha: string;
+  subject: string;
+  date: string;
+}
+
+/**
+ * One commit, resolved into something diffable.
+ *
+ * The comparison carries resolved SHAs, not `<hash>^` — that expression names
+ * nothing for a root commit and is ambiguous for a merge, which are exactly
+ * the two cases `parentCount` exists to report.
+ */
+export interface CommitComparison {
+  hash: string;
+  shortHash: string;
+  subject: string;
+  author: string;
+  /** Author date, ISO-8601 strict. */
+  date: string;
+  /** 0 for a root commit, more than 1 for a merge. */
+  parentCount: number;
+  /** `parent..commit` — a merge's first parent, a root's empty tree. */
+  comparison: Comparison;
+}
+
 // Git status types
 export interface GitStatusSummary {
   currentBranch: string;
@@ -735,6 +778,31 @@ export interface WorktreeInfo {
   commitHash: string;
   isDetached: boolean;
   isReviewManaged: boolean;
+}
+
+/** A worktree plus the facts a git client would show beside it. */
+export interface WorktreeStatus extends WorktreeInfo {
+  /**
+   * Uncommitted work — modified, staged, or untracked. Always false for the
+   * main checkout, whose dirt is a fact on its branch row already; only linked
+   * worktrees are asked, because a `git status` per registered repo is the
+   * expensive half of listing them.
+   */
+  hasChanges: boolean;
+}
+
+/** One repo's worktrees, as the batched status call returns them. */
+export interface RepoWorktrees {
+  repoPath: string;
+  worktrees: WorktreeStatus[];
+}
+
+/** Where a branch's checkout lives, and whether this call is what made it. */
+export interface WorktreeCheckout {
+  path: string;
+  branch: string;
+  /** False when the branch already had a checkout and we routed to it. */
+  created: boolean;
 }
 
 // Trust patterns
