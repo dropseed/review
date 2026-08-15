@@ -129,7 +129,7 @@ export function TerminalPanel(): ReactNode {
           wrap — the strip grows downward instead of scrolling sideways. */}
       {/* select-none: the strip is drag-and-click chrome, and a tab title left
           highlighted after a drag reads as a selection you didn't make. */}
-      <div className="flex select-none items-start gap-0.5 border-b border-edge/60 px-1.5 py-1">
+      <div className="group/bar flex select-none items-start gap-0.5 border-b border-edge/60 px-1.5 py-1">
         {/* Tabs wrap rather than scroll: the panel is often half the window
             wide, where a horizontal scroller hides tabs behind a gesture you
             have to discover. Capped at ~three rows so a pile of terminals can't

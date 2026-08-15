@@ -14,6 +14,14 @@ export type StageHalf = "terminal" | "code";
  * two bars are never both hidden — so the button that took the stage is always
  * on screen to give it back. `contentFocus` is still the one state underneath;
  * this is `split ⇄ this half`, which is exactly what the two store toggles do.
+ *
+ * It is revealed by hovering its own bar (the bar carries `group/bar`), because
+ * a layout switch is something you go looking for perhaps twice an hour and it
+ * shouldn't hold a lit pixel on both tab strips the rest of the time. Two
+ * exceptions keep it from being a control you have to already know about: it
+ * stays visible while *focused*, since a half that has taken the whole stage
+ * must always show the way back, and it appears on keyboard focus so tabbing
+ * still reaches it.
  */
 export function FocusToggle({
   half,
@@ -39,10 +47,12 @@ export function FocusToggle({
           half === "terminal" ? toggleTerminalFocus() : toggleTerminalPanel()
         }
         className={clsx(
-          "flex h-5 w-6 shrink-0 items-center justify-center rounded transition-colors",
+          `flex h-5 w-6 shrink-0 items-center justify-center rounded
+           transition-[color,background-color,opacity]`,
           focused
             ? "bg-surface-raised text-fg-secondary"
-            : "text-fg-faint hover:bg-fg/[0.08] hover:text-fg-secondary",
+            : `text-fg-faint opacity-0 hover:bg-fg/[0.08] hover:text-fg-secondary
+               focus-visible:opacity-100 group-hover/bar:opacity-100`,
         )}
       >
         <ExpandGlyph collapsing={focused} />

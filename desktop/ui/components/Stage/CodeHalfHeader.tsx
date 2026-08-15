@@ -33,7 +33,7 @@ export function CodeHalfHeader(): ReactNode {
   const docked = useTerminalDockPresent();
 
   return (
-    <div className="flex shrink-0 select-none items-center gap-1 border-b border-edge/60 px-1.5 py-1">
+    <div className="group/bar flex shrink-0 select-none items-center gap-1 border-b border-edge/60 px-1.5 py-1">
       {workspace && <RepoTabs workspace={workspace} />}
       {docked && (
         <div className="ml-auto flex shrink-0 items-center pl-1">
