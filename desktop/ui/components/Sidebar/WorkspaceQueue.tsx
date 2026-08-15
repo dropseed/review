@@ -34,7 +34,7 @@ import { CheckIcon } from "../ui/icons";
 import { ContextActionItems } from "./ActionMenu";
 import { WorkspaceTitleInput } from "./WorkspaceTitleInput";
 import { PrBadge } from "./PrBadge";
-import { StatusDot, STATE_LABEL, workspaceState } from "./StatusDot";
+import { workspaceState } from "./StatusDot";
 import { TerminalRow } from "./TerminalRow";
 import { activateOnKey } from "./row-chrome";
 import { workspaceActions } from "./workspace-actions";
@@ -308,7 +308,7 @@ const QueueEntry = memo(function QueueEntry({
             startWorkspaceDrag(e, { id: workspace.id, index })
           }
           onDragEnd={() => setDraggedWorkspace(null)}
-          title={`${STATE_LABEL[state]} — ${status.subtitle || status.title}`}
+          title={status.subtitle || status.title}
           className={clsx(
             "group relative cursor-default rounded-lg border px-2 py-1.5 outline-none transition-colors duration-100",
             isOver
@@ -321,10 +321,8 @@ const QueueEntry = memo(function QueueEntry({
         >
           {/* Unseen: something changed here since the last time this workspace
               was looked at. A bar on the outer edge rather than another badge
-              in the row — it has to be findable by scanning the list's margin,
-              and it must not compete with the status dot, which answers a
-              different question (what is it doing *now*). Focusing the
-              workspace is what clears it; there is no dismiss. */}
+              in the row — it has to be findable by scanning the list's margin.
+              Focusing the workspace is what clears it; there is no dismiss. */}
           {unseen && !focused && (
             <span
               aria-hidden="true"
@@ -334,28 +332,23 @@ const QueueEntry = memo(function QueueEntry({
           )}
 
           <div className="flex items-center gap-2">
-            {/* While ⌘ is down the dot's slot answers a different question:
-                which number this card is. The two never share the space —
-                a digit is what you want while reaching for one, and the dot is
-                what you want the rest of the time — and swapping them inside a
-                box the size of the dot is what keeps the title from moving.
-                The number is the card's position, the same one ⌘1–9 press. */}
-            <span className="relative flex shrink-0">
-              <StatusDot
-                state={state}
-                className={showShortcut ? "opacity-0" : undefined}
-              />
-              {showShortcut && (
-                <span
-                  aria-hidden="true"
-                  data-shortcut-digit
-                  className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2
-                             text-[9px] leading-none text-fg-faint tabular-nums"
-                >
-                  {index + 1}
-                </span>
-              )}
-            </span>
+            {/* The card's position, shown only while ⌘ is down — the number
+                ⌘1–9 would press. It takes the slot rather than reserving one:
+                there is no status mark here any more (a card's terminals carry
+                their own phase dots, which is where that question is actually
+                read), and a permanently empty box would indent every title for
+                the sake of a mark that isn't there. The titles shift for as
+                long as the chord is held, which is exactly when the digits,
+                not the titles, are what is being read. */}
+            {showShortcut && (
+              <span
+                aria-hidden="true"
+                data-shortcut-digit
+                className="w-[7px] shrink-0 text-center text-[9px] leading-none text-fg-faint tabular-nums"
+              >
+                {index + 1}
+              </span>
+            )}
             {renaming ? (
               <WorkspaceTitleInput
                 workspaceId={workspace.id}
