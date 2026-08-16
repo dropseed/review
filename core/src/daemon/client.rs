@@ -24,7 +24,7 @@ use tokio::net::UnixStream;
 use tokio::sync::{mpsc, oneshot};
 
 use super::codec::{read_frame, write_frame};
-use super::protocol::{Hello, Op, OpResult, Request, Response, StreamFrame, B64};
+use super::protocol::{Hello, Op, OpResult, Request, Response, StreamFrame, VersionInfo, B64};
 
 /// Buffered [`StreamFrame`]s per open stream before the reader task blocks.
 /// Matches the daemon-side subscriber bound, so back-pressure surfaces there
@@ -275,14 +275,10 @@ impl DaemonClient {
         self.request_as(Op::List { repo_path: None }).await
     }
 
-    /// The daemon's crate version — the desktop compares it against its own and
-    /// respawns the daemon on a mismatch.
-    pub async fn version(&self) -> Result<String> {
-        let value = self.request(Op::Version).await?;
-        value
-            .as_str()
-            .map(ToOwned::to_owned)
-            .ok_or_else(|| anyhow!("daemon returned a non-string version: {value}"))
+    /// Who the daemon is and what wire it speaks — the desktop compares both
+    /// against its own to decide between attaching and respawning.
+    pub async fn version(&self) -> Result<VersionInfo> {
+        VersionInfo::from_payload(self.request(Op::Version).await?)
     }
 
     /// Open a second connection carrying one session's live output.

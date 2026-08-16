@@ -28,6 +28,18 @@ use serde_json::Value;
 pub const B64: base64::engine::general_purpose::GeneralPurpose =
     base64::engine::general_purpose::STANDARD;
 
+/// The version of this wire contract, reported by [`Op::Version`] alongside
+/// the build identity.
+///
+/// The desktop app attaches to a daemon whose protocol matches even when its
+/// build identity differs — that is what lets sessions survive an app update.
+/// The compatibility contract is therefore this number, not the binary:
+/// **bump it whenever anything on this wire changes** — an op added, removed,
+/// or reshaped; a payload or stream frame changed; a semantic an existing op
+/// relies on. An unbumped change means an updated app silently driving a
+/// daemon that disagrees about the wire.
+pub const PROTOCOL_VERSION: u32 = 1;
+
 // ============================================================
 // Hello
 // ============================================================
@@ -109,8 +121,8 @@ pub enum Op {
     Peek { terminal_id: String },
     /// Capability probe. Ok payload: `true`.
     Available,
-    /// The daemon's crate version, for the desktop's version-mismatch respawn.
-    /// Ok payload: a string.
+    /// Who the daemon is and what wire it speaks, for the desktop's
+    /// attach-vs-respawn decision. Ok payload: a [`VersionInfo`].
     Version,
     /// Kill every session but keep serving. Ok payload: `null`.
     ShutdownAllSessions,
@@ -133,6 +145,33 @@ pub struct Response {
 pub enum OpResult {
     Ok(Value),
     Err(String),
+}
+
+/// The `version` Ok payload: who the daemon is, and what wire it speaks.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VersionInfo {
+    /// The daemon's build identity (`version+hash`, see
+    /// [`super::build_identity`]), captured at its own startup.
+    pub identity: String,
+    /// The [`PROTOCOL_VERSION`] the daemon serves. `None` when talking to a
+    /// daemon from before the protocol was versioned — which is itself a
+    /// protocol mismatch.
+    pub protocol: Option<u32>,
+}
+
+impl VersionInfo {
+    /// Parse either shape of the payload: daemons from before the protocol was
+    /// versioned answered with a bare identity string.
+    pub fn from_payload(value: Value) -> Result<Self> {
+        match value {
+            Value::String(identity) => Ok(Self {
+                identity,
+                protocol: None,
+            }),
+            other => serde_json::from_value(other).context("unexpected version payload"),
+        }
+    }
 }
 
 /// The `replay` Ok payload: base64 scrollback, the byte cursor those bytes end
@@ -391,6 +430,27 @@ mod tests {
         assert_eq!(value["result"]["status"], "err");
         assert_eq!(value["result"]["value"], "no such terminal t9");
         assert_eq!(serde_json::from_value::<Response>(value).unwrap(), err);
+    }
+
+    /// Both shapes of the version payload parse: today's object, and the bare
+    /// identity string every daemon reported before the protocol was versioned
+    /// — which must read as "no protocol", not an error, so the app respawns
+    /// such a daemon instead of failing to decide.
+    #[test]
+    fn version_payload_parses_both_generations() {
+        let current = VersionInfo::from_payload(json!({
+            "identity": "0.0.130+aabbccdd00112233",
+            "protocol": 1,
+        }))
+        .unwrap();
+        assert_eq!(current.identity, "0.0.130+aabbccdd00112233");
+        assert_eq!(current.protocol, Some(1));
+
+        let legacy = VersionInfo::from_payload(json!("0.0.124+deadbeef00000000")).unwrap();
+        assert_eq!(legacy.identity, "0.0.124+deadbeef00000000");
+        assert_eq!(legacy.protocol, None);
+
+        assert!(VersionInfo::from_payload(json!(42)).is_err());
     }
 
     /// Encode then decode, asserting the frame survives byte-for-byte.

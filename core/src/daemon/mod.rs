@@ -91,7 +91,10 @@ mod server;
 #[cfg(all(test, feature = "daemon", feature = "daemon-client"))]
 pub(crate) mod test_support;
 
-pub use protocol::{Hello, Op, OpResult, ReplayPayload, Request, Response, StreamFrame, B64};
+pub use protocol::{
+    Hello, Op, OpResult, ReplayPayload, Request, Response, StreamFrame, VersionInfo, B64,
+    PROTOCOL_VERSION,
+};
 
 #[cfg(feature = "daemon-client")]
 pub use client::{

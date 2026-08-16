@@ -25,7 +25,8 @@ use tokio::sync::{Mutex, Notify};
 use super::codec::{read_frame, write_frame};
 use super::pid_path;
 use super::protocol::{
-    encode_output_framed, Hello, Op, OpResult, ReplayPayload, Request, Response, StreamFrame, B64,
+    encode_output_framed, Hello, Op, OpResult, ReplayPayload, Request, Response, StreamFrame,
+    VersionInfo, B64, PROTOCOL_VERSION,
 };
 use crate::terminal::{SessionManager, SessionSpec, Subscription, TerminalId, TerminalMessage};
 
@@ -300,8 +301,13 @@ async fn dispatch(op: Op, manager: &Arc<SessionManager>) -> OpResult {
         // the release-built sidecar disagree forever. Served from the identity
         // captured at startup, never recomputed from disk: the file can be
         // rebuilt under a running daemon, and the check exists to catch exactly
-        // that. See `STARTUP_IDENTITY` and `build_identity`.
-        Op::Version => OpResult::Ok(startup_identity().to_owned().into()),
+        // that. See `STARTUP_IDENTITY` and `build_identity`. The protocol rides
+        // along so the app can attach across an identity mismatch when the wire
+        // still agrees — sessions surviving an app update.
+        Op::Version => to_result(anyhow::Ok(VersionInfo {
+            identity: startup_identity().to_owned(),
+            protocol: Some(PROTOCOL_VERSION),
+        })),
         // `shutdown_all_sessions` kills every session but leaves the daemon
         // serving; `quit` does the same and then lets `serve` return (the
         // caller signals that once this response has been flushed).
@@ -484,6 +490,17 @@ mod tests {
         let reported = client.version().await.unwrap();
         let _ = child.kill().await;
 
+        // A sidecar built before the protocol was versioned reports a bare
+        // string (no protocol). Same reasoning as the version skip below: the
+        // artifact is stale, not the identity buggy.
+        if reported.protocol.is_none() && !required {
+            eprintln!(
+                "skipping: sidecar predates protocol versioning — rebuild it with \
+                 scripts/build-daemon-sidecar (set {REQUIRE_SIDECAR} to make this a failure)"
+            );
+            return;
+        }
+
         // A sidecar built from a different version cannot answer the question
         // this test asks. It compares two *profiles* of one version; against an
         // older binary a mismatch is guaranteed and means only "the tree moved
@@ -493,7 +510,7 @@ mod tests {
         // pipeline sets REQUIRE_SIDECAR immediately after building the sidecar
         // from the bumped version, so there a version mismatch is real.
         let version = env!("CARGO_PKG_VERSION");
-        let reported_version = reported.split('+').next().unwrap_or_default();
+        let reported_version = reported.identity.split('+').next().unwrap_or_default();
         if reported_version != version && !required {
             eprintln!(
                 "skipping: sidecar reports version {reported_version}, tree is {version} \
@@ -504,10 +521,11 @@ mod tests {
         }
 
         assert_eq!(
-            reported,
+            reported.identity,
             crate::daemon::build_identity(version, &binary),
             "release daemon and debug caller disagree on the build identity"
         );
+        assert_eq!(reported.protocol, Some(PROTOCOL_VERSION));
     }
 
     /// Set this to require the release sidecar rather than skipping without it.
@@ -537,11 +555,9 @@ mod tests {
 
         // The identity is the version plus a binary fingerprint (see
         // `build_identity`), so the version is a prefix, not the whole string.
-        assert!(client
-            .version()
-            .await
-            .unwrap()
-            .starts_with(env!("CARGO_PKG_VERSION")));
+        let version = client.version().await.unwrap();
+        assert!(version.identity.starts_with(env!("CARGO_PKG_VERSION")));
+        assert_eq!(version.protocol, Some(PROTOCOL_VERSION));
         assert_eq!(
             client.request(Op::Available).await.unwrap(),
             Value::Bool(true)
@@ -739,6 +755,7 @@ mod tests {
             .version()
             .await
             .unwrap()
+            .identity
             .starts_with(env!("CARGO_PKG_VERSION")));
     }
 

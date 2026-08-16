@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Result};
 use log::{error, info, warn};
-use review::daemon::{socket_path, DaemonClient, Op};
+use review::daemon::{socket_path, DaemonClient, Op, PROTOCOL_VERSION};
 use tauri::{AppHandle, Manager};
 
 /// Where a spawned daemon's stdout/stderr are appended.
@@ -38,17 +38,42 @@ const POLL_INTERVAL_MIN: Duration = Duration::from_millis(2);
 /// spinning. The overall budgets above are unchanged.
 const POLL_INTERVAL_MAX: Duration = Duration::from_millis(25);
 
+/// Whether this app is a dev build, which changes attach *policy* (not
+/// identity — see `build_identity`, which must stay profile-independent): a
+/// dev loop rebuilds the daemon constantly without touching the protocol, and
+/// attaching to yesterday's daemon is exactly the stale-code bug the identity
+/// check exists to catch. Release builds let the protocol govern instead, so
+/// sessions survive app updates.
+const DEV_BUILD: bool = cfg!(debug_assertions);
+
 /// What [`ensure_daemon`] should do about the daemon it just probed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
-    /// A daemon is listening and speaks our version — use it as-is.
+    /// A daemon is listening and is the exact build we expect — use it as-is.
     Attach,
-    /// A daemon is listening but is a different build — stop it and spawn ours.
-    /// Its sessions are lost; that is the accepted cost of an app update.
+    /// A daemon is listening and speaks our protocol but is a different build
+    /// (the app was updated underneath it). The caller settles it by session
+    /// liveness: attach if anything is running — keeping those sessions alive
+    /// is the point — else restart it as a free upgrade.
+    AttachSkewed,
+    /// A daemon is listening but should not be kept: it speaks a different
+    /// protocol, or this is a dev build iterating on daemon code. Stop it and
+    /// spawn ours; any sessions it had are lost.
     RespawnMismatch,
     /// Nothing is listening. Any socket file left on disk is stale (a crashed
     /// daemon) and is unlinked before spawning.
     SpawnFresh,
+}
+
+/// What the version probe learned about whatever is on the socket.
+#[derive(Debug, Clone, Copy)]
+pub struct Probe {
+    /// A daemon answered on the socket.
+    pub connect_ok: bool,
+    /// It serves our [`PROTOCOL_VERSION`] — the compatibility contract.
+    pub protocol_match: bool,
+    /// It is byte-for-byte the build we would spawn.
+    pub identity_match: bool,
 }
 
 /// Decide what to do from what the version probe told us.
@@ -56,11 +81,23 @@ pub enum Action {
 /// Pure so the attach-vs-spawn logic is testable without processes. A leftover
 /// socket file is not an input: it cannot change the *action*, it only tells the
 /// caller there is a stale entry to unlink before spawning.
-pub fn attach_decision(connect_ok: bool, version_match: bool) -> Action {
-    match (connect_ok, version_match) {
-        (true, true) => Action::Attach,
-        (true, false) => Action::RespawnMismatch,
-        (false, _) => Action::SpawnFresh,
+pub fn attach_decision(probe: Probe, dev_build: bool) -> Action {
+    if !probe.connect_ok {
+        return Action::SpawnFresh;
+    }
+    if !probe.protocol_match {
+        return Action::RespawnMismatch;
+    }
+    if probe.identity_match {
+        return Action::Attach;
+    }
+    // Same protocol, different build. In dev the hash governs — iterating on
+    // daemon code must run the new code (see `DEV_BUILD`). In release the
+    // protocol governs, and the caller weighs the daemon's sessions.
+    if dev_build {
+        Action::RespawnMismatch
+    } else {
+        Action::AttachSkewed
     }
 }
 
@@ -98,11 +135,21 @@ pub async fn ensure_daemon(app: &AppHandle) -> Result<DaemonClient> {
         Some(client) => client.version().await.ok(),
         None => None,
     };
-
     let decision = attach_decision(
-        existing.is_some(),
-        daemon_version.as_deref() == Some(expected_identity.as_str()),
+        Probe {
+            connect_ok: existing.is_some(),
+            protocol_match: daemon_version
+                .as_ref()
+                .is_some_and(|v| v.protocol == Some(PROTOCOL_VERSION)),
+            identity_match: daemon_version
+                .as_ref()
+                .is_some_and(|v| v.identity == expected_identity),
+        },
+        DEV_BUILD,
     );
+    let daemon_identity = daemon_version
+        .as_ref()
+        .map_or("unknown", |v| v.identity.as_str());
 
     match decision {
         Action::Attach => {
@@ -114,10 +161,38 @@ pub async fn ensure_daemon(app: &AppHandle) -> Result<DaemonClient> {
             );
             Ok(client)
         }
+        Action::AttachSkewed => {
+            let client = existing.ok_or_else(|| anyhow!("attach without a live connection"))?;
+            // The one place session liveness matters: a busy daemon is kept for
+            // its sessions, an idle one restarts as a free upgrade. A probe
+            // that fails reads as busy — never kill what we cannot see.
+            if client
+                .attributions()
+                .await
+                .map_or(true, |sessions| !sessions.is_empty())
+            {
+                info!(
+                    "[daemon] attached to daemon {daemon_identity} (this app expects {expected_identity}) — \
+                     protocol {PROTOCOL_VERSION} matches and it has live sessions, so they survive the update; \
+                     it upgrades on a later launch once idle",
+                );
+                Ok(client)
+            } else {
+                info!(
+                    "[daemon] daemon {daemon_identity} is outdated but idle — upgrading it to {expected_identity}",
+                );
+                stop_daemon(client, &socket).await;
+                spawn_and_connect(app, &socket, t0).await
+            }
+        }
         Action::RespawnMismatch => {
             warn!(
-                "[daemon] running daemon is v{} but this app is v{app_version} — restarting it (its sessions are lost)",
-                daemon_version.as_deref().unwrap_or("unknown"),
+                "[daemon] running daemon is {daemon_identity} (protocol {}) but this app expects \
+                 {expected_identity} (protocol {PROTOCOL_VERSION}) — restarting it (any sessions it had are lost)",
+                daemon_version
+                    .as_ref()
+                    .and_then(|v| v.protocol)
+                    .map_or_else(|| "none".to_owned(), |p| p.to_string()),
             );
             let client = existing.ok_or_else(|| anyhow!("respawn without a live connection"))?;
             stop_daemon(client, &socket).await;
@@ -359,23 +434,48 @@ fn resolve_daemon_binary(app: &AppHandle) -> Result<PathBuf> {
 mod tests {
     use super::*;
 
+    /// The whole policy as one table: (connect_ok, protocol_match,
+    /// identity_match, dev_build) → action, with the rationale as the failure
+    /// message. `AttachSkewed` is deliberately a *release-only* answer — the
+    /// caller then keeps a busy daemon or restarts an idle one as a free
+    /// upgrade; that half is effectful and lives in `ensure_daemon`.
     #[test]
-    fn a_live_daemon_on_our_version_is_attached_to() {
-        assert_eq!(attach_decision(true, true), Action::Attach);
-    }
-
-    #[test]
-    fn a_live_daemon_on_another_version_is_respawned() {
-        assert_eq!(attach_decision(true, false), Action::RespawnMismatch);
-    }
-
-    #[test]
-    fn nothing_listening_spawns_fresh() {
-        // Nothing answered — whether a crashed daemon left a socket file behind
-        // or not, and a version can never match, but the decision must not
-        // depend on that.
-        assert_eq!(attach_decision(false, false), Action::SpawnFresh);
-        assert_eq!(attach_decision(false, true), Action::SpawnFresh);
+    fn the_attach_decision_table_holds() {
+        #[rustfmt::skip]
+        let table = [
+            (true, true, true, false, Action::Attach,
+             "the exact expected build is attached to"),
+            (true, true, true, true, Action::Attach,
+             "the exact expected build is attached to, in dev too"),
+            (true, false, false, false, Action::RespawnMismatch,
+             "a daemon speaking a different protocol cannot be driven at all"),
+            (true, false, false, true, Action::RespawnMismatch,
+             "a daemon speaking a different protocol cannot be driven, in dev too"),
+            (true, true, false, true, Action::RespawnMismatch,
+             "in dev the hash governs: a rebuilt daemon must run its new code \
+              (the live stale-daemon bug of 2026-08-14)"),
+            (true, true, false, false, Action::AttachSkewed,
+             "in release the protocol governs: an app update must not kill the \
+              sessions of a daemon it can still talk to"),
+            (false, false, false, false, Action::SpawnFresh,
+             "nothing listening spawns fresh"),
+            (false, true, true, true, Action::SpawnFresh,
+             "nothing listening spawns fresh — no other flag can matter"),
+        ];
+        for (connect_ok, protocol_match, identity_match, dev_build, expected, why) in table {
+            assert_eq!(
+                attach_decision(
+                    Probe {
+                        connect_ok,
+                        protocol_match,
+                        identity_match,
+                    },
+                    dev_build,
+                ),
+                expected,
+                "{why}"
+            );
+        }
     }
 
     /// The gap must start well under a daemon's ~5-15ms startup and stop at the
