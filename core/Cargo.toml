@@ -30,7 +30,12 @@ anyhow = "1"
 
 # Server dependencies (feature-gated)
 axum = { version = "0.8", features = ["ws"], optional = true }
-tower-http = { version = "0.6", features = ["cors"], optional = true }
+# `set-header` puts `Cache-Control: no-cache` on the SPA's index.html.
+tower-http = { version = "0.6", features = ["cors", "fs", "set-header"], optional = true }
+# Only for `Layer::layer` — applying that header layer to a bare `ServeFile`,
+# which is not a Router and so has no `.layer()` of its own. Already in the tree
+# as axum's own dependency.
+tower = { version = "0.5", optional = true }
 tokio-stream = { version = "0.1", optional = true }
 notify = { version = "7", optional = true }
 notify-debouncer-mini = { version = "0.5", optional = true }
@@ -110,10 +115,11 @@ terminal = ["terminal-types", "dep:portable-pty", "dep:vte", "dep:nix", "dep:byt
 # The CLI drives the terminal daemon (`review terminal …`), so it pulls in the
 # connect-side client and the wire types — neither adds PTY dependencies.
 cli = ["clap", "daemon-client", "terminal-types"]
-# Web-mode HTTP backend. Deliberately does NOT imply `terminal`: web mode has no
-# terminals — PTYs live in the `review-daemon` process and only the desktop app
-# reaches them.
-server = ["axum", "tower-http", "tokio-stream", "notify", "notify-debouncer-mini", "env_logger"]
+# Web-mode HTTP backend. It pulls in `daemon-client`, not `terminal`: web mode
+# reaches PTYs the same way the desktop app does — as a thin client of the
+# `review-daemon` process — so it gets terminals without linking a PTY stack
+# (and therefore without needing Zig).
+server = ["axum", "tower", "tower-http", "tokio-stream", "notify", "notify-debouncer-mini", "env_logger", "daemon-client"]
 # Terminal session daemon. `daemon` is the server half (owns the SessionManager,
 # so it implies `terminal`); `daemon-client` is the connect side and pulls in no
 # PTY dependencies. They compose freely with each other and with `server`.
@@ -143,3 +149,6 @@ tempfile = "3"
 # Router-level `oneshot` testing of the web handlers. Already in the tree via
 # axum/tower-http; the `util` feature adds `ServiceExt::oneshot`.
 tower = { version = "0.5", features = ["util"] }
+# A WebSocket *client* for the terminal-bridge tests. Already in the tree as
+# axum's own `ws` dependency, so this adds no new crates.
+tokio-tungstenite = "0.28"

@@ -28,6 +28,7 @@ import "./index.css";
 import { initSentry } from "./utils/sentry";
 import { initializeLogger, initLogPath } from "./utils/logger";
 import { installDevtools } from "./utils/devtools";
+import { registerServiceWorker } from "./utils/register-sw";
 import { useReviewStore } from "./stores";
 
 import { resolveLanguages } from "@pierre/diffs";
@@ -96,6 +97,9 @@ initReactScanLog({ clear: true });
 
 // Expose the store on window in dev builds only.
 installDevtools();
+
+// Make web mode installable (no-op under Tauri and on the dev server).
+registerServiceWorker();
 
 // Pre-resolve common languages in background to warm the cache.
 // WorkerPoolContextProvider calls resolveLanguages() itself during init,

@@ -31,6 +31,21 @@ use super::protocol::{Hello, Op, OpResult, Request, Response, StreamFrame, B64};
 /// (where re-subscribe recovery lives) rather than here.
 const STREAM_CHANNEL_CAPACITY: usize = 1024;
 
+// The three ways the *transport* dies, as they appear in an error chain.
+//
+// Callers tell "the connection is gone" apart from "the daemon says no" by
+// matching these (see `crate::server`'s `is_disconnected`), which is only safe
+// while both sides name the same string — so both sides name the same const,
+// and drift is a compile error rather than a bridge that silently stops
+// reconnecting.
+
+/// Dialing the socket failed. Carries ` at <path>` after it at the call site.
+pub const ERR_CONNECTING: &str = "connecting to daemon";
+/// Writing a request frame onto the control connection failed.
+pub const ERR_SENDING: &str = "sending request to daemon";
+/// The control connection ended with a request still in flight.
+pub const ERR_CLOSED: &str = "daemon connection closed before responding";
+
 /// Requests awaiting a response, keyed by request id.
 type Pending = Arc<Mutex<HashMap<u64, oneshot::Sender<OpResult>>>>;
 
@@ -88,7 +103,7 @@ impl DaemonClient {
     pub async fn connect(socket: &Path) -> Result<Self> {
         let stream = UnixStream::connect(socket)
             .await
-            .with_context(|| format!("connecting to daemon at {}", socket.display()))?;
+            .with_context(|| format!("{ERR_CONNECTING} at {}", socket.display()))?;
         let (mut read_half, mut write_half) = stream.into_split();
 
         let hello = serde_json::to_vec(&Hello::Control)?;
@@ -130,6 +145,16 @@ impl DaemonClient {
         })
     }
 
+    /// Whether these two handles are clones of the *same* connection.
+    ///
+    /// A clone is cheap because it shares one [`Inner`], so identity is `Arc`
+    /// identity. Callers that cache a client use this before throwing a dead one
+    /// away: two tasks can fail on the same connection at once, and the second
+    /// must not evict the healthy replacement the first already installed.
+    pub fn is_same_connection(&self, other: &DaemonClient) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
+    }
+
     /// Run one op and return its Ok payload, mapping a daemon-side failure to an
     /// `Err`. Safe to call concurrently from any number of tasks.
     pub async fn request(&self, op: Op) -> Result<Value> {
@@ -153,13 +178,13 @@ impl DaemonClient {
                 .lock()
                 .expect("pending poisoned")
                 .remove(&id);
-            return Err(e).context("sending request to daemon");
+            return Err(e).context(ERR_SENDING);
         }
 
         match rx.await {
             Ok(OpResult::Ok(value)) => Ok(value),
             Ok(OpResult::Err(message)) => Err(anyhow!(message)),
-            Err(_) => Err(anyhow!("daemon connection closed before responding")),
+            Err(_) => Err(anyhow!(ERR_CLOSED)),
         }
     }
 
@@ -269,7 +294,7 @@ impl DaemonClient {
         let socket = &self.inner.socket;
         let stream = UnixStream::connect(socket)
             .await
-            .with_context(|| format!("connecting to daemon at {}", socket.display()))?;
+            .with_context(|| format!("{ERR_CONNECTING} at {}", socket.display()))?;
         let (mut read_half, mut write_half) = stream.into_split();
 
         let hello = serde_json::to_vec(&Hello::Stream {

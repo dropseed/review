@@ -1,0 +1,137 @@
+#!/bin/bash
+# Set up a remote/cloud Claude session (or any Linux container behind an HTTPS
+# proxy) to build the full workspace, terminal daemon included.
+#
+# The container's egress proxy breaks Zig's own fetcher twice over: `zig build`
+# does not honor $HTTPS_PROXY, and GitHub *archive* downloads are refused for
+# repos outside the session's scope even though anonymous `git clone` of any
+# public repo is allowed. So this script pre-fetches every Zig package the
+# ghostty build needs — with curl for plain tarballs, and with git-clone +
+# `git archive` for git+https deps and GitHub archive URLs — and inserts them
+# into Zig's global package cache (`zig fetch <file>`), where the build then
+# finds them by hash without touching the network.
+#
+# Idempotent: run it again after a submodule bump and it fetches only what the
+# new pin added. Safe on a normal dev machine too (everything no-ops when the
+# network works and the cache is warm).
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+ZIG_VERSION=0.16.0
+MARKERS=~/.cache/review-remote-setup
+mkdir -p "$MARKERS"
+
+# --- Zig ---------------------------------------------------------------------
+if ! zig version 2>/dev/null | grep -qE '^0\.(1[6-9]|[2-9][0-9])\.'; then
+    arch=$(uname -m)
+    case "$(uname -s)" in
+        Linux) os=linux ;;
+        Darwin) os=macos ;;
+        *) echo "Unsupported OS for auto-install; install Zig ${ZIG_VERSION}+ yourself." >&2; exit 1 ;;
+    esac
+    echo "Installing Zig ${ZIG_VERSION} (${arch}-${os})..."
+    url="https://ziglang.org/download/${ZIG_VERSION}/zig-${arch}-${os}-${ZIG_VERSION}.tar.xz"
+    tmp=$(mktemp -d)
+    curl -sSL "$url" -o "$tmp/zig.tar.xz"
+    mkdir -p /opt/zig
+    tar -xJf "$tmp/zig.tar.xz" -C /opt/zig --strip-components=1
+    ln -sf /opt/zig/zig /usr/local/bin/zig
+    rm -rf "$tmp"
+fi
+echo "zig $(zig version)"
+
+# --- ghostty submodule -------------------------------------------------------
+if [ ! -f vendor/ghostty/build.zig.zon ]; then
+    echo "Fetching vendor/ghostty submodule..."
+    git submodule update --init --depth 1 vendor/ghostty
+fi
+
+# --- Zig package prefetch, to fixpoint ---------------------------------------
+# `zig fetch` must run somewhere with a build.zig; use the submodule.
+fetch_into_cache() { (cd vendor/ghostty && zig fetch "$1" >/dev/null); }
+
+# GitHub tarball/git deps: the proxy only allows the git transport, and
+# `git archive` reproduces GitHub's codeload tarball (same export-ignore
+# handling), so the content hash zig computes matches the pinned one.
+fetch_via_git() { # $1 = repo url, $2 = commit
+    local tmp
+    tmp=$(mktemp -d)
+    git init -q "$tmp"
+    git -C "$tmp" remote add origin "$1"
+    git -C "$tmp" fetch -q --depth 1 origin "$2"
+    git -C "$tmp" archive --format=tar.gz --prefix=pkg/ "$2" > "$tmp/pkg.tar.gz"
+    fetch_into_cache "$tmp/pkg.tar.gz"
+    rm -rf "$tmp"
+}
+
+echo "Prefetching Zig package dependencies..."
+failures=0
+for pass in 1 2 3 4 5 6; do
+    new=0
+    failures=0
+    zon_files=$(find vendor/ghostty ~/.cache/zig/p -name build.zig.zon 2>/dev/null)
+
+    # git+https://host/owner/repo(?query)#commit
+    for spec in $(grep -hoE 'git\+https://[^"]+' $zon_files | sort -u); do
+        marker="$MARKERS/$(echo -n "$spec" | sha256sum | cut -c1-32)"
+        [ -f "$marker" ] && continue
+        url="${spec#git+}"; url="${url%%#*}"; url="${url%%\?*}"
+        commit="${spec##*#}"
+        echo "  git: $url @ ${commit:0:12}"
+        if fetch_via_git "$url" "$commit"; then
+            touch "$marker"; new=$((new+1))
+        else
+            echo "    FAILED: $spec" >&2
+            failures=$((failures+1))
+        fi
+    done
+
+    # Plain archive URLs. GitHub ones go through git (the proxy rejects
+    # codeload); everything else through curl. "COMMIT" is a placeholder URL in
+    # libghostty-vt's own manifest, never a real dependency.
+    for url in $(grep -hoE 'https://[^"]+\.(tar\.gz|tar\.xz|tar\.zst|tgz|zip)' $zon_files | grep -v '/COMMIT\.' | sort -u); do
+        marker="$MARKERS/$(echo -n "$url" | sha256sum | cut -c1-32)"
+        [ -f "$marker" ] && continue
+        if [[ "$url" =~ ^https://github\.com/([^/]+/[^/]+)/archive/([0-9a-f]{40})\.tar\.gz$ ]]; then
+            echo "  git(archive): ${BASH_REMATCH[1]} @ ${BASH_REMATCH[2]:0:12}"
+            if fetch_via_git "https://github.com/${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"; then
+                touch "$marker"; new=$((new+1))
+            else
+                echo "    FAILED: $url" >&2
+                failures=$((failures+1))
+            fi
+        else
+            echo "  curl: $url"
+            # zig fetch detects the archive format from the file extension, so
+            # the temp file must keep the URL's basename.
+            tmpdir=$(mktemp -d)
+            tmp="$tmpdir/$(basename "$url")"
+            if curl -fsSL "$url" -o "$tmp" && fetch_into_cache "$tmp"; then
+                touch "$marker"; new=$((new+1))
+            else
+                echo "    FAILED: $url" >&2
+                failures=$((failures+1))
+            fi
+            rm -rf "$tmpdir"
+        fi
+    done
+
+    [ "$new" -eq 0 ] && break
+    echo "  pass $pass: $new new package(s); rescanning for transitive deps"
+done
+if [ "$failures" -gt 0 ]; then
+    echo "error: $failures package(s) could not be fetched — the build will fail on them." >&2
+    exit 1
+fi
+
+# --- npm ---------------------------------------------------------------------
+if [ ! -d desktop/node_modules ]; then
+    echo "Installing npm dependencies..."
+    (cd desktop && npm install)
+fi
+
+echo
+echo "Done. Everything builds now, e.g.:"
+echo "  cargo build -p review --features daemon --bin review-daemon"
+echo "  cargo build -p review --features cli --bin review"
+echo "  scripts/dev-web"
