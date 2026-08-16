@@ -12,6 +12,9 @@ import { jsonEqual } from "../../utils/equality";
 export const EMPTY_STAGED_SET = new Set<string>();
 
 let commitNonce = 0;
+// Separate from commitNonce: an unrelated commitStaged() call must not mark
+// an in-flight generateCommitMessage() as superseded.
+let generateCommitNonce = 0;
 
 export interface GitSlice {
   // Git state
@@ -42,6 +45,21 @@ export interface GitSlice {
   generateCommitMessage: () => Promise<void>;
 }
 
+/**
+ * The commit box belongs to one working tree. Cleared whenever the working
+ * tree shown could change (repo switch, comparison switch, or entering a
+ * different review's worktree) so a draft or an in-flight generation from
+ * the previous one never lingers into the next -- see comparisonResetState
+ * in filesSlice.ts, which spreads this in.
+ */
+export const gitCommitResetState = {
+  commitMessage: "",
+  commitInProgress: false,
+  commitOutput: [] as CommitOutputLine[],
+  commitResult: null as CommitResult | null,
+  commitMessageGenerating: false,
+} satisfies Partial<GitSlice>;
+
 export const createGitSlice: SliceCreatorWithClient<GitSlice> =
   (client: ApiClient) => (set, get) => ({
     gitStatus: null,
@@ -49,11 +67,7 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
     remoteInfo: null,
     gitUser: null,
 
-    commitMessage: "",
-    commitInProgress: false,
-    commitOutput: [],
-    commitResult: null,
-    commitMessageGenerating: false,
+    ...gitCommitResetState,
 
     loadGitStatus: async () => {
       const workingPath = get().getWorkingTreePath();
@@ -235,12 +249,27 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
       const workingPath = get().getWorkingTreePath();
       if (!workingPath) return;
 
-      const requestId = `commit-msg-${++commitNonce}`;
+      const nonce = ++generateCommitNonce;
+      const requestId = `commit-msg-${nonce}`;
       const previousMessage = get().commitMessage;
+      // Guards every content write below: a repo/worktree switch, or a
+      // second generate call superseding this one, must not clobber state
+      // that no longer belongs to this request (same race class as
+      // loadGitStatus/loadRemoteInfo above).
+      const isStale = () =>
+        get().getWorkingTreePath() !== workingPath ||
+        generateCommitNonce !== nonce;
+      // Narrower than isStale(): only true when a *newer generate call*
+      // has taken over commitMessageGenerating. A plain repo switch means
+      // nothing is generating there, so the flag still needs to come back
+      // down -- leaving it stuck true would disable Generate/Commit for
+      // every repo visited afterward.
+      const supersededByNewerGenerate = () => generateCommitNonce !== nonce;
 
       set({ commitMessageGenerating: true, commitMessage: "" });
 
       const unsubscribe = client.onCommitMessageChunk(requestId, (chunk) => {
+        if (isStale()) return;
         set((state) => ({
           commitMessage: state.commitMessage + chunk,
         }));
@@ -253,8 +282,10 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
           workingPath,
           requestId,
         );
+        if (isStale()) return;
         set({ commitMessage: finalMessage });
       } catch (err) {
+        if (isStale()) return;
         console.error("Failed to generate commit message:", err);
         // Restore the user's draft rather than leaving the box empty with
         // no explanation of what went wrong.
@@ -269,7 +300,9 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
       } finally {
         unsubscribe();
         get().endActivity(requestId);
-        set({ commitMessageGenerating: false });
+        if (!supersededByNewerGenerate()) {
+          set({ commitMessageGenerating: false });
+        }
       }
     },
   });
