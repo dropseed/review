@@ -66,6 +66,33 @@ async function resolveRepoFromUrl(): Promise<string | null> {
   return null;
 }
 
+/**
+ * The review ref a URL names, or null if it names none.
+ *
+ * `/:owner/:repo/review/:ref`, and the path may continue past the ref into a
+ * file (`…/review/feature-x/file/src/main.rs`).
+ *
+ * Both halves of that sentence have burned this. Matching `/review/` anchored
+ * to the end of the path made a link *into a file* read as no ref at all — the
+ * default branch was resolved instead and the file segment dropped as not
+ * belonging to it, so every shared link landed on the file list. Unanchoring it
+ * then found the *first* `/review/`, which in this repo's own URLs is the repo
+ * name, and answered "review".
+ *
+ * Extracted and exported for exactly that reason: each form was right in the
+ * case anybody checks by hand and wrong in the other.
+ */
+export function refFromReviewPath(pathname: string): string | null {
+  // Positional, not a search. `/review/` appears twice in this very repo's own
+  // URLs — `/dropseed/review/review/master` — so a regex looking for the first
+  // one answers "review", the repo, and a regex anchored to the end answers
+  // nothing at all once the path continues into a file. The route has a fixed
+  // shape; reading it by position is the only form that is right in both.
+  const parts = pathname.split("/").filter(Boolean);
+  if (parts[2] !== "review") return null;
+  return refFromUrlSegment(parts[3] ?? null);
+}
+
 /** Decode a review ref from a URL path segment. Returns null when empty. */
 export function refFromUrlSegment(segment: string | null): string | null {
   if (!segment) return null;
@@ -300,12 +327,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       // In browser mode, try to resolve a repo from the URL path (e.g. /owner/repo/...)
       const urlRepoPath_ = await resolveRepoFromUrl();
       if (urlRepoPath_) {
-        // Extract the review ref from the URL if present
-        // (e.g. /owner/repo/review/<encoded-ref>)
-        const pathMatch = window.location.pathname.match(
-          /\/review\/([^/]+)(?:\/|$)/,
-        );
-        const urlRef = refFromUrlSegment(pathMatch?.[1] ?? null);
+        const urlRef = refFromReviewPath(window.location.pathname);
 
         if (window.location.pathname.includes("/browse")) {
           await openBrowseModeRef.current(urlRepoPath_, { replace: true });
@@ -409,10 +431,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         }
 
         // Try to recover the review ref from the current URL path
-        const pathMatch = window.location.pathname.match(
-          /\/review\/([^/]+)(?:\/|$)/,
-        );
-        const urlRef = refFromUrlSegment(pathMatch?.[1] ?? null);
+        const urlRef = refFromReviewPath(window.location.pathname);
         const resolved = await resolveTarget(storedPath, urlRef);
         await initRepo(storedPath, resolved);
         return;
