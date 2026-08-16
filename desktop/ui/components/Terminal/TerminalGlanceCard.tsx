@@ -1,4 +1,5 @@
 import { memo, type ReactNode } from "react";
+import { agentKind } from "./agent-kind";
 import { clsx } from "clsx";
 import { useReviewStore } from "../../stores";
 import { PhaseDot } from "../Sidebar/PhaseDot";
@@ -52,7 +53,11 @@ export const TerminalGlanceCard = memo(function TerminalGlanceCard({
   return (
     <div className={clsx("overflow-hidden text-left", className)}>
       <div className="flex items-center gap-1.5 px-2.5 pt-2">
-        <PhaseDot phase={status.phase} dead={dead} />
+        <PhaseDot
+          phase={status.phase}
+          dead={dead}
+          agent={agentKind(status.runningCommand)}
+        />
         <span className="min-w-0 truncate text-xs text-fg-secondary">
           {title}
         </span>

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { agentKind } from "./agent-kind";
 import { clsx } from "clsx";
 import { useReviewStore } from "../../stores";
 import { PhaseDot } from "../Sidebar/PhaseDot";
@@ -94,7 +95,11 @@ export function CollapsedPane({
                 vertical ? "pb-5" : "pr-5",
               )}
             >
-              <PhaseDot phase={phase} dead={dead} />
+              <PhaseDot
+                phase={phase}
+                dead={dead}
+                agent={agentKind(status?.runningCommand ?? null)}
+              />
               <span
                 className={clsx(
                   "truncate text-[11px] leading-none",

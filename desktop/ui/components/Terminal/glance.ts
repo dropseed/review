@@ -1,6 +1,7 @@
 import { terminalSeverity } from "../../stores/slices/terminalSlice";
 import { basename } from "../Sidebar/terminal-status-format";
 import { collectLeafIds, type TerminalTab } from "./pane-tree";
+import { agentKind, type AgentKind } from "./agent-kind";
 import type {
   TerminalPhase,
   TerminalSessionInfo,
@@ -27,6 +28,11 @@ export interface TabGlance {
    * the most severe pane, falling back to the focused one.
    */
   primaryId: string;
+  /**
+   * The agent running in the pane this tab is summarised by, if the app
+   * recognises one — what its marker wears instead of the terminal glyph.
+   */
+  agent: AgentKind | null;
 }
 
 /** The name a session goes by everywhere it's listed. */
@@ -64,13 +70,17 @@ export function tabGlance(
   const leafStatuses = leafIds
     .map((id) => statuses[id])
     .filter((s): s is TerminalStatus => s != null);
+  const primary = primaryStatus(leafStatuses);
   return {
     leafIds,
     statuses: leafStatuses,
     severity: terminalSeverity(leafStatuses),
     allDead: leafIds.every((id) => id in exited),
     title: sessionTitle(statuses[tab.focused], sessions[tab.focused]),
-    primaryId: primaryStatus(leafStatuses)?.id ?? tab.focused,
+    primaryId: primary?.id ?? tab.focused,
+    // Read off the same pane the tab is named and coloured by, so the mark, the
+    // title and the phase all describe one shell rather than three.
+    agent: agentKind(primary?.runningCommand ?? null),
   };
 }
 

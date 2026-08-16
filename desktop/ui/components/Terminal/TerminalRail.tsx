@@ -45,12 +45,8 @@ export function TerminalRail(): ReactNode {
           its width. Picking one restores the panel with that tab active. */}
       <div className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto">
         {tabs.map((tab) => {
-          const { statuses, severity, allDead, title, primaryId } = tabGlance(
-            tab,
-            terminalSessions,
-            terminalStatuses,
-            terminalExited,
-          );
+          const { statuses, severity, allDead, title, primaryId, agent } =
+            tabGlance(tab, terminalSessions, terminalStatuses, terminalExited);
           const phase = severity ?? "idle";
           const label = allDead
             ? `${title} — exited`
@@ -64,7 +60,7 @@ export function TerminalRail(): ReactNode {
               edge="left"
               active={tab.id === activeTabId}
               onClick={() => showTab(tab)}
-              marker={<PhaseDot phase={phase} dead={allDead} />}
+              marker={<PhaseDot phase={phase} dead={allDead} agent={agent} />}
               rich={
                 allDead ? undefined : (
                   <TerminalGlanceCard sessionId={primaryId} />

@@ -126,34 +126,34 @@ export function TerminalPanel(): ReactNode {
     // or a rounding of their own, so there's one edge between diff and shell.
     <div className="panel-card flex h-full w-full flex-col overflow-hidden bg-surface-inset">
       {/* Tab strip */}
-      {/* Controls stay on the first row (items-start) while the tabs below them
-          wrap — the strip grows downward instead of scrolling sideways. */}
+      {/* One row, so the controls simply sit on it. */}
       {/* select-none: the strip is drag-and-click chrome, and a tab title left
           highlighted after a drag reads as a selection you didn't make. */}
-      <div className="group/bar flex select-none items-start gap-0.5 border-b border-edge/60 px-1.5 py-1">
+      <div className="group/bar flex select-none items-center gap-0.5 border-b border-edge/60 px-1.5 py-1">
         {/* Phone only: the way out to the workspace queue. Renders nothing at
             desktop width, where that queue is a column already on screen. */}
         <CompactMenuButton />
-        {/* Tabs wrap rather than scroll: the panel is often half the window
-            wide, where a horizontal scroller hides tabs behind a gesture you
-            have to discover. Capped at ~three rows so a pile of terminals can't
-            eat the panel; past that the rows scroll. */}
-        <div
-          className="flex max-h-[4.75rem] flex-1 flex-wrap items-center gap-0.5
-                     overflow-y-auto scrollbar-thin"
-        >
+        {/* One row, browser-style: the tabs divide the strip between them and
+            shrink as more arrive, rather than wrapping onto new rows. Wrapping
+            made the strip grow downward and take height from the terminal
+            itself — with a few shells open, a third of a short panel was tab
+            chrome. Each tab keeps a floor wide enough for its marker and a few
+            characters; past the point where they all fit at that floor the row
+            scrolls, which is the same bargain every browser makes. */}
+        <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto scrollbar-thin">
           {stripTabs.map((tab) => {
             // The strip shows one workspace's tabs, but a reorder moves a tab
             // within the whole list — so the index that travels with the drag
             // (and lands in `data-strip-index`, which the Tauri drop path
             // reads) is the tab's position in `terminalTabs`, not in the strip.
             const index = indexOfTab.get(tab.id) ?? 0;
-            const { leafIds, severity, allDead, title, primaryId } = tabGlance(
-              tab,
-              terminalSessions,
-              terminalStatuses,
-              terminalExited,
-            );
+            const { leafIds, severity, allDead, title, primaryId, agent } =
+              tabGlance(
+                tab,
+                terminalSessions,
+                terminalStatuses,
+                terminalExited,
+              );
             const focusedSession = terminalSessions[tab.focused];
             const isActive = tab.id === activeTabId;
             const isDropTarget =
@@ -245,7 +245,8 @@ export function TerminalPanel(): ReactNode {
                       setTabDropTarget(null);
                     }}
                     className={clsx(
-                      "group relative flex max-w-full shrink-0 items-center rounded-md px-2 py-1 text-xs",
+                      `group relative flex min-w-[5.5rem] max-w-[13rem] flex-1
+                       basis-0 items-center rounded-md px-2 py-1 text-xs`,
                       // Lifted off the terminal surface, not recessed into it —
                       // the strip now sits on surface-inset itself.
                       isActive
@@ -276,8 +277,12 @@ export function TerminalPanel(): ReactNode {
                         title={allDead ? title : undefined}
                         className="flex min-w-0 items-center gap-1.5"
                       >
-                        <PhaseDot phase={severity ?? "idle"} dead={allDead} />
-                        <span className="max-w-[12rem] truncate">{title}</span>
+                        <PhaseDot
+                          phase={severity ?? "idle"}
+                          dead={allDead}
+                          agent={agent}
+                        />
+                        <span className="truncate">{title}</span>
                         {orphaned && (
                           <span
                             title={`${basename(

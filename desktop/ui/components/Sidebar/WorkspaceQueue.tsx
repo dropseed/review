@@ -366,6 +366,7 @@ const QueueEntry = memo(function QueueEntry({
               <PhaseDot
                 phase={titleTerminal.severity ?? "idle"}
                 dead={titleTerminal.allDead}
+                agent={titleTerminal.agent}
                 className="-mr-0.5"
               />
             )}

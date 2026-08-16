@@ -138,6 +138,7 @@ function OverviewTab({
         <PhaseDot
           phase={glance?.severity ?? "idle"}
           dead={glance?.allDead ?? false}
+          agent={glance?.agent ?? null}
         />
         <span className="min-w-0 truncate">{glance?.title ?? "shell"}</span>
         {/* The card it lives under, quieter than its own name: the column is a

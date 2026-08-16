@@ -29,7 +29,7 @@ export const TerminalRow = memo(function TerminalRow({
 }): ReactNode {
   const glance = useTabGlance(tabId);
   if (!glance) return null;
-  const { severity, allDead, title, leafIds } = glance;
+  const { severity, allDead, title, leafIds, agent } = glance;
 
   return (
     // Pointer chrome only: the card is one `role="option"` in the queue's
@@ -47,7 +47,7 @@ export const TerminalRow = memo(function TerminalRow({
       title={title}
       className="flex items-center gap-1.5 rounded px-1 py-px hover:bg-fg/[0.06]"
     >
-      <PhaseDot phase={severity ?? "idle"} dead={allDead} />
+      <PhaseDot phase={severity ?? "idle"} dead={allDead} agent={agent} />
       <span
         className={clsx(
           "min-w-0 flex-1 truncate text-[10px] leading-4",
