@@ -191,7 +191,6 @@ export function workspaceContext({
     ]),
     knownRepos: new Set([repoPath]),
     heads: new Map(),
-    reviews,
     shipped,
   };
 }

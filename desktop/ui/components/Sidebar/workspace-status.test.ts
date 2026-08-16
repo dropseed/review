@@ -1,10 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  attentionSignalAt,
-  describeWorkspace,
-  isUnseen,
-  type WorkspaceContext,
-} from "./workspace-status";
+import { describeWorkspace, type WorkspaceContext } from "./workspace-status";
 import { makeReviewKey } from "../../utils/review-key";
 import {
   attachment,
@@ -14,7 +9,6 @@ import {
   workspaceContext,
 } from "../../test/fixtures";
 import type {
-  GlobalReviewSummary,
   LocalBranchInfo,
   ShippedPr,
   ViewerPr,
@@ -33,9 +27,8 @@ function pr(overrides: Partial<ViewerPr> = {}): ViewerPr {
 function context(
   branches: LocalBranchInfo[],
   prs: ViewerPr[] = [],
-  reviews: Record<string, GlobalReviewSummary> = {},
 ): WorkspaceContext {
-  return workspaceContext({ repoPath: REPO, branches, prs, reviews });
+  return workspaceContext({ repoPath: REPO, branches, prs });
 }
 
 function item(overrides: Partial<Workspace> = {}): Workspace {
@@ -68,7 +61,7 @@ describe("describeWorkspace", () => {
   it("resolves a card whose every branch is gone", () => {
     const status = describeWorkspace(item(), context([branch("main")]));
     expect(status.resolved).toBe(true);
-    expect(status.phrase).toBe("branch gone");
+    expect(status.subtitle).toContain("branch gone");
   });
 
   /**
@@ -107,113 +100,46 @@ describe("describeWorkspace", () => {
       ),
     );
     expect(status.openPr?.number).toBe(12);
-    expect(status.phrase).toContain("#12 changes requested");
+    expect(status.subtitle).toContain("#12 changes requested");
   });
 
-  it("sizes the working tree, and stops at two clauses", () => {
+  /** Each chip's PR is its own branch's, so a card can wear two numbers. */
+  it("hands every attachment the PR its branch stands for", () => {
     const status = describeWorkspace(
-      item(),
+      item({
+        attachments: [attachment(REPO, "quiet"), attachment(REPO, "feature")],
+      }),
       context(
-        [
-          branch("feature", {
-            hasWorkingTreeChanges: true,
-            workingTreeStats: { fileCount: 3, additions: 48, deletions: 12 },
-          }),
-        ],
-        [pr({ checksState: "FAILURE" })],
-        {
-          [makeReviewKey(REPO, "feature")]: {
-            repoPath: REPO,
-            repoName: "repo",
-            ref: "feature",
-            tier: "materialized",
-            totalHunks: 10,
-            trustedHunks: 0,
-            approvedHunks: 4,
-            reviewedHunks: 4,
-            rejectedHunks: 0,
-            savedForLaterHunks: 0,
-            state: null,
-            updatedAt: new Date(NOW).toISOString(),
-          },
-        },
+        [branch("quiet"), branch("feature")],
+        [pr({ number: 9, headRefName: "quiet" }), pr({ number: 12 })],
       ),
     );
-    // Two clauses, so the review progress the same context supplies is left
-    // out — and the changes one is structured, since the card colours it.
-    expect(status.phrase).toBe("#12 CI failing · 3 files +48 −12");
-    // Every clause carries its own words; the stat rides *alongside* them, so
-    // the card can colour the numbers without rewriting the sentence.
-    expect(status.clauses).toEqual([
-      { text: "#12 CI failing" },
-      {
-        text: "3 files +48 −12",
-        stat: { fileCount: 3, additions: 48, deletions: 12 },
-      },
-    ]);
+    expect(status.repos.map((c) => c.openPr?.number)).toEqual([9, 12]);
   });
 
   /**
-   * Stats are the checked-out branch's alone, so a workspace can have changes
-   * with nothing having counted them. The adjective is still true.
+   * Dirtiness is a per-repo boolean, never a sum: the summed diffstat this
+   * card used to report was a number that kept disagreeing with reality.
    */
-  it("says uncommitted changes when nothing measured them", () => {
-    const status = describeWorkspace(
-      item(),
-      context([branch("feature", { hasWorkingTreeChanges: true })]),
-    );
-    expect(status.phrase).toBe("uncommitted changes");
-  });
-
-  /** One line for the card, so several repos' working trees are one sum. */
-  it("sums the working trees of every repo that has one", () => {
+  it("reports a dirty working tree as that branch's own boolean", () => {
     const status = describeWorkspace(
       item({
-        attachments: [attachment(REPO, "feature"), attachment(REPO, "other")],
+        attachments: [attachment(REPO, "feature"), attachment(REPO, "clean")],
       }),
       context([
-        branch("feature", {
-          hasWorkingTreeChanges: true,
-          workingTreeStats: { fileCount: 3, additions: 48, deletions: 12 },
-        }),
-        branch("other", {
-          hasWorkingTreeChanges: true,
-          workingTreeStats: { fileCount: 1, additions: 2, deletions: 30 },
-        }),
+        branch("feature", { hasWorkingTreeChanges: true }),
+        branch("clean"),
       ]),
     );
-    expect(status.phrase).toBe("4 files +50 −42");
+    expect(status.repos.map((c) => c.hasChanges)).toEqual([true, false]);
   });
 
-  /** A clean workspace is never asked how big its changes are. */
-  it("says nothing about a working tree with nothing in it", () => {
-    const status = describeWorkspace(item(), context([branch("feature")]));
-    expect(status.phrase).toBe("");
-    expect(status.clauses).toEqual([]);
-  });
-
-  it("falls back to review progress when nothing is waiting on you", () => {
-    const key = makeReviewKey(REPO, "feature");
+  it("says red CI in the subtitle, after the number", () => {
     const status = describeWorkspace(
       item(),
-      context([branch("feature")], [], {
-        [key]: {
-          repoPath: REPO,
-          repoName: "repo",
-          ref: "feature",
-          tier: "materialized",
-          totalHunks: 10,
-          trustedHunks: 0,
-          approvedHunks: 3,
-          reviewedHunks: 3,
-          rejectedHunks: 0,
-          savedForLaterHunks: 0,
-          state: null,
-          updatedAt: new Date(NOW).toISOString(),
-        },
-      }),
+      context([branch("feature")], [pr({ checksState: "FAILURE" })]),
     );
-    expect(status.phrase).toBe("3/10 reviewed");
+    expect(status.subtitle).toContain("#12 CI failing");
   });
 
   it("labels each chip with the repo it belongs to", () => {
@@ -244,33 +170,6 @@ describe("describeWorkspace", () => {
     expect(status.title).toBe("scratch");
     expect(status.repos[0].chipLabel).toBe("scratch");
     expect(status.resolved).toBe(false);
-  });
-
-  it("sums review progress across the repos that have one", () => {
-    const review = (ref: string, reviewed: number, total: number) => ({
-      repoPath: REPO,
-      repoName: "repo",
-      ref,
-      tier: "materialized" as const,
-      totalHunks: total,
-      trustedHunks: 0,
-      approvedHunks: reviewed,
-      reviewedHunks: reviewed,
-      rejectedHunks: 0,
-      savedForLaterHunks: 0,
-      state: null,
-      updatedAt: new Date(NOW).toISOString(),
-    });
-    const status = describeWorkspace(
-      item({
-        attachments: [attachment(REPO, "feature"), attachment(REPO, "dev")],
-      }),
-      context([branch("feature"), branch("dev")], [], {
-        [makeReviewKey(REPO, "feature")]: review("feature", 3, 10),
-        [makeReviewKey(REPO, "dev")]: review("dev", 1, 2),
-      }),
-    );
-    expect(status.progress).toEqual({ reviewed: 4, total: 12 });
   });
 });
 
@@ -311,7 +210,7 @@ describe("shipped", () => {
       shippedContext([branch("main")], [shippedPr("feature")]),
     );
     expect(status.shipped?.number).toBe(12);
-    expect(status.phrase).toBe("#12 shipped");
+    expect(status.subtitle).toContain("#12 merged");
     expect(status.resolved).toBe(true);
   });
 
@@ -352,47 +251,5 @@ describe("shipped", () => {
     );
     expect(status.shipped).toBeUndefined();
     expect(status.openPr?.number).toBe(12);
-  });
-});
-
-describe("attention markers", () => {
-  const quiet = () => describeWorkspace(item(), context([branch("feature")]));
-
-  it("says nothing about a workspace that is quietly getting on with it", () => {
-    expect(attentionSignalAt(quiet(), null)).toBeNull();
-    expect(isUnseen(null, undefined)).toBe(false);
-  });
-
-  it("takes the newest of the things that want a person", () => {
-    const blocked = describeWorkspace(
-      item(),
-      context(
-        [branch("feature")],
-        [
-          pr({
-            reviewDecision: "CHANGES_REQUESTED",
-            updatedAt: new Date(NOW).toISOString(),
-          }),
-        ],
-      ),
-    );
-    // A terminal that stopped after the review landed is the newer thing.
-    expect(attentionSignalAt(blocked, NOW + 5000)).toBe(NOW + 5000);
-    expect(attentionSignalAt(blocked, null)).toBe(NOW);
-  });
-
-  it("ignores a PR that is open and healthy", () => {
-    const healthy = describeWorkspace(
-      item(),
-      context([branch("feature")], [pr()]),
-    );
-    expect(attentionSignalAt(healthy, null)).toBeNull();
-  });
-
-  it("is unseen until the last look postdates the signal", () => {
-    expect(isUnseen(NOW, undefined)).toBe(true);
-    expect(isUnseen(NOW, NOW - 1)).toBe(true);
-    expect(isUnseen(NOW, NOW)).toBe(false);
-    expect(isUnseen(NOW, NOW + 1)).toBe(false);
   });
 });

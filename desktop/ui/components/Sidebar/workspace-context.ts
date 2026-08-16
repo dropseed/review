@@ -42,7 +42,6 @@ export function getWorkspaceContext(state: {
     tree,
     state.localActivity,
     state.repoMetadata,
-    state.globalReviewsByKey,
     state.viewerPrs?.shipped,
   ];
   if (cache && deps.every((dep, i) => dep === cache!.deps[i])) return cache.ctx;
@@ -83,7 +82,6 @@ export function getWorkspaceContext(state: {
     repoNames,
     knownRepos,
     heads,
-    reviews: state.globalReviewsByKey,
     shipped,
     rowsByRepoRef: sidebarRowsByRepoRef(tree),
   };

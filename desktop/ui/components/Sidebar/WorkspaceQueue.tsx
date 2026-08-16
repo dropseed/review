@@ -3,7 +3,6 @@ import {
   Fragment,
   memo,
   useCallback,
-  useEffect,
   useMemo,
   useRef,
   useState,
@@ -34,20 +33,19 @@ import {
 import { CheckIcon } from "../ui/icons";
 import { ContextActionItems } from "./ActionMenu";
 import { WorkspaceTitleInput } from "./WorkspaceTitleInput";
-import { PrBadge } from "./PrBadge";
 import { PhaseDot } from "./PhaseDot";
 import { workspaceState } from "./StatusDot";
 import { TerminalRow } from "./TerminalRow";
 import { activateOnKey } from "./row-chrome";
+import { prBadgeClass } from "./pr-format";
+import { prNeedsAttention } from "../../utils/sidebar-tree";
 import { workspaceActions } from "./workspace-actions";
 import { useWorkspaceContext } from "./workspace-context";
 import {
-  attentionSignalAt,
-  fileCountLabel,
   describeWorkspace,
   isNamed,
-  isUnseen,
-  type PhraseClause,
+  prCiFailing,
+  type AttachmentStatus,
   type WorkspaceContext,
   type WorkspaceStatus,
 } from "./workspace-status";
@@ -82,19 +80,6 @@ export function WorkspaceQueue(): ReactNode {
   const tabsByWorkspace = useTabsByWorkspaceId();
   const focused = useFocusedWorkspace();
   const modHeld = useModHeld();
-  const seenAt = useReviewStore((s) => s.workspaceSeenAt);
-  const markWorkspaceSeen = useReviewStore((s) => s.markWorkspaceSeen);
-
-  // Stable, so an entry's acknowledge effect doesn't re-run on every render of
-  // the queue.
-  const markSeen = useCallback(
-    (workspaceId: string) =>
-      markWorkspaceSeen(
-        workspaceId,
-        useReviewStore.getState().workspaces.map((entry) => entry.id),
-      ),
-    [markWorkspaceSeen],
-  );
 
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -140,7 +125,7 @@ export function WorkspaceQueue(): ReactNode {
         role="listbox"
         aria-label="Workspaces"
         aria-orientation="vertical"
-        className="min-h-0 flex-1 space-y-px overflow-y-auto px-1.5 py-1 scrollbar-thin"
+        className="min-h-0 flex-1 space-y-[3px] overflow-y-auto px-1.5 py-1 scrollbar-thin"
       >
         {workspaces.map((workspace, index) => (
           <Fragment key={workspace.id}>
@@ -157,8 +142,6 @@ export function WorkspaceQueue(): ReactNode {
               // re-render each time a ⌘ chord is pressed anywhere in the app.
               showShortcut={modHeld && index < SHORTCUT_LIMIT}
               focused={workspace.id === focused?.id}
-              seenAt={seenAt[workspace.id]}
-              onSeen={markSeen}
             />
           </Fragment>
         ))}
@@ -229,10 +212,6 @@ interface QueueEntryProps {
   /** ⌘ is down and this card is one a digit can reach — show its number. */
   showShortcut: boolean;
   focused: boolean;
-  /** When this workspace was last looked at, for the unseen accent. */
-  seenAt: number | undefined;
-  /** Acknowledge it — see the effect in `QueueEntry`. */
-  onSeen: (workspaceId: string) => void;
 }
 
 /**
@@ -251,8 +230,6 @@ const QueueEntry = memo(function QueueEntry({
   tabIds,
   showShortcut,
   focused,
-  seenAt,
-  onSeen,
 }: QueueEntryProps): ReactNode {
   const [renaming, setRenaming] = useState(false);
   const removeWorkspace = useReviewStore((s) => s.removeWorkspace);
@@ -277,26 +254,21 @@ const QueueEntry = memo(function QueueEntry({
   );
   const state = workspaceState(terminals.phase, terminals.tabs > 0);
   const live = state !== "dormant";
-  const detailRepos = isNamed(workspace)
-    ? status.repos
-    : status.repos.filter((repo) => repo.chipLabel !== status.title);
+  // A chip that would just repeat the derived title is *absorbed*: its row is
+  // not drawn, and its marks — the PR number, the dirty dot — move up beside
+  // the title instead, so a dormant `repo · branch` card stays one line
+  // without losing the branch's state.
+  const absorbed = isNamed(workspace)
+    ? undefined
+    : status.repos.find((repo) => repo.chipLabel === status.title);
+  const detailRepos = status.repos.filter((repo) => repo !== absorbed);
   // Two ways a queue entry is finished with: its branches are gone, or its PR
   // landed. Both keep their place and offer removal — the app changes what a
   // workspace *says*, and only the user takes one out of the queue.
   const done = status.resolved || !!status.shipped;
-  const unseen = isUnseen(
-    attentionSignalAt(status, terminals.waitingSince),
-    seenAt,
-  );
-
-  // A workspace on the stage is one you are looking at, so a signal raised
-  // while it is focused is acknowledged as it arrives. Without this, the
-  // acknowledgement would be the *moment of focusing* alone, and every signal
-  // that landed while you were reading the diff would light the card up the
-  // instant you moved on.
-  useEffect(() => {
-    if (focused && unseen) onSeen(workspace.id);
-  }, [focused, unseen, workspace.id, onSeen]);
+  // The one changes-requested PR this card shows, wherever its chip ended up.
+  const changesRequested =
+    status.openPr && prNeedsAttention(status.openPr) ? status.openPr : null;
 
   const open = useCallback(() => focusWorkspace(workspace), [workspace]);
 
@@ -320,27 +292,18 @@ const QueueEntry = memo(function QueueEntry({
           onDragEnd={() => setDraggedWorkspace(null)}
           title={status.subtitle || status.title}
           className={clsx(
+            // A real container, not a hover ghost: entries are individually
+            // clickable and draggable, and with the status phrase gone the
+            // queue needs the card edge to say where one workspace ends.
             "group relative cursor-default rounded-lg border px-2 py-1.5 outline-none transition-colors duration-100",
             isOver
               ? "border-focus-ring bg-fg/[0.06]"
               : focused
                 ? "border-edge-default bg-fg/[0.06]"
-                : "border-transparent hover:bg-fg/[0.04]",
+                : "border-edge bg-fg/[0.03] hover:bg-fg/[0.05]",
             "focus-visible:ring-1 focus-visible:ring-focus-ring/70",
           )}
         >
-          {/* Unseen: something changed here since the last time this workspace
-              was looked at. A bar on the outer edge rather than another badge
-              in the row — it has to be findable by scanning the list's margin.
-              Focusing the workspace is what clears it; there is no dismiss. */}
-          {unseen && !focused && (
-            <span
-              aria-hidden="true"
-              data-unseen
-              className="absolute inset-y-1.5 -left-px w-[2px] rounded-full bg-status-saved"
-            />
-          )}
-
           <div className="flex items-center gap-2">
             {/* The card's position, shown only while ⌘ is down — the number
                 ⌘1–9 would press. It takes the slot rather than reserving one:
@@ -417,10 +380,11 @@ const QueueEntry = memo(function QueueEntry({
                   )}
                 />
               ) : (
-                // No "M" beside the PR badge any more: the line below now says
-                // how big the working tree is, and a badge that means "there is
-                // something uncommitted" is the same fact with less in it.
-                status.openPr && <PrBadge pr={status.openPr} />
+                // The absorbed chip's marks, worn by the title that swallowed
+                // it — so a one-line `repo · branch` card still says its PR
+                // and its dirtiness. Cards whose chips are drawn below carry
+                // these on the chips instead.
+                absorbed && <ChipMarks repo={absorbed} />
               )}
               {done && (
                 <button
@@ -440,41 +404,25 @@ const QueueEntry = memo(function QueueEntry({
             </span>
           </div>
 
-          {/* Every entry shows its repos and status phrase, focused or not:
-              the stage says nothing about the workspace any more, so this card
-              is the only place its repos, its PR and how far its review got
-              are read — hiding that on dormant entries would make the queue a
-              list of bare names. A chip that would just repeat the derived
-              title is dropped: the title already is that repo. */}
-          {(detailRepos.length > 0 || status.phrase) && (
-            <div className="mt-1 flex flex-wrap items-center gap-1 pl-[15px]">
+          {/* Every entry shows its repos, focused or not: the stage says
+              nothing about the workspace any more, so this card is the only
+              place its repos and their PRs are read — hiding that on dormant
+              entries would make the queue a list of bare names. Each chip
+              carries its own branch's facts (see `RepoChip`); the chip a
+              derived title already is gets absorbed instead (see `absorbed`).
+              Red CI is words, not colour — red here means a reviewer asked
+              for changes and nothing else. */}
+          {(detailRepos.length > 0 ||
+            (status.openPr && prCiFailing(status.openPr))) && (
+            <div className="mt-1 flex flex-wrap items-center gap-1">
               {detailRepos.map((repo) => (
-                <span
-                  key={repo.reviewKey}
-                  className={clsx(
-                    "max-w-full truncate rounded px-1 text-[9.5px] leading-4",
-                    repo.gone
-                      ? "bg-fg/[0.04] text-fg-faint/50 line-through"
-                      : "bg-fg/[0.05] text-status-trusted/80",
-                  )}
-                  title={repo.attachment.path}
-                >
-                  {repo.chipLabel}
+                <RepoChip key={repo.reviewKey} repo={repo} />
+              ))}
+              {status.openPr && prCiFailing(status.openPr) && (
+                <span className="text-[9.5px] leading-4 text-fg-faint">
+                  CI failing
                 </span>
-              ))}
-              {status.clauses.map((clause, index) => (
-                <Fragment key={clause.text}>
-                  {index > 0 && (
-                    <span
-                      aria-hidden="true"
-                      className="text-[9.5px] leading-4 text-fg-faint/50"
-                    >
-                      ·
-                    </span>
-                  )}
-                  <PhraseClauseText clause={clause} />
-                </Fragment>
-              ))}
+              )}
             </div>
           )}
 
@@ -486,25 +434,36 @@ const QueueEntry = memo(function QueueEntry({
               workspace running nothing — a heading over an empty list is the
               queue claiming space for something that isn't there — and nothing
               for the terminal the title above already is, which would be the
-              same string twice with a marker between them. */}
+              same string twice with a marker between them. The negative margin
+              lets a row's hover ground bleed while its text stays flush with
+              the card's own lines. */}
           {tabIds.length > 0 && !titleTerminal && (
-            <div className="mt-1 pl-[15px]">
+            <div className="-mx-1 mt-1">
               {tabIds.map((tabId) => (
                 <TerminalRow key={tabId} tabId={tabId} />
               ))}
             </div>
           )}
 
-          {/* The signature line: what a stopped agent is stopped on, in its
-              own words, so the queue answers "what needs me" without opening
-              anything. At most one, and only when something waiting actually
-              said something — that a terminal is waiting is what its phase
-              marker is for. */}
-          {terminals.waitingOn && (
-            <p className="mt-1 truncate pl-[15px] text-[10px] leading-4 text-status-saved/90">
+          {/* The signal line: the one thing here that wants a person, in
+              words. A stopped agent's own question, or the reviewer's verdict
+              — the same kind of fact, so they share the slot — and the good
+              ending when the story is over. At most one; a waiting terminal
+              that said nothing shows nothing, because that it is waiting is
+              what its phase marker is for. */}
+          {status.shipped ? (
+            <p className="mt-1 truncate text-[10px] leading-4 text-status-approved/85">
+              #{status.shipped.number} merged
+            </p>
+          ) : terminals.waitingOn ? (
+            <p className="mt-1 truncate text-[10px] leading-4 text-status-saved/90">
               {terminals.waitingOn}
             </p>
-          )}
+          ) : changesRequested ? (
+            <p className="mt-1 truncate text-[10px] leading-4 text-pr-attention/90">
+              changes requested
+            </p>
+          ) : null}
         </div>
       </ContextMenuTrigger>
 
@@ -525,28 +484,58 @@ const QueueEntry = memo(function QueueEntry({
 });
 
 /**
- * One clause of the status line.
- *
- * The changes clause is the only one drawn as more than its words: how much is
- * uncommitted is a number you compare across cards, and it reads as one at a
- * glance only if the two signs are the colours the diff itself uses for them.
- * The file count stays the phrase's own grey — it is the noun, not the news.
+ * The marks a branch's chip carries: its PR number in GitHub's colours, and an
+ * amber dot when its working tree is dirty. Their own component because they
+ * are drawn in two places — on the chip, and beside a title that absorbed one.
  */
-function PhraseClauseText({ clause }: { clause: PhraseClause }): ReactNode {
-  if (!clause.stat) {
-    return (
-      <span className="truncate text-[9.5px] leading-4 text-fg-faint">
-        {clause.text}
-      </span>
-    );
-  }
-  // The words come from the same helpers that built `clause.text`, so the line
-  // and the tooltip describing it cannot say different things.
+function ChipMarks({ repo }: { repo: AttachmentStatus }): ReactNode {
   return (
-    <span className="flex shrink-0 items-center gap-1 text-[9.5px] leading-4 tabular-nums text-fg-faint">
-      <span>{fileCountLabel(clause.stat)}</span>
-      <span className="text-diff-added">+{clause.stat.additions}</span>
-      <span className="text-diff-removed">−{clause.stat.deletions}</span>
+    <>
+      {repo.openPr && (
+        <span
+          className={clsx(
+            "shrink-0 text-[9.5px] leading-4 tabular-nums",
+            prBadgeClass(repo.openPr),
+          )}
+        >
+          #{repo.openPr.number}
+        </span>
+      )}
+      {repo.hasChanges && (
+        <span
+          title="Uncommitted changes"
+          className="shrink-0 text-[9.5px] leading-4 text-status-saved"
+        >
+          •
+        </span>
+      )}
+    </>
+  );
+}
+
+/**
+ * One attachment, as `repo · branch` plus the facts that belong to that
+ * branch. The label is what truncates — the marks are pinned outside the
+ * ellipsis, because state must never be the first thing a long branch name
+ * pushes off the card.
+ */
+function RepoChip({ repo }: { repo: AttachmentStatus }): ReactNode {
+  return (
+    <span
+      className="flex min-w-0 max-w-full items-center gap-1 rounded bg-fg/[0.05] px-1"
+      title={repo.attachment.path}
+    >
+      <span
+        className={clsx(
+          "min-w-0 truncate text-[9.5px] leading-4",
+          repo.gone
+            ? "text-fg-faint/50 line-through"
+            : "text-status-trusted/80",
+        )}
+      >
+        {repo.chipLabel}
+      </span>
+      <ChipMarks repo={repo} />
     </span>
   );
 }

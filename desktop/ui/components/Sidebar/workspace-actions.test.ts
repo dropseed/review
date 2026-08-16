@@ -55,7 +55,6 @@ const EMPTY_CONTEXT: WorkspaceContext = {
   repoNames: new Map(),
   knownRepos: new Set(),
   heads: new Map(),
-  reviews: {},
   shipped: new Map(),
 };
 
