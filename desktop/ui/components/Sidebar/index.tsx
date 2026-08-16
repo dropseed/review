@@ -4,7 +4,7 @@ import { useSidebarResize } from "../../hooks/useSidebarResize";
 import { useAutoUpdater } from "../../hooks/useAutoUpdater";
 import { getPlatformServices } from "../../platform";
 import { focusWorkspace } from "../../commands/workspaceCommands";
-import { SidebarPanelIcon } from "../ui/icons";
+import { SidebarPanelIcon, XIcon } from "../ui/icons";
 import { SidebarResizeHandle } from "../ui/sidebar-resize-handle";
 import { Spinner } from "../ui/spinner";
 import { LspStatusIndicator } from "../LspStatusIndicator";
@@ -84,7 +84,13 @@ function FooterVersionInfo({
  * of one workspace at a time, every terminal in every one of them at once. It
  * belongs here because the row it opens spans the whole list this header names.
  */
-function SidebarHeader({ onToggle }: { onToggle: () => void }): ReactNode {
+function SidebarHeader({
+  onToggle,
+  drawer = false,
+}: {
+  onToggle: () => void;
+  drawer?: boolean;
+}): ReactNode {
   const addWorkspace = useReviewStore((s) => s.addWorkspace);
   const terminalOverview = useReviewStore((s) => s.terminalOverview);
   const toggleTerminalOverview = useReviewStore(
@@ -167,9 +173,13 @@ function SidebarHeader({ onToggle }: { onToggle: () => void }): ReactNode {
           className="flex items-center justify-center w-6 h-6 shrink-0 rounded
                    hover:bg-fg/[0.08] transition-colors duration-100
                    text-fg-muted hover:text-fg-secondary"
-          aria-label="Hide sidebar"
+          aria-label={drawer ? "Close" : "Hide sidebar"}
         >
-          <SidebarPanelIcon className="w-3.5 h-3.5" />
+          {drawer ? (
+            <XIcon className="w-3.5 h-3.5" />
+          ) : (
+            <SidebarPanelIcon className="w-3.5 h-3.5" />
+          )}
         </button>
       </span>
     </div>
@@ -188,9 +198,26 @@ function SidebarHeader({ onToggle }: { onToggle: () => void }): ReactNode {
  * repo you are actually working in is a workspace in the queue by definition.
  * Nothing here is a second place to look.
  */
-export const Sidebar = memo(function Sidebar() {
-  const collapsed = useReviewStore((s) => s.tabRailCollapsed);
-  const toggleSidebar = useReviewStore((s) => s.toggleTabRail);
+export const Sidebar = memo(function Sidebar({
+  drawer = false,
+  onDismiss,
+}: {
+  /**
+   * Drawn as a phone drawer rather than the window's own column: it fills
+   * whatever width the drawer gives it, its resize handle and collapsed rail
+   * are gone (there is nothing beside it to take room from), and the header's
+   * button dismisses the drawer instead of collapsing a column.
+   */
+  drawer?: boolean;
+  onDismiss?: () => void;
+} = {}) {
+  const storeCollapsed = useReviewStore((s) => s.tabRailCollapsed);
+  const toggleStoreSidebar = useReviewStore((s) => s.toggleTabRail);
+  // A drawer is only ever rendered while open, and its own state is the shell's
+  // — the persisted desktop collapse must not decide whether a phone's queue
+  // appears, or a window collapsed on a laptop would open to an empty drawer.
+  const collapsed = drawer ? false : storeCollapsed;
+  const toggleSidebar = drawer ? (onDismiss ?? (() => {})) : toggleStoreSidebar;
 
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const { updateAvailable, installing, installUpdate } = useAutoUpdater();
@@ -216,31 +243,36 @@ export const Sidebar = memo(function Sidebar() {
   }
 
   return (
-    <div className="relative flex shrink-0">
+    <div className={drawer ? "flex h-full min-h-0" : "relative flex shrink-0"}>
       {/* Collapsed, the sidebar keeps its column as a rail rather than
           vanishing — the way back lives on the sidebar's own edge instead of
           floating over whichever view is mounted. The nav below stays mounted
           at zero width so expanding is a width animation, not a remount. */}
-      {collapsed && <SidebarRail onExpand={toggleSidebar} />}
+      {collapsed && !drawer && <SidebarRail onExpand={toggleSidebar} />}
 
       {/* select-none for the whole sidebar: entries are things you click and
           drag, not text you select. */}
       <nav
         className={`tab-rail flex h-full shrink-0 select-none flex-col
                    bg-surface overflow-hidden
-                   ${isResizing ? "" : "transition-[width,opacity] duration-200 ease-out"}`}
-        style={{
-          width: collapsed ? 0 : `${sidebarWidth}rem`,
-          opacity: collapsed ? 0 : 1,
-        }}
+                   ${drawer ? "w-full" : ""}
+                   ${isResizing || drawer ? "" : "transition-[width,opacity] duration-200 ease-out"}`}
+        style={
+          drawer
+            ? undefined
+            : {
+                width: collapsed ? 0 : `${sidebarWidth}rem`,
+                opacity: collapsed ? 0 : 1,
+              }
+        }
         aria-label="Workspaces"
         aria-hidden={collapsed}
       >
         <div
           className="flex flex-col h-full min-w-0"
-          style={{ width: `${sidebarWidth}rem` }}
+          style={drawer ? { width: "100%" } : { width: `${sidebarWidth}rem` }}
         >
-          <SidebarHeader onToggle={toggleSidebar} />
+          <SidebarHeader onToggle={toggleSidebar} drawer={drawer} />
 
           <WorkspaceQueue />
 
@@ -262,7 +294,7 @@ export const Sidebar = memo(function Sidebar() {
           </div>
         </div>
 
-        {!collapsed && (
+        {!collapsed && !drawer && (
           <SidebarResizeHandle
             position="right"
             onMouseDown={handleResizeStart}

@@ -16,43 +16,65 @@ import { FilesRail } from "./FilesRail";
  * forgets them. `content-visibility` is what makes that cheap — React state
  * survives, but a file tree nobody can see skips layout and paint.
  */
-export function FilesPanelDock(): ReactNode {
-  const collapsed = useReviewStore((s) => s.filesPanelCollapsed);
+export function FilesPanelDock({
+  full = false,
+  availablePx,
+}: { full?: boolean; availablePx?: number } = {}): ReactNode {
+  const stored = useReviewStore((s) => s.filesPanelCollapsed);
+  // `full` is the phone: the panel *is* the code half there, so it fills it and
+  // the persisted collapse has no say — a preference about how to share a row
+  // means nothing in a layout with one column. Reading it would let a desktop
+  // choice blank the only thing on screen.
+  const collapsed = full ? false : stored;
+  // Measured against the code half rather than the window: this column shares
+  // a row with the diff, not with the screen. See `useSidebarResize`.
   const { sidebarWidth, isResizing, handleResizeStart } = useSidebarResize({
     sidebarPosition: "right",
+    availablePx,
   });
 
   return (
     <>
-      {collapsed && <FilesRail />}
+      {collapsed && !full && <FilesRail />}
 
       <aside
-        className={`relative flex flex-shrink-0 flex-col overflow-hidden
+        className={`relative flex flex-col overflow-hidden
+                    ${full ? "min-w-0 flex-1" : "flex-shrink-0"}
                     ${
-                      isResizing
+                      isResizing || full
                         ? ""
                         : "transition-[width,opacity] duration-200 ease-out"
                     }`}
-        style={{
-          width: collapsed ? 0 : `${sidebarWidth}rem`,
-          // Faded as it narrows, like the sidebar: a right-edge panel that only
-          // clips reads as content being cut off rather than put away.
-          opacity: collapsed ? 0 : 1,
-        }}
+        style={
+          full
+            ? undefined
+            : {
+                width: collapsed ? 0 : `${sidebarWidth}rem`,
+                // Faded as it narrows, like the sidebar: a right-edge panel
+                // that only clips reads as content being cut off rather than
+                // put away.
+                opacity: collapsed ? 0 : 1,
+              }
+        }
         aria-hidden={collapsed}
       >
         <div
-          className="flex flex-col flex-1 overflow-hidden border-l border-edge/60 bg-surface"
-          style={{
-            width: `${sidebarWidth}rem`,
-            contentVisibility: collapsed ? "hidden" : "visible",
-          }}
+          className={`flex flex-col flex-1 overflow-hidden bg-surface
+                      ${full ? "min-w-0" : "border-l border-edge/60"}`}
+          style={
+            full
+              ? undefined
+              : {
+                  width: `${sidebarWidth}rem`,
+                  contentVisibility: collapsed ? "hidden" : "visible",
+                }
+          }
         >
           <div className="flex-1 overflow-hidden">
             <FilesPanel />
           </div>
 
-          {!collapsed && (
+          {!collapsed && !full && (
             <SidebarResizeHandle
               position="left"
               onMouseDown={handleResizeStart}

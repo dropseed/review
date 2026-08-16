@@ -83,6 +83,19 @@ export function useFileRouteSync() {
     if (overlay !== null) return;
     if (!owner || !repo) return;
     if (!isBrowseRoute && !reviewRef) return;
+    // A file in the URL that the store hasn't adopted *yet* is not a stale URL
+    // to correct — it is the load this hook's other half is still waiting on.
+    // Both effects run on mount; without this the empty selection wins the
+    // race, rewrites the URL to the base path, and the file path is gone
+    // before the list it would have been validated against arrives. It shows
+    // up as "opening a link to a file lands on the file list", which is every
+    // cold start of the installed app and every shared URL.
+    if (
+      selectedFile === null &&
+      urlFilePath !== null &&
+      flatFileList.length === 0
+    )
+      return;
 
     const basePath = isBrowseRoute
       ? `/${owner}/${repo}/browse`
@@ -111,5 +124,7 @@ export function useFileRouteSync() {
     isBrowseRoute,
     location.pathname,
     navigate,
+    urlFilePath,
+    flatFileList,
   ]);
 }

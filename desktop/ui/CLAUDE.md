@@ -52,6 +52,20 @@ The stage is **two tab strips**, drawn to match: terminals on the left (`Termina
 
 `autoCreated` is backend plumbing for cleanup. It is never rendered and nothing branches on it — a router-made workspace and a human-made one are the same thing on screen.
 
+## Phone width is a degraded desktop, never a mode
+
+`useIsCompact()` (below Tailwind's `md`, so a JS branch and an `md:` class flip on the same pixel) is the one answer to "is this a phone". Everything reading it **degrades and writes nothing back** — the rule `useResponsiveDiffViewMode` already follows for a split diff in a narrow pane — so a stored preference survives a phone visit untouched and returns intact when the window widens.
+
+It is split by what CSS can reach. Structure is JS, because the widths come from `style` props and a `ResizeObserver` and because "a drawer instead of a column" is a different tree, not a different style; pure styling stays in `md:` classes. Three places branch:
+
+- **The stage** shows one half (`TerminalDock`). `Stage/compact.ts` resolves `contentFocus`'s "split" to the terminal, since a running agent is why this gets opened on a phone. The other half stays mounted and hidden, for the reason `contentRail` keeps the content mounted.
+- **The sidebar** becomes `Sidebar/QueueDrawer` — the same component with `drawer`, over the stage. Its open state is the shell's `useState`, deliberately **not** `tabRailCollapsed`: that one is persisted, and a phone must not open into whatever a laptop last chose.
+- **The code half** is list-or-detail, derived from `selectedFile` alone. `filesPanelCollapsed` is the obvious lever and the wrong one — a persisted desktop preference a thumb must not edit.
+
+`Stage/CompactBar` is the whole navigation: the queue, and which half is on screen, at the bottom where a thumb is, padded by `env(safe-area-inset-bottom)`.
+
+A cold start at a URL is the PWA's normal case and used to lose the file — `ReviewRoute` treated "repo still resolving" as "no repo", and `useRepositoryInit`'s clean-route normalization dropped the `/file/...` segment. Both now preserve a location already inside the review being opened.
+
 The one list in the sidebar that isn't the queue is the **pull-requests drawer** (`Sidebar/PullRequestsDrawer`, rules in `Sidebar/pr-drawer.ts`), collapsible at the foot above agent usage. It shows the viewer's open PRs **minus** the ones a workspace already stands for, minus the repos filtered out in its header popover — so its count is a count of work not yet picked up, and any subtraction the user made is restated beside it as `· N hidden` rather than silently shortening the list. Clicking a row is the gesture that moves one across: `openRowInWorkspace` on the tree's own row for that PR, the same verb ⌘K's Enter uses.
 
 Three joins make that safe, and all three go through the sidebar tree rather than re-reading the PR snapshot — `stores/selectors/sidebar.ts` owns them, cached on tree identity. `availablePrs` is the one gate on a logged-out `gh` (its cached PRs must be ignored everywhere, or a card badges what the row below it discarded). `sidebarRowsByRepoRef` indexes rows by repo and _branch_, which is what an attachment names — that is how a PR branch that hasn't been fetched yet is badged rather than called _gone_, and it is what `attachmentPr`/`attachmentRow` in `workspace-status` read. `sidebarRowsByPr` indexes rows by the PR they stand for, so the drawer never re-derives a join the tree already made. A PR whose repo isn't cloned here stays listed and opens in the browser — there is no clone-on-click.

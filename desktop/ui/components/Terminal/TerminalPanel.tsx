@@ -1,6 +1,7 @@
 import { type ReactElement, type ReactNode, useMemo } from "react";
 import { clsx } from "clsx";
 import { useReviewStore } from "../../stores";
+import { CompactMenuButton } from "../Stage/CompactNav";
 import {
   isOrphanedSession,
   type TerminalTab,
@@ -130,6 +131,9 @@ export function TerminalPanel(): ReactNode {
       {/* select-none: the strip is drag-and-click chrome, and a tab title left
           highlighted after a drag reads as a selection you didn't make. */}
       <div className="group/bar flex select-none items-start gap-0.5 border-b border-edge/60 px-1.5 py-1">
+        {/* Phone only: the way out to the workspace queue. Renders nothing at
+            desktop width, where that queue is a column already on screen. */}
+        <CompactMenuButton />
         {/* Tabs wrap rather than scroll: the panel is often half the window
             wide, where a horizontal scroller hides tabs behind a gesture you
             have to discover. Capped at ~three rows so a pile of terminals can't

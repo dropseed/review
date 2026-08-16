@@ -39,7 +39,10 @@ export function EmptyStage(): ReactNode {
   const dual = own.tabs === 0 && workspace.attachments.length === 0;
 
   return (
-    <div className="flex h-full min-h-0 flex-row gap-2 p-2">
+    // Stacked at phone width rather than two columns of 180px: the frame is
+    // meant to say "shells go here, repos go there", and two unreadable
+    // columns say neither.
+    <div className="flex h-full min-h-0 flex-col gap-2 p-2 md:flex-row">
       {dual && (
         <section className="panel-card flex min-w-0 flex-1 flex-col overflow-hidden bg-surface-panel">
           <StartTerminal workspace={workspace} />

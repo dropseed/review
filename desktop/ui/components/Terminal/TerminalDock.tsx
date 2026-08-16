@@ -1,10 +1,4 @@
-import {
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { type ReactNode, useCallback, useRef, useState } from "react";
 import { clsx } from "clsx";
 import { useReviewStore } from "../../stores";
 import { ResizeHandle } from "../ContentArea/ResizeHandle";
@@ -15,7 +9,6 @@ import { TerminalRail } from "./TerminalRail";
 import {
   TERMINAL_MAX_CONTENT_FRACTION,
   clampPanelWidthPx,
-  rafThrottle,
   toggleToCanonical,
 } from "../../utils/resize";
 import {
@@ -23,6 +16,9 @@ import {
   TERMINAL_PANEL_WIDTH_MIN,
 } from "../../stores/slices/terminalSlice";
 import { useTerminalDockPresent } from "../../stores/selectors/terminals";
+import { useIsCompact } from "../../hooks/useIsCompact";
+import { useElementWidth } from "../../hooks/useElementWidth";
+import { compactStageHalf } from "../Stage/compact";
 
 /**
  * The terminal's place in the window: a resizable pane on the left of whatever
@@ -42,48 +38,37 @@ export function TerminalDock({ children }: { children: ReactNode }): ReactNode {
   const terminalOverview = useReviewStore((s) => s.terminalOverview);
   const terminalPanelWidth = useReviewStore((s) => s.terminalPanelWidth);
   const setTerminalPanelWidth = useReviewStore((s) => s.setTerminalPanelWidth);
-  const contentRowRef = useRef<HTMLDivElement | null>(null);
 
   // A workspace showing a repo keeps its dock whether or not it is running
   // anything — the strip's own "+" is how a shell gets started in it.
   const docked = useTerminalDockPresent();
+  const compact = useIsCompact();
+  const compactHalf = compactStageHalf(contentFocus, docked);
   const focus = docked ? contentFocus : "code";
   const terminalFocused = focus === "terminal";
   // Focusing the code still leaves the terminal on its dock edge — as a
   // narrow rail, not nothing, so there's a way back besides remembering ⌘`.
   const railed = docked && focus === "code";
 
-  // ResizeHandle reports a fraction of the content row from its left edge, and
-  // the terminal is that edge — so the fraction *is* the panel's own width.
-  const handleTerminalResize = useCallback(
-    (fraction: number) => {
-      const rowWidth = contentRowRef.current?.clientWidth ?? 0;
-      if (rowWidth === 0) return;
-      setTerminalPanelWidth(Math.round(fraction * rowWidth));
-    },
-    [setTerminalPanelWidth],
-  );
-
   // The panel's stored width is px, and a width picked on an ultrawide is most
   // of a laptop screen. Rather than rewrite the stored width — which would lose
   // it the moment you unplugged — the row is measured and the panel is capped
   // at a share of it, so it comes back at full size on the display it was
-  // sized for.
-  const [contentRowWidth, setContentRowWidth] = useState(0);
-  useEffect(() => {
-    const row = contentRowRef.current;
-    if (!row) return;
-    const update = rafThrottle(setContentRowWidth);
-    const observer = new ResizeObserver((entries) => {
-      update(entries[0].contentRect.width);
-    });
-    observer.observe(row);
-    setContentRowWidth(row.clientWidth);
-    return () => {
-      observer.disconnect();
-      update.cancel();
-    };
-  }, []);
+  // sized for. The files column is capped the same way, against its own row.
+  const [contentRow, setContentRow] = useState<HTMLDivElement | null>(null);
+  const contentRowWidth = useElementWidth(contentRow);
+
+  // ResizeHandle reports a fraction of the content row from its left edge, and
+  // the terminal is that edge — so the fraction *is* the panel's own width.
+  const handleTerminalResize = useCallback(
+    (fraction: number) => {
+      const rowWidth = contentRow?.clientWidth ?? 0;
+      if (rowWidth === 0) return;
+      setTerminalPanelWidth(Math.round(fraction * rowWidth));
+    },
+    [contentRow, setTerminalPanelWidth],
+  );
+
   const appliedTerminalWidth = clampPanelWidthPx(
     terminalPanelWidth,
     contentRowWidth,
@@ -95,7 +80,7 @@ export function TerminalDock({ children }: { children: ReactNode }): ReactNode {
   // width back.
   const rememberedTerminalWidth = useRef<number | null>(null);
   const handleTerminalReset = useCallback(() => {
-    const rowWidth = contentRowRef.current?.clientWidth ?? 0;
+    const rowWidth = contentRow?.clientWidth ?? 0;
     if (rowWidth === 0) return;
     // Held inside the panel's own bounds so "even" is a width the panel can
     // actually take — otherwise the toggle would never register as reached.
@@ -112,7 +97,7 @@ export function TerminalDock({ children }: { children: ReactNode }): ReactNode {
     );
     rememberedTerminalWidth.current = remember;
     setTerminalPanelWidth(Math.round(next));
-  }, [setTerminalPanelWidth]);
+  }, [contentRow, setTerminalPanelWidth]);
 
   // Cmd+` and Cmd+Shift+Enter are the `view.toggleTerminal` and
   // `view.maximizeTerminal` commands. A second window listener here would not
@@ -170,6 +155,43 @@ export function TerminalDock({ children }: { children: ReactNode }): ReactNode {
     </div>
   );
 
+  // At phone width the row has room for one half, so it draws one half: no
+  // rail, no divider, no second column at 40px. Which one is `compactStageHalf`
+  // (see Stage/compact.ts) reading the same `contentFocus` the desktop reads —
+  // the layout degrades, it does not switch modes, and nothing is written back.
+  //
+  // The other half stays mounted and hidden for exactly the reason `contentRail`
+  // keeps the content mounted: a shell you can't currently see is still running,
+  // and unmounting the review would drop its watchers and its scroll position
+  // every time a thumb hit the other tab.
+  if (compact && !terminalOverview) {
+    return (
+      <div
+        ref={setContentRow}
+        className="relative flex flex-1 flex-row overflow-hidden bg-surface"
+      >
+        {docked && (
+          <div
+            className={clsx(
+              "min-w-0 flex-1 overflow-hidden p-2",
+              compactHalf !== "terminal" && "hidden",
+            )}
+          >
+            <TerminalPanel />
+          </div>
+        )}
+        <div
+          className={clsx(
+            "flex min-w-0 flex-1 flex-col overflow-hidden",
+            compactHalf !== "code" && "hidden",
+          )}
+        >
+          {children}
+        </div>
+      </div>
+    );
+  }
+
   // The overview takes the whole row and the panel does not render at all —
   // not a third dock state but a replacement for both halves. A terminal's
   // xterm element can only be parented in one place, and the overview mounts
@@ -179,7 +201,7 @@ export function TerminalDock({ children }: { children: ReactNode }): ReactNode {
   if (terminalOverview) {
     return (
       <div
-        ref={contentRowRef}
+        ref={setContentRow}
         className="relative flex flex-1 flex-row overflow-hidden bg-surface"
       >
         <div className="min-w-0 flex-1 overflow-hidden p-2">
@@ -192,7 +214,7 @@ export function TerminalDock({ children }: { children: ReactNode }): ReactNode {
 
   return (
     <div
-      ref={contentRowRef}
+      ref={setContentRow}
       className="relative flex flex-1 flex-row overflow-hidden bg-surface"
     >
       {docked && (

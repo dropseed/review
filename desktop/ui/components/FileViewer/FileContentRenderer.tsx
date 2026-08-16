@@ -13,7 +13,6 @@ import {
 } from "./FileCodeView";
 import type { TokenHoverHandler, TokenClickHandler } from "./diff-model";
 import type { ContentMode } from "./content-mode";
-import { showsMinimap } from "./content-mode";
 
 export type { TokenHoverHandler, TokenClickHandler };
 
@@ -50,6 +49,13 @@ interface FileContentRendererProps {
   onTokenClick?: TokenClickHandler;
   /** Receives the code scroll container (null for non-code content modes) */
   containerRef?: (node: HTMLDivElement | null) => void;
+  /**
+   * The viewer is drawing its minimap beside this content, so the native
+   * scrollbar must go — the minimap *is* the scrollbar while it is up. Taken as
+   * a prop rather than re-derived, so the two can never disagree and leave the
+   * view with no scrollbar at all.
+   */
+  minimapShown?: boolean;
   /** Imperative scroll API of the rendered CodeView */
   handleRef?: React.Ref<FileCodeViewHandle>;
   /**
@@ -64,6 +70,7 @@ export const FileContentRenderer = memo(function FileContentRenderer({
   filePath,
   fileContent,
   contentMode,
+  minimapShown = false,
   codeTheme,
   fontCSS,
   effectiveLanguage,
@@ -121,7 +128,7 @@ export const FileContentRenderer = memo(function FileContentRenderer({
       onTokenLeave={onTokenLeave}
       onTokenClick={onTokenClick}
       containerRef={containerRef}
-      hideScrollbar={showsMinimap(contentMode)}
+      hideScrollbar={minimapShown}
       handleRef={handleRef}
     />
   );

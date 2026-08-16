@@ -50,6 +50,8 @@ import { SymbolOutlinePanel } from "./SymbolOutlinePanel";
 import { useFileSymbols } from "./useFileSymbols";
 import type { ContentMode } from "./content-mode";
 import { showsMinimap } from "./content-mode";
+import { useElementWidth } from "../../hooks/useElementWidth";
+import { rootFontSize } from "../../utils/resize";
 import { useDiffViewMode } from "./hooks/useDiffViewMode";
 import { useShapeMode } from "./hooks/useShapeMode";
 import { realLineToRow } from "./shape-model";
@@ -57,6 +59,14 @@ import { realLineToRow } from "./shape-model";
 const PLAIN_MODE: ContentMode = { type: "plain" };
 const IMAGE_MODE: ContentMode = { type: "image" };
 const EMPTY_HUNKS: DiffHunk[] = [];
+
+/**
+ * Narrowest pane that still has room for the minimap beside the code, in rem.
+ * Below `useResponsiveDiffViewMode`'s 48rem split threshold: a unified diff is
+ * readable in less room than two columns, but not while giving a fixed strip
+ * away.
+ */
+const MINIMAP_MIN_PANE_REM = 34;
 
 /** Recursively search the file tree for an entry with the given path and status. */
 function hasFileStatus(
@@ -649,6 +659,17 @@ export function FileViewer({
 
   // Memoize contentMode before early returns so hook call order stays constant.
   // When fileContent is null the value is unused but the hook still runs.
+  // The minimap's one answer, computed here and handed down: it is drawn only
+  // beside a diff (`showsMinimap`) *and* only where there is room for a fixed
+  // column beside the code. The width is this viewer's own pane — the same node
+  // the split→unified rule measures — so a docked terminal or a split pane
+  // counts, not just the window. Below the threshold the column is a slice of
+  // an already-cramped view showing an overview of a file you can see forty
+  // characters of.
+  const paneWidth = useElementWidth(paneNode);
+  const minimapRoom =
+    paneWidth <= 0 || paneWidth >= MINIMAP_MIN_PANE_REM * rootFontSize();
+
   const contentMode = useMemo<ContentMode>(() => {
     if (!fileContent) return PLAIN_MODE;
     const hasChanges = fileContent.hunks.length > 0;
@@ -666,6 +687,8 @@ export function FileViewer({
     if (hasChanges) return { type: "diff", viewMode } as const;
     return PLAIN_MODE;
   }, [fileContent, isGitignored, svgViewMode, viewMode]);
+
+  const minimapShown = showsMinimap(contentMode) && minimapRoom;
 
   // --- Shape mode ---------------------------------------------------------
   const {
@@ -917,6 +940,7 @@ export function FileViewer({
           />
         )}
         <FileContentRenderer
+          minimapShown={minimapShown}
           filePath={filePath}
           fileContent={fileContent}
           contentMode={contentMode}
@@ -935,7 +959,7 @@ export function FileViewer({
           handleRef={codeViewHandleRef}
           shape={shape}
         />
-        {showsMinimap(contentMode) && (
+        {minimapShown && (
           <DiffMinimap
             markers={minimapMarkers}
             scrollContainer={scrollNode}

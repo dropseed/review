@@ -4,6 +4,7 @@ import { useReviewStore } from "../../stores";
 import { useFocusedWorkspace } from "../../stores/selectors/workspaces";
 import { useTerminalDockPresent } from "../../stores/selectors/terminals";
 import { FocusToggle } from "./FocusToggle";
+import { CompactMenuButton } from "./CompactNav";
 import { activateAttachment } from "../../commands/workspaceCommands";
 import { getCommandUi } from "../../commands/host";
 import { useWorkspaceContext } from "../Sidebar/workspace-context";
@@ -27,14 +28,67 @@ import type { Workspace } from "../../types";
  * Review/Git/Browse strip used to be portalled up here; it belongs to the panel
  * it switches, and now sits inside it.
  */
-export function CodeHalfHeader(): ReactNode {
+export function CodeHalfHeader({
+  narrow = false,
+}: {
+  /**
+   * This half is too tight for its two columns, so it is showing one — see
+   * `Stage/compact.ts`. Passed in rather than measured here: `ReviewView` owns
+   * the row this describes, and two measurements of one box could disagree.
+   */
+  narrow?: boolean;
+} = {}): ReactNode {
   const workspace = useFocusedWorkspace();
   // Nothing to take the stage from when the terminal half isn't there.
   const docked = useTerminalDockPresent();
+  const selectedFile = useReviewStore((s) => s.selectedFile);
+
+  // In a narrow half the files column and the file are the same space (see
+  // ReviewView), so an open file needs a way back to the list — the header is
+  // the one row that is on screen either way. It replaces the repo tabs rather
+  // than sitting beside them: a half this tight does not hold both, and while
+  // you are in a file the question is "back", not "which repo".
+  if (narrow && selectedFile !== null) {
+    return (
+      <div className="flex shrink-0 select-none items-center gap-1 border-b border-edge/60 px-1.5 py-1">
+        <CompactMenuButton />
+        <button
+          type="button"
+          onClick={() => useReviewStore.setState({ selectedFile: null })}
+          className="flex min-h-9 shrink-0 items-center gap-1 rounded-md px-2 text-xs
+                     text-fg-muted active:bg-surface-raised"
+        >
+          <svg
+            className="size-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+          Files
+        </button>
+        <span className="min-w-0 flex-1 truncate text-right text-xs text-fg-secondary">
+          {selectedFile.split("/").pop()}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className="group/bar flex shrink-0 select-none items-center gap-1 border-b border-edge/60 px-1.5 py-1">
+      {/* Phone only: out to the workspace queue. See Stage/CompactNav. */}
+      <CompactMenuButton />
       {workspace && <RepoTabs workspace={workspace} />}
+      {/* Kept even in a narrow half. The terminal's own rail deliberately
+          carries no toggle — its exit is meant to be this one — so hiding it
+          here left a window between the phone bar's breakpoint and a
+          comfortable split with no on-screen way back to the terminal at all,
+          only ⌘`. It costs 24px; a hidden exit costs the way out. */}
       {docked && (
         <div className="ml-auto flex shrink-0 items-center pl-1">
           <FocusToggle half="code" />

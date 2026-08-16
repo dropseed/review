@@ -10,6 +10,9 @@ import {
 } from "react-router-dom";
 import { toast } from "sonner";
 import { Sidebar } from "./components/Sidebar";
+import { QueueDrawer } from "./components/Sidebar/QueueDrawer";
+import { CompactBar } from "./components/Stage/CompactBar";
+import { CompactNavProvider } from "./components/Stage/CompactNav";
 import { ReviewView } from "./components/ReviewView";
 import { NewReviewView } from "./components/NewReviewView";
 import { TooltipProvider } from "./components/ui/tooltip";
@@ -41,6 +44,7 @@ import {
   type RepoStatus,
 } from "./hooks";
 import { useReviewFreshness } from "./hooks/useReviewFreshness";
+import { useIsCompact } from "./hooks/useIsCompact";
 import {
   APP_COMMANDS,
   reviewCommands,
@@ -217,38 +221,58 @@ function AppShell() {
 
   useWindowTitle(repoPath, comparison, comparisonReady);
 
+  const compact = useIsCompact();
+
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="flex h-screen bg-surface">
-        {/* The sidebar is chrome: it owns the window's left edge, and the two
-            work halves float on it as rounded panels. */}
-        <Sidebar />
+      {/* h-dvh, not h-screen: on a phone `vh` is the tallest the viewport ever
+          gets, so a bottom bar measured against it spends the first scroll
+          hidden behind Safari's toolbar. */}
+      <CompactNavProvider>
+        {({ queueOpen, closeQueue }) => (
+          <div className="flex h-dvh bg-surface">
+            {/* The sidebar is chrome: it owns the window's left edge, and the
+                two work halves float on it as rounded panels. At phone width
+                there is no edge to spare, so the same component is a drawer
+                over the stage instead — see QueueDrawer, opened by the
+                hamburger on whichever half header is showing. */}
+            {compact ? (
+              <QueueDrawer open={queueOpen} onClose={closeQueue} />
+            ) : (
+              <Sidebar />
+            )}
 
-        {/* The stage: one workspace, as its two halves and nothing above them
-            — the sidebar is where a workspace says what it is. The terminal
-            dock is what splits them; it is mounted here rather than inside the
-            review screen because tabs are global, so a shell has to survive
-            going back to the home screen, and its xterms have to survive the
-            route change. */}
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <TerminalDock>
-            <Outlet
-              context={{
-                repoStatus,
-                repoError,
-                repoPath,
-                comparisonReady,
-                handleOpenRepo,
-                handleNewWindow,
-                handleCloseRepo,
-                handleSelectRepo,
-                handleNewReview,
-                handleStartReview,
-              }}
-            />
-          </TerminalDock>
-        </div>
-      </div>
+            {/* The stage: one workspace, as its two halves and nothing above
+                them — the sidebar is where a workspace says what it is. The
+                terminal dock is what splits them; it is mounted here rather
+                than inside the review screen because tabs are global, so a
+                shell has to survive going back to the home screen, and its
+                xterms have to survive the route change. */}
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+              <TerminalDock>
+                <Outlet
+                  context={{
+                    repoStatus,
+                    repoError,
+                    repoPath,
+                    comparisonReady,
+                    handleOpenRepo,
+                    handleNewWindow,
+                    handleCloseRepo,
+                    handleSelectRepo,
+                    handleNewReview,
+                    handleStartReview,
+                  }}
+                />
+              </TerminalDock>
+
+              {/* Which half is on screen. Leaving the workspace entirely is the
+                  hamburger's job, not a third tab beside these two. */}
+              {compact && <CompactBar />}
+            </div>
+          </div>
+        )}
+      </CompactNavProvider>
 
       {activeOverlay === "settings" && (
         <Suspense fallback={null}>
@@ -363,11 +387,20 @@ function NewReviewRoute() {
 
 /** Review UI — shown at /:owner/:repo/review/:ref (ref is encodeURIComponent-encoded) */
 function ReviewRoute() {
-  const { repoPath, comparisonReady, handleStartReview } = useAppContext();
+  const { repoPath, repoStatus, comparisonReady, handleStartReview } =
+    useAppContext();
 
   useFileRouteSync();
 
+  // "No repo yet" and "no repo" are different answers, and only the second one
+  // is grounds for throwing the URL away. A cold load has no `repoPath` until
+  // `useRepositoryInit` resolves one, so redirecting on the bare null sent
+  // every deep link to "/" before it could be read — taking the ref and the
+  // file path with it, which is why arriving at a file URL landed on the file
+  // list. Nothing noticed while the desktop app restored its own last repo on
+  // launch; an installed PWA cold-starts at a URL every single time.
   if (!repoPath) {
+    if (repoStatus === "loading") return null;
     return <Navigate to="/" replace />;
   }
 

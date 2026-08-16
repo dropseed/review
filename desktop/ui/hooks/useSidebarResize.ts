@@ -24,6 +24,19 @@ interface UseSidebarResizeOptions {
   initialWidth?: number;
   minWidth?: number;
   maxWidth?: number;
+  /**
+   * Width of the box this panel actually sits in, in px, when that is not the
+   * window.
+   *
+   * The window is the right measure for a panel on the window's own edge — the
+   * sidebar. It is the wrong one for the files column, which lives inside the
+   * code half: the window minus the sidebar minus the terminal. Clamped against
+   * the window, a stored width that is a third of the screen can be most of the
+   * half it is drawn in, and since the panel's inner box keeps its chosen width
+   * so collapsing can slide rather than reflow, the overflow *clips* the
+   * contents rather than narrowing them. Omit to measure against the window.
+   */
+  availablePx?: number;
 }
 
 interface UseSidebarResizeReturn {
@@ -65,6 +78,7 @@ export function useSidebarResize({
   initialWidth = SIDEBAR_LIMITS[sidebarPosition].defaultRem,
   minWidth = SIDEBAR_LIMITS[sidebarPosition].minRem,
   maxWidth = SIDEBAR_LIMITS[sidebarPosition].maxRem,
+  availablePx,
 }: UseSidebarResizeOptions): UseSidebarResizeReturn {
   const widthKey = SIDEBAR_LIMITS[sidebarPosition].key;
   const chosenWidth = useReviewStore((s) => s[widthKey]);
@@ -142,7 +156,9 @@ export function useSidebarResize({
   const sidebarWidth = clampSidebarWidth(chosenWidth ?? initialWidth, {
     minRem: minWidth,
     maxRem: maxWidth,
-    viewportPx: viewportWidth,
+    // A measured container wins over the window; `availablePx` is 0 until the
+    // observer's first callback, which must not be read as "no room at all".
+    viewportPx: availablePx && availablePx > 0 ? availablePx : viewportWidth,
     rootFontSizePx: rootFontPx,
   });
 

@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { clsx } from "clsx";
 import { useReviewStore } from "../stores";
 import { useProvideCommandUi } from "../commands/host";
 import { getMissingRefs } from "../stores/slices/groupingSlice";
@@ -34,6 +35,9 @@ import { ContentArea } from "./ContentArea";
 import { WarningIcon } from "./ui/icons";
 import { ActivityBar } from "./ActivityBar";
 import { CompareRefDeletedNotice } from "./CompareRefDeletedNotice";
+import { useElementWidth } from "../hooks/useElementWidth";
+import { codeHalfIsNarrow } from "./Stage/compact";
+import { rootFontSize } from "../utils/resize";
 
 const DebugModal = lazy(() =>
   import("./modals/DebugModal").then((m) => ({ default: m.DebugModal })),
@@ -227,6 +231,35 @@ export function ReviewView({
   // so confetti can't fire over the bogus all-deleted diff behind the notice.
   useCelebration(!compareRefMissing);
 
+  // The row the diff and the files column share. Its width is what caps the
+  // files column — the window would let it take most of this row — and what
+  // decides whether the row can hold both columns at all.
+  const [codeRow, setCodeRow] = useState<HTMLDivElement | null>(null);
+  const codeRowWidth = useElementWidth(codeRow);
+  // Re-read per render rather than cached: the root font size follows the
+  // UI-scale preference, and there is no resize event for a font-size change.
+  const narrow = codeHalfIsNarrow(codeRowWidth, rootFontSize());
+
+  // Which of the two columns a narrow code half is showing. Derived, never
+  // stored: what the content area has open *is* the answer to "list or detail".
+  //
+  // Not `selectedFile` alone. `ContentArea` also gives the whole region to the
+  // search results, the guide's stack and the rolling working-tree diff, none of
+  // which set `selectedFile` — so keyed on the file, ⌘⇧F in a narrow half opened
+  // the search view into the column this hides and left the file list on screen.
+  // And the deleted-ref notice replaces the diff entirely while the files column
+  // isn't rendered at all, which showed a header over nothing.
+  const selectedFile = useReviewStore((s) => s.selectedFile);
+  const searchViewOpen = useReviewStore((s) => s.searchViewOpen);
+  const guideContentMode = useReviewStore((s) => s.guideContentMode);
+  const workingTreeMultiView = useReviewStore((s) => s.workingTreeMultiView);
+  const listing =
+    selectedFile === null &&
+    !searchViewOpen &&
+    guideContentMode === null &&
+    workingTreeMultiView === null &&
+    !compareRefMissing;
+
   return (
     <div className="flex h-full flex-row bg-surface">
       <div className="flex flex-1 flex-col min-w-0">
@@ -307,9 +340,25 @@ export function ReviewView({
               whether a terminal is beside it, or on which side. */}
           <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden p-2">
             <div className="panel-card relative flex min-h-0 flex-1 flex-col overflow-hidden bg-surface">
-              <CodeHalfHeader />
-              <div className="flex min-h-0 flex-1 flex-row overflow-hidden">
-                <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+              <CodeHalfHeader narrow={narrow} />
+              <div
+                ref={setCodeRow}
+                className="flex min-h-0 flex-1 flex-row overflow-hidden"
+              >
+                {/* At phone width the code half is list-or-detail, not a
+                    column beside a column: the files list until a file is
+                    picked, that file afterwards. `selectedFile` already means
+                    exactly that, so nothing new is stored and nothing is
+                    written — `filesPanelCollapsed` would have been the obvious
+                    lever and is precisely the wrong one, being a persisted
+                    desktop preference a thumb must not edit. Both stay mounted
+                    for the reason the dock's halves do. */}
+                <div
+                  className={clsx(
+                    "flex min-w-0 flex-1 flex-col overflow-hidden",
+                    narrow && listing && "hidden",
+                  )}
+                >
                   {compareRefMissing ? (
                     <CompareRefDeletedNotice
                       repoPath={repoPath!}
@@ -324,7 +373,20 @@ export function ReviewView({
                 {/* The files column — hidden when the compared branch is
                     gone, since its list would otherwise show every file as
                     deleted. */}
-                {!compareRefMissing && <FilesPanelDock />}
+                {!compareRefMissing && (
+                  <div
+                    className={clsx(
+                      "flex min-h-0 flex-row overflow-hidden",
+                      narrow
+                        ? listing
+                          ? "min-w-0 flex-1"
+                          : "hidden"
+                        : "shrink-0",
+                    )}
+                  >
+                    <FilesPanelDock full={narrow} availablePx={codeRowWidth} />
+                  </div>
+                )}
               </div>
             </div>
           </div>

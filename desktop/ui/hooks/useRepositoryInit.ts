@@ -280,9 +280,16 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       await ensureReviewExists(path, resolved.ref, resolved.baseOverride);
 
       const { routePrefix } = await resolveRepoIdentity(path);
-      navigateRef.current(reviewUrl(routePrefix, resolved.ref), {
-        replace: true,
-      });
+      // Canonicalize the *review*, not the whole location: a URL already
+      // inside this review — `/…/review/master/file/src/main.rs` — is not a
+      // route to clean up, it is where the link pointed. Replacing it with the
+      // bare review URL is what made opening a link to a file land on the file
+      // list, which the desktop app hid by restoring its own last repo instead
+      // of booting from a URL. An installed PWA has nothing else to boot from.
+      const canonical = reviewUrl(routePrefix, resolved.ref);
+      const here = window.location.pathname;
+      const destination = here.startsWith(`${canonical}/`) ? here : canonical;
+      navigateRef.current(destination, { replace: true });
 
       setComparisonReady((c) => c + 1);
       setInitialLoading(true);
@@ -295,7 +302,9 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       if (urlRepoPath_) {
         // Extract the review ref from the URL if present
         // (e.g. /owner/repo/review/<encoded-ref>)
-        const pathMatch = window.location.pathname.match(/\/review\/([^/]+)$/);
+        const pathMatch = window.location.pathname.match(
+          /\/review\/([^/]+)(?:\/|$)/,
+        );
         const urlRef = refFromUrlSegment(pathMatch?.[1] ?? null);
 
         if (window.location.pathname.includes("/browse")) {
@@ -400,7 +409,9 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         }
 
         // Try to recover the review ref from the current URL path
-        const pathMatch = window.location.pathname.match(/\/review\/([^/]+)$/);
+        const pathMatch = window.location.pathname.match(
+          /\/review\/([^/]+)(?:\/|$)/,
+        );
         const urlRef = refFromUrlSegment(pathMatch?.[1] ?? null);
         const resolved = await resolveTarget(storedPath, urlRef);
         await initRepo(storedPath, resolved);
