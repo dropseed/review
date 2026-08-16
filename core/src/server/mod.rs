@@ -28,6 +28,14 @@ use tower_http::set_header::SetResponseHeaderLayer;
 /// Environment variable naming a built Vite `dist/` to serve alongside the API.
 const WEB_DIST_ENV: &str = "REVIEW_WEB_DIST";
 
+/// The port everything defaults to: `spur` on a phone keypad.
+///
+/// One constant rather than a literal per entry point, because the desktop
+/// app's tailnet toggle hands this number to `tailscale serve` — a default that
+/// disagreed with the one the server binds would produce a proxy pointing at
+/// nothing, which looks exactly like the app being broken.
+pub const DEFAULT_PORT: u16 = 7787;
+
 /// Comma-separated origins allowed on top of the ones [`origin_allowed`]
 /// derives — the escape hatch for a reverse proxy on a name this process never
 /// sees itself.
@@ -38,8 +46,29 @@ const ALLOWED_ORIGINS_ENV: &str = "REVIEW_ALLOWED_ORIGINS";
 /// ever produced and still bounded.
 const MAX_BODY_BYTES: usize = 64 * 1024 * 1024;
 
+/// One file the embedded UI can answer with, for a server that has no `dist/`
+/// on disk to point at.
+pub struct StaticAsset {
+    pub bytes: Vec<u8>,
+    pub mime: String,
+}
+
+/// Where a request for `index.html` or `/assets/x.js` is answered from.
+///
+/// The desktop app has no bundle directory: its frontend is compiled into the
+/// binary, and Tauri hands it out through an asset resolver. Rather than teach
+/// the app to unpack a `dist/` somewhere so `ServeDir` can find it — a copy on
+/// disk to keep in step with the binary, for no gain — the server takes the
+/// lookup itself. `review-server` still uses `$REVIEW_WEB_DIST` and touches
+/// none of this.
+pub type AssetSource = std::sync::Arc<dyn Fn(&str) -> Option<StaticAsset> + Send + Sync>;
+
 /// Build the full router with all API routes.
 fn build_router() -> Router {
+    build_router_with(None)
+}
+
+fn build_router_with(assets: Option<AssetSource>) -> Router {
     // Origin is the gate, not the method or the header list: this server hands
     // out a machine's terminals and working tree, so a page on some other site
     // must not be able to drive it just because the user has a tab open. See
@@ -54,6 +83,31 @@ fn build_router() -> Router {
     let api = handlers::build_api_router()
         .merge(terminal::router(terminal::TerminalBridge::new()))
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES));
+
+    // An unknown `/api/...` is a typo or a stale client, and answering it with
+    // the SPA's HTML (200!) hides that behind a JSON parse error somewhere
+    // else. Static routes still win: axum matches the wildcard last. Added
+    // under either bundle source, since both put an HTML fallback behind it.
+    let api_404 = |router: Router| {
+        router.route(
+            "/api/{*rest}",
+            axum::routing::any(|| async { StatusCode::NOT_FOUND }),
+        )
+    };
+
+    // An embedded bundle takes precedence over the environment variable: the
+    // app that compiled its own frontend in is not looking for one on disk, and
+    // a stale `$REVIEW_WEB_DIST` left in a shell must not be able to serve a
+    // different build of the UI to the desktop app's own port.
+    if let Some(assets) = assets {
+        log::info!("[server] serving the web bundle embedded in this binary");
+        return api_404(api)
+            .fallback(move |uri: axum::http::Uri| {
+                let assets = assets.clone();
+                async move { embedded_asset(&assets, uri.path()) }
+            })
+            .layer(cors);
+    }
 
     // The bundle is a *fallback*, so every `/api` route still wins; anything
     // else that isn't a real file falls through to `index.html`, which is what
@@ -71,21 +125,48 @@ fn build_router() -> Router {
                 HeaderValue::from_static("no-cache"),
             )
             .layer(ServeFile::new(index));
-            api
-                // An unknown `/api/...` is a typo or a stale client, and
-                // answering it with the SPA's HTML (200!) hides that behind a
-                // JSON parse error somewhere else. Static routes still win:
-                // axum matches the wildcard last.
-                .route(
-                    "/api/{*rest}",
-                    axum::routing::any(|| async { StatusCode::NOT_FOUND }),
-                )
-                .fallback_service(ServeDir::new(&dist).fallback(index))
+            api_404(api).fallback_service(ServeDir::new(&dist).fallback(index))
         }
         _ => api,
     };
 
     app.layer(cors)
+}
+
+/// Answer one request out of the embedded bundle, with the SPA fallback.
+///
+/// A path that names no asset is a client-side route, not a 404 — the router in
+/// the page has to be given `index.html` and left to resolve it, which is the
+/// same rule `ServeDir::fallback` applies to a directory. A missing index is
+/// the one genuine 404 here: it means this binary was built without a frontend.
+fn embedded_asset(assets: &AssetSource, path: &str) -> axum::response::Response {
+    use axum::response::IntoResponse as _;
+
+    // Hashed asset names change every build, so only `index.html` — which names
+    // them — needs holding back from the cache. See the `$REVIEW_WEB_DIST` arm.
+    let (asset, cacheable) = match assets(path) {
+        Some(asset) => {
+            let cacheable = path != "/" && path != "/index.html";
+            (Some(asset), cacheable)
+        }
+        None => (assets("/index.html"), false),
+    };
+
+    let Some(asset) = asset else {
+        return (StatusCode::NOT_FOUND, "Not found").into_response();
+    };
+
+    let mut headers = HeaderMap::new();
+    if let Ok(mime) = HeaderValue::from_str(&asset.mime) {
+        headers.insert(axum::http::header::CONTENT_TYPE, mime);
+    }
+    if !cacheable {
+        headers.insert(
+            axum::http::header::CACHE_CONTROL,
+            HeaderValue::from_static("no-cache"),
+        );
+    }
+    (headers, asset.bytes).into_response()
 }
 
 /// Whether a request carrying this `Origin` may talk to this server.
@@ -188,6 +269,49 @@ pub async fn serve(port: u16) {
         .expect("Server error");
 }
 
+/// Take the port, so a host process can fail *before* it claims to be serving.
+///
+/// Split from [`serve_on`] because "is this port free" is the one question a
+/// settings toggle actually has to answer synchronously: a port already held —
+/// by a `review-server` left over from a dev session, or a second copy of the
+/// app — must switch the toggle back off with the reason on it. Bundled into
+/// the serving future, that error would surface some indeterminate time after
+/// the UI had already drawn itself as on.
+///
+/// **Loopback only, deliberately.** `tailscale serve` proxies *from* the tailnet
+/// *to* a local address, and tailscaled runs on this machine — so `127.0.0.1`
+/// is everything it needs, and every other interface is pure exposure. This
+/// server hands out a machine's terminals and working tree; on `0.0.0.0` anyone
+/// on the coffee-shop wifi could take them, and the origin gate would not stop
+/// them, because that gate answers a *browser* question and a plain HTTP client
+/// simply sends no `Origin` at all.
+///
+/// `$REVIEW_BIND` is not read here either. It is `review-server`'s escape hatch
+/// for someone deliberately running a server; reaching the app from a phone is
+/// what the toggle is for, and it grants exactly that and nothing wider.
+pub async fn bind(port: u16) -> std::io::Result<tokio::net::TcpListener> {
+    tokio::net::TcpListener::bind(bind_target("127.0.0.1", port)).await
+}
+
+/// Serve the app on an already-bound listener, until told to stop.
+///
+/// What `review-server`'s [`serve`] does, minus the two things that only make
+/// sense for a process whose whole job this is: it returns its error instead of
+/// panicking, and it stops on the caller's signal rather than on SIGINT — a
+/// host process gets its own Ctrl-C.
+pub async fn serve_on(
+    listener: tokio::net::TcpListener,
+    assets: AssetSource,
+    shutdown: impl std::future::Future<Output = ()> + Send + 'static,
+) -> std::io::Result<()> {
+    if let Ok(local) = listener.local_addr() {
+        log::info!("[server] hosting the app on http://{local}");
+    }
+    axum::serve(listener, build_router_with(Some(assets)))
+        .with_graceful_shutdown(shutdown)
+        .await
+}
+
 /// The address to bind: `$REVIEW_BIND`, or loopback.
 pub fn bind_host() -> String {
     match std::env::var("REVIEW_BIND") {
@@ -222,6 +346,89 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert(axum::http::header::HOST, origin(host));
         headers
+    }
+
+    // ----- The embedded bundle -----
+
+    /// A bundle holding exactly an index and one hashed asset.
+    fn bundle() -> AssetSource {
+        std::sync::Arc::new(|path: &str| match path {
+            "/index.html" => Some(StaticAsset {
+                bytes: b"<!doctype html>".to_vec(),
+                mime: "text/html".to_owned(),
+            }),
+            "/assets/app-abc123.js" => Some(StaticAsset {
+                bytes: b"console.log(1)".to_vec(),
+                mime: "text/javascript".to_owned(),
+            }),
+            _ => None,
+        })
+    }
+
+    fn header(response: &axum::response::Response, name: axum::http::HeaderName) -> Option<String> {
+        Some(response.headers().get(name)?.to_str().ok()?.to_owned())
+    }
+
+    #[test]
+    fn a_real_asset_is_served_with_its_own_type() {
+        let response = embedded_asset(&bundle(), "/assets/app-abc123.js");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            header(&response, axum::http::header::CONTENT_TYPE).as_deref(),
+            Some("text/javascript")
+        );
+    }
+
+    /// The whole point of the fallback: `/dropseed/review/review/master` is a
+    /// route in the page, not a missing file, and answering 404 would break
+    /// every deep link and every cold start of the installed app.
+    #[test]
+    fn an_unknown_path_falls_back_to_the_index() {
+        let response = embedded_asset(&bundle(), "/dropseed/review/review/master");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            header(&response, axum::http::header::CONTENT_TYPE).as_deref(),
+            Some("text/html")
+        );
+    }
+
+    /// `index.html` names this build's hashed assets, so a cached copy pins the
+    /// whole app to an old build — including when it was reached as a fallback.
+    #[test]
+    fn the_index_is_never_cached_however_it_was_reached() {
+        for path in ["/", "/index.html", "/some/client/route"] {
+            assert_eq!(
+                header(
+                    &embedded_asset(&bundle(), path),
+                    axum::http::header::CACHE_CONTROL
+                )
+                .as_deref(),
+                Some("no-cache"),
+                "{path} should not be cached"
+            );
+        }
+    }
+
+    /// Hashed names are new files rather than new versions, so they may be kept.
+    #[test]
+    fn a_hashed_asset_keeps_the_default_caching() {
+        let response = embedded_asset(&bundle(), "/assets/app-abc123.js");
+        assert_eq!(
+            header(&response, axum::http::header::CACHE_CONTROL),
+            None,
+            "a content-hashed asset should not be marked no-cache"
+        );
+    }
+
+    /// A binary built with no frontend has nothing to fall back *to*, and must
+    /// say so rather than loop.
+    #[test]
+    fn a_bundle_with_no_index_is_a_genuine_404() {
+        let empty: AssetSource = std::sync::Arc::new(|_| None);
+        assert_eq!(
+            embedded_asset(&empty, "/anything").status(),
+            StatusCode::NOT_FOUND
+        );
     }
 
     /// The CLI, curl, and a same-origin navigation send no `Origin` at all.

@@ -4617,6 +4617,7 @@ dependencies = [
  "futures",
  "ignore",
  "log",
+ "mime_guess",
  "notify 6.1.1",
  "notify-debouncer-mini 0.4.1",
  "review",

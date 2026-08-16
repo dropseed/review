@@ -23,6 +23,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { SimpleTooltip } from "../ui/tooltip";
 import { Switch } from "../ui/switch";
+import { RemoteAccessSection } from "./RemoteAccessSection";
 import { getAllUiThemes } from "../../lib/ui-themes";
 import { getApiClient } from "../../api";
 import { phaseDotClass } from "../Sidebar/terminal-status-format";
@@ -925,6 +926,8 @@ export function SettingsModal({
               </p>
             </div>
           </div>
+
+          <RemoteAccessSection />
 
           {/* Command Line */}
           {!devMode && (

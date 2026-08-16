@@ -24,7 +24,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:3421",
+        target: "http://127.0.0.1:7787",
         // Allow WebSocket upgrades (terminal PTY sockets in web mode).
         ws: true,
       },

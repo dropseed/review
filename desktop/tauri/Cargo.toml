@@ -18,11 +18,15 @@ tauri-build = { version = "2", features = [] }
 # `terminal-types` is the wire contract only (TerminalSummary, SessionStatus) —
 # the PTYs themselves live in the `review-daemon` process, which this app talks
 # to through `daemon-client`, so none of the PTY crates are linked here.
+# `server` is safe to link here for the same reason `terminal-types` is: it
+# reaches PTYs through `daemon-client`, never by owning them, so it pulls in no
+# PTY crates and needs no Zig. It is what the tailnet toggle hosts in-process.
 review = { path = "../../core", features = [
     "symbols-dev",
     "lsp",
     "terminal-types",
     "daemon-client",
+    "server",
 ] }
 
 # Tauri and plugins
@@ -41,6 +45,9 @@ tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-deep-link = "2"
 url = "2"
+# Already in the tree via tauri; taken directly so the in-app server can name
+# an asset's type from its extension rather than trusting the resolver's guess.
+mime_guess = "2"
 
 # Desktop-specific dependencies
 anyhow = "1"

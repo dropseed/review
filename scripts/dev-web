@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run the UI in a browser: Axum backend on :3421, Vite on :1420.
+# Run the UI in a browser: Axum backend on :7787, Vite on :1420.
 #
 # Both halves run as background jobs in their own process groups so cleanup can
 # kill the *group*. The processes started here are not the ones holding the
@@ -12,7 +12,7 @@ set -e
 set -m  # job control: each background job gets its own process group
 cd "$(dirname "$0")/.."
 
-SERVER_PORT=3421
+SERVER_PORT=7787
 VITE_PORT=1420
 
 SERVER_PID=""

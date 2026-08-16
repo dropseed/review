@@ -7,6 +7,7 @@
 
 pub mod commands;
 pub mod daemon;
+pub mod remote;
 pub mod terminal_commands;
 pub mod watchers;
 
@@ -586,6 +587,16 @@ pub fn run() {
             // `TerminalState::client`.
             app.manage(terminal_commands::TerminalState::new());
 
+            // The tailnet server, and its restart if the user left it on. Off
+            // the startup path deliberately: binding a port is fast, but the
+            // window must not wait on it, and a failure here is a settings
+            // toggle to look at rather than a launch to abort.
+            app.manage(remote::RemoteServer::default());
+            let remote_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                remote::restore(&remote_handle).await;
+            });
+
             // Start lightweight watchers for local activity on registered repos
             let app_handle = app.handle().clone();
             std::thread::spawn(move || {
@@ -659,6 +670,9 @@ pub fn run() {
 
     let app = builder
         .invoke_handler(tauri::generate_handler![
+            remote::remote_access_status,
+            remote::remote_access_enable,
+            remote::remote_access_disable,
             commands::get_current_repo,
             commands::check_github_available,
             commands::list_pull_requests,

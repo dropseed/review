@@ -26,6 +26,11 @@ pub mod work;
 // Service layer — shared business logic for Tauri and Axum
 pub mod service;
 
+// The local Tailscale node, as the settings panel's "serve this on my tailnet"
+// switch needs to see it. Shells out to the `tailscale` CLI and nothing else,
+// so it costs no dependencies and is compiled unconditionally.
+pub mod tailnet;
+
 // LSP client (feature-gated)
 #[cfg(feature = "lsp")]
 pub mod lsp;

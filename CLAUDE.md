@@ -86,6 +86,21 @@ Communication: the frontend calls Rust via Tauri's `invoke()`, commands defined 
 
 `scripts/dev-web` runs the UI in a regular browser (Chrome) with an Axum HTTP backend instead of Tauri. This is the preferred way to develop and test UI changes — you get full Chrome devtools, fast hot reload, and no Tauri rebuild cycle. The frontend uses an `HttpClient` (fetch-based) instead of `TauriClient` (invoke-based), both implementing the same `ApiClient` interface. Use web mode when working on the UI — open `localhost:1420` in Chrome to test.
 
+The backend defaults to `server::DEFAULT_PORT` (**7787**, `spur` on a phone keypad), overridable with `$REVIEW_PORT`. One constant, because the tailnet toggle below hands that number to `tailscale serve`.
+
+### Serve on my tailnet
+
+Settings → Remote access is the phone path: it starts the same Axum server **inside the desktop app** and points Tailscale at it. `desktop/tauri/src/desktop/remote.rs` owns both halves, and their lifetimes are deliberately different:
+
+- The **server** is this process's. It serves the frontend already compiled into the binary — Tauri's asset resolver, reached through `server::AssetSource`, so nothing unpacks a `dist/` to disk — and stops when the app does, restarting on next launch from the `tailnetServeEnabled` setting.
+- The **`tailscale serve` config** is tailscaled's. It persists across reboots and outlives the app entirely. Only turning the toggle off clears it.
+
+`core/src/tailnet.rs` is the whole Tailscale interface, shelling out to the CLI (the local API socket is not a public contract). Two things it must keep doing: probing known install paths as well as `PATH`, because a Finder-launched app inherits launchd's environment and never sees `/usr/local/bin`; and checking `CertDomains` before running `serve`, since a tailnet without HTTPS certificates fails in a way whose fix is an admin-console setting the app can only name.
+
+The origin gate needs no configuration for this — `tailscale serve` forwards the `.ts.net` Host, and `origin_allowed` already admits an Origin whose host matches the Host header.
+
+Serving the app over HTTPS on a real name is what makes it **installable**: a service worker needs a secure context, so a plain `http://100.x.x.x:7787` bind would show the site but never install it.
+
 ## Terminal VT engine
 
 The embedded terminal's content peek replays PTY bytes into a screen model to answer "what is on screen right now?". That model is **libghostty-vt** — Ghostty's own VT core — so the peek agrees with the visible terminal on wide characters, emoji clusters, and combining marks instead of approximating them.
