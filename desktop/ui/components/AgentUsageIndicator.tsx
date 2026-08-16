@@ -252,12 +252,23 @@ function useAgentSnapshot(agent: AgentUsage): AgentSnapshot {
 }
 
 /** The trigger's spoken form, shared so the rail's rings say what the rows do. */
+/**
+ * The row as a sentence — its accessible name, and now its tooltip.
+ *
+ * Carries the figure the row itself stopped printing, so the exact number is a
+ * hover away rather than gone. It also has to carry expiry: a reset window's
+ * bar is empty, which is honest about the new window but indistinguishable from
+ * a fresh one, and the label used to claim the *old* window's percentage as
+ * though it still applied.
+ */
 function usageLabel(
   agent: AgentUsage,
   headline: UsageWindow,
   percent: number,
   paceDelta: string | null,
+  expired: boolean,
 ): string {
+  if (expired) return `${agent.name} usage: ${headline.label} window has reset`;
   return (
     `${agent.name} usage: ${Math.round(percent)}% of ${headline.label}` +
     (paceDelta ? `, ${paceDelta}` : "")
@@ -279,6 +290,8 @@ function AgentUsageRow({
     snapshot;
   if (!headline) return null;
 
+  const label = usageLabel(agent, headline, percent, paceDelta, expired);
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -286,10 +299,20 @@ function AgentUsageRow({
           type="button"
           className="flex w-full items-center gap-2 rounded px-1 py-0.5
                      hover:bg-fg/[0.06] transition-colors duration-100"
-          aria-label={usageLabel(agent, headline, percent, paceDelta)}
+          aria-label={label}
+          // The figure the row used to print, on hover and in the popover. Both
+          // are a gesture away, which is the right price for a number nobody
+          // reads precisely — see below.
+          title={label}
         >
           {/* The mark carries the identity here; the name is a click away in
-              the popover, and the width it frees goes to the bar. */}
+              the popover, and the width it frees goes to the bar. The same
+              argument retired the percentage beside it: "61%" is a number you
+              read as "over half", which is the one thing a bar says without
+              being read at all — and it cost 2rem of a 15rem sidebar, on the
+              row least likely to be the reason you looked. The collapsed rail
+              has always drawn this as a bare ring with no figure; the two
+              agree now. */}
           <AgentIcon
             agent={agent}
             className={clsx(
@@ -298,14 +321,6 @@ function AgentUsageRow({
             )}
           />
           <UsageBar percent={filled} pace={pace} dimmed={muted} />
-          <span
-            className={clsx(
-              "w-7 shrink-0 text-right text-xxs tabular-nums",
-              muted ? "text-fg-faint" : "text-fg-muted",
-            )}
-          >
-            {expired ? "—" : `${Math.round(percent)}%`}
-          </span>
         </button>
       </PopoverTrigger>
 
@@ -505,10 +520,10 @@ function AgentUsageDial({
 }): ReactNode {
   const snapshot = useAgentSnapshot(agent);
   const [open, setOpen] = useState(false);
-  const { headline, muted, percent, filled, paceDelta } = snapshot;
+  const { headline, expired, muted, percent, filled, paceDelta } = snapshot;
   if (!headline) return null;
 
-  const label = usageLabel(agent, headline, percent, paceDelta);
+  const label = usageLabel(agent, headline, percent, paceDelta, expired);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

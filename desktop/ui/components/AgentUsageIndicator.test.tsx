@@ -356,8 +356,13 @@ describe("AgentUsageIndicator", () => {
     );
     await renderIndicator();
 
-    const row = await screen.findByRole("button", { name: /Codex usage/ });
-    expect(row.textContent).toContain("—");
+    // The row prints no figure at all now, so a reset window is reported in
+    // its accessible name — which also stops it claiming the *old* window's
+    // percentage as though that still applied.
+    const row = await screen.findByRole("button", {
+      name: /Codex usage: Weekly window has reset/,
+    });
+    expect(row.getAttribute("aria-label")).not.toContain("30%");
     expect(row.textContent).not.toContain("30%");
   });
 
@@ -365,8 +370,12 @@ describe("AgentUsageIndicator", () => {
     resolveWith(claude());
     await renderIndicator();
 
+    // The bar carries it on screen; the number stays reachable by hover and by
+    // screen reader rather than being spent on 2rem of sidebar.
     const row = await screen.findByRole("button", { name: /Claude usage/ });
-    expect(row.textContent).toContain("86%");
+    expect(row.getAttribute("aria-label")).toContain("86%");
+    expect(row.getAttribute("title")).toContain("86%");
+    expect(row.textContent).not.toContain("86%");
   });
 
   it("leaves the last known values in place when a refresh fails", async () => {
