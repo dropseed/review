@@ -21,7 +21,7 @@ import type { UndoEntry } from "./undoSlice";
 import { ephemeralResetState } from "./ephemeralSlice";
 import { symbolsResetState, repoSymbolsResetState } from "./symbolsSlice";
 import { classificationResetState } from "./classificationSlice";
-import { EMPTY_STAGED_SET } from "./gitSlice";
+import { EMPTY_STAGED_SET, gitCommitResetState } from "./gitSlice";
 import { debouncedSave } from "./reviewSlice";
 import { debouncedUndoSave } from "./undoSlice";
 
@@ -360,6 +360,11 @@ const reviewIdentityResetState = {
 const comparisonResetState = {
   ...diffDataResetState,
   ...reviewIdentityResetState,
+  // The commit box is scoped to the working tree, which reviewIdentityResetState
+  // above already resets (worktreePath) -- reset alongside it so a draft or an
+  // in-flight generateCommitMessage() from the previous working tree can't
+  // linger into the next.
+  ...gitCommitResetState,
 };
 
 /** Additional state reset only needed when switching repositories. */
