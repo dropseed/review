@@ -516,15 +516,12 @@ impl LocalGitSource {
     }
 
     /// Resolve a `git log` argument that may be a bare ref or a range
-    /// (`a..b` / `a...b`). Tries the three-dot separator first because
-    /// `split_once("..")` would otherwise greedily split inside `a...b`.
+    /// (`a..b` / `a...b`).
     fn resolve_log_ref_arg(&self, arg: &str) -> String {
-        for sep in ["...", ".."] {
-            if let Some((left, right)) = arg.split_once(sep) {
-                let l = self.resolve_ref_or_self(left);
-                let r = self.resolve_ref_or_self(right);
-                return format!("{l}{sep}{r}");
-            }
+        if let Some((left, sep, right)) = split_range_sep(arg) {
+            let l = self.resolve_ref_or_self(left);
+            let r = self.resolve_ref_or_self(right);
+            return format!("{l}{sep}{r}");
         }
         self.resolve_ref_or_self(arg)
     }
@@ -3453,6 +3450,21 @@ pub(crate) fn split_remote_url(url: &str) -> Option<(&str, &str)> {
     let path = path.strip_suffix(".git").unwrap_or(path);
     // Ensure we have at least org/repo (two path segments)
     path.contains('/').then_some((host, path))
+}
+
+/// Split a git-style range spec (`a..b` / `a...b`) into its `(left, sep,
+/// right)`. Tries the three-dot separator first because `split_once("..")`
+/// would otherwise greedily split inside `a...b`. Shared by callers that
+/// parse a range spec themselves rather than handing it to git as one
+/// argument — [`LocalGitSource::resolve_log_ref_arg`] and
+/// `cli::parse_review_spec`.
+pub(crate) fn split_range_sep(spec: &str) -> Option<(&str, &str, &str)> {
+    for sep in ["...", ".."] {
+        if let Some((left, right)) = spec.split_once(sep) {
+            return Some((left, sep, right));
+        }
+    }
+    None
 }
 
 /// Drop a trailing `:<digits>` from a URL host. Ports are transport detail —

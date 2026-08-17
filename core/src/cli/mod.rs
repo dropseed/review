@@ -495,15 +495,17 @@ fn resolve_ref_sha(repo_path: &Path, rev: &str) -> Result<String, String> {
 /// derive it. Forms:
 /// - `<ref>` → `(ref, None)` — a branch (vs the default branch), a tag or SHA
 ///   (reviewed as a single commit), etc. — the ladder decides.
-/// - `<base>..<ref>` → `(ref, Some(base))` — pin the base (empty side means
-///   `HEAD`, like git's `a..` / `..b`).
+/// - `<base>..<ref>` / `<base>...<ref>` → `(ref, Some(base))` — pin the base
+///   (empty side means `HEAD`, like git's `a..` / `..b`). The two separators
+///   mean the same thing here, since `base..ref` is already resolved against
+///   their merge-base at diff time (see `LocalGitSource::diff_base_ref`).
 /// - `<rev>^!` → `(rev, None)` — review that one commit (the ladder's
 ///   single-commit rule yields `rev^..rev`).
 /// - `snapshot:<rev>` → `(rev, Some(""))` — the full tree at a rev, diffed
 ///   against the empty tree (empty-string base is the empty-tree convention).
 pub(crate) fn parse_review_spec(spec: &str) -> Result<(String, Option<String>), String> {
     // Explicit range — an empty side means HEAD, matching git's `a..` / `..b`.
-    if let Some((base, head)) = spec.split_once("..") {
+    if let Some((base, _sep, head)) = crate::sources::local_git::split_range_sep(spec) {
         let base = if base.is_empty() { "HEAD" } else { base };
         let head = if head.is_empty() { "HEAD" } else { head };
         return Ok((head.to_owned(), Some(base.to_owned())));
@@ -758,6 +760,11 @@ mod tests {
         // Explicit range → pinned base.
         assert_eq!(
             parse_review_spec("main..feature").unwrap(),
+            ("feature".into(), Some("main".into()))
+        );
+        // Three-dot range → same pinned base as two-dot (see doc comment).
+        assert_eq!(
+            parse_review_spec("main...feature").unwrap(),
             ("feature".into(), Some("main".into()))
         );
         // Empty sides mean HEAD, like git.
