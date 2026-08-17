@@ -56,6 +56,11 @@ CLI (`--home ~/.review-dev`) is handy for poking sessions from the outside.
 
 ### Isolated dev instance (`$REVIEW_HOME`)
 
+**Agents: always test against an isolated home (`REVIEW_HOME=~/.review-dev`)
+unless Dave explicitly says otherwise.** The default home is his live app —
+its terminals run his real work, and browser keystrokes, tab clicks, panel
+toggles (some persisted), and scratch sessions all land in it.
+
 Everything — state, `work.json`, the daemon socket, the CLI↔app open-request
 signal file, dev logs — resolves through the review home (`~/.review`, or
 `$REVIEW_HOME`). To run a dev build fully separate from an installed released
