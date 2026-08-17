@@ -7,6 +7,7 @@ import {
   useRef,
 } from "react";
 import { useReviewStore } from "../../stores";
+import { readContextKeys } from "../../commands/contextKeys";
 import { browseRef } from "../../stores/selectors/browse";
 import { viewOnly } from "../../stores/selectors/ephemeral";
 import { getApiClient } from "../../api";
@@ -329,6 +330,11 @@ export function FileViewer({
       // Both bars address real file lines — suppressed in shape mode.
       if (shapeModeRef.current) return;
       if (!(e.metaKey || e.ctrlKey) || e.shiftKey) return;
+      // A keystroke inside a terminal pane is the terminal's: ⌘F there opens
+      // the terminal's own search (terminal.find), not this file's. Asked via
+      // the published context key — and after the modifier guard, so the DOM
+      // probe never runs for plain typing.
+      if (readContextKeys().terminalFocused) return;
       if (e.key === "f") {
         e.preventDefault();
         setOpenBar("search");

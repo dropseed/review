@@ -1,5 +1,6 @@
 import { Terminal, type ITheme, type FontWeight } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { SearchAddon } from "@xterm/addon-search";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes";
@@ -42,6 +43,7 @@ import {
 interface RegistryEntry {
   term: Terminal;
   fit: FitAddon;
+  search: SearchAddon;
   webgl: WebglAddon | null;
   /** Detaches the output stream; called only from disposeTerminal. */
   unsubOutput: (() => void) | null;
@@ -135,6 +137,11 @@ export function acquireTerminal(
   );
   const fit = new FitAddon();
   term.loadAddon(fit);
+  // Buffer search (⌘F). The addon lives with the instance rather than the
+  // search bar so its match decorations survive the bar unmounting on a tab
+  // switch; the bar drives it via getSearchAddon.
+  const search = new SearchAddon();
+  term.loadAddon(search);
   term.loadAddon(new WebLinksAddon((_event, uri) => openTerminalLink(uri)));
   // xterm ships Unicode 6 width tables, where a modern emoji counts as one
   // column and a combining sequence counts as several. Coding agents draw
@@ -151,6 +158,7 @@ export function acquireTerminal(
   const entry: RegistryEntry = {
     term,
     fit,
+    search,
     webgl: null,
     unsubOutput: null,
     disposeKitty,
@@ -549,6 +557,11 @@ export function refreshAllTerminalOptions(opts: TerminalFontOptions): void {
 /** Whether an instance already exists (test/debug helper). */
 export function hasTerminal(id: string): boolean {
   return registry.has(id);
+}
+
+/** The search addon for a live instance — what the search bar drives. */
+export function getSearchAddon(id: string): SearchAddon | null {
+  return registry.get(id)?.search ?? null;
 }
 
 /**

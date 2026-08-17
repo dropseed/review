@@ -87,6 +87,12 @@ export interface TerminalSlice {
    * workspace nobody asked to leave.
    */
   terminalOverview: boolean;
+  /**
+   * The session whose pane is wearing the ⌘F search bar, or null. One bar at a
+   * time, and not persisted for the overview's reason: a search is a look
+   * taken and put down, not a layout to come back wearing.
+   */
+  terminalSearchId: string | null;
   /** Panel width in px (persisted) — the vertical pane's own width. */
   terminalPanelWidth: number;
   /** Whether the current backend can host terminals (probed on mount). */
@@ -206,6 +212,8 @@ export interface TerminalSlice {
   setTerminalOverview: (on: boolean) => void;
   /** [`setTerminalOverview`] as the one gesture that drives it. */
   toggleTerminalOverview: () => void;
+  /** Open the ⌘F search bar over one pane (null closes; one bar at a time). */
+  setTerminalSearchId: (id: string | null) => void;
   /** ⌘`: focus code ↔ split — the terminal in and out of view. */
   toggleTerminalPanel: () => void;
   /** ⇧⌘↵: focus terminal ↔ split — full width from wherever it starts. */
@@ -1017,6 +1025,7 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
     set({
       ...removeTerminalFromState(g, id),
       ...removeTerminalFromTabs(g, id),
+      terminalSearchId: g.terminalSearchId === id ? null : g.terminalSearchId,
     });
   }
 
@@ -1063,6 +1072,7 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
     terminalCheckouts: {},
     contentFocus: "code",
     terminalOverview: false,
+    terminalSearchId: null,
     terminalPanelWidth: TERMINAL_PANEL_WIDTH_DEFAULT,
     terminalsSupported: false,
 
@@ -1264,6 +1274,8 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
 
     toggleTerminalOverview: () =>
       set({ terminalOverview: !get().terminalOverview }),
+
+    setTerminalSearchId: (id) => set({ terminalSearchId: id }),
 
     toggleTerminalPanel: () => {
       // From terminal focus this lands on "code", not "split" — hiding the

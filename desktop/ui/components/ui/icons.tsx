@@ -380,6 +380,42 @@ export function ChevronRightIcon({ className = "h-3 w-3" }: IconProps) {
   );
 }
 
+/** Chevron pointing up — previous match, collapse. */
+export function ChevronUpIcon({ className = "h-3 w-3" }: IconProps) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M5 15l7-7 7 7" />
+    </svg>
+  );
+}
+
+/** Chevron pointing down — next match, expand. */
+export function ChevronDownIcon({ className = "h-3 w-3" }: IconProps) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M19 9l-7 7-7-7" />
+    </svg>
+  );
+}
+
 /** A funnel — what is being left out of a list. */
 export function FilterIcon({ className = "h-3 w-3" }: IconProps) {
   return (

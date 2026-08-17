@@ -1,5 +1,21 @@
 import type { ITheme } from "@xterm/xterm";
+import type { ISearchOptions } from "@xterm/addon-search";
 import { ansiPaletteFor } from "./terminal-palettes";
+
+/** One read of the live CSS tokens both builders below derive from. */
+function readTokens() {
+  const cs = getComputedStyle(document.documentElement);
+  const v = (name: string): string => cs.getPropertyValue(name).trim();
+  const foreground = v("--color-fg") || "#fafaf9";
+  return {
+    v,
+    foreground,
+    // --color-selection exists on every bundled theme, but fall back to a
+    // translucent foreground wash in case a custom/VS Code-derived theme
+    // omits it.
+    selection: v("--color-selection") || `${foreground}33`,
+  };
+}
 
 /**
  * Build an xterm theme from the app's CSS custom properties so the terminal
@@ -15,17 +31,11 @@ import { ansiPaletteFor } from "./terminal-palettes";
  */
 export function buildXtermTheme(): ITheme {
   const el = document.documentElement;
-  const cs = getComputedStyle(el);
-  const v = (name: string): string => cs.getPropertyValue(name).trim();
+  const { v, foreground, selection: selectionBackground } = readTokens();
 
   const background = v("--color-surface-inset") || "#1c1917";
-  const foreground = v("--color-fg") || "#fafaf9";
-  // --color-selection exists on every bundled theme, but fall back to a
-  // translucent foreground wash in case a custom/VS Code-derived theme omits it.
-  const selectionBackground = v("--color-selection") || `${foreground}33`;
 
-  const scheme =
-    cs.getPropertyValue("color-scheme").trim() === "light" ? "light" : "dark";
+  const scheme = v("color-scheme") === "light" ? "light" : "dark";
   const ansi = ansiPaletteFor(el.dataset.uiTheme ?? "", scheme, background);
 
   return {
@@ -35,5 +45,24 @@ export function buildXtermTheme(): ITheme {
     cursorAccent: background,
     selectionBackground,
     ...ansi,
+  };
+}
+
+/**
+ * Decoration colors for the ⌘F search addon, from the same live tokens as the
+ * theme: matches wear the selection wash, the active match the "modified"
+ * accent every theme carries. Read fresh per search-bar mount (like
+ * buildXtermTheme per terminal mount) so a theme change recolors the next
+ * search.
+ */
+export function buildSearchDecorations(): ISearchOptions["decorations"] {
+  const { v, selection: match } = readTokens();
+  const active = v("--color-status-modified") || "#fbbf24";
+
+  return {
+    matchBackground: match,
+    matchOverviewRuler: match,
+    activeMatchBackground: active,
+    activeMatchColorOverviewRuler: active,
   };
 }

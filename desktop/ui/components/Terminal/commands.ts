@@ -125,6 +125,28 @@ export const TERMINAL_COMMANDS: readonly Command[] = [
     },
   },
   {
+    id: "terminal.find",
+    title: "Find in Terminal",
+    category: "Terminal",
+    keywords: ["search", "scrollback", "buffer", "grep"],
+    shortcut: { code: "KeyF", mod: true },
+    allowInTerminal: true,
+    // ⌘F is contextual: it belongs to whatever is being read. Gated on a
+    // focused terminal so that anywhere else the keystroke falls through
+    // untouched to the file viewer's own find bar — which also keeps this
+    // entry out of the palette, where "the terminal you're focused in" is
+    // never the palette's input. Yes, that is the DOM-probe-in-a-predicate
+    // problem `activeTerminalTab` (above) exists to avoid — but here the
+    // probe is the point: this gate arbitrates a shared keystroke, not
+    // palette enablement, so don't "fix" it to a store read or ⌘F steals
+    // the file viewer's find from across the stage.
+    isVisible: (ctx) => supported(ctx) && ctx.keys.terminalFocused === true,
+    run: ({ store }) => {
+      const id = focusedTerminalId();
+      if (id) store.setTerminalSearchId(id);
+    },
+  },
+  {
     id: "view.toggleTerminal",
     title: "Toggle Terminal",
     category: "View",

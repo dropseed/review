@@ -19,6 +19,7 @@ import {
   usePaneDropEdge,
 } from "./pane-drag";
 import { TerminalPane } from "./TerminalPane";
+import { TerminalSearchBar } from "./TerminalSearchBar";
 import { SplitDivider } from "./SplitDivider";
 
 /** Smallest fraction a pane can be dragged to, so a pane never vanishes. */
@@ -245,6 +246,7 @@ function PaneLeaf({
   onCollapse,
 }: PaneLeafProps): ReactNode {
   const dropPaneOn = useReviewStore((s) => s.dropPaneOn);
+  const searchOpen = useReviewStore((s) => s.terminalSearchId === id);
   // Where a drop would land, whichever way the drag reached us: these handlers
   // in web mode, the window-level events under Tauri (see useTerminalFileDrop).
   // Both publish to pane-drag, so the highlight has one source either way.
@@ -314,6 +316,12 @@ function PaneLeaf({
     >
       <div className="relative min-h-0 flex-1">
         <TerminalPane id={id} active={isFocused} />
+        {/* Above the focus veil: a pane being searched is being looked at. */}
+        {searchOpen && (
+          <div className="absolute top-0 right-0 z-10 p-2">
+            <TerminalSearchBar id={id} />
+          </div>
+        )}
         {/* Focus reads as the pane that isn't faded, rather than a border
             drawn around it — one less line inside an already busy panel.
             This is a veil of the terminal's own background rather than
