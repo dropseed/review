@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { clsx } from "clsx";
 import { useReviewStore } from "../../stores";
 import {
@@ -38,6 +38,36 @@ export function TerminalOverview(): ReactNode {
   const byWorkspace = useTabsByWorkspaceId();
   const workspaces = useWorkspaces();
 
+  // The row is almost entirely xterm, and xterm cancels the wheel events it
+  // sees — its viewport preventDefaults anything with a vertical component to
+  // drive scrollback, which also kills the browser's default handling of the
+  // *horizontal* component. So a trackpad swipe over a terminal never reached
+  // this container, and the row read as unscrollable. Intercept in the capture
+  // phase, before any pane's listener: a sideways gesture (or Shift+wheel, the
+  // mouse spelling of one) scrolls the row by hand and stops there; a vertical
+  // one still falls through to whichever scrollback it was over.
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!scroller) return;
+    const onWheel = (event: WheelEvent) => {
+      const sideways = Math.abs(event.deltaX) > Math.abs(event.deltaY);
+      if (!sideways && !event.shiftKey) return;
+      const delta = sideways ? event.deltaX : event.deltaY;
+      scroller.scrollLeft +=
+        event.deltaMode === WheelEvent.DOM_DELTA_LINE ? delta * 16 : delta;
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    // React's own onWheel is passive at the root — preventDefault would be
+    // ignored — so this listener is attached natively.
+    scroller.addEventListener("wheel", onWheel, {
+      capture: true,
+      passive: false,
+    });
+    return () =>
+      scroller.removeEventListener("wheel", onWheel, { capture: true });
+  }, [scroller]);
+
   // Queue order, so the row reads the way the sidebar does — a terminal is
   // found here by remembering where its card sits, not by scanning titles. A
   // tab whose workspace the queue hasn't caught up with lands in no column and
@@ -54,8 +84,12 @@ export function TerminalOverview(): ReactNode {
   );
 
   return (
-    <div className="panel-card flex h-full w-full flex-col overflow-hidden bg-surface-inset">
-      <div className="flex shrink-0 select-none items-center gap-2 border-b border-edge/60 px-3 py-1">
+    // Not a card of its own: the columns are the panels here, each drawn the
+    // way the terminal panel is, so the row reads as that panel repeated —
+    // one per terminal, side by side — rather than one wide surface with
+    // dividers. This frame is just the strip above them and the scroll.
+    <div className="flex h-full w-full flex-col overflow-hidden">
+      <div className="flex shrink-0 select-none items-center gap-2 px-1 pb-2">
         <span className="text-xs text-fg-muted">All terminals</span>
         {columns.length > 0 && (
           <span className="text-xxs text-fg-faint tabular-nums">
@@ -85,8 +119,11 @@ export function TerminalOverview(): ReactNode {
         // Fixed-width columns that scroll rather than share the width: eight
         // terminals squeezed into one screen are eight things none of which can
         // be read, and the point of the row is that each one still is.
-        <div className="min-h-0 flex-1 overflow-x-auto scrollbar-thin">
-          <div className="flex h-full gap-2 p-2">
+        <div
+          ref={setScroller}
+          className="min-h-0 flex-1 overflow-x-auto scrollbar-thin"
+        >
+          <div className="flex h-full gap-3">
             {columns.map(({ workspace, tab }) => (
               <OverviewTab key={tab.id} workspace={workspace} tab={tab} />
             ))}
@@ -117,12 +154,16 @@ function OverviewTab({
   const glance = useTabGlance(tab.id);
 
   return (
-    // No card, no border, no surface of its own: the terminals already sit on
-    // the panel's, and a box drawn around each one turns a row of shells into a
-    // row of widgets — every edge one more thing between the reader and the
-    // text they came here for. What separates the columns is the gap, and what
-    // labels one is the bar over it.
-    <div className={clsx("flex h-full shrink-0 flex-col", COLUMN_WIDTH)}>
+    // Each column is its own panel — the same card the terminal panel draws,
+    // so a terminal looks like itself here: the header bar where the tab strip
+    // would be, the panes on the card's surface, and the gap between cards
+    // saying where one terminal ends and the next begins.
+    <div
+      className={clsx(
+        "panel-card flex h-full shrink-0 flex-col overflow-hidden bg-surface-inset",
+        COLUMN_WIDTH,
+      )}
+    >
       {/* "Take me to this" — the one verb `jump.ts` exists for, shared with the
           sidebar's terminal rows and ⌘K's. Doing it by hand here focused the
           workspace and selected the tab but left the panel hidden when the
@@ -132,8 +173,9 @@ function OverviewTab({
         type="button"
         onClick={() => jumpToTab(tab.id)}
         title={`Go to ${glance?.title ?? "terminal"} in ${workspace.displayTitle}`}
-        className="flex shrink-0 select-none items-center gap-1.5 px-1 pb-1
-                   text-left text-xs text-fg-muted hover:text-fg-secondary"
+        className="flex shrink-0 select-none items-center gap-1.5 border-b
+                   border-edge/60 px-2 py-1 text-left text-xs text-fg-muted
+                   hover:text-fg-secondary"
       >
         <PhaseDot
           phase={glance?.severity ?? "idle"}
