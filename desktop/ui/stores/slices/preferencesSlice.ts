@@ -3,6 +3,7 @@ import type { StorageService } from "../../platform";
 import type { SliceCreatorWithStorage } from "../types";
 import type { RecentRepo } from "../../utils/preferences";
 import { setSentryConsent } from "../../utils/sentry";
+import { getFileExtension } from "../../utils/file-extension";
 import { setSoundEnabled } from "../../utils/sounds";
 import { setTerminalNotificationsEnabled as setTerminalNotifications } from "../../utils/terminal-notifications";
 import {
@@ -158,16 +159,6 @@ export const TERMINAL_LETTER_SPACING_MAX = 4;
 export const TERMINAL_LETTER_SPACING_STEP = 0.5;
 
 const MAX_RECENT_REPOS = 5;
-
-/** Extract lowercase file extension (without dot) from a file path, or empty string. */
-function getFileExtension(filePath: string): string {
-  const lastDot = filePath.lastIndexOf(".");
-  const lastSlash = filePath.lastIndexOf("/");
-  if (lastDot > lastSlash) {
-    return filePath.slice(lastDot + 1).toLowerCase();
-  }
-  return "";
-}
 
 /** Resolve the effective diff view mode for a file, checking per-extension overrides first. */
 export function resolveViewModeForFile(

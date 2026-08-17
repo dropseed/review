@@ -48,7 +48,7 @@ export function applyCollapseShift(shift: CollapseShift): void {
 }
 
 /** Nearest scrollable ancestor, or null if nothing above this element scrolls. */
-function findScrollParent(el: HTMLElement): HTMLElement | null {
+export function findScrollParent(el: HTMLElement): HTMLElement | null {
   let node = el.parentElement;
   while (node) {
     const overflowY = getComputedStyle(node).overflowY;

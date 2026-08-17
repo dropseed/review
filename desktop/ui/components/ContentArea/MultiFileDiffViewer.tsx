@@ -2,10 +2,23 @@ import { type ReactNode, useCallback } from "react";
 import { Virtualizer } from "@pierre/diffs/react";
 import { useReviewStore } from "../../stores";
 import { GroupDiffViewer } from "../GuideView/GroupDiffViewer";
+import type { HunkGroup } from "../../types";
 
 const VIRTUALIZER_STYLE = { overflow: "auto" } as const;
 
-export function MultiFileDiffViewer(): ReactNode {
+interface MultiFileDiffViewerProps {
+  /**
+   * Render this group instead of resolving one from the store. Used for the
+   * default needs-review view, which is implicit render state rather than a
+   * stored overlay — it gets no close button (there is nothing to close it
+   * into; picking a file is how you leave it) and no group-index badge.
+   */
+  group?: HunkGroup;
+}
+
+export function MultiFileDiffViewer({
+  group: groupProp,
+}: MultiFileDiffViewerProps): ReactNode {
   const guideContentMode = useReviewStore((s) => s.guideContentMode);
   const activeEntry = useReviewStore((s) => s.getActiveGroupingEntry());
   const reviewGroups = activeEntry.reviewGroups;
@@ -22,8 +35,10 @@ export function MultiFileDiffViewer(): ReactNode {
 
   // Resolve which group and optional index to render
   const isAdhoc = guideContentMode === "adhoc-group";
-  const group = isAdhoc ? adhocGroup : (reviewGroups[activeGroupIndex] ?? null);
-  const groupIndex = isAdhoc ? undefined : activeGroupIndex;
+  const group =
+    groupProp ??
+    (isAdhoc ? adhocGroup : (reviewGroups[activeGroupIndex] ?? null));
+  const groupIndex = groupProp || isAdhoc ? undefined : activeGroupIndex;
 
   if (!group) {
     return (
@@ -46,7 +61,7 @@ export function MultiFileDiffViewer(): ReactNode {
               </span>
             ) : undefined
           }
-          onClose={handleClose}
+          onClose={groupProp ? undefined : handleClose}
         />
       </Virtualizer>
     </div>

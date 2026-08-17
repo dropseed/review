@@ -3,6 +3,7 @@ import { useReviewStore } from "../../stores";
 import { FileViewer } from "../FileViewer";
 import { ResizeHandle } from "./ResizeHandle";
 import { toggleToCanonical } from "../../utils/resize";
+import { useNeedsReviewDefaultGroup } from "./useNeedsReviewDefault";
 const MultiFileDiffViewer = lazy(() =>
   import("./MultiFileDiffViewer").then((m) => ({
     default: m.MultiFileDiffViewer,
@@ -39,7 +40,34 @@ function NoFileSelected(): ReactNode {
   );
 }
 
-export function ContentArea(): ReactNode {
+/**
+ * What the content area shows when nothing is open: the comparison's
+ * needs-review hunks as one rolling diff, ready to be walked top to bottom.
+ * Falls back to the placeholder above when there is nothing to roll — browse
+ * mode, a commit peek, a review with nothing left pending.
+ *
+ * `narrow` comes down from ReviewView, which owns the fact: a narrow code
+ * half shows the file list and keeps this mounted but hidden, and a hidden
+ * mount must not pay for a diff stack nobody can see.
+ */
+function DefaultContent({ narrow }: { narrow: boolean }): ReactNode {
+  const group = useNeedsReviewDefaultGroup();
+  if (group === null || narrow) {
+    return <NoFileSelected />;
+  }
+  return (
+    <Suspense fallback={null}>
+      <MultiFileDiffViewer group={group} />
+    </Suspense>
+  );
+}
+
+interface ContentAreaProps {
+  /** The code half is showing the file list instead of this region. */
+  narrow?: boolean;
+}
+
+export function ContentArea({ narrow = false }: ContentAreaProps): ReactNode {
   const selectedFile = useReviewStore((s) => s.selectedFile);
   const externalFilePath = useReviewStore((s) => s.externalFilePath);
   const secondaryFile = useReviewStore((s) => s.secondaryFile);
@@ -115,7 +143,7 @@ export function ContentArea(): ReactNode {
   }
 
   if (!effectiveFile && !secondaryFile) {
-    return <NoFileSelected />;
+    return <DefaultContent narrow={narrow} />;
   }
 
   // Single pane mode

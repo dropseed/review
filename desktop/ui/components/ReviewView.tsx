@@ -366,7 +366,7 @@ export function ReviewView({
                       missingRefs={missingRefs}
                     />
                   ) : (
-                    <ContentArea />
+                    <ContentArea narrow={narrow} />
                   )}
                 </div>
 

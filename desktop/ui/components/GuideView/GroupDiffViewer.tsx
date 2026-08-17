@@ -24,7 +24,11 @@ import type {
 import type { DiffViewMode } from "../../stores/slices/preferencesSlice";
 import { DiffView, DiffErrorBoundary } from "../FileViewer/DiffView";
 import { ImageViewer } from "../FileViewer/ImageViewer";
-import { FileDiffStackItem } from "../ui/file-diff-stack-item";
+import {
+  FileDiffStackItem,
+  findScrollParent,
+} from "../ui/file-diff-stack-item";
+import { isImagePath } from "../../utils/file-extension";
 import {
   useHunkBlockScrollTarget,
   useCodeFont,
@@ -111,7 +115,10 @@ function applyExpansions(
   expansionByHunk: Map<string, HunkExpansion>,
   lineCache: LineCache,
 ): DiffHunk[] {
-  if (fileHunks.length === 0) return fileHunks;
+  // No expansions for this file (the common case, and every first render):
+  // the parsed hunks are already sorted and non-touching, so pass them
+  // through instead of rebuilding every hunk's lines array.
+  if (!fileHunks.some((h) => expansionByHunk.has(h.id))) return fileHunks;
 
   const sorted = [...fileHunks].sort((a, b) => a.oldStart - b.oldStart);
 
@@ -195,24 +202,18 @@ function applyExpansions(
 }
 
 /**
- * Build a unified diff patch containing only the specified hunks.
- * Extracts the diff header (everything before the first @@ line) from
- * the full patch, then reconstructs each hunk from its lines array.
- * When the source patch is empty (e.g., untracked/new files), generates
- * a synthetic header so the patch-only rendering path works correctly.
+ * Build a unified diff patch containing only the specified hunks, under a
+ * synthesized header. Deliberately never the real git header: the hunk lines
+ * are already in the store, so a synthetic header is what lets a group render
+ * before (and without) the per-file `getFileContent` fetch — and a header
+ * that switched to git's once that fetch landed would re-parse and visibly
+ * re-render a diff already on screen. `/dev/null` marks a side the hunks say
+ * doesn't exist, matching what git itself writes for added/deleted files.
  */
-function buildFilteredPatch(
-  fullPatch: string,
-  hunks: DiffHunk[],
-  filePath: string,
-): string {
-  let diffHeader: string;
-  if (fullPatch) {
-    const headerMatch = fullPatch.match(/^([\s\S]*?)(?=^@@\s)/m);
-    diffHeader = headerMatch ? headerMatch[1] : "";
-  } else {
-    diffHeader = `--- /dev/null\n+++ ${filePath}\n`;
-  }
+function buildFilteredPatch(hunks: DiffHunk[], filePath: string): string {
+  const hasOld = hunks.some((h) => h.oldCount > 0);
+  const hasNew = hunks.some((h) => h.newCount > 0);
+  const diffHeader = `--- ${hasOld ? filePath : "/dev/null"}\n+++ ${hasNew ? filePath : "/dev/null"}\n`;
 
   const hunkSections = hunks.map((h) => {
     const header = `@@ -${h.oldStart},${h.oldCount} +${h.newStart},${h.newCount} @@`;
@@ -224,6 +225,16 @@ function buildFilteredPatch(
 
   return diffHeader + hunkSections.join("\n");
 }
+
+/**
+ * Per-file content loaded for a section: the data URL for images and the
+ * line counts behind the context expanders. Same shape as
+ * WorkingTreeMultiFileDiffViewer's — absent means not requested yet.
+ */
+type FileLoadState =
+  { kind: "ok"; content: FileContent } | { kind: "error"; message: string };
+
+const EMPTY_TRUST_LIST: string[] = [];
 
 function getUnreviewedIds(
   ids: string[],
@@ -435,7 +446,8 @@ interface GroupDiffViewerProps {
   group: HunkGroup;
   groupIndex?: number;
   headerBadge?: ReactNode;
-  onClose: () => void;
+  /** Absent for the default needs-review view, which has nothing to close into. */
+  onClose?: () => void;
 }
 
 export function GroupDiffViewer({
@@ -457,10 +469,9 @@ export function GroupDiffViewer({
   const codeTheme = useReviewStore((s) => s.codeTheme);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
 
-  const [fileContents, setFileContents] = useState<Map<string, FileContent>>(
+  const [fileStates, setFileStates] = useState<Map<string, FileLoadState>>(
     new Map(),
   );
-  const [loadingFiles, setLoadingFiles] = useState<Set<string>>(new Set());
   const [expansionByHunk, setExpansionByHunk] = useState<
     Map<string, HunkExpansion>
   >(new Map());
@@ -472,7 +483,7 @@ export function GroupDiffViewer({
 
   const hunkById = useHunkById();
 
-  const trustList = reviewState?.trustList ?? [];
+  const trustList = reviewState?.trustList ?? EMPTY_TRUST_LIST;
   const autoApproveStaged = reviewState?.autoApproveStaged ?? false;
   const hunkStates = reviewState?.hunks;
 
@@ -494,69 +505,129 @@ export function GroupDiffViewer({
     [groupFiles],
   );
 
-  // Load file contents for all files in this group
+  // The diff bodies render straight from the store's hunks — per-file content
+  // only supplies what those can't: image data URLs and the full-file line
+  // counts behind the context expanders. So it is fetched lazily, per file,
+  // as its section approaches the viewport. Eagerly fetching every file up
+  // front is what made opening a large group expensive: one git-backed IPC
+  // call per file, re-paid on every mount.
+  const [wantedFiles, setWantedFiles] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const sectionElsRef = useRef(new Set<HTMLElement>());
+  const observerRef = useRef<IntersectionObserver | null>(null);
+
+  // One stable callback ref for every section (React ref cleanup handles
+  // unmount), with the file path read back off data-section-file.
+  const sectionRef = useCallback((el: HTMLElement | null) => {
+    if (!el) return;
+    sectionElsRef.current.add(el);
+    observerRef.current?.observe(el);
+    return () => {
+      sectionElsRef.current.delete(el);
+      observerRef.current?.unobserve(el);
+    };
+  }, []);
+
+  // The observer's root must be the Virtualizer's scroll container, not the
+  // viewport — with the default root, rootMargin expands a rect the inner
+  // scroller still clips to, and the prefetch margin does nothing.
+  useEffect(() => {
+    if (!rootNode) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        setWantedFiles((prev) => {
+          let next: Set<string> | null = null;
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            const fp = (entry.target as HTMLElement).dataset.sectionFile;
+            if (fp && !prev.has(fp)) {
+              next ??= new Set(prev);
+              next.add(fp);
+            }
+          }
+          return next ?? prev;
+        });
+      },
+      // Fetch ahead of the scroll so the expanders and images are usually
+      // there by the time their section is.
+      { root: findScrollParent(rootNode), rootMargin: "1000px 0px" },
+    );
+    observerRef.current = observer;
+    for (const el of sectionElsRef.current) observer.observe(el);
+    return () => {
+      observer.disconnect();
+      observerRef.current = null;
+    };
+  }, [rootNode]);
+
+  // Everything ever requested, so a section growing into view fetches once.
+  // A failed fetch stays requested (and visible as its error row) rather
+  // than silently retrying.
+  const requestedRef = useRef(new Set<string>());
   useEffect(() => {
     if (!repoPath || !comparison) return;
 
-    const api = getApiClient();
-    let cancelled = false;
-
-    // Only load files we don't have yet
-    const toLoad = filePaths.filter((fp) => !fileContents.has(fp));
+    const toLoad = [...wantedFiles].filter(
+      (fp) => !requestedRef.current.has(fp),
+    );
     if (toLoad.length === 0) return;
 
-    setLoadingFiles((prev) => new Set([...prev, ...toLoad]));
-
+    for (const fp of toLoad) requestedRef.current.add(fp);
+    const api = getApiClient();
     Promise.all(
-      toLoad.map(async (filePath) => {
+      toLoad.map(async (filePath): Promise<[string, FileLoadState]> => {
         try {
           const content = await api.getFileContent(
             repoPath,
             filePath,
             comparison,
           );
-          return { filePath, content };
-        } catch {
-          return { filePath, content: null };
+          return [filePath, { kind: "ok", content }];
+        } catch (err) {
+          return [
+            filePath,
+            {
+              kind: "error",
+              message: err instanceof Error ? err.message : String(err),
+            },
+          ];
         }
       }),
     ).then((results) => {
-      if (cancelled) return;
-      setFileContents((prev) => {
-        const next = new Map(prev);
-        for (const { filePath, content } of results) {
-          if (content) next.set(filePath, content);
-        }
-        return next;
-      });
-      setLoadingFiles((prev) => {
-        const next = new Set(prev);
-        for (const fp of toLoad) next.delete(fp);
-        return next;
-      });
+      setFileStates((prev) => new Map([...prev, ...results]));
     });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [repoPath, comparison, filePaths, fileContents]);
+  }, [repoPath, comparison, wantedFiles]);
 
   const groupKey = useMemo(() => group.hunkIds.join(","), [group.hunkIds]);
+  const patchCacheRef = useRef(new Map<string, string>());
   useEffect(() => {
     setExpansionByHunk(new Map());
     lineCacheRef.current = new Map();
+    patchCacheRef.current = new Map();
   }, [groupKey]);
 
+  // Counted once per loaded content (WeakMap-cached), not once per batch —
+  // lazy loading means this memo re-runs on every scroll-triggered arrival.
+  const lineCountsCacheRef = useRef(
+    new WeakMap<FileContent, { newLines: number; oldLines: number }>(),
+  );
   const fileLineCounts = useMemo(() => {
     const map = new Map<string, { newLines: number; oldLines: number }>();
-    for (const [fp, fc] of fileContents) {
-      map.set(fp, {
-        newLines: countLines(fc.content),
-        oldLines: countLines(fc.oldContent),
-      });
+    for (const [fp, state] of fileStates) {
+      if (state.kind !== "ok") continue;
+      let counts = lineCountsCacheRef.current.get(state.content);
+      if (!counts) {
+        counts = {
+          newLines: countLines(state.content.content),
+          oldLines: countLines(state.content.oldContent),
+        };
+        lineCountsCacheRef.current.set(state.content, counts);
+      }
+      map.set(fp, counts);
     }
     return map;
-  }, [fileContents]);
+  }, [fileStates]);
 
   const handleExpandContext = useCallback(
     async (hunk: DiffHunk, direction: "above" | "below", amount: number) => {
@@ -666,8 +737,8 @@ export function GroupDiffViewer({
   // tagged with their source hunk IDs, so targets resolve to a direct
   // scrollIntoView on the wrapper. Re-attempt once file contents load.
   const loadedContentKey = useMemo(
-    () => [...fileContents.keys()].join(","),
-    [fileContents],
+    () => [...fileStates.keys()].join(","),
+    [fileStates],
   );
   useHunkBlockScrollTarget(rootNode, group.hunkIds, loadedContentKey);
 
@@ -683,60 +754,70 @@ export function GroupDiffViewer({
     unapproveHunkIds(group.hunkIds);
   }, [group.hunkIds, unapproveHunkIds]);
 
+  // Each file's unreviewed ids, computed once per state change rather than
+  // per file per render — this is the whole comparison's hunks when the group
+  // is the default needs-review view.
+  const unreviewedByFile = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const { filePath, hunks: fileHunks } of groupFiles) {
+      map.set(
+        filePath,
+        getUnreviewedIds(
+          fileHunks.map((h) => h.id),
+          hunkById,
+          hunkStates,
+          trustList,
+          autoApproveStaged,
+          stagedFilePaths,
+        ),
+      );
+    }
+    return map;
+  }, [
+    groupFiles,
+    hunkById,
+    hunkStates,
+    trustList,
+    autoApproveStaged,
+    stagedFilePaths,
+  ]);
+
   const handleApproveFileHunks = useCallback(
     (filePath: string) => {
-      const fileHunkIds = hunksPerFile.get(filePath)?.map((h) => h.id) ?? [];
-      const ids = getUnreviewedIds(
-        fileHunkIds,
-        hunkById,
-        hunkStates,
-        trustList,
-        autoApproveStaged,
-        stagedFilePaths,
-      );
+      const ids = unreviewedByFile.get(filePath) ?? [];
       if (ids.length > 0) approveHunkIds(ids);
     },
-    [
-      hunksPerFile,
-      hunkById,
-      hunkStates,
-      trustList,
-      autoApproveStaged,
-      stagedFilePaths,
-      approveHunkIds,
-    ],
+    [unreviewedByFile, approveHunkIds],
   );
 
   const handleRejectFileHunks = useCallback(
     (filePath: string) => {
-      const fileHunkIds = hunksPerFile.get(filePath)?.map((h) => h.id) ?? [];
-      const ids = getUnreviewedIds(
-        fileHunkIds,
-        hunkById,
-        hunkStates,
-        trustList,
-        autoApproveStaged,
-        stagedFilePaths,
-      );
+      const ids = unreviewedByFile.get(filePath) ?? [];
       if (ids.length > 0) rejectHunkIds(ids);
     },
-    [
-      hunksPerFile,
-      hunkById,
-      hunkStates,
-      trustList,
-      autoApproveStaged,
-      stagedFilePaths,
-      rejectHunkIds,
-    ],
+    [unreviewedByFile, rejectHunkIds],
   );
 
+  // The rebuilt patch string is identical between renders unless the hunk's
+  // expanded range changed — which the DiffView key already encodes, so it
+  // doubles as the cache key. Skips an O(lines) join per hunk per render.
+  function cachedFilteredPatch(hunk: DiffHunk, filePath: string): string {
+    const key = `${hunk.id}:${hunk.oldStart}:${hunk.oldCount}:${hunk.newStart}:${hunk.newCount}`;
+    let patch = patchCacheRef.current.get(key);
+    if (patch === undefined) {
+      patch = buildFilteredPatch([hunk], filePath);
+      patchCacheRef.current.set(key, patch);
+    }
+    return patch;
+  }
+
   function renderFileContent(
-    fc: FileContent,
+    fc: FileContent | undefined,
     filePath: string,
     fileHunks: DiffHunk[],
   ): ReactNode {
     if (
+      fc &&
       (fc.contentType === "image" || fc.contentType === "svg") &&
       fc.imageDataUrl
     ) {
@@ -828,7 +909,7 @@ export function GroupDiffViewer({
               <div data-hunk-ids={blockHunkIds.join("\n")}>
                 <DiffView
                   key={`${hunk.id}:${hunk.oldStart}:${hunk.oldCount}:${hunk.newStart}:${hunk.newCount}`}
-                  diffPatch={buildFilteredPatch(fc.diffPatch, [hunk], filePath)}
+                  diffPatch={cachedFilteredPatch(hunk, filePath)}
                   viewMode={effectiveViewMode(responsiveViewMode)}
                   hunks={[hunk]}
                   theme={codeTheme}
@@ -870,23 +951,25 @@ export function GroupDiffViewer({
           <h2 className="text-sm font-medium text-fg-secondary flex-1 min-w-0 truncate">
             {group.title}
           </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex items-center justify-center w-6 h-6 rounded text-fg-muted hover:text-fg-secondary hover:bg-surface-raised transition-colors shrink-0"
-          >
-            <svg
-              className="w-3.5 h-3.5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex items-center justify-center w-6 h-6 rounded text-fg-muted hover:text-fg-secondary hover:bg-surface-raised transition-colors shrink-0"
             >
-              <path d="M18 6L6 18M6 6l12 12" />
-            </svg>
-          </button>
+              <svg
+                className="w-3.5 h-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </button>
+          )}
         </div>
         {/* Row 2: Metadata + action buttons */}
         <div className="flex items-center gap-2 mt-1.5">
@@ -940,31 +1023,39 @@ export function GroupDiffViewer({
         </div>
       </div>
 
-      {/* File sections */}
+      {/* File sections. The wrapper div is each section's viewport sentinel —
+          entering (or nearing) the viewport is what triggers its content
+          fetch. The diff itself renders immediately from the store's hunks. */}
       {groupFiles.map(({ filePath, hunks: fileHunks }) => {
-        const fc = fileContents.get(filePath);
-        const isLoading = loadingFiles.has(filePath);
-        const fileUnreviewed = getUnreviewedIds(
-          fileHunks.map((h) => h.id),
-          hunkById,
-          hunkStates,
-          trustList,
-          autoApproveStaged,
-          stagedFilePaths,
-        );
+        const loadState = fileStates.get(filePath);
+        const fc = loadState?.kind === "ok" ? loadState.content : undefined;
+        // An image file's diff *is* its data URL, so its section has nothing
+        // to draw until the content arrives (loading row meanwhile) and an
+        // error is worth a surface. A text file renders its hunks from the
+        // store either way — a failed fetch only costs it the expanders.
+        const isImage = isImagePath(filePath);
+        const awaitingImage = isImage && loadState === undefined;
+        const fileUnreviewed = unreviewedByFile.get(filePath) ?? [];
         return (
-          <FileDiffSection
-            key={filePath}
-            filePath={filePath}
-            isLoading={isLoading && !fc}
-            fileUnreviewed={fileUnreviewed}
-            fileCompleted={fileUnreviewed.length === 0}
-            onApproveFile={() => handleApproveFileHunks(filePath)}
-            onRejectFile={() => handleRejectFileHunks(filePath)}
-            onViewFile={() => navigateToBrowse(filePath)}
-          >
-            {fc ? renderFileContent(fc, filePath, fileHunks) : null}
-          </FileDiffSection>
+          <div key={filePath} ref={sectionRef} data-section-file={filePath}>
+            <FileDiffSection
+              filePath={filePath}
+              isLoading={awaitingImage}
+              fileUnreviewed={fileUnreviewed}
+              fileCompleted={fileUnreviewed.length === 0}
+              onApproveFile={() => handleApproveFileHunks(filePath)}
+              onRejectFile={() => handleRejectFileHunks(filePath)}
+              onViewFile={() => navigateToBrowse(filePath)}
+            >
+              {isImage && loadState?.kind === "error" ? (
+                <div className="px-4 py-3 text-xs text-status-rejected">
+                  Failed to load {filePath}: {loadState.message}
+                </div>
+              ) : awaitingImage ? null : (
+                renderFileContent(fc, filePath, fileHunks)
+              )}
+            </FileDiffSection>
+          </div>
         );
       })}
     </div>
