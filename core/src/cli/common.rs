@@ -291,7 +291,7 @@ pub fn load_review_view(repo: &Path, spec: Option<&str>) -> Result<ReviewView, S
     })
 }
 
-const MAX_SAVE_RETRIES: usize = 5;
+pub(super) const MAX_SAVE_RETRIES: usize = 5;
 
 /// The set of live hunk IDs from a parsed diff.
 pub fn live_hunk_ids(hunks: &[DiffHunk]) -> HashSet<String> {

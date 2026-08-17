@@ -95,7 +95,8 @@ at a time). For each batch:
   - Your recommendation: approve / reject / save / "your call".
 - Ask for confirmations or overrides as a batch, not one at a time.
 - Then act: `review approve <ids>`, `review reject <ids> --reason "…"`,
-  `review save <ids> --reason "…"`.
+  `review save <ids> --reason "…"`. A mark you got wrong is recoverable —
+  `review history` shows the versions and `review undo` puts one back.
 
 Example of what to send the human:
 
@@ -414,6 +415,9 @@ review hunks   [--status|--file|--label|--hunk] [--json] [--diff]
 review approve|reject|save|unmark <hunk-id>... [--reason TEXT] [--source ui|cli|agent|github|gitlab]
 review status                          # progress + overall state
 review list                            # all saved reviews
+review history [--json]                # this review's saved versions + what each changed
+review undo [--to N]                   # restore one as a new version — the safety net
+                                       # under any bulk mark; undo is itself undoable
 review use [<spec>] [--clear]          # show/set the repo's default comparison
 review change-base <new-base> [--clear]
 review note show                       # the human's note — read-only for agents

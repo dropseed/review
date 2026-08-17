@@ -10,6 +10,7 @@ use std::process::Command;
 mod comments;
 mod common;
 mod guide;
+mod history;
 mod review_state;
 mod skill;
 mod staging;
@@ -113,6 +114,12 @@ pub enum Commands {
 
     /// Delete a saved review
     Delete(review_state::DeleteArgs),
+
+    /// List the review's saved versions and what each one changed
+    History(history::HistoryArgs),
+
+    /// Restore an earlier version of the review as a new version
+    Undo(history::UndoArgs),
 
     /// Pin (or clear) a review's base override — a derived setting, not identity
     ChangeBase(review_state::ChangeBaseArgs),
@@ -276,6 +283,8 @@ pub fn run(cli: Cli) -> Result<(), String> {
         Some(Commands::Status(args)) => review_state::run_status(args),
         Some(Commands::List(args)) => review_state::run_list(args),
         Some(Commands::Delete(args)) => review_state::run_delete(args),
+        Some(Commands::History(args)) => history::run_history(args),
+        Some(Commands::Undo(args)) => history::run_undo(args),
         Some(Commands::ChangeBase(args)) => review_state::run_change_base(args),
         Some(Commands::Trust(args)) => review_state::run_trust(args),
         Some(Commands::Note(args)) => review_state::run_note(args),

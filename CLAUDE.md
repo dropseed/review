@@ -175,6 +175,7 @@ The `review` binary (built with `--features cli`, source in `core/src/cli/`) is 
 - `review hunks [-s base..head] [--status|--file|--label|--hunk] [--json] [--diff]`
 - `review approve|reject|save|unmark <hunk-id>... [--reason TEXT]`
 - `review status` · `review list [--all]` · `review delete` · `review change-base <new-base>`
+- `review history [--json]` · `review undo [--to N]` — every save moves the version it supersedes into `reviews/history/<review>/v<N>.json` (newest 50 kept); `history` lists them newest first with a terse diff of each, `undo` restores one as a **new** version, so an undo is itself undoable
 - `review use [<spec>] [--clear]` — set/show the repo's default comparison. Every data command resolves its spec as `-s` flag → `$REVIEW_SPEC` → this default → auto-detect. `-s`/`--repo` are global (accepted in any position within a command).
 - `review trust list|add|remove [<pattern>]`
 - `review note show|set|append [<text>]`
@@ -214,7 +215,7 @@ A workspace's terminals are the daemon's record, not the queue's: each session c
 
 **Skills**: one bundled skill, `review-app`, covering all three surfaces an agent touches — reviewing a diff (hunks, trust, guide, comments), driving the app's terminals, and reading/feeding the work queue. The canonical source is `core/resources/skills/review-app/SKILL.md`, `include_str!`-embedded into the binary so the shipped CLI carries it. `review skill install` writes it into `~/.claude/skills/` and `$CODEX_HOME/skills/` (defaulting to `~/.codex/skills/`), and deletes the superseded `review-guide` / `review-terminals` skills it previously installed.
 
-Source layout: `mod.rs` (Cli, Commands enum, dispatch, comparison resolution shared with `review start`, `review use`); `common.rs` (`EffectiveStatus`, `mutate_review` retry, hunk-target parsing, spec-resolution precedence, `sync_classification`); `staging.rs`; `review_state.rs`; `comments.rs` (line-level comments / annotations + batch `comments submit`); `guide.rs` (guide grouping); `skill.rs`; `terminal.rs` (daemon-backed terminal control). Mutations use optimistic version-conflict retry against `~/.review/.../*.json`.
+Source layout: `mod.rs` (Cli, Commands enum, dispatch, comparison resolution shared with `review start`, `review use`); `common.rs` (`EffectiveStatus`, `mutate_review` retry, hunk-target parsing, spec-resolution precedence, `sync_classification`); `staging.rs`; `review_state.rs`; `comments.rs` (line-level comments / annotations + batch `comments submit`); `guide.rs` (guide grouping); `history.rs` (version history + undo); `skill.rs`; `terminal.rs` (daemon-backed terminal control). Mutations use optimistic version-conflict retry against `~/.review/.../*.json`.
 
 ## Debugging / Traces
 
