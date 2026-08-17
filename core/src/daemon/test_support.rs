@@ -50,6 +50,24 @@ impl Drop for Harness {
     }
 }
 
+/// Peek `id` until `probe` is satisfied (or [`TIMEOUT`] passes), so a test never
+/// races the PTY's own echo.
+pub(crate) async fn peek_until(client: &DaemonClient, id: &str, probe: impl Fn(&str) -> bool) {
+    let deadline = tokio::time::Instant::now() + TIMEOUT;
+    loop {
+        let screen: String = client
+            .request_as(Op::Peek {
+                terminal_id: id.to_owned(),
+            })
+            .await
+            .unwrap();
+        if probe(&screen) || tokio::time::Instant::now() >= deadline {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
 /// An `Op::Start` for a `/bin/sh` session in a temp-dir "repo".
 pub(crate) fn start_op(id: &str, repo: &Path) -> Op {
     let path = repo.to_string_lossy().into_owned();

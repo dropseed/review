@@ -32,7 +32,7 @@
 pub mod router;
 pub mod storage;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Serialize};
@@ -207,6 +207,34 @@ impl From<Workspace> for WorkspaceView {
 /// Every workspace as a surface renders it.
 pub fn views(workspaces: Vec<Workspace>) -> Vec<WorkspaceView> {
     workspaces.into_iter().map(Into::into).collect()
+}
+
+/// Display titles for every workspace in the queue, keyed by id — the index a
+/// surface joins workspace attribution against.
+///
+/// Read-only, and forgiving: building it is not one of the two reads that clean
+/// the queue up, and an unreadable `work.json` costs titles rather than the
+/// listing they decorate.
+pub fn title_index() -> HashMap<String, String> {
+    list()
+        .map(|state| {
+            state
+                .workspaces
+                .into_iter()
+                .map(|ws| (ws.id.clone(), ws.display_title()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// What to show for a workspace id. Attribution is the daemon's and the queue
+/// never sees it, so an id with no workspace behind it prints as itself rather
+/// than vanishing; nothing attributed at all prints as a dash.
+pub fn label_for<'a>(titles: &'a HashMap<String, String>, id: Option<&'a str>) -> &'a str {
+    match id {
+        Some(id) => titles.get(id).map_or(id, String::as_str),
+        None => "-",
+    }
 }
 
 /// The whole queue, as stored. Array order is priority order.
@@ -579,6 +607,15 @@ mod tests {
 
     fn add_ws(title: &str, attachments: Vec<Attachment>) -> Workspace {
         add(Some(title), attachments).unwrap().1
+    }
+
+    #[test]
+    fn label_for_falls_back_to_the_raw_id() {
+        let titles = HashMap::from([("ws-1".to_owned(), "review · main".to_owned())]);
+        assert_eq!(label_for(&titles, Some("ws-1")), "review · main");
+        // Attribution the queue has never heard of still names itself.
+        assert_eq!(label_for(&titles, Some("ws-gone")), "ws-gone");
+        assert_eq!(label_for(&titles, None), "-");
     }
 
     /// A workspace as [`router`] alone creates them. Tests can't build one

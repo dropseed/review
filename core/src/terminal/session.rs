@@ -135,6 +135,11 @@ impl Session {
         // output. Without them Review is indistinguishable from a bare xterm.
         cmd.env("TERM_PROGRAM", "Review");
         cmd.env("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"));
+        // Which session this is, so anything running inside it can name itself
+        // to `review terminal`. The workspace is deliberately not exported:
+        // attribution can change under a running shell (a drag in the app is an
+        // `AssignWorkspace`), so it has to be asked for live, not frozen here.
+        cmd.env(super::TERMINAL_ID_ENV, &id.0);
         // Enable OSC 133 shell integration for zsh (no-op for other shells).
         // Applied before the caller's env so an explicit override still wins.
         if let Some(injected) = shell_integration::injection_env(&shell) {

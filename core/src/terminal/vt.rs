@@ -63,9 +63,6 @@ const VT_INBOX_CAPACITY: usize = 1024;
 /// stall.
 const PEEK_TIMEOUT: Duration = Duration::from_millis(200);
 
-/// Keep a peek snapshot popover-sized: the last this-many non-blank screen rows.
-const PEEK_MAX_LINES: usize = 40;
-
 /// A terminal screen model that can be fed raw PTY bytes and rendered to text.
 ///
 /// **Not `Send`.** Implementations may hold thread-confined state (e.g. FFI
@@ -165,27 +162,28 @@ fn run(factory: EngineFactory, rx: &Receiver<VtMsg>) {
             VtMsg::Bytes(bytes) => engine.feed(&bytes),
             VtMsg::Resize(cols, rows) => engine.resize(cols, rows),
             VtMsg::Peek(reply) => {
-                let screen = engine.screen_text();
+                let screen = trim_screen(engine.screen_text());
                 // Reply buffer holds one; if the waiter has already timed out and
                 // dropped its receiver, discard the render.
-                let _ = reply.try_send(trim_screen(&screen));
+                let _ = reply.try_send(screen);
             }
             VtMsg::Shutdown => break,
         }
     }
 }
 
-/// Trim a rendered screen for a popover-sized peek: drop trailing blank lines,
-/// then keep only the last [`PEEK_MAX_LINES`] lines.
-fn trim_screen(text: &str) -> String {
-    let lines: Vec<&str> = text.lines().collect();
-    let end = lines
-        .iter()
-        .rposition(|line| !line.trim().is_empty())
-        .map_or(0, |i| i + 1);
-    let kept = &lines[..end];
-    let start = kept.len().saturating_sub(PEEK_MAX_LINES);
-    kept[start..].join("\n")
+/// Drop a rendered screen's trailing blank lines — the empty rows below the
+/// last thing written, which are padding rather than content.
+///
+/// Nothing else is cut. The render is one line per visible row, so the grid's
+/// own height is the only honest bound on it; a line cap on top of that reads
+/// as a screen whose top rows are blank, which is how a short transcript drawn
+/// at the top of a tall window (Claude Code's, with its prompt pinned to the
+/// bottom) once peeked as nothing but the prompt box. Callers wanting less
+/// take the tail themselves.
+fn trim_screen(mut text: String) -> String {
+    super::trim_trailing_blank_lines(&mut text);
+    text
 }
 
 /// Forwards raw PTY output into a session's VT actor. Installed as an
@@ -303,20 +301,33 @@ mod tests {
     }
 
     #[test]
-    fn trim_drops_trailing_blanks_and_caps_lines() {
+    fn trim_drops_trailing_blanks_only() {
         // Trailing blank lines are dropped.
-        assert_eq!(trim_screen("a\nb\n\n\n"), "a\nb");
+        assert_eq!(trim_screen("a\nb\n\n\n".to_owned()), "a\nb");
         // Interior blanks are preserved.
-        assert_eq!(trim_screen("a\n\nb\n"), "a\n\nb");
+        assert_eq!(trim_screen("a\n\nb\n".to_owned()), "a\n\nb");
+    }
 
-        // Capped to the last PEEK_MAX_LINES lines.
-        let many = (0..PEEK_MAX_LINES + 10)
-            .map(|i| i.to_string())
-            .collect::<Vec<_>>()
-            .join("\n");
-        let trimmed = trim_screen(&many);
-        assert_eq!(trimmed.lines().count(), PEEK_MAX_LINES);
-        assert!(trimmed.starts_with("10\n"));
-        assert!(trimmed.ends_with(&(PEEK_MAX_LINES + 9).to_string()));
+    /// The 2026-08-17 regression: a short transcript at the top of a tall
+    /// window with the prompt pinned to the bottom row. Everything above the
+    /// prompt used to fall off the peek, which read as a stalled session.
+    #[test]
+    fn peek_keeps_the_top_of_a_tall_screen() {
+        let vt = VtThread::spawn("tall", default_engine_factory(30, 50));
+        let mut sink = vt.output_sink();
+        sink.on_output(b"\x1b[2J\x1b[H");
+        sink.on_output(b"top-marker\r\nsecond line\r\n");
+        // Park the prompt on the last row, as a full-screen TUI does.
+        sink.on_output(b"\x1b[50;1H> prompt");
+
+        let peeked = vt.peek().expect("peek should return the screen");
+        assert!(
+            peeked.contains("top-marker"),
+            "content above the old 40-line horizon was cut: {peeked:?}"
+        );
+        assert!(peeked.contains("> prompt"), "{peeked:?}");
+        assert_eq!(peeked.lines().count(), 50, "{peeked:?}");
+
+        vt.shutdown_and_join();
     }
 }

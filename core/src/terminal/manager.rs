@@ -264,6 +264,26 @@ mod tests {
     }
 
     #[test]
+    fn session_env_carries_its_own_terminal_id() {
+        let manager = SessionManager::new();
+        let id = TerminalId::from("whoami-test");
+        manager.start(spec("whoami-test")).unwrap();
+
+        let mut sub = manager.subscribe(&id).unwrap();
+        // The brackets keep the echoed command line (which contains the
+        // variable name, not its value) from satisfying the needle.
+        manager
+            .write(&id, b"echo mine=[$REVIEW_TERMINAL_ID]\n")
+            .unwrap();
+
+        assert!(
+            wait_for_output(&mut sub.rx, "mine=[whoami-test]", Duration::from_secs(5)),
+            "the shell did not inherit REVIEW_TERMINAL_ID"
+        );
+        manager.kill(&id).unwrap();
+    }
+
+    #[test]
     fn replay_returns_scrollback_after_the_fact() {
         let manager = SessionManager::new();
         let id = TerminalId::from("replay-test");

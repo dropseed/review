@@ -19,6 +19,33 @@ mod wire;
 
 pub use wire::{Phase, SessionStatus, TerminalId, TerminalSummary};
 
+/// The environment variable every session carries its own id in. Set by
+/// `Session::spawn` on the daemon side, read by the CLI (`terminal whoami`) on
+/// the other — which is how something running inside a session names itself.
+///
+/// Unconditional, like the wire types: both halves of that contract have to
+/// agree on the spelling, and only one of them links a PTY stack.
+pub const TERMINAL_ID_ENV: &str = "REVIEW_TERMINAL_ID";
+
+/// Drop `text`'s trailing blank lines in place, leaving no trailing newline.
+///
+/// The empty rows below the last thing written are padding rather than content,
+/// whether they come from a rendered VT grid or from a cooked byte stream.
+/// Interior blanks are content and stay. In place and allocation-free because
+/// the peek path runs this on the daemon's VT actor thread, behind the
+/// desktop's poll.
+pub fn trim_trailing_blank_lines(text: &mut String) {
+    let mut end = 0;
+    let mut offset = 0;
+    for line in text.split_inclusive('\n') {
+        offset += line.len();
+        if !line.trim().is_empty() {
+            end = offset - usize::from(line.ends_with('\n'));
+        }
+    }
+    text.truncate(end);
+}
+
 // Everything below owns or drives real PTYs.
 #[cfg(feature = "terminal")]
 mod engine_ghostty;
@@ -124,4 +151,32 @@ pub enum TerminalMessage {
     Resized { cols: u16, rows: u16 },
     /// The child process exited with this code (`None` if unknown).
     Exit(Option<i32>),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::trim_trailing_blank_lines;
+
+    fn trimmed(text: &str) -> String {
+        let mut text = text.to_owned();
+        trim_trailing_blank_lines(&mut text);
+        text
+    }
+
+    #[test]
+    fn trailing_blank_lines_go_and_interior_ones_stay() {
+        assert_eq!(trimmed("a\nb\n\n\n"), "a\nb");
+        assert_eq!(trimmed("a\n\nb\n"), "a\n\nb");
+        // Whitespace-only rows are padding too.
+        assert_eq!(trimmed("a\n   \n\t\n"), "a");
+        // Nothing but padding leaves nothing.
+        assert_eq!(trimmed("\n  \n\n"), "");
+        assert_eq!(trimmed(""), "");
+    }
+
+    #[test]
+    fn text_without_a_trailing_newline_is_left_alone() {
+        assert_eq!(trimmed("a\nb"), "a\nb");
+        assert_eq!(trimmed("only"), "only");
+    }
 }

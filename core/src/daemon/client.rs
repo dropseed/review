@@ -218,9 +218,6 @@ impl DaemonClient {
         if from.is_empty() {
             return Ok(0);
         }
-        // The assignments are independent of each other, so they go out
-        // together rather than one round trip after another — moving a
-        // workspace with several shells in it is one wait, not n.
         let moving = self
             .attributions()
             .await?
@@ -231,19 +228,36 @@ impl DaemonClient {
                     .as_ref()
                     .is_some_and(|id| from.contains(id))
             })
-            .map(|session| {
-                self.request(Op::AssignWorkspace {
-                    terminal_id: session.id,
-                    workspace_id: Some(to.to_owned()),
-                })
-            })
+            .map(|session| session.id)
             .collect::<Vec<_>>();
 
-        let moved = moving.len();
-        for result in futures::future::join_all(moving).await {
+        // The assignments are independent of each other, so they go out
+        // together rather than one round trip after another — moving a
+        // workspace with several shells in it is one wait, not n.
+        let sending = moving
+            .iter()
+            .map(|id| self.assign_workspace(id, Some(to.to_owned())));
+        for result in futures::future::join_all(sending).await {
             result?;
         }
-        Ok(moved)
+        Ok(moving.len())
+    }
+
+    /// Move one session onto a workspace, or off every workspace.
+    ///
+    /// The workspace id is opaque to the daemon, so this writes nothing to the
+    /// queue — a caller that means a real workspace resolves it first.
+    pub async fn assign_workspace(
+        &self,
+        terminal_id: &str,
+        workspace_id: Option<String>,
+    ) -> Result<()> {
+        self.request(Op::AssignWorkspace {
+            terminal_id: terminal_id.to_owned(),
+            workspace_id,
+        })
+        .await
+        .map(|_| ())
     }
 
     /// Every session as `(id, workspace)`. Decoded into a local shape rather

@@ -1,4 +1,4 @@
-//! Work subcommands: `work [list] | add | remove | rename | move | attach |
+//! Work subcommands: `work [list] | add | remove | rename | reorder | attach |
 //! detach | resolve`.
 //!
 //! The work queue is the global, user-ordered list of the workspaces you intend
@@ -43,8 +43,8 @@ pub enum WorkAction {
     Remove(IdArgs),
     /// Retitle a workspace (omit the title to go back to a derived one)
     Rename(RenameArgs),
-    /// Move a workspace to a new position (1-based)
-    Move(MoveArgs),
+    /// Move a workspace to a new position in the queue (1-based)
+    Reorder(ReorderArgs),
     /// Show a repository in a workspace
     Attach(AttachArgs),
     /// Stop showing a repository in a workspace
@@ -74,7 +74,7 @@ pub struct RenameArgs {
 }
 
 #[derive(Debug, Args)]
-pub struct MoveArgs {
+pub struct ReorderArgs {
     /// Workspace id (a unique prefix is accepted)
     pub id: String,
     /// New position, 1-based (1 is the top of the queue)
@@ -114,7 +114,7 @@ pub fn run_work(args: WorkArgs) -> Result<(), String> {
         Some(WorkAction::Add(a)) => run_add(a, json),
         Some(WorkAction::Remove(a)) => run_remove(a, json),
         Some(WorkAction::Rename(a)) => run_rename(a, json),
-        Some(WorkAction::Move(a)) => run_move(a, json),
+        Some(WorkAction::Reorder(a)) => run_reorder(a, json),
         Some(WorkAction::Attach(a)) => run_attach(a, json),
         Some(WorkAction::Detach(a)) => run_detach(a, json),
         Some(WorkAction::Resolve(a)) => run_resolve(a, json),
@@ -226,7 +226,7 @@ fn run_rename(args: RenameArgs, json: bool) -> Result<(), String> {
     Ok(())
 }
 
-fn run_move(args: MoveArgs, json: bool) -> Result<(), String> {
+fn run_reorder(args: ReorderArgs, json: bool) -> Result<(), String> {
     // 1-based on the way in, to match the printed list; 0 and 1 both mean "top"
     // rather than erroring on an off-by-one.
     let to_index = args.position.saturating_sub(1);

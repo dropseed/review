@@ -209,11 +209,14 @@ running", the Review app isn't open — ask the human to open it; you can't star
 the daemon yourself.
 
 ```
-review terminal list [--all|--repo PATH] [--json]     # sessions + phase + cwd
+review terminal list [--all|--repo PATH] [--json]     # sessions + phase + workspace + cwd
 review terminal start [--id NAME] [--cwd DIR] [--workspace ID] [--json]
-review terminal send <id> [TEXT] [--key KEY]... [--enter]
+review terminal whoami [ID] [--json]                  # which session am I in?
+review terminal move <id>... --workspace <ID>         # reattribute sessions
+review terminal send <id> [TEXT] [--key KEY]... [--enter|--submit]
 review terminal peek <id>                             # what's on screen right now
-review terminal wait <id> [--until <phase|exit>] [--match REGEX] [--timeout SECS]
+review terminal log <id> [-n N]                       # everything it has printed
+review terminal wait <id> [--until <phase|exit>] [--match REGEX] [--new-only] [--timeout SECS]
 review terminal resize <id> --cols N --rows M
 review terminal kill <id>...
 ```
@@ -229,6 +232,22 @@ creating one for it — and says which in its output (`--json` carries it as
 `workspace: {id, title, created}`). `--workspace <id>` names one explicitly
 instead, which lands the session there and attaches nothing. See Part 3 for the
 queue those ids come from.
+
+**If you are running inside a Review terminal, you can name yourself.** Every
+session's shell carries `$REVIEW_TERMINAL_ID`, and `review terminal whoami`
+turns that into the answer to "what workspace am I in?" — the session's id,
+phase, cwd, and its workspace's id and title:
+
+```
+review terminal whoami            # this session
+review terminal whoami --json     # the summary plus workspace: {id, title}
+```
+
+Ask rather than remember: a session's workspace can change under you (the human
+dragging your terminal onto another card), which is why the id is exported and
+the workspace is not. `review terminal move <id>... --workspace <id>` does that
+same move from the CLI; it only reattributes sessions and writes nothing to the
+queue.
 
 The human's equivalents, if they ask: **⌘T** starts a terminal in whichever
 workspace is focused, no questions asked, and **⌘K** then **⌘Enter** on a branch
@@ -248,36 +267,58 @@ row goes to that branch *and* starts a terminal there in one gesture.
 Every session has a phase: `working` (command running), `waiting_for_input` (at
 a prompt), `needs_attention` (bell/notification), `idle`. Phases come from
 OSC 133 shell integration plus process polling. Check `shellIntegrationActive`
-in `list --json` — when it's `false`, phase transitions are best-effort, so
-prefer `--match` or `peek` over `--until` for that session.
+in `list --json` — when it's `false`, phase transitions are best-effort. Every
+phase wait rests on them, bare `wait` included (it *is* `--until
+waiting-for-input`), so for such a session prefer an explicit `--match` on
+something the command itself prints, or `peek`.
 
 ## Patterns
 
-**Run a command and wait for it to finish** — send, then wait for the prompt to
-come back. The phase check is race-free (a snapshot is taken after subscribing),
-so it's fine if the command finishes before the wait starts:
+**Run a command and wait for it to finish** — send, then wait. Bare `wait`
+means "back at a prompt", which is exactly "the thing I sent has finished", so
+it needs no flags beyond a `--timeout` when the default 60s is too short. The
+phase check is race-free (a snapshot is taken after subscribing), so it's fine
+if the command finishes before the wait starts:
 
 ```
 review terminal send my-task 'cargo test' --enter
-review terminal wait my-task --until waiting-for-input --timeout 600
+review terminal wait my-task --timeout 600
 review terminal peek my-task            # read the result / exit status
 ```
 
 `list --json` also carries `lastExitCode` per session.
 
-**Wait for a long-running process to say something** — `--match` sees only
-output produced *after the wait starts*, so start the process, then wait for its
-startup line:
+**Wait for a long-running process to say something** — start it, then wait for
+its startup line:
 
 ```
 review terminal send dev-server 'npm run dev' --enter
 review terminal wait dev-server --match 'Listening on|ready in' --timeout 120
 ```
 
-Output is matched with terminal semantics applied (escape sequences stripped,
-`\r` progress lines overwritten), so write regexes against what a human sees,
-not raw bytes. If the output you need already happened, it's history — `peek`
-the screen instead of waiting.
+`--match` tests the current screen first and then watches for new output, so it
+still answers when the line landed a moment before you asked — checking on
+something that was already running, or a command that finished faster than you
+expected. Output is matched with terminal semantics applied (escape sequences
+stripped, `\r` progress lines overwritten), so write regexes against what a
+human sees, not raw bytes. Add `--new-only` for the opposite intent: ignore the
+screen and wait for the *next* occurrence, e.g. a dev server printing "ready"
+again after you triggered a restart.
+
+**Read what's on screen, or everything it has printed:**
+
+```
+review terminal peek my-task            # the whole visible screen
+review terminal log my-task             # the session's full output history
+review terminal log my-task -n 100      # just the last 100 lines
+```
+
+`peek` is the terminal's grid rendered as text, exactly as the human sees it —
+the answer to "what is it showing right now?". `log` is a different thing: the
+session's byte stream cooked into lines, `docker logs` for a terminal, so it
+reaches back past the screen — but a full-screen TUI, which draws itself with
+cursor moves, only comes out approximately. Reach for it when a command printed
+more than the window holds.
 
 **Check on an agent or long task the human asked about** — read-only, any
 session:
@@ -292,6 +333,18 @@ review terminal peek 7e0d               # prefix of the id from list
 ```
 review terminal send my-task --key down --key enter
 review terminal send my-task --key ctrl-c          # interrupt
+```
+
+**Type into a TUI (Claude Code, an agent, anything with autocomplete)** — use
+`--submit` instead of `--enter`. It sends the text, waits for the UI to settle,
+then presses Enter as a separate write; an Enter arriving in the same write as a
+slash command is read as *accepting the popup's highlighted entry* rather than
+submitting what you typed:
+
+```
+review terminal send agent-1 'summarize what you just did' --submit
+review terminal send agent-1 '/compact' --submit --settle-ms 1000
+review terminal peek agent-1                       # confirm it took the input
 ```
 
 **Wait for a session to end** (you sent `exit`, or a one-shot command shell):
@@ -391,7 +444,7 @@ it.
 
 ## What is the human's, not yours
 
-- **Never reorder.** `review work move` exists for the human (they drag the list
+- **Never reorder.** `review work reorder` exists for the human (they drag the list
   in the app). Their ordering is their prioritization; silently promoting your
   own item steals that decision.
 - **Never remove.** `review work remove` is the human's acknowledgment moment —
