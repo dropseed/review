@@ -1174,6 +1174,18 @@ export interface TerminalExit {
   exitCode: number | null;
 }
 
+/**
+ * Payload of the `terminal:resized:{id}` event — the PTY's new grid, after any
+ * client resized it. Every attached client shares the one grid, so a pane
+ * hearing this re-renders at the new size (its own resize included: the daemon
+ * does not say who asked).
+ */
+export interface TerminalResized {
+  id: string;
+  cols: number;
+  rows: number;
+}
+
 /** Result of `terminalReplay` — ring-buffer scrollback for xterm reattach. */
 export interface TerminalReplay {
   dataB64: string;

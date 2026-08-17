@@ -135,6 +135,16 @@ pub struct TerminalExitPayload {
     exit_code: Option<i32>,
 }
 
+/// `terminal:resized:{id}` payload — the PTY's new size, after any client
+/// (this window, another window, the CLI, a browser tab) resized it.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalResizedPayload {
+    id: String,
+    cols: u16,
+    rows: u16,
+}
+
 /// Return shape of `terminal_replay` — scrollback bytes, the byte cursor those
 /// bytes end at, and current status.
 #[derive(Serialize)]
@@ -257,6 +267,7 @@ async fn drain_stream(
 ) {
     let output_evt = format!("terminal:output:{id}");
     let status_evt = format!("terminal:status:{id}");
+    let resized_evt = format!("terminal:resized:{id}");
     let exit_evt = format!("terminal:exit:{id}");
 
     while let Some(frame) = stream.recv().await {
@@ -287,6 +298,18 @@ async fn drain_stream(
                     }
                     Err(e) => warn!("[terminal] malformed status for {id}: {e}"),
                 }
+            }
+            // Not gated on `emit_output`: a status-only drain still carries
+            // geometry, so a pane that mounts later starts at the right grid.
+            StreamFrame::Resized { cols, rows } => {
+                let _ = app.emit(
+                    &resized_evt,
+                    &TerminalResizedPayload {
+                        id: id.to_owned(),
+                        cols,
+                        rows,
+                    },
+                );
             }
             StreamFrame::Exit { exit_code } => {
                 let _ = app.emit(

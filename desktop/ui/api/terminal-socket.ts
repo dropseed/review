@@ -7,7 +7,9 @@
  * the desktop path:
  *
  *   server → client  Binary = 8-byte big-endian u64 `seq` cursor + raw PTY
- *                             output; Text = `{"t":"status",...}` | `{"t":"exit"}`
+ *                             output; Text = `{"t":"status",...}` |
+ *                             `{"t":"resize","cols","rows"}` (any client resized
+ *                             the shared PTY) | `{"t":"exit"}`
  *   client → server  Binary = stdin bytes; Text = `{"t":"resize","cols","rows"}`
  *
  * The stream is purely live — the server sends no replay frame on connect. Each
@@ -40,6 +42,8 @@ export interface TerminalSocketHandlers {
   onStatus: (status: TerminalStatus) => void;
   /** exitCode is null when the session is simply gone (server restart / 4404). */
   onExit: (exitCode: number | null) => void;
+  /** The shared PTY was resized (by any client, this one included). */
+  onResize: (cols: number, rows: number) => void;
 }
 
 /** Bytes of the big-endian u64 `seq` cursor prefixed to each Binary frame. */
@@ -172,6 +176,11 @@ export class TerminalSocket {
     const t = (msg as { t?: unknown }).t;
     if (t === "status") {
       this.handlers.onStatus(msg as TerminalStatus);
+    } else if (t === "resize") {
+      const { cols, rows } = msg as { cols?: unknown; rows?: unknown };
+      if (typeof cols === "number" && typeof rows === "number") {
+        this.handlers.onResize(cols, rows);
+      }
     } else if (t === "exit") {
       // The child exited: the server's follow-up normal close must NOT trigger a
       // reconnect to a dead session. Mark the socket gone before the close lands.

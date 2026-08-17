@@ -288,8 +288,12 @@ impl DaemonClient {
                         }
                     }
                     Err(e) => {
-                        log::warn!("[daemon client] malformed stream frame: {e}");
-                        return;
+                        // Skip, don't die: the length prefix already resynced
+                        // us to the next frame, and an unknown tag is most
+                        // likely a newer daemon speaking a frame this build
+                        // predates — ending the stream over it turns every
+                        // protocol addition into a hard break for old clients.
+                        log::warn!("[daemon client] skipping malformed stream frame: {e}");
                     }
                 }
             }

@@ -98,6 +98,7 @@ interface Captured {
   outputSeq: number[];
   status: TerminalStatus[];
   exit: Array<number | null>;
+  resized: Array<{ cols: number; rows: number }>;
   handlers: TerminalSocketHandlers;
 }
 
@@ -106,11 +107,13 @@ function captureHandlers(): Captured {
   const outputSeq: number[] = [];
   const status: TerminalStatus[] = [];
   const exit: Array<number | null> = [];
+  const resized: Array<{ cols: number; rows: number }> = [];
   return {
     output,
     outputSeq,
     status,
     exit,
+    resized,
     handlers: {
       onOutput: (data, seq) => {
         output.push(data);
@@ -118,6 +121,7 @@ function captureHandlers(): Captured {
       },
       onStatus: (s) => status.push(s),
       onExit: (code) => exit.push(code),
+      onResize: (cols, rows) => resized.push({ cols, rows }),
     },
   };
 }
@@ -214,6 +218,16 @@ describe("TerminalSocket frame routing", () => {
     ws.emitText(JSON.stringify({ t: "exit", exitCode: 137 }));
     ws.emitText(JSON.stringify({ t: "exit", exitCode: null }));
     expect(cap.exit).toEqual([137, null]);
+  });
+
+  it("routes resize text frames to onResize, dropping malformed sizes", () => {
+    const cap = captureHandlers();
+    const socket = makeSocket(cap);
+    socket.connect();
+    const ws = FakeWebSocket.last();
+    ws.emitText(JSON.stringify({ t: "resize", cols: 141, rows: 52 }));
+    ws.emitText(JSON.stringify({ t: "resize", cols: "141" })); // malformed
+    expect(cap.resized).toEqual([{ cols: 141, rows: 52 }]);
   });
 
   it("drops malformed text frames without throwing", () => {

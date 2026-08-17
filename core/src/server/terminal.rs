@@ -14,8 +14,9 @@
 //!   which is where the Tauri path emits `terminal:output:{id}` events instead.
 //!   The wire is fixed by `desktop/ui/api/terminal-socket.ts`: server→client
 //!   binary frames are `[8-byte BE u64 seq][raw PTY bytes]`, text frames are
-//!   `{"t":"status",…}` / `{"t":"exit","exitCode":…}`; client→server binary is
-//!   stdin and text is `{"t":"resize","cols":N,"rows":N}`.
+//!   `{"t":"status",…}` / `{"t":"resize","cols":N,"rows":N}` (another client
+//!   resized the shared PTY) / `{"t":"exit","exitCode":…}`; client→server
+//!   binary is stdin and text is `{"t":"resize","cols":N,"rows":N}`.
 //!
 //! Control payloads pass straight through as `serde_json::Value` — the daemon
 //! already speaks the frontend's camelCase, and re-typing them would drag
@@ -663,6 +664,11 @@ fn translate(frame: StreamFrame) -> Outbound {
             log::warn!("[terminal_ws] status frame was not an object: {other}");
             Outbound::Skip
         }
+        // The same tag the client sends its own resizes under: on this wire a
+        // resize is a fact about the shared PTY, whichever direction it travels.
+        StreamFrame::Resized { cols, rows } => Outbound::Frame(Message::text(
+            json!({"t": "resize", "cols": cols, "rows": rows}).to_string(),
+        )),
         StreamFrame::Exit { exit_code } => Outbound::Final(Message::text(
             json!({"t": "exit", "exitCode": exit_code}).to_string(),
         )),
@@ -777,6 +783,23 @@ mod tests {
         assert_eq!(
             translate(StreamFrame::Status(json!("idle"))),
             Outbound::Skip
+        );
+    }
+
+    /// A daemon-side resize (another client's) reaches the browser as the same
+    /// text shape the browser itself sends resizes in.
+    #[test]
+    fn resized_frames_become_resize_text_frames() {
+        let translated = translate(StreamFrame::Resized {
+            cols: 141,
+            rows: 52,
+        });
+        let Outbound::Frame(ref message) = translated else {
+            panic!("a resize must keep the stream open: {translated:?}");
+        };
+        assert_eq!(
+            text_of(message),
+            json!({"t": "resize", "cols": 141, "rows": 52})
         );
     }
 

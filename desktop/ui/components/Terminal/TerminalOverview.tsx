@@ -196,6 +196,10 @@ function OverviewTab({
           path={[]}
           canFold={expandedLeafIds(tab.root).length > 1}
           tabId={tab.id}
+          // A column here is a look at the terminal, not a place it lives:
+          // render each grid at its true size, scaled to the column, so
+          // opening the overview stops resizing every session to 28rem.
+          viewer
           // Only the tab the panel was showing keeps its focused pane lit, so
           // opening the row doesn't have every column call for the keyboard at
           // once — and the one you were typing in is still the one you are

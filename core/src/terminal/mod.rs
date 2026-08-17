@@ -118,6 +118,10 @@ pub enum TerminalMessage {
     Output { data: Bytes, seq: u64 },
     /// A status transition.
     Status(SessionStatus),
+    /// The PTY was resized. Every attached client shares the one grid, so each
+    /// needs to hear when another one changed it — a pane rendering raw PTY
+    /// bytes at the wrong width draws garbage, not a smaller screen.
+    Resized { cols: u16, rows: u16 },
     /// The child process exited with this code (`None` if unknown).
     Exit(Option<i32>),
 }

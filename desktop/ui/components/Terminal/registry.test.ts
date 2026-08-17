@@ -13,6 +13,12 @@ const outputListeners = new Map<
   (chunk: { data: Uint8Array; seq: number }) => void
 >();
 const unsubOutput = vi.fn();
+/** Resized listeners registered by the registry, keyed by terminal id. */
+const resizedListeners = new Map<
+  string,
+  (resized: { id: string; cols: number; rows: number }) => void
+>();
+const unsubResized = vi.fn();
 vi.mock("../../api", () => ({
   getApiClient: () => ({
     terminalResize,
@@ -26,6 +32,16 @@ vi.mock("../../api", () => ({
         unsubOutput();
       };
     },
+    onTerminalResized: (
+      id: string,
+      cb: (resized: { id: string; cols: number; rows: number }) => void,
+    ) => {
+      resizedListeners.set(id, cb);
+      return () => {
+        resizedListeners.delete(id);
+        unsubResized();
+      };
+    },
   }),
 }));
 
@@ -34,19 +50,32 @@ function emitOutput(id: string, text: string, seq: number): void {
   outputListeners.get(id)?.({ data: new TextEncoder().encode(text), seq });
 }
 
+/** Push a PTY-resized event at the registry, as the transport would. */
+function emitResized(id: string, cols: number, rows: number): void {
+  resizedListeners.get(id)?.({ id, cols, rows });
+}
+
 // The WebGL addon needs a real GPU context that jsdom lacks, so instantiating
 // it throws. That's fine for these tests: attachRenderer swallows construction
 // failures. We assert the code path runs, not that a real addon attaches.
 const {
   acquireTerminal,
+  beginTerminalReplay,
   disposeTerminal,
   forgetCellHeight,
   normalizeWheel,
+  onTerminalGrid,
   refreshAllTerminalOptions,
   refreshAllTerminalThemes,
   attachRenderer,
+  seedTerminalGridSize,
+  setTerminalMountPolicy,
+  setTerminalRemoteClaim,
   startTerminalOutput,
   hasTerminal,
+  terminalGridSize,
+  terminalRemoteClaim,
+  terminalReplayInFlight,
 } = await import("./registry");
 
 const ids: string[] = [];
@@ -72,6 +101,103 @@ afterEach(() => {
   terminalResize.mockClear();
   unsubOutput.mockClear();
   outputListeners.clear();
+  unsubResized.mockClear();
+  resizedListeners.clear();
+});
+
+describe("replay-in-flight guard", () => {
+  it("tracks the round trip so a remount can decline to flush", () => {
+    acquire("t-replay");
+    expect(terminalReplayInFlight("t-replay")).toBe(false);
+
+    // First mount starts a replay; a StrictMode remount lands inside it and
+    // must see the flag rather than releasing the held-back output itself.
+    beginTerminalReplay("t-replay");
+    expect(terminalReplayInFlight("t-replay")).toBe(true);
+
+    // The fetch resolves (or fails — both paths end here) and releases.
+    startTerminalOutput("t-replay");
+    expect(terminalReplayInFlight("t-replay")).toBe(false);
+  });
+});
+
+describe("grid tracking", () => {
+  it("records the daemon's resizes and notifies grid listeners", () => {
+    acquire("t-grid");
+    expect(terminalGridSize("t-grid")).toBeNull();
+
+    const seen: Array<{ cols: number; rows: number }> = [];
+    const unsub = onTerminalGrid("t-grid", (size) => seen.push(size));
+
+    emitResized("t-grid", 100, 30);
+    expect(terminalGridSize("t-grid")).toEqual({ cols: 100, rows: 30 });
+    expect(seen).toEqual([{ cols: 100, rows: 30 }]);
+
+    unsub();
+    emitResized("t-grid", 80, 24);
+    expect(seen).toHaveLength(1);
+    expect(terminalGridSize("t-grid")).toEqual({ cols: 80, rows: 24 });
+  });
+
+  it("seeds from a session listing but never overwrites a live report", () => {
+    acquire("t-seed");
+    seedTerminalGridSize("t-seed", { cols: 120, rows: 40 });
+    expect(terminalGridSize("t-seed")).toEqual({ cols: 120, rows: 40 });
+
+    emitResized("t-seed", 100, 30);
+    seedTerminalGridSize("t-seed", { cols: 120, rows: 40 });
+    expect(terminalGridSize("t-seed")).toEqual({ cols: 100, rows: 30 });
+  });
+
+  it("unsubscribes the resized stream on dispose", () => {
+    acquire("t-unsub");
+    expect(resizedListeners.has("t-unsub")).toBe(true);
+    disposeTerminal(ids.pop()!);
+    expect(resizedListeners.has("t-unsub")).toBe(false);
+    expect(unsubResized).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("font refresh under a viewer mount", () => {
+  it("relays a font change to viewer listeners instead of resizing the PTY", () => {
+    acquire("t-viewer");
+    setTerminalMountPolicy("t-viewer", "viewer");
+    emitResized("t-viewer", 141, 52);
+    const seen: Array<{ cols: number; rows: number }> = [];
+    onTerminalGrid("t-viewer", (size) => seen.push(size));
+
+    refreshAllTerminalOptions({ ...FONT_OPTS, fontSize: 15 });
+
+    // A font change on this screen is no reason to reflow the shared PTY —
+    // the pane re-lays out through its grid listener, at the PTY's grid.
+    expect(terminalResize).not.toHaveBeenCalled();
+    expect(seen).toEqual([{ cols: 141, rows: 52 }]);
+  });
+
+  it("rescales instead of refitting an owner whose grid is claimed elsewhere", () => {
+    acquire("t-claimed");
+    setTerminalMountPolicy("t-claimed", "owner");
+    emitResized("t-claimed", 60, 20);
+    setTerminalRemoteClaim("t-claimed", { cols: 60, rows: 20 });
+    const seen: Array<{ cols: number; rows: number }> = [];
+    onTerminalGrid("t-claimed", (size) => seen.push(size));
+
+    refreshAllTerminalOptions({ ...FONT_OPTS, fontSize: 15 });
+
+    // Reclaiming is a click or a keystroke — never a Settings change.
+    expect(terminalResize).not.toHaveBeenCalled();
+    expect(seen).toEqual([{ cols: 60, rows: 20 }]);
+    expect(terminalRemoteClaim("t-claimed")).toEqual({ cols: 60, rows: 20 });
+  });
+
+  it("marks only the first report as the attach announcement", () => {
+    acquire("t-seedflag");
+    const seeds: boolean[] = [];
+    onTerminalGrid("t-seedflag", (_size, seed) => seeds.push(seed));
+    emitResized("t-seedflag", 80, 24);
+    emitResized("t-seedflag", 100, 30);
+    expect(seeds).toEqual([true, false]);
+  });
 });
 
 describe("output subscription", () => {

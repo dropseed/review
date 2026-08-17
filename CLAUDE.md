@@ -106,6 +106,26 @@ The origin gate needs no configuration for this — `tailscale serve` forwards t
 
 Serving the app over HTTPS on a real name is what makes it **installable**: a service worker needs a secure context, so a plain `http://100.x.x.x:7787` bind would show the site but never install it.
 
+## One PTY grid: owners and viewers
+
+A session's PTY has exactly one cols×rows, shared by every client — there is no
+per-viewer size, and rendering its byte stream at any other width draws
+garbage. So every surface showing a terminal is one of two things. An **owner**
+fits the grid to its container and resizes the PTY (the desktop panel). A
+**viewer** renders the grid at its true size, scaled down to fit, and never
+resizes — the terminal overview's columns, and everything at phone width
+(compact), so glancing at the PWA cannot reflow the session out from under the
+desktop. Looking at a terminal never changes it; only deliberate use does.
+
+The daemon enforces the one honest version of this: `Session::resize` is a
+no-op for an unchanged size and otherwise fans `Resized` out to every
+subscriber (`StreamFrame::Resized`, protocol v2 — the WS forwards it as a
+`{"t":"resize"}` text frame, Tauri as `terminal:resized:{id}`). An owner
+hearing a size it didn't ask for letterboxes at the remote grid and wears a
+"sized elsewhere" badge; clicking or typing in it fits the grid back. Compact
+gets the symmetric deliberate act — a "Fit to screen" button, shown only while
+the drawing is scaled — which is the only way a phone resizes anything.
+
 ## Terminal VT engine
 
 The embedded terminal's content peek replays PTY bytes into a screen model to answer "what is on screen right now?". That model is **libghostty-vt** — Ghostty's own VT core — so the peek agrees with the visible terminal on wide characters, emoji clusters, and combining marks instead of approximating them.

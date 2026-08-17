@@ -228,6 +228,11 @@ impl Session {
         self.shared.status.lock().unwrap().clone()
     }
 
+    /// The PTY's current grid.
+    pub fn size(&self) -> (u16, u16) {
+        *self.size.lock().unwrap()
+    }
+
     /// A summary of this session for `list`/`start` responses.
     pub fn summary(&self) -> TerminalSummary {
         let (cols, rows) = *self.size.lock().unwrap();
@@ -315,9 +320,22 @@ impl Session {
     }
 
     /// Resize the PTY. Errors if the session has exited.
+    ///
+    /// A resize to the size the session already has is a no-op — no ioctl, no
+    /// fan-out. That keeps a client's confirmation of its own resize from
+    /// echoing forever, and keeps re-mounts from spamming SIGWINCH.
     pub fn resize(&self, cols: u16, rows: u16) -> Result<()> {
         if self.has_exited() {
             return Err(anyhow!("terminal {} has exited", self.shared.id));
+        }
+        // One guard held across compare → ioctl → record → fan-out, so two
+        // concurrent resizes serialize: interleaved, the recorded size (and
+        // the no-op guard reading it) could disagree with the kernel's real
+        // winsize forever, and the last Resized fanned out must name the size
+        // the PTY actually ended at.
+        let mut size = self.size.lock().unwrap();
+        if *size == (cols, rows) {
+            return Ok(());
         }
         if let Some(master) = self.master.lock().unwrap().as_ref() {
             master
@@ -329,11 +347,17 @@ impl Session {
                 })
                 .context("Failed to resize pty")?;
         }
-        *self.size.lock().unwrap() = (cols, rows);
+        *size = (cols, rows);
         // Keep the peek grid's dimensions in step with the live terminal.
         if let Some(vt) = self.vt.lock().unwrap().as_ref() {
             vt.send_resize(cols, rows);
         }
+        // Tell every attached client: they all share this one grid, and any of
+        // them rendering at the old size is now rendering wrong.
+        fanout(
+            &self.shared.subscribers,
+            &TerminalMessage::Resized { cols, rows },
+        );
         Ok(())
     }
 

@@ -56,11 +56,12 @@ The stage is **two tab strips**, drawn to match: terminals on the left (`Termina
 
 `useIsCompact()` (below Tailwind's `md`, so a JS branch and an `md:` class flip on the same pixel) is the one answer to "is this a phone". Everything reading it **degrades and writes nothing back** — the rule `useResponsiveDiffViewMode` already follows for a split diff in a narrow pane — so a stored preference survives a phone visit untouched and returns intact when the window widens.
 
-It is split by what CSS can reach. Structure is JS, because the widths come from `style` props and a `ResizeObserver` and because "a drawer instead of a column" is a different tree, not a different style; pure styling stays in `md:` classes. Three places branch:
+It is split by what CSS can reach. Structure is JS, because the widths come from `style` props and a `ResizeObserver` and because "a drawer instead of a column" is a different tree, not a different style; pure styling stays in `md:` classes. Four places branch:
 
 - **The stage** shows one half (`TerminalDock`). `Stage/compact.ts` resolves `contentFocus`'s "split" to the terminal, since a running agent is why this gets opened on a phone. The other half stays mounted and hidden, for the reason `contentRail` keeps the content mounted.
 - **The sidebar** becomes `Sidebar/QueueDrawer` — the same component with `drawer`, over the stage. Its open state is the shell's `useState`, deliberately **not** `tabRailCollapsed`: that one is persisted, and a phone must not open into whatever a laptop last chose.
 - **The code half** is list-or-detail, derived from `selectedFile` alone. `filesPanelCollapsed` is the obvious lever and the wrong one — a persisted desktop preference a thumb must not edit.
+- **A terminal pane** becomes a viewer: it draws the PTY's true grid scaled to fit and never resizes it (see "One PTY grid" in the root CLAUDE.md). The PTY's size is the degraded-desktop rule applied to a resource *shared with other machines* — a phone visit must not reflow the session under the desktop that is sized to it. The one write is the explicit "Fit to screen" tap.
 
 `Stage/CompactBar` is the whole navigation: the queue, and which half is on screen, at the bottom where a thumb is, padded by `env(safe-area-inset-bottom)`.
 

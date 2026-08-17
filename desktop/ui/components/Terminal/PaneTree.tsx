@@ -45,6 +45,12 @@ interface PaneTreeProps {
   focusedId: string;
   /** Whether this tab is the visible one (drives auto-focus of the focused pane). */
   tabActive: boolean;
+  /**
+   * Render every leaf as a viewer — at the PTY's true grid, scaled, never
+   * resizing it. The overview passes this: looking at a terminal there must
+   * not reflow it for whoever is actually working in it.
+   */
+  viewer?: boolean;
   onFocus: (terminalId: string) => void;
   onClose: (terminalId: string) => void;
 }
@@ -76,6 +82,7 @@ export function PaneTree({
   tabId,
   focusedId,
   tabActive,
+  viewer = false,
   onFocus,
   onClose,
 }: PaneTreeProps): ReactNode {
@@ -110,6 +117,7 @@ export function PaneTree({
         // by side — and there, dimming each unselected tab's panes made a row
         // of split terminals read as a row of asleep ones.
         tabActive={tabActive}
+        viewer={viewer}
         onFocus={onFocus}
         onCollapse={() => setPaneCollapsed(tabId, node.terminalId, true)}
       />
@@ -208,6 +216,7 @@ export function PaneTree({
                 tabId={tabId}
                 focusedId={focusedId}
                 tabActive={tabActive}
+                viewer={viewer}
                 onFocus={onFocus}
                 onClose={onClose}
               />
@@ -227,6 +236,8 @@ interface PaneLeafProps {
   isFocused: boolean;
   /** Whether this pane's tab is the one on screen — see the veil below. */
   tabActive: boolean;
+  /** See PaneTreeProps.viewer. */
+  viewer: boolean;
   onFocus: (terminalId: string) => void;
   onCollapse: () => void;
 }
@@ -242,6 +253,7 @@ function PaneLeaf({
   foldDirection,
   isFocused,
   tabActive,
+  viewer,
   onFocus,
   onCollapse,
 }: PaneLeafProps): ReactNode {
@@ -315,7 +327,7 @@ function PaneLeaf({
       }}
     >
       <div className="relative min-h-0 flex-1">
-        <TerminalPane id={id} active={isFocused} />
+        <TerminalPane id={id} active={isFocused} viewer={viewer} />
         {/* Above the focus veil: a pane being searched is being looked at. */}
         {searchOpen && (
           <div className="absolute top-0 right-0 z-10 p-2">

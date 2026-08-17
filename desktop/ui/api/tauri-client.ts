@@ -66,6 +66,7 @@ import type {
   TerminalStatus,
   TerminalOutput,
   TerminalExit,
+  TerminalResized,
   TerminalReplay,
 } from "../types";
 
@@ -964,6 +965,13 @@ export class TauriClient implements ApiClient {
     callback: (status: TerminalStatus) => void,
   ): () => void {
     return this.listenForEvent("terminal:status-changed", callback);
+  }
+
+  onTerminalResized(
+    terminalId: string,
+    callback: (resized: TerminalResized) => void,
+  ): () => void {
+    return this.listenForEvent(`terminal:resized:${terminalId}`, callback);
   }
 
   onTerminalExit(

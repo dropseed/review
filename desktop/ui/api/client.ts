@@ -58,6 +58,7 @@ import type {
   TerminalStatus,
   TerminalOutput,
   TerminalExit,
+  TerminalResized,
   TerminalReplay,
 } from "../types";
 
@@ -774,6 +775,16 @@ export interface ApiClient {
    */
   onTerminalStatusChanged(
     callback: (status: TerminalStatus) => void,
+  ): () => void;
+
+  /**
+   * Subscribe to a session's PTY-resized event (returns unsubscribe fn). Fires
+   * for every size change, whichever client asked for it — the shared grid is
+   * the daemon's, and a pane rendering at a stale size draws garbage.
+   */
+  onTerminalResized(
+    terminalId: string,
+    callback: (resized: TerminalResized) => void,
   ): () => void;
 
   /** Subscribe to a session's exit event (returns unsubscribe fn). */

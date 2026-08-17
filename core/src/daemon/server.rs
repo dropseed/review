@@ -335,6 +335,13 @@ async fn subscribe_blocking(
     tokio::task::spawn_blocking(move || manager.subscribe(&id)).await?
 }
 
+/// The session's current grid, on the blocking pool (same reasoning).
+async fn size_blocking(manager: &Arc<SessionManager>, id: &TerminalId) -> Result<(u16, u16)> {
+    let manager = Arc::clone(manager);
+    let id = id.clone();
+    tokio::task::spawn_blocking(move || manager.size(&id)).await?
+}
+
 /// Pump one session's live messages to the client until the session exits or the
 /// client goes away. Never kills the session.
 async fn serve_stream(
@@ -356,6 +363,14 @@ async fn serve_stream(
     };
 
     let mut rx = subscription.rx;
+
+    // Open with the PTY's current grid. A client seeding its render from a
+    // stale session listing — or reconnecting after missing a resize — has no
+    // other way to learn the real size, since an unchanged resize is a no-op
+    // and nothing else on this stream carries geometry.
+    if let Ok((cols, rows)) = size_blocking(&manager, &id).await {
+        write_frame(&mut writer, &StreamFrame::Resized { cols, rows }.encode()).await?;
+    }
 
     // A stream connection carries no client→daemon traffic; reading it exists
     // only to notice a disconnect promptly and drop the subscription.
@@ -384,6 +399,7 @@ async fn serve_stream(
             Some(TerminalMessage::Status(status)) => {
                 StreamFrame::Status(serde_json::to_value(status)?)
             }
+            Some(TerminalMessage::Resized { cols, rows }) => StreamFrame::Resized { cols, rows },
             Some(TerminalMessage::Exit(exit_code)) => {
                 write_frame(&mut writer, &StreamFrame::Exit { exit_code }.encode()).await?;
                 return Ok(());
@@ -392,10 +408,17 @@ async fn serve_stream(
                 // The channel closed while the session may still be alive: this
                 // consumer fell behind and was dropped. Re-subscribe and carry
                 // on, discarding the fresh replay (the client already has the
-                // earlier bytes).
+                // earlier bytes) — but re-announce the grid, since a Resized
+                // may have been among the frames the lag cost.
                 match subscribe_blocking(&manager, &id).await {
                     Ok(subscription) => {
                         rx = subscription.rx;
+                        if let Ok((cols, rows)) = size_blocking(&manager, &id).await {
+                            let frame = StreamFrame::Resized { cols, rows };
+                            if write_frame(&mut writer, &frame.encode()).await.is_err() {
+                                return Ok(()); // client went away
+                            }
+                        }
                         continue;
                     }
                     Err(_) => return Ok(()), // session is gone for good
@@ -691,6 +714,48 @@ mod tests {
             .as_array()
             .unwrap()
             .is_empty());
+    }
+
+    /// Every stream opens by announcing the PTY's current grid, so a client
+    /// attaching (or reconnecting) with a stale idea of the size learns the
+    /// truth without anyone having to resize.
+    #[tokio::test]
+    async fn a_new_stream_opens_with_the_current_grid() {
+        let harness = Harness::start().await;
+        let client = harness.client().await;
+        let repo = tempfile::TempDir::new().unwrap();
+        let id = "grid-announce";
+
+        client.request(start_op(id, repo.path())).await.unwrap();
+        client
+            .request(Op::Resize {
+                terminal_id: id.to_owned(),
+                cols: 101,
+                rows: 31,
+            })
+            .await
+            .unwrap();
+
+        let mut stream = client.open_stream(id).await.unwrap();
+        let first = tokio::time::timeout(TIMEOUT, stream.recv())
+            .await
+            .unwrap()
+            .expect("the stream should open with a frame");
+        assert_eq!(
+            first,
+            StreamFrame::Resized {
+                cols: 101,
+                rows: 31
+            },
+            "the opening frame must announce the current grid"
+        );
+
+        client
+            .request(Op::Kill {
+                terminal_id: id.to_owned(),
+            })
+            .await
+            .unwrap();
     }
 
     #[tokio::test]

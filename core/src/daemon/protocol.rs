@@ -38,7 +38,8 @@ pub const B64: base64::engine::general_purpose::GeneralPurpose =
 /// or reshaped; a payload or stream frame changed; a semantic an existing op
 /// relies on. An unbumped change means an updated app silently driving a
 /// daemon that disagrees about the wire.
-pub const PROTOCOL_VERSION: u32 = 1;
+/// History: 2 added [`StreamFrame::Resized`].
+pub const PROTOCOL_VERSION: u32 = 2;
 
 // ============================================================
 // Hello
@@ -197,6 +198,8 @@ pub const TAG_STATUS: u8 = 0x01;
 pub const TAG_EXIT: u8 = 0x02;
 /// Tag byte for an error frame: `[0x03][JSON {error}]`.
 pub const TAG_ERROR: u8 = 0x03;
+/// Tag byte for a resized frame: `[0x04][JSON {cols, rows}]`.
+pub const TAG_RESIZED: u8 = 0x04;
 
 /// A daemon→client frame on a stream connection.
 ///
@@ -208,6 +211,10 @@ pub enum StreamFrame {
     Output { seq: u64, data: Vec<u8> },
     /// A status transition, as a `SessionStatus` JSON object.
     Status(Value),
+    /// The PTY was resized — by any client; the daemon does not say which. Every
+    /// attached client shares the one grid, so each needs to re-render at the
+    /// new size.
+    Resized { cols: u16, rows: u16 },
     /// The session's child exited; the daemon closes the connection after this.
     Exit { exit_code: Option<i32> },
     /// The stream could not be established (e.g. unknown terminal). Terminal —
@@ -220,6 +227,13 @@ pub enum StreamFrame {
 #[serde(rename_all = "camelCase")]
 struct ExitBody {
     exit_code: Option<i32>,
+}
+
+/// JSON body of [`StreamFrame::Resized`].
+#[derive(Serialize, Deserialize)]
+struct ResizedBody {
+    cols: u16,
+    rows: u16,
 }
 
 /// JSON body of [`StreamFrame::Error`].
@@ -240,6 +254,13 @@ impl StreamFrame {
                 out
             }
             Self::Status(status) => tagged_json(TAG_STATUS, status),
+            Self::Resized { cols, rows } => tagged_json(
+                TAG_RESIZED,
+                &ResizedBody {
+                    cols: *cols,
+                    rows: *rows,
+                },
+            ),
             Self::Exit { exit_code } => tagged_json(
                 TAG_EXIT,
                 &ExitBody {
@@ -274,6 +295,14 @@ impl StreamFrame {
             TAG_STATUS => Ok(Self::Status(
                 serde_json::from_slice(rest).context("bad status frame")?,
             )),
+            TAG_RESIZED => {
+                let body: ResizedBody =
+                    serde_json::from_slice(rest).context("bad resized frame")?;
+                Ok(Self::Resized {
+                    cols: body.cols,
+                    rows: body.rows,
+                })
+            }
             TAG_EXIT => {
                 let body: ExitBody = serde_json::from_slice(rest).context("bad exit frame")?;
                 Ok(Self::Exit {
@@ -511,6 +540,10 @@ mod tests {
         ));
         assert_frame_round_trips(&StreamFrame::Exit { exit_code: Some(3) });
         assert_frame_round_trips(&StreamFrame::Exit { exit_code: None });
+        assert_frame_round_trips(&StreamFrame::Resized {
+            cols: 141,
+            rows: 52,
+        });
         assert_frame_round_trips(&StreamFrame::Error {
             message: "no such terminal t9".into(),
         });

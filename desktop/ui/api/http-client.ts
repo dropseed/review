@@ -63,6 +63,7 @@ import type {
   TerminalStatus,
   TerminalOutput,
   TerminalExit,
+  TerminalResized,
   TerminalReplay,
 } from "../types";
 
@@ -96,6 +97,10 @@ export class HttpClient implements ApiClient {
   private terminalExitCallbacks = new Map<
     string,
     Set<(exit: TerminalExit) => void>
+  >();
+  private terminalResizedCallbacks = new Map<
+    string,
+    Set<(resized: TerminalResized) => void>
   >();
   private terminalStatusChangedCallbacks = new Set<
     (status: TerminalStatus) => void
@@ -1027,6 +1032,10 @@ export class HttpClient implements ApiClient {
           const cbs = this.terminalExitCallbacks.get(terminalId);
           if (cbs) for (const cb of cbs) cb({ id: terminalId, exitCode });
         },
+        onResize: (cols, rows) => {
+          const cbs = this.terminalResizedCallbacks.get(terminalId);
+          if (cbs) for (const cb of cbs) cb({ id: terminalId, cols, rows });
+        },
       });
       this.terminalSockets.set(terminalId, socket);
     }
@@ -1178,6 +1187,18 @@ export class HttpClient implements ApiClient {
     return () => {
       this.terminalStatusChangedCallbacks.delete(callback);
     };
+  }
+
+  onTerminalResized(
+    terminalId: string,
+    callback: (resized: TerminalResized) => void,
+  ): () => void {
+    // Registration only, like status: the socket is opened by start/output.
+    return this.registerTerminalCallback(
+      this.terminalResizedCallbacks,
+      terminalId,
+      callback,
+    );
   }
 
   onTerminalExit(

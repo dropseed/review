@@ -582,6 +582,8 @@ async fn wait_for(
                     window.drain(..cut);
                 }
             }
+            // A resize is nothing a wait is waiting on.
+            StreamFrame::Resized { .. } => {}
             StreamFrame::Exit { exit_code } => return Ok(WaitOutcome::Exited(exit_code)),
             StreamFrame::Error { message } => return Err(message),
         }
@@ -757,7 +759,18 @@ mod daemon_tests {
         let client = harness.client().await;
         start_session(&harness, &client, "t-match").await;
 
-        let outcome = wait_after(&client, "t-match", Some("marker-[0-9]+"), "echo marker-42").await;
+        // The pattern requires the terminator so no *prefix* of the marker can
+        // satisfy it: the PTY echoes the typed line back in arbitrary chunks,
+        // and `marker-[0-9]+` alone matched a split "marker-4" ahead of the
+        // "2;" still in flight. The window is cumulative, so by the time the
+        // ";" arrives the whole marker is in it.
+        let outcome = wait_after(
+            &client,
+            "t-match",
+            Some("marker-[0-9]+;"),
+            "echo marker-42;",
+        )
+        .await;
         match outcome {
             WaitOutcome::Matched(line) => assert!(line.contains("marker-42"), "{line}"),
             other => panic!("expected a match, got {other:?}"),

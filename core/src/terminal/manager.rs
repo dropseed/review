@@ -153,6 +153,11 @@ impl SessionManager {
         Ok(Subscription { rx })
     }
 
+    /// The PTY's current grid, for a stream's opening announcement.
+    pub fn size(&self, id: &TerminalId) -> Result<(u16, u16)> {
+        Ok(self.get(id)?.size())
+    }
+
     /// Kill every session and clear the registry (app shutdown).
     ///
     /// **Every host process must call this on every death path.** portable-pty
@@ -305,6 +310,45 @@ mod tests {
 
         // Writing to a dead session errors.
         assert!(manager.write(&id, b"noop\n").is_err());
+    }
+
+    #[test]
+    fn resize_fans_out_to_subscribers_and_skips_no_ops() {
+        let manager = SessionManager::new();
+        let id = TerminalId::from("resize-fanout");
+        manager.start(spec("resize-fanout")).unwrap();
+        let mut sub = manager.subscribe(&id).unwrap();
+
+        // A real change reaches every subscriber…
+        manager.resize(&id, 100, 30).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut resized = None;
+        while resized.is_none() && Instant::now() < deadline {
+            match sub.rx.try_recv() {
+                Ok(TerminalMessage::Resized { cols, rows }) => resized = Some((cols, rows)),
+                Ok(_) => {}
+                Err(mpsc::error::TryRecvError::Empty) => {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Err(mpsc::error::TryRecvError::Disconnected) => break,
+            }
+        }
+        assert_eq!(resized, Some((100, 30)), "resize never fanned out");
+        assert_eq!(manager.list(None)[0].cols, 100);
+
+        // …and repeating the same size is a no-op: no echo storm between
+        // clients confirming each other's resizes.
+        manager.resize(&id, 100, 30).unwrap();
+        std::thread::sleep(Duration::from_millis(50));
+        let mut extra = 0;
+        while let Ok(message) = sub.rx.try_recv() {
+            if matches!(message, TerminalMessage::Resized { .. }) {
+                extra += 1;
+            }
+        }
+        assert_eq!(extra, 0, "an unchanged resize must not fan out");
+
+        manager.kill(&id).unwrap();
     }
 
     #[test]

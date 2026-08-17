@@ -47,13 +47,52 @@ interface RegistryEntry {
   webgl: WebglAddon | null;
   /** Detaches the output stream; called only from disposeTerminal. */
   unsubOutput: (() => void) | null;
+  /** Detaches the PTY-resized stream; called only from disposeTerminal. */
+  unsubResized: (() => void) | null;
   /** Removes the kitty keyboard negotiation handlers. */
   disposeKitty: (() => void) | null;
+  /**
+   * The PTY's grid as the daemon last reported it (every client shares the one
+   * grid). `null` until the first resized event or a seed from a session
+   * listing — at which point the local xterm's own cols/rows are the best
+   * guess anyway.
+   */
+  gridSize: { cols: number; rows: number } | null;
+  /**
+   * Panes listening for grid changes (a viewer re-rendering at the new size).
+   * `seed` marks the stream's opening announcement — the daemon stating the
+   * current size on attach, not anyone changing it.
+   */
+  gridListeners: Set<
+    (size: { cols: number; rows: number }, seed: boolean) => void
+  >;
+  /**
+   * The grid another client claimed while an owner pane was letterboxing it,
+   * or null. Held here rather than in the pane so the claim survives remounts
+   * (⌘` toggles, workspace switches) — reclaiming stays a deliberate click or
+   * keystroke, never a side effect of the pane re-appearing — and so a font
+   * refresh knows to rescale a claimed owner instead of refitting it.
+   */
+  remoteClaim: { cols: number; rows: number } | null;
+  /**
+   * How the currently mounted pane sizes this terminal: an `owner` fits the
+   * grid to its container and resizes the PTY; a `viewer` renders the grid at
+   * its true size, scaled, and never resizes. `null` while unmounted.
+   */
+  mountPolicy: "owner" | "viewer" | null;
   /**
    * Live output held back until a cold reattach's replay has been written, so
    * historical scrollback lands ahead of new bytes. `null` once flushed.
    */
   pending: { data: Uint8Array; seq: number }[] | null;
+  /**
+   * Whether a mount has a replay fetch in flight. A remount that lands inside
+   * that round trip (StrictMode's double-mount, a pane switching surfaces)
+   * sees `isNew: false` and would otherwise release the held-back output
+   * immediately — nulling `pending`, so the replay is dropped on arrival and
+   * the pane sits on an empty buffer until the program happens to redraw.
+   */
+  replayInFlight: boolean;
 }
 
 const registry = new Map<string, RegistryEntry>();
@@ -161,17 +200,94 @@ export function acquireTerminal(
     search,
     webgl: null,
     unsubOutput: null,
+    unsubResized: null,
     disposeKitty,
+    gridSize: null,
+    gridListeners: new Set(),
+    remoteClaim: null,
+    mountPolicy: null,
     // A brand-new instance has nothing on screen yet, so hold output until the
     // caller has decided whether it needs a replay first.
     pending: [],
+    replayInFlight: false,
   };
   registry.set(id, entry);
   entry.unsubOutput = getApiClient().onTerminalOutput(id, ({ data, seq }) => {
     if (entry.pending) entry.pending.push({ data, seq });
     else safeWrite(entry, data);
   });
+  // Grid changes are subscribed for the instance's whole life, like output: a
+  // hidden pane's buffer must reflow with the PTY or it comes back garbled.
+  entry.unsubResized = getApiClient().onTerminalResized(
+    id,
+    ({ cols, rows }) => {
+      // The first report is the stream's opening announcement (the daemon
+      // states the current size on every attach); later ones are changes.
+      const seed = entry.gridSize === null;
+      entry.gridSize = { cols, rows };
+      for (const listener of entry.gridListeners)
+        listener({ cols, rows }, seed);
+    },
+  );
   return { term, fit, isNew: true };
+}
+
+/** The grid another client claimed from an owner pane, or null — see
+ *  RegistryEntry.remoteClaim. */
+export function terminalRemoteClaim(
+  id: string,
+): { cols: number; rows: number } | null {
+  return registry.get(id)?.remoteClaim ?? null;
+}
+
+/** Record (or clear) an owner pane's letterboxed claim — see RegistryEntry. */
+export function setTerminalRemoteClaim(
+  id: string,
+  claim: { cols: number; rows: number } | null,
+): void {
+  const entry = registry.get(id);
+  if (entry) entry.remoteClaim = claim;
+}
+
+/** The PTY grid as last reported by the daemon, or null while unknown. */
+export function terminalGridSize(
+  id: string,
+): { cols: number; rows: number } | null {
+  return registry.get(id)?.gridSize ?? null;
+}
+
+/**
+ * Seed the grid record from a session listing, for a pane that mounts before
+ * any resized event has arrived. Never overwrites a live report.
+ */
+export function seedTerminalGridSize(
+  id: string,
+  size: { cols: number; rows: number },
+): void {
+  const entry = registry.get(id);
+  if (entry && !entry.gridSize) entry.gridSize = size;
+}
+
+/** Listen for PTY grid changes for one terminal (returns unsubscribe fn). */
+export function onTerminalGrid(
+  id: string,
+  listener: (size: { cols: number; rows: number }, seed: boolean) => void,
+): () => void {
+  const entry = registry.get(id);
+  if (!entry) return () => {};
+  entry.gridListeners.add(listener);
+  return () => {
+    entry.gridListeners.delete(listener);
+  };
+}
+
+/** Record how the mounted pane sizes this terminal — see RegistryEntry. */
+export function setTerminalMountPolicy(
+  id: string,
+  policy: "owner" | "viewer" | null,
+): void {
+  const entry = registry.get(id);
+  if (entry) entry.mountPolicy = policy;
 }
 
 /**
@@ -259,6 +375,7 @@ export function startTerminalOutput(
   replay?: { data: Uint8Array; cursor: number },
 ): void {
   const entry = registry.get(id);
+  if (entry) entry.replayInFlight = false;
   if (!entry?.pending) return;
   if (replay) safeWrite(entry, replay.data);
   const cursor = replay?.cursor ?? -1;
@@ -496,6 +613,9 @@ export function disposeTerminal(id: string): void {
   if (!entry) return;
   entry.unsubOutput?.();
   entry.unsubOutput = null;
+  entry.unsubResized?.();
+  entry.unsubResized = null;
+  entry.gridListeners.clear();
   entry.disposeKitty?.();
   entry.disposeKitty = null;
   // The keyboard mode belongs to the program that negotiated it, so it dies
@@ -541,6 +661,22 @@ export function refreshAllTerminalOptions(opts: TerminalFontOptions): void {
   for (const [id, entry] of registry) {
     applyFontOptions(entry.term, opts);
 
+    // A viewer-mounted terminal — and an owner letterboxing a grid another
+    // client claimed — keeps the PTY's grid and rescales instead: a font
+    // change on this screen is no reason to reflow every other client. The
+    // pane re-lays itself out through its grid listener.
+    if (
+      entry.mountPolicy === "viewer" ||
+      (entry.mountPolicy === "owner" && entry.remoteClaim)
+    ) {
+      const size = entry.gridSize ?? {
+        cols: entry.term.cols,
+        rows: entry.term.rows,
+      };
+      for (const listener of entry.gridListeners) listener(size, false);
+      continue;
+    }
+
     const el = entry.term.element;
     if (!el || el.clientWidth === 0 || el.clientHeight === 0) continue;
     try {
@@ -552,6 +688,22 @@ export function refreshAllTerminalOptions(opts: TerminalFontOptions): void {
       .terminalResize(id, entry.term.cols, entry.term.rows)
       .catch((err) => console.error("[terminal] Resize failed:", err));
   }
+}
+
+/**
+ * Note that a replay fetch is in flight for `id`, so a remount inside the
+ * round trip leaves the release to it (see `RegistryEntry.replayInFlight`).
+ * Cleared by `startTerminalOutput`, which every replay path ends in — the
+ * failure path included.
+ */
+export function beginTerminalReplay(id: string): void {
+  const entry = registry.get(id);
+  if (entry) entry.replayInFlight = true;
+}
+
+/** Whether a mount's replay fetch has yet to resolve — see beginTerminalReplay. */
+export function terminalReplayInFlight(id: string): boolean {
+  return registry.get(id)?.replayInFlight ?? false;
 }
 
 /** Whether an instance already exists (test/debug helper). */
