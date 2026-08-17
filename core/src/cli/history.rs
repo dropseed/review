@@ -299,7 +299,8 @@ pub fn run_history(args: HistoryArgs) -> Result<(), String> {
     Ok(())
 }
 
-/// `review undo` — restore a snapshot as a new version.
+/// `review undo` — restore a snapshot as a new version. The decisions come from
+/// the snapshot; the review's worktree and PR pointers stay as they are.
 pub fn run_undo(args: UndoArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
     let (review, hunks, _) = load_for_mutation(&repo, args.target.spec.as_deref())?;
@@ -338,6 +339,14 @@ pub fn run_undo(args: UndoArgs) -> Result<(), String> {
         // the next version, so the history it walked stays intact behind it.
         state.version = current.version;
         state.ref_name.clone_from(&current.ref_name);
+        // Undo restores review *decisions*. These two are pointers at things
+        // that exist outside the review — a worktree on disk, a PR upstream —
+        // and reverting them to what a snapshot happened to say would orphan a
+        // real directory or forget an association nothing else records. They
+        // survive an undo by definition, re-read here so a retry sees whatever
+        // the concurrent writer left.
+        state.worktree_path.clone_from(&current.worktree_path);
+        state.github_pr.clone_from(&current.github_pr);
         // drop_orphans=true: `hunks` is the authoritative full diff, and the
         // snapshot may predate edits that moved hunks out of it entirely.
         state.reconcile(&hunks, true);
@@ -646,6 +655,62 @@ mod tests {
         })
         .unwrap_err();
         assert!(err.contains("No v99"), "{err}");
+    }
+
+    /// A worktree on disk and a PR upstream outlive any decision about them, so
+    /// undoing back past the moment they were recorded must not un-record them.
+    #[test]
+    fn undo_keeps_pointers_a_snapshot_predates() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_guard, _home, repo, spec) = repo_with_feature();
+        let p = repo.path();
+
+        // v1: approvals, and no pointers yet.
+        let (_review, hunks, _live) = load_for_mutation(p, Some(&spec)).unwrap();
+        let ids: Vec<String> = hunks.iter().map(|h| h.id.clone()).collect();
+        super::super::review_state::run_mark(
+            super::super::review_state::MarkArgs {
+                target: target(p, &spec),
+                hunks: ids.clone(),
+                reason: None,
+                source: None,
+                json: false,
+            },
+            HunkStatus::Approved,
+        )
+        .unwrap();
+
+        // v2: the app clears the decisions and attaches a worktree and a PR.
+        let mut state = storage::load_review_state(p, "feature").unwrap();
+        state.hunks.values_mut().for_each(|hunk| hunk.status = None);
+        state.worktree_path = Some("/tmp/review-worktrees/feature".to_owned());
+        state.github_pr = Some(crate::sources::github::GitHubPrRef {
+            number: 42,
+            title: "Add the thing".to_owned(),
+            head_ref_name: "feature".to_owned(),
+            base_ref_name: "main".to_owned(),
+            body: None,
+        });
+        state.prepare_for_save();
+        storage::save_review_state(p, &state).unwrap();
+        assert_eq!(approved_count(p), 0);
+
+        run_undo(UndoArgs {
+            target: target(p, &spec),
+            to: None,
+            json: false,
+        })
+        .unwrap();
+
+        let restored = storage::load_review_state(p, "feature").unwrap();
+        // The decisions came back from v1…
+        assert_eq!(approved_count(p), ids.len());
+        // …and the pointers v1 never knew about are still here.
+        assert_eq!(
+            restored.worktree_path.as_deref(),
+            Some("/tmp/review-worktrees/feature")
+        );
+        assert_eq!(restored.github_pr.as_ref().map(|pr| pr.number), Some(42));
     }
 
     #[test]
