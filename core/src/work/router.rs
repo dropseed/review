@@ -249,7 +249,7 @@ mod tests {
         // The ref it was found on rides along as a hint, so the derived title
         // reads like the checkout it came from.
         assert_eq!(
-            first.workspace.display_title(None),
+            first.workspace.display_title(),
             format!("{} · trunk", name_of(repo.path()))
         );
 
@@ -418,7 +418,7 @@ mod tests {
 
         let first = route(&dir);
         assert!(first.created);
-        assert_eq!(first.workspace.display_title(None), "scratch");
+        assert_eq!(first.workspace.display_title(), "scratch");
         assert_eq!(first.workspace.attachments, vec![location.attachment()]);
 
         // The directory is attached like any repo, so coming back here joins

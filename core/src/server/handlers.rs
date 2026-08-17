@@ -26,7 +26,7 @@ use crate::sources::traits::{
 };
 use crate::symbols::{FileSymbolDiff, Symbol, SymbolDefinition};
 use crate::trust::patterns::TrustCategory;
-use crate::work::{self, Attachment, Workspace, WorkspaceView};
+use crate::work::{self, Attachment, WorkspaceView};
 
 pub(super) type ApiResult<T> = Result<Json<T>, (StatusCode, String)>;
 
@@ -1143,23 +1143,17 @@ struct WorkDetachRequest {
     path: String,
 }
 
-/// Every workspace as the frontend reads it. Derived titles get no terminal
-/// rung here: web mode has no daemon to ask (see [`work::views`]).
-fn views(workspaces: Vec<Workspace>) -> Vec<WorkspaceView> {
-    work::views(workspaces, None)
-}
-
 /// Deliberately never cleans up. Cleanup needs the daemon's answer to "what is
 /// running", and web mode has no daemon to ask — an empty set here would mean
 /// "nothing is live" and reap every router-made workspace the desktop app is
 /// using. See `work::cleanup`: a caller that cannot answer must not reap.
 async fn work_list() -> ApiResult<Vec<WorkspaceView>> {
-    blocking(|| Ok(views(work::list_with_liveness(None)?.workspaces))).await
+    blocking(|| Ok(work::views(work::list_with_liveness(None)?.workspaces))).await
 }
 
 async fn work_add(Json(req): Json<WorkAddRequest>) -> ApiResult<Vec<WorkspaceView>> {
     blocking(move || {
-        Ok(views(
+        Ok(work::views(
             work::add(req.title.as_deref(), req.attachments)?
                 .0
                 .workspaces,
@@ -1169,12 +1163,12 @@ async fn work_add(Json(req): Json<WorkAddRequest>) -> ApiResult<Vec<WorkspaceVie
 }
 
 async fn work_remove(Json(req): Json<WorkIdRequest>) -> ApiResult<Vec<WorkspaceView>> {
-    blocking(move || Ok(views(work::remove(&req.id)?.0.workspaces))).await
+    blocking(move || Ok(work::views(work::remove(&req.id)?.0.workspaces))).await
 }
 
 async fn work_rename(Json(req): Json<WorkRenameRequest>) -> ApiResult<Vec<WorkspaceView>> {
     blocking(move || {
-        Ok(views(
+        Ok(work::views(
             work::rename(&req.id, req.title.as_deref())?.0.workspaces,
         ))
     })
@@ -1183,7 +1177,7 @@ async fn work_rename(Json(req): Json<WorkRenameRequest>) -> ApiResult<Vec<Worksp
 
 async fn work_move(Json(req): Json<WorkMoveRequest>) -> ApiResult<Vec<WorkspaceView>> {
     blocking(move || {
-        Ok(views(
+        Ok(work::views(
             work::move_workspace(&req.id, req.position)?.0.workspaces,
         ))
     })
@@ -1191,12 +1185,17 @@ async fn work_move(Json(req): Json<WorkMoveRequest>) -> ApiResult<Vec<WorkspaceV
 }
 
 async fn work_attach(Json(req): Json<WorkAttachRequest>) -> ApiResult<Vec<WorkspaceView>> {
-    blocking(move || Ok(views(work::attach(&req.id, req.attachment)?.0.workspaces))).await
+    blocking(move || {
+        Ok(work::views(
+            work::attach(&req.id, req.attachment)?.0.workspaces,
+        ))
+    })
+    .await
 }
 
 async fn work_detach(Json(req): Json<WorkDetachRequest>) -> ApiResult<Vec<WorkspaceView>> {
     blocking(move || {
-        Ok(views(
+        Ok(work::views(
             work::detach(&req.id, std::path::Path::new(&req.path))?
                 .0
                 .workspaces,
@@ -1212,7 +1211,7 @@ async fn work_route(Json(req): Json<WorkRouteRequest>) -> ApiResult<RouteLanding
             work::router::location_of_ref(std::path::Path::new(&req.repo_path), &req.r#ref);
         let landing = work::router::land(&location, req.workspace_id.as_deref())?;
         Ok(RouteLanding {
-            workspace: work::views(vec![landing.workspace], None).remove(0),
+            workspace: work::WorkspaceView::from(landing.workspace),
             created: landing.created,
         })
     })

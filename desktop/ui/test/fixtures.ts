@@ -12,6 +12,7 @@ import {
   sidebarRowsByKey,
   sidebarRowsByRepoRef,
 } from "../stores/selectors/sidebar";
+import { attachmentLabel } from "../stores/selectors/workspaceData";
 import type { WorkspaceContext } from "../components/Sidebar/workspace-status";
 import type {
   Attachment,
@@ -60,12 +61,10 @@ export function workspace(
   };
 }
 
-/** The backend's derived title, minus the live-terminal rung. */
+/** The backend's derived title: the first attachment's label, else Untitled. */
 function derivedTitle(attachments: Attachment[]): string {
   const first = attachments[0];
-  if (!first) return "Untitled";
-  const name = first.path.slice(first.path.lastIndexOf("/") + 1);
-  return first.refName ? `${name} · ${first.refName}` : name;
+  return first ? attachmentLabel(first) : "Untitled";
 }
 
 /** One repo tab. */

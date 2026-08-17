@@ -125,11 +125,9 @@ Only the `terminal` feature needs this, so only `review-daemon` (and `cargo test
 
 ## Titles are derived
 
-A workspace's title is `null` until someone types one. `Workspace::display_title` derives it live, in three rungs: the first attachment's label ("review · feature/x"), else the title of a live terminal in it, else "Untitled". The wire carries both `title` (raw, nullable) and `displayTitle` (always set), so a rename field prefills with what the human typed rather than what was derived for them; renaming to an empty string clears the stored title and derivation resumes.
+A workspace's title is `null` until someone types one. `Workspace::display_title` derives it live, in two rungs: the first attachment's label ("review · feature/x"), else "Untitled". A terminal's title never stands in — the title is what the workspace is _about_ (its attachments, or the human's words), and a terminal is something running in it, listed on the card as its own row. The wire carries both `title` (raw, nullable) and `displayTitle` (always set), so a rename field prefills with what the human typed rather than what was derived for them; renaming to an empty string clears the stored title and derivation resumes.
 
-The terminal rung is the daemon's answer, so only the two liveness reads (`review work list`, the app's `work_list`) can supply it. Every other surface derives without it.
-
-The **queue card** raises that rung above the attachment when a workspace has exactly one terminal and no typed title (`describeWorkspace`'s `soleTerminal`): a workspace running one agent is that agent, where the repo label names something half the queue could equally be showing. The repo is still on the card, as a chip; the terminal's own row is not, because the title is now that row — it wears the phase marker and the pane count instead. This is the card's rule alone and nothing is stored: two terminals, or a name someone typed, and the derived label is back.
+The **queue card** renders a derived title in italics — same colour and weight, visibly implicit — and absorbs the one chip that would repeat it (`repo · branch` twice on a two-line card said nothing new), moving that chip's PR and dirty marks up beside the title. Everything else on the card is explicit: every other attachment is a chip, and every terminal is a row with its own phase dot and pane count.
 
 ## Cleanup, not endorsement
 

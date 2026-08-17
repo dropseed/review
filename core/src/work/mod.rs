@@ -21,7 +21,8 @@
 //!
 //! A title is optional because most workspaces need no naming: with none stored,
 //! [`Workspace::display_title`] derives one at read time from the first
-//! attachment, else from a live terminal, else "Untitled".
+//! attachment, else "Untitled". A terminal's title never stands in — what a
+//! workspace is about is its attachments, not what happens to be running in it.
 //!
 //! The one piece of bookkeeping is [`Workspace::auto_created`], which the
 //! [`router`] alone sets and every mutation here clears — so it means, precisely,
@@ -31,7 +32,7 @@
 pub mod router;
 pub mod storage;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Serialize};
@@ -153,23 +154,19 @@ pub struct Workspace {
 impl Workspace {
     /// What to call this workspace, derived when nobody named it.
     ///
-    /// Three rungs: the stored title, then the first attachment, then the title
-    /// of a live terminal — which is why this takes one rather than looking it
-    /// up. The daemon owns terminal titles and this module owns the queue, so
-    /// only the caller joining both (see [`views`]) can supply it; `None` is
-    /// "there is no live terminal, or nobody could ask".
-    pub fn display_title(&self, terminal: Option<&str>) -> String {
+    /// Two rungs: the stored title, then the first attachment's label. What a
+    /// workspace is *about* is its attachments — a terminal's title never
+    /// stands in, because a terminal is something running in the workspace,
+    /// not what the workspace is. A workspace with neither reads "Untitled",
+    /// which is the honest answer until something is attached or typed.
+    pub fn display_title(&self) -> String {
         if let Some(title) = self.title.as_deref().filter(|t| !t.trim().is_empty()) {
             return title.to_owned();
         }
         if let Some(attachment) = self.attachments.first() {
             return attachment.label();
         }
-        terminal
-            .map(str::trim)
-            .filter(|title| !title.is_empty())
-            .unwrap_or(UNTITLED)
-            .to_owned()
+        UNTITLED.to_owned()
     }
 
     /// Where `path` sits among the attachments, if it is attached at all.
@@ -197,31 +194,19 @@ pub struct WorkspaceView {
     pub display_title: String,
 }
 
+impl From<Workspace> for WorkspaceView {
+    fn from(workspace: Workspace) -> Self {
+        let display_title = workspace.display_title();
+        WorkspaceView {
+            workspace,
+            display_title,
+        }
+    }
+}
+
 /// Every workspace as a surface renders it.
-///
-/// `terminal_titles` maps a workspace id to the title of a live terminal in it —
-/// the derived title's last rung. It is `None` for every caller without the
-/// daemon's answer (each mutation, and web mode), which costs exactly the
-/// workspaces that have no title and no attachment: they read "Untitled" until
-/// the next liveness read.
-pub fn views(
-    workspaces: Vec<Workspace>,
-    terminal_titles: Option<&HashMap<String, String>>,
-) -> Vec<WorkspaceView> {
-    workspaces
-        .into_iter()
-        .map(|workspace| {
-            let display_title = workspace.display_title(
-                terminal_titles
-                    .and_then(|titles| titles.get(&workspace.id))
-                    .map(String::as_str),
-            );
-            WorkspaceView {
-                workspace,
-                display_title,
-            }
-        })
-        .collect()
+pub fn views(workspaces: Vec<Workspace>) -> Vec<WorkspaceView> {
+    workspaces.into_iter().map(Into::into).collect()
 }
 
 /// The whole queue, as stored. Array order is priority order.
@@ -588,7 +573,7 @@ mod tests {
         state
             .workspaces
             .iter()
-            .map(|ws| ws.display_title(None))
+            .map(|ws| ws.display_title())
             .collect()
     }
 
@@ -678,42 +663,21 @@ mod tests {
 
         // Nothing to go on.
         let bare = add(None, vec![]).unwrap().1;
-        assert_eq!(bare.display_title(None), "Untitled");
-        // …except a terminal, which is the last rung.
-        assert_eq!(bare.display_title(Some("npm test")), "npm test");
+        assert_eq!(bare.display_title(), "Untitled");
 
-        // An attachment outranks the terminal, and carries its ref when it has
-        // one.
+        // An attachment names it, and carries its ref when it has one.
         let (_, attached) = attach(&bare.id, at("/repos/review", None)).unwrap();
-        assert_eq!(attached.display_title(Some("npm test")), "review");
+        assert_eq!(attached.display_title(), "review");
         let (_, at_ref) = attach(&bare.id, at("/repos/review", Some("feature/x"))).unwrap();
-        assert_eq!(at_ref.display_title(None), "review · feature/x");
+        assert_eq!(at_ref.display_title(), "review · feature/x");
 
         // A stored title outranks everything, and clearing it goes back down the
         // ladder.
         let (_, named) = rename(&bare.id, Some("Ship it")).unwrap();
-        assert_eq!(named.display_title(None), "Ship it");
+        assert_eq!(named.display_title(), "Ship it");
         let (_, cleared) = rename(&bare.id, Some("   ")).unwrap();
         assert_eq!(cleared.title, None);
-        assert_eq!(cleared.display_title(None), "review · feature/x");
-    }
-
-    #[test]
-    fn views_join_terminal_titles_by_workspace_id() {
-        let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _home, _repo) = setup_test();
-
-        let bare = add(None, vec![]).unwrap().1;
-        let titles: HashMap<String, String> = [(bare.id.clone(), "claude".to_owned())]
-            .into_iter()
-            .collect();
-
-        let joined = views(list().unwrap().workspaces, Some(&titles));
-        assert_eq!(joined[0].display_title, "claude");
-        // Without the daemon's answer the same workspace falls to the bottom
-        // rung rather than to a stale title.
-        let unjoined = views(list().unwrap().workspaces, None);
-        assert_eq!(unjoined[0].display_title, "Untitled");
+        assert_eq!(cleared.display_title(), "review · feature/x");
     }
 
     #[test]
@@ -835,7 +799,7 @@ mod tests {
 
         // The wire adds the derived title beside the stored one, so a rename
         // field can prefill with what the human typed.
-        let view = serde_json::to_value(&views(vec![workspace], None)[0]).unwrap();
+        let view = serde_json::to_value(&WorkspaceView::from(workspace)).unwrap();
         assert_eq!(view["title"], "Ship it");
         assert_eq!(view["displayTitle"], "Ship it");
         assert_eq!(view["id"], "0a1b2c3d");

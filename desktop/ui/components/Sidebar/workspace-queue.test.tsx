@@ -248,15 +248,20 @@ describe("what a card says about itself", () => {
       ],
     });
     render(<WorkspaceQueue />);
-    expect(entries()[0].textContent).toBe("repo · feature");
+    const card = entries()[0];
+    expect(card.textContent).toBe("repo · feature");
+    // Derived, so visibly implicit — a typed title renders upright.
+    expect(within(card).getByText("repo · feature").className).toContain(
+      "italic",
+    );
   });
 
   /**
-   * One terminal and no name of its own: the terminal is what this workspace
-   * is, and the repo label it would otherwise wear drops to the chip line.
-   * The row for that terminal goes — the title is now that row.
+   * A terminal never titles the card: the title is what the workspace is
+   * about, and the terminal is listed below it as its own row — even when it
+   * is the only one.
    */
-  it("takes an unnamed workspace's title from its only terminal", () => {
+  it("keeps the derived title over a sole terminal, and lists its row", () => {
     useReviewStore.setState({
       workspaces: [
         makeWorkspace("u", { attachments: [attachment(REPO, "feature")] }),
@@ -266,12 +271,11 @@ describe("what a card says about itself", () => {
     render(<WorkspaceQueue />);
 
     const card = entries()[0];
-    expect(card.textContent?.match(/sh s1/g)).toHaveLength(1);
-    expect(card.textContent).toContain("repo · feature");
-    expect(within(card).queryByTitle("sh s1")).toBeNull();
+    expect(card.textContent).toMatch(/^repo · feature/);
+    expect(within(card).getByTitle("sh s1")).toBeTruthy();
   });
 
-  /** Two terminals: neither speaks for the workspace, so the repo does. */
+  /** And the same with two terminals: both are rows under the same title. */
   it("keeps the derived title when a workspace runs two terminals", () => {
     useReviewStore.setState({
       workspaces: [
@@ -285,6 +289,7 @@ describe("what a card says about itself", () => {
     const card = entries()[0];
     expect(card.textContent).toMatch(/^repo · feature/);
     expect(within(card).getByTitle("sh s1")).toBeTruthy();
+    expect(within(card).getByTitle("sh s2")).toBeTruthy();
   });
 
   /** A name the human typed outranks any terminal. */

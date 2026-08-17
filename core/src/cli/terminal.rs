@@ -337,7 +337,7 @@ async fn run_start(client: &DaemonClient, args: StartArgs) -> Result<(), String>
         let mut payload = serde_json::to_value(&summary).map_err(|e| e.to_string())?;
         payload["workspace"] = json!({
             "id": landing.workspace.id,
-            "title": landing.workspace.display_title(None),
+            "title": landing.workspace.display_title(),
             "created": landing.created,
         });
         print_json(&payload);
@@ -346,7 +346,7 @@ async fn run_start(client: &DaemonClient, args: StartArgs) -> Result<(), String>
             "Started terminal {} in {} · {verb} \"{}\" ({}).",
             summary.id,
             summary.cwd,
-            landing.workspace.display_title(None),
+            landing.workspace.display_title(),
             landing.workspace.id
         );
     }

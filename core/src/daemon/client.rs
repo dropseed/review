@@ -56,21 +56,6 @@ type Pending = Arc<Mutex<HashMap<u64, oneshot::Sender<OpResult>>>>;
 pub struct Attribution {
     id: String,
     workspace_id: Option<String>,
-    title: Option<String>,
-}
-
-/// What the daemon knows about the queue's workspaces, in one answer.
-///
-/// The two halves are asked for together because they are read together: a
-/// liveness read decides what to reap *and* what to call a workspace that has
-/// nothing else to be named after (see `crate::work::Workspace::display_title`).
-/// Splitting them would cost a second `Op::List` per read for the same data.
-#[derive(Debug, Clone, Default)]
-pub struct LiveWorkspaces {
-    /// Every workspace with at least one live session.
-    pub ids: HashSet<String>,
-    /// Workspace id → the title of its first titled live session.
-    pub titles: HashMap<String, String>,
 }
 
 /// A connected control channel to the terminal daemon.
@@ -208,26 +193,18 @@ impl DaemonClient {
         .map(|_| ())
     }
 
-    /// What the daemon can say about the queue's workspaces right now.
+    /// Every workspace with at least one live session.
     ///
     /// The liveness half of [`crate::work::cleanup`]: the queue is this
     /// process's to read, but "is anything running in it?" is only the daemon's
     /// to answer, and a caller that cannot reach the daemon must not guess.
-    pub async fn live_workspaces(&self) -> Result<LiveWorkspaces> {
-        let mut live = LiveWorkspaces::default();
-        for session in self.attributions().await? {
-            let Some(workspace_id) = session.workspace_id else {
-                continue;
-            };
-            if let Some(title) = session.title.filter(|title| !title.trim().is_empty()) {
-                // First titled session wins: sessions come back in start order,
-                // so a workspace is named after the thing that opened it rather
-                // than after whatever was started in it last.
-                live.titles.entry(workspace_id.clone()).or_insert(title);
-            }
-            live.ids.insert(workspace_id);
-        }
-        Ok(live)
+    pub async fn live_workspaces(&self) -> Result<HashSet<String>> {
+        Ok(self
+            .attributions()
+            .await?
+            .into_iter()
+            .filter_map(|session| session.workspace_id)
+            .collect())
     }
 
     /// Move every session attributed to one of `from` onto `to`, returning how
@@ -392,7 +369,7 @@ mod workspace_tests {
 
         let live = client.live_workspaces().await.unwrap();
         assert_eq!(
-            live.ids,
+            live,
             ["aaaa1111".to_owned(), "bbbb2222".to_owned()]
                 .into_iter()
                 .collect()
@@ -415,7 +392,7 @@ mod workspace_tests {
 
         let live = client.live_workspaces().await.unwrap();
         assert_eq!(
-            live.ids,
+            live,
             ["mine".to_owned(), "elsewhere".to_owned()]
                 .into_iter()
                 .collect(),

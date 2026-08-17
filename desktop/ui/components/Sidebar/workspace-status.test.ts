@@ -40,22 +40,13 @@ function item(overrides: Partial<Workspace> = {}): Workspace {
 }
 
 describe("describeWorkspace", () => {
-  it("renders the title the backend derived when the user gave it none", () => {
+  it("describes a live workspace by its repos", () => {
     const status = describeWorkspace(
       item(),
       context([branch("main", { isCurrent: true }), branch("feature")]),
     );
-    expect(status.title).toBe("repo · feature");
     expect(status.subtitle).toContain("repo");
     expect(status.resolved).toBe(false);
-  });
-
-  it("keeps the user's title when there is one", () => {
-    const status = describeWorkspace(
-      item({ title: "Ship the thing" }),
-      context([branch("feature")]),
-    );
-    expect(status.title).toBe("Ship the thing");
   });
 
   it("resolves a card whose every branch is gone", () => {
@@ -167,7 +158,6 @@ describe("describeWorkspace", () => {
       item({ title: "", attachments: [attachment("/tmp/scratch")] }),
       context([]),
     );
-    expect(status.title).toBe("scratch");
     expect(status.repos[0].chipLabel).toBe("scratch");
     expect(status.resolved).toBe(false);
   });

@@ -14,7 +14,6 @@ import {
   useWorkspaces,
 } from "../../stores/selectors/workspaces";
 import {
-  useTabGlance,
   useTabsByWorkspaceId,
   useTerminalsByWorkspaceId,
   workspaceTerminals,
@@ -33,7 +32,6 @@ import {
 import { CheckIcon } from "../ui/icons";
 import { ContextActionItems } from "./ActionMenu";
 import { WorkspaceTitleInput } from "./WorkspaceTitleInput";
-import { PhaseDot } from "./PhaseDot";
 import { workspaceState } from "./StatusDot";
 import { TerminalRow } from "./TerminalRow";
 import { activateOnKey } from "./row-chrome";
@@ -240,27 +238,21 @@ const QueueEntry = memo(function QueueEntry({
     ),
   );
 
-  // The card's own terminal, when one terminal is all there is. It supplies
-  // the title of an unnamed workspace (see `describeWorkspace`), and then the
-  // card *is* that terminal: it wears the phase marker and the pane count, and
-  // draws no row below for the thing it just named. `useTabGlance("")` is the
-  // no-terminal answer — a hook can't be skipped, and no tab has that id.
-  const soleGlance = useTabGlance(tabIds.length === 1 ? tabIds[0]! : "");
-  const titleTerminal = isNamed(workspace) ? null : soleGlance;
-
   const status = useMemo(
-    () => describeWorkspace(workspace, ctx, titleTerminal?.title),
-    [workspace, ctx, titleTerminal?.title],
+    () => describeWorkspace(workspace, ctx),
+    [workspace, ctx],
   );
   const state = workspaceState(terminals.phase, terminals.tabs > 0);
   const live = state !== "dormant";
-  // A chip that would just repeat the derived title is *absorbed*: its row is
-  // not drawn, and its marks — the PR number, the dirty dot — move up beside
-  // the title instead, so a dormant `repo · branch` card stays one line
-  // without losing the branch's state.
-  const absorbed = isNamed(workspace)
-    ? undefined
-    : status.repos.find((repo) => repo.chipLabel === status.title);
+  // Nobody typed a title, so the card is wearing a derived one — rendered in
+  // italics, and the chip it stands for is *absorbed*: a derived title is
+  // definitionally the first attachment's label, so that chip's row is not
+  // drawn and its marks — the PR number, the dirty dot — move up beside the
+  // title instead. Decided structurally rather than by comparing label
+  // strings, which silently failed to absorb whenever the chip spelled the
+  // repo by its remote name while the title used the directory's.
+  const derived = !isNamed(workspace);
+  const absorbed = derived ? status.repos[0] : undefined;
   const detailRepos = status.repos.filter((repo) => repo !== absorbed);
   // Two ways a queue entry is finished with: its branches are gone, or its PR
   // landed. Both keep their place and offer removal — the app changes what a
@@ -290,7 +282,7 @@ const QueueEntry = memo(function QueueEntry({
             startWorkspaceDrag(e, { id: workspace.id, index })
           }
           onDragEnd={() => setDraggedWorkspace(null)}
-          title={status.subtitle || status.title}
+          title={status.subtitle || workspace.displayTitle}
           className={clsx(
             // A real container, not a hover ghost: entries are individually
             // clickable and draggable, and with the status phrase gone the
@@ -322,17 +314,6 @@ const QueueEntry = memo(function QueueEntry({
                 {index + 1}
               </span>
             )}
-            {/* The title is this terminal's, so the terminal's marker belongs
-                beside it — the phase is the one thing the collapsed row was
-                carrying that the title doesn't say. */}
-            {titleTerminal && !renaming && (
-              <PhaseDot
-                phase={titleTerminal.severity ?? "idle"}
-                dead={titleTerminal.allDead}
-                agent={titleTerminal.agent}
-                className="-mr-0.5"
-              />
-            )}
             {renaming ? (
               <WorkspaceTitleInput
                 workspaceId={workspace.id}
@@ -349,6 +330,10 @@ const QueueEntry = memo(function QueueEntry({
                 }}
                 className={clsx(
                   "min-w-0 flex-1 truncate text-[11.5px] leading-4",
+                  // A derived title in italics: same weight and colour as a
+                  // typed one — it is not less true — but visibly implicit,
+                  // and a quiet hint that double-clicking here names it.
+                  derived && "italic",
                   done
                     ? "text-fg-faint/60"
                     : live
@@ -356,17 +341,10 @@ const QueueEntry = memo(function QueueEntry({
                       : "text-fg-muted",
                 )}
               >
-                {status.title}
+                {workspace.displayTitle}
               </span>
             )}
             <span className="flex shrink-0 items-center gap-1">
-              {/* The strip's vocabulary for a split tab, kept with the title
-                  that stands for it. */}
-              {titleTerminal && titleTerminal.leafIds.length > 1 && (
-                <span className="text-xxs text-fg-faint tabular-nums">
-                  {titleTerminal.leafIds.length}
-                </span>
-              )}
               {done ? (
                 <CheckIcon
                   className={clsx(
@@ -389,7 +367,7 @@ const QueueEntry = memo(function QueueEntry({
               {done && (
                 <button
                   type="button"
-                  aria-label={`Remove ${status.title}`}
+                  aria-label={`Remove ${workspace.displayTitle}`}
                   onClick={(e) => {
                     e.stopPropagation();
                     void removeWorkspace(workspace.id);
@@ -426,18 +404,15 @@ const QueueEntry = memo(function QueueEntry({
             </div>
           )}
 
-          {/* The workspace's terminals, one line each. The dot above is the
-              loudest of them, which is the right summary for a card you are
-              scanning past and the wrong one for the card you stopped at: two
-              agents working and a third asking for a password read as "asking"
-              and say nothing about the other two. Nothing is drawn for a
-              workspace running nothing — a heading over an empty list is the
-              queue claiming space for something that isn't there — and nothing
-              for the terminal the title above already is, which would be the
-              same string twice with a marker between them. The negative margin
-              lets a row's hover ground bleed while its text stays flush with
-              the card's own lines. */}
-          {tabIds.length > 0 && !titleTerminal && (
+          {/* The workspace's terminals, one line each — always, when there are
+              any: the title above is what the workspace is about, and these
+              rows are what is running in it, each wearing its own phase dot
+              and pane count. Nothing is drawn for a workspace running nothing
+              — a heading over an empty list is the queue claiming space for
+              something that isn't there. The negative margin lets a row's
+              hover ground bleed while its text stays flush with the card's
+              own lines. */}
+          {tabIds.length > 0 && (
             <div className="-mx-1 mt-1">
               {tabIds.map((tabId) => (
                 <TerminalRow key={tabId} tabId={tabId} />

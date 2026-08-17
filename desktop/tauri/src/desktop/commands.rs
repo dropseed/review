@@ -11,7 +11,6 @@
 
 use log::{debug, error, info, warn};
 use review::classify::{self, ClassifyResponse};
-use review::daemon::LiveWorkspaces;
 use review::diff::parser::DiffHunk;
 use review::lsp::client::LspClient;
 use review::lsp::registry;
@@ -35,7 +34,7 @@ use review::sources::traits::{
 };
 use review::symbols::{self, FileSymbolDiff, Symbol};
 use review::trust::patterns::TrustCategory;
-use review::work::{Attachment, Workspace, WorkspaceView};
+use review::work::{Attachment, WorkspaceView};
 use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
@@ -479,16 +478,15 @@ pub fn get_review_storage_path(repo_path: String) -> Result<String, String> {
 // the attachments a workspace holds do. See `ApiClient` for why every mutation
 // returns the full list.
 //
-// `work_list` talks to the terminal daemon as well, because two facts about a
-// workspace live there rather than in `work.json`: whether anything is running
-// in it (cleanup), and what its terminals are called (the derived title's last
-// rung). Both degrade to "leave it alone" when the daemon has not been
+// `work_list` talks to the terminal daemon as well, because one fact about a
+// workspace lives there rather than in `work.json`: whether anything is running
+// in it (cleanup). It degrades to "leave it alone" when the daemon has not been
 // contacted yet.
 // ============================================================
 
 /// What the daemon can say about the queue, or `None` when nobody can say —
 /// see `work::cleanup` for why the difference matters.
-async fn live_workspaces(terminals: &TerminalState) -> Option<LiveWorkspaces> {
+async fn live_workspaces(terminals: &TerminalState) -> Option<HashSet<String>> {
     terminals.connected().await?.live_workspaces().await.ok()
 }
 
@@ -511,13 +509,6 @@ fn in_use(live: Option<HashSet<String>>, focused: Option<String>) -> Option<Hash
     Some(live)
 }
 
-/// Every workspace as the frontend reads it, with no terminal titles joined —
-/// what a mutation can answer without a daemon round trip of its own. The
-/// derived title's last rung arrives on the next `work_list`.
-fn views(workspaces: Vec<Workspace>) -> Vec<WorkspaceView> {
-    review::work::views(workspaces, None)
-}
-
 /// `focused` is the workspace the stage is showing, so the read that cleans up
 /// does not reap it out from under the human. Absent when nothing is focused.
 #[tauri::command]
@@ -529,10 +520,9 @@ pub async fn work_list(
     // The read that cleans up: this and `review work list` are the two places
     // that hold the queue and the liveness answer at once.
     let live = live_workspaces(&terminals).await;
-    let titles = live.as_ref().map(|live| live.titles.clone());
-    let in_use = in_use(live.map(|live| live.ids), focused);
+    let in_use = in_use(live, focused);
     let state = review::work::list_with_liveness(in_use.as_ref()).map_err(|e| e.to_string())?;
-    let views = review::work::views(state.workspaces, titles.as_ref());
+    let views = review::work::views(state.workspaces);
     info!(
         "work_list -> {} workspaces in {:?}",
         views.len(),
@@ -550,7 +540,7 @@ pub fn work_add(
     let (state, item) =
         review::work::add(title.as_deref(), attachments).map_err(|e| e.to_string())?;
     info!("work_add {} in {:?}", item.id, t0.elapsed());
-    Ok(views(state.workspaces))
+    Ok(review::work::views(state.workspaces))
 }
 
 #[tauri::command]
@@ -558,7 +548,7 @@ pub fn work_remove(id: String) -> Result<Vec<WorkspaceView>, String> {
     let t0 = Instant::now();
     let (state, item) = review::work::remove(&id).map_err(|e| e.to_string())?;
     info!("work_remove {} in {:?}", item.id, t0.elapsed());
-    Ok(views(state.workspaces))
+    Ok(review::work::views(state.workspaces))
 }
 
 /// Retitle an item. An absent (or empty) `title` clears the stored one and the
@@ -568,7 +558,7 @@ pub fn work_rename(id: String, title: Option<String>) -> Result<Vec<WorkspaceVie
     let t0 = Instant::now();
     let (state, item) = review::work::rename(&id, title.as_deref()).map_err(|e| e.to_string())?;
     info!("work_rename {} in {:?}", item.id, t0.elapsed());
-    Ok(views(state.workspaces))
+    Ok(review::work::views(state.workspaces))
 }
 
 /// Reorder an item. `position` is 0-based, matching the array the frontend
@@ -578,7 +568,7 @@ pub fn work_move(id: String, position: usize) -> Result<Vec<WorkspaceView>, Stri
     let t0 = Instant::now();
     let (state, item) = review::work::move_workspace(&id, position).map_err(|e| e.to_string())?;
     info!("work_move {} -> {position} in {:?}", item.id, t0.elapsed());
-    Ok(views(state.workspaces))
+    Ok(review::work::views(state.workspaces))
 }
 
 /// Show a repo in a workspace — opening a repo tab. Nothing is exclusive, so
@@ -593,7 +583,7 @@ pub fn work_attach(
     let (state, item) =
         review::work::attach(&id, Attachment::new(&path, r#ref)).map_err(|e| e.to_string())?;
     info!("work_attach {} {} in {:?}", item.id, path, t0.elapsed());
-    Ok(views(state.workspaces))
+    Ok(review::work::views(state.workspaces))
 }
 
 /// Stop showing a repo — closing a repo tab.
@@ -603,7 +593,7 @@ pub fn work_detach(id: String, path: String) -> Result<Vec<WorkspaceView>, Strin
     let (state, item) =
         review::work::detach(&id, std::path::Path::new(&path)).map_err(|e| e.to_string())?;
     info!("work_detach {} {} in {:?}", item.id, path, t0.elapsed());
-    Ok(views(state.workspaces))
+    Ok(review::work::views(state.workspaces))
 }
 
 /// Where a repo+branch landed, as the frontend reads it.
@@ -653,7 +643,7 @@ pub async fn work_route(
         t0.elapsed()
     );
     Ok(RouteLanding {
-        workspace: views(vec![landing.workspace]).remove(0),
+        workspace: review::work::WorkspaceView::from(landing.workspace),
         created: landing.created,
     })
 }

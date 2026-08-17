@@ -336,8 +336,9 @@ running in.
 
 **Titles are derived unless someone typed one.** `title` is null until a rename
 sets it; `displayTitle` is what to show — the first attachment ("review ·
-feature/x"), else a live terminal's title, else "Untitled". Use `displayTitle`
-when you talk about a workspace.
+feature/x"), else "Untitled". A terminal's title never stands in: the title is
+what the workspace is about, not what happens to be running in it. Use
+`displayTitle` when you talk about a workspace.
 
 **Attachments are not exclusive.** Two workspaces may show the same repo, so
 `attach` never conflicts and never takes anything from anyone. Within one

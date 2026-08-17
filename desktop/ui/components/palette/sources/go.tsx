@@ -139,7 +139,7 @@ export function useGoSource(
       return {
         kind: "workspace",
         id: `workspace:${workspace.id}`,
-        title: status.title,
+        title: workspace.displayTitle,
         detail: status.subtitle,
         workspace,
       };

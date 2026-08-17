@@ -9,12 +9,13 @@
 //! Positions are **1-based here** and 0-based in the core module, matching how
 //! the list prints. Ids accept unique prefixes, like `review terminal`.
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 use clap::{Args, Subcommand};
 use serde_json::json;
 
-use crate::daemon::{socket_path, DaemonClient, LiveWorkspaces};
+use crate::daemon::{socket_path, DaemonClient};
 use crate::work::router::{self, RouteResult};
 use crate::work::{self, Attachment, Workspace};
 
@@ -142,9 +143,8 @@ fn daemon_runtime() -> Option<tokio::runtime::Runtime> {
 ///
 /// The distinction is the whole point: `None` means "unknown", and cleanup on
 /// unknown liveness would reap every workspace the app is using. The work queue
-/// is a plain file, so `review work` keeps working either way — a workspace that
-/// would have been named after its terminal just reads "Untitled".
-fn live_workspaces() -> Option<LiveWorkspaces> {
+/// is a plain file, so `review work` keeps working either way.
+fn live_workspaces() -> Option<HashSet<String>> {
     let runtime = daemon_runtime()?;
     runtime.block_on(async {
         let client = DaemonClient::connect(&socket_path().ok()?).await.ok()?;
@@ -163,9 +163,8 @@ fn run_list(json: bool) -> Result<(), String> {
     // be re-made in one keystroke, and closing it would mean the queue file
     // carrying per-window UI state.
     let live = live_workspaces();
-    let state =
-        work::list_with_liveness(live.as_ref().map(|live| &live.ids)).map_err(|e| e.to_string())?;
-    let views = work::views(state.workspaces, live.as_ref().map(|live| &live.titles));
+    let state = work::list_with_liveness(live.as_ref()).map_err(|e| e.to_string())?;
+    let views = work::views(state.workspaces);
     if json {
         print_json(&views);
         return Ok(());
@@ -185,28 +184,19 @@ fn run_list(json: bool) -> Result<(), String> {
 
 /// Print a workspace after a mutation: the JSON workspace, or a one-line
 /// confirmation.
-///
-/// The JSON carries the same derived title the list does, minus the terminal
-/// rung — a mutation has no daemon answer in hand, and a round trip for one
-/// fallback title is not worth it.
 fn report(json: bool, workspace: Workspace, message: &str) {
     if json {
-        print_json(&work::views(vec![workspace], None)[0]);
+        print_json(&work::WorkspaceView::from(workspace));
     } else {
         println!("{message}");
     }
-}
-
-/// A workspace's name in a message, derived without the terminal rung.
-fn name(workspace: &Workspace) -> String {
-    workspace.display_title(None)
 }
 
 fn run_add(args: AddArgs, json: bool) -> Result<(), String> {
     let (state, ws) = work::add(args.title.as_deref(), vec![]).map_err(|e| e.to_string())?;
     let message = format!(
         "Added \"{}\" at position {} ({}).",
-        name(&ws),
+        ws.display_title(),
         state.workspaces.len(),
         ws.id
     );
@@ -216,7 +206,7 @@ fn run_add(args: AddArgs, json: bool) -> Result<(), String> {
 
 fn run_remove(args: IdArgs, json: bool) -> Result<(), String> {
     let (_state, ws) = work::remove(&args.id).map_err(|e| e.to_string())?;
-    let message = format!("Removed \"{}\" ({}).", name(&ws), ws.id);
+    let message = format!("Removed \"{}\" ({}).", ws.display_title(), ws.id);
     report(json, ws, &message);
     Ok(())
 }
@@ -224,12 +214,12 @@ fn run_remove(args: IdArgs, json: bool) -> Result<(), String> {
 fn run_rename(args: RenameArgs, json: bool) -> Result<(), String> {
     let (_state, ws) = work::rename(&args.id, args.title.as_deref()).map_err(|e| e.to_string())?;
     let message = match ws.title {
-        Some(_) => format!("Renamed {} to \"{}\".", ws.id, name(&ws)),
+        Some(_) => format!("Renamed {} to \"{}\".", ws.id, ws.display_title()),
         // Cleared: what it is called now is whatever it is showing.
         None => format!(
             "Cleared the title of {}; it reads \"{}\".",
             ws.id,
-            name(&ws)
+            ws.display_title()
         ),
     };
     report(json, ws, &message);
@@ -244,7 +234,7 @@ fn run_move(args: MoveArgs, json: bool) -> Result<(), String> {
     // Report where it actually landed, which differs from what was asked for
     // when the position was past the end.
     let position = to_index.min(state.workspaces.len().saturating_sub(1)) + 1;
-    let message = format!("Moved \"{}\" to position {position}.", name(&ws));
+    let message = format!("Moved \"{}\" to position {position}.", ws.display_title());
     report(json, ws, &message);
     Ok(())
 }
@@ -253,7 +243,7 @@ fn run_attach(args: AttachArgs, json: bool) -> Result<(), String> {
     let attachment = Attachment::new(target_path(args.path)?, args.ref_name);
     let label = attachment.label();
     let (_state, ws) = work::attach(&args.id, attachment).map_err(|e| e.to_string())?;
-    let message = format!("Attached {label} to \"{}\".", name(&ws));
+    let message = format!("Attached {label} to \"{}\".", ws.display_title());
     report(json, ws, &message);
     Ok(())
 }
@@ -261,7 +251,11 @@ fn run_attach(args: AttachArgs, json: bool) -> Result<(), String> {
 fn run_detach(args: DetachArgs, json: bool) -> Result<(), String> {
     let path = target_path(args.path)?;
     let (_state, ws) = work::detach(&args.id, &path).map_err(|e| e.to_string())?;
-    let message = format!("Detached {} from \"{}\".", path.display(), name(&ws));
+    let message = format!(
+        "Detached {} from \"{}\".",
+        path.display(),
+        ws.display_title()
+    );
     report(json, ws, &message);
     Ok(())
 }
@@ -270,9 +264,9 @@ fn run_resolve(args: ResolveArgs, json: bool) -> Result<(), String> {
     let cwd = resolve_cwd_arg(args.cwd)?;
     let (payload, line) = match router::preview(&cwd).map_err(|e| e.to_string())? {
         RouteResult::Existing(ws) => {
-            let line = format!("Joins \"{}\" ({}).", name(&ws), ws.id);
+            let line = format!("Joins \"{}\" ({}).", ws.display_title(), ws.id);
             (
-                json!({ "action": "join", "workspace": work::views(vec![ws], None).remove(0) }),
+                json!({ "action": "join", "workspace": work::WorkspaceView::from(ws) }),
                 line,
             )
         }

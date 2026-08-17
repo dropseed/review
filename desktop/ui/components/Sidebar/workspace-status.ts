@@ -122,8 +122,6 @@ export interface AttachmentStatus {
 
 export interface WorkspaceStatus {
   repos: AttachmentStatus[];
-  /** The card's first line — see `describeWorkspace`'s `soleTerminal`. */
-  title: string;
   /**
    * `repos · state words` — the one-sentence answer for the surfaces that
    * want text instead of chips: the entry's tooltip, a ⌘K row's detail line.
@@ -229,21 +227,6 @@ export function isNamed(workspace: Workspace): boolean {
 export function describeWorkspace(
   workspace: Workspace,
   ctx: WorkspaceContext,
-  /**
-   * The title of this workspace's *only* terminal, when it has exactly one.
-   *
-   * It outranks the backend's derived title, which is the first attachment's
-   * label: a workspace running one agent is that agent, and "review · master"
-   * names the repo every other card in the queue could also be showing while
-   * the terminal says what is actually going on in this one. The repo is still
-   * on the card — it moves down to the chip line, which is where the details
-   * that vary between cards live anyway.
-   *
-   * Only when nobody typed a title, and only for one terminal: with two, no
-   * single one speaks for the workspace, and the derived repo label is the
-   * honest summary again.
-   */
-  soleTerminal?: string | null,
 ): WorkspaceStatus {
   const repos = workspace.attachments.map((attachment) =>
     describeAttachment(attachment, ctx),
@@ -255,10 +238,6 @@ export function describeWorkspace(
 
   return {
     repos,
-    title:
-      !isNamed(workspace) && soleTerminal?.trim()
-        ? soleTerminal
-        : workspace.displayTitle,
     subtitle: [names.join(", "), statusWords(repos, resolved, shipped)]
       .filter(Boolean)
       .join(" · "),

@@ -97,9 +97,7 @@ pub use protocol::{
 };
 
 #[cfg(feature = "daemon-client")]
-pub use client::{
-    DaemonClient, LiveWorkspaces, StreamHandle, ERR_CLOSED, ERR_CONNECTING, ERR_SENDING,
-};
+pub use client::{DaemonClient, StreamHandle, ERR_CLOSED, ERR_CONNECTING, ERR_SENDING};
 #[cfg(feature = "daemon")]
 pub use server::serve;
 
