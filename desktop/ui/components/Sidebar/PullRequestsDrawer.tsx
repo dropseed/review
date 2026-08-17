@@ -79,13 +79,6 @@ export const PullRequestsDrawer = memo(function PullRequestsDrawer() {
               {shown.length}
             </span>
           )}
-          {/* Never a bare count when something was left out of it: a filtered
-              list that doesn't say so is one that lies about being empty. */}
-          {hidden > 0 && (
-            <span className="shrink-0 text-[10px] tabular-nums leading-4 text-fg-faint/50">
-              · {hidden} hidden
-            </span>
-          )}
           {/* The one thing worth seeing while collapsed: something down there
               is red. Which one it is takes an expansion, and should. */}
           {attention && !open && (
