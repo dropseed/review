@@ -261,6 +261,7 @@ export function useFilePanelNavigation({
     viewMode,
     showGitTab,
     gitChangeCount,
+    hasHunks,
     setFilesPanelTab: handleSetFilesPanelTab,
     expandedPaths,
     togglePath,

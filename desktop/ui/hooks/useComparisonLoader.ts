@@ -1,14 +1,48 @@
 import { useEffect, useRef } from "react";
 import { getApiClient } from "../api";
 import { useReviewStore } from "../stores";
+import {
+  fingerprintsMatch,
+  probeDiff,
+  statusFingerprint,
+  type RestoredComparison,
+} from "../stores/comparisonCache";
 import { ephemeralView } from "../stores/selectors/ephemeral";
 import { flattenFiles } from "../stores/types";
+
+/**
+ * Has git moved under the snapshot that was just painted?
+ *
+ * Three cheap reads against the two the snapshot recorded on its way out. The
+ * two SHAs settle a comparison of commits outright; `--shortstat` is what
+ * catches an edit to a checked-out head, where the diff includes the working
+ * tree and no ref moves; and git status catches a file appearing, vanishing, or
+ * being staged. Anything git declines to answer reads as drift, because the
+ * only safe direction to be wrong in is the expensive one.
+ */
+export async function hasDrifted(
+  restored: RestoredComparison,
+): Promise<boolean> {
+  const { repoPath, comparison, loadGitStatus } = useReviewStore.getState();
+  if (!repoPath || !comparison) return true;
+
+  const [before, after] = await Promise.all([
+    restored.fingerprint,
+    probeDiff(repoPath, comparison),
+    loadGitStatus(),
+  ]);
+  if (!fingerprintsMatch(before, after)) return true;
+  return (
+    statusFingerprint(useReviewStore.getState().gitStatus) !== restored.status
+  );
+}
 
 /**
  * Coordinates loading of files and review state when comparison is ready.
  *
  * Data loaded lazily by their respective UI components:
  * - Symbols: FilesPanel triggers loadSymbols when flat mode is entered
+ * - The whole-repo tree: Browse and the ⌘P file list call `ensureAllFiles`
  */
 export function useComparisonLoader(
   comparisonReady: number,
@@ -91,7 +125,6 @@ export function useComparisonLoader(
       loadReviewState,
       reconcileReviewState,
       loadFiles,
-      loadAllFiles,
       loadGitStatus,
       loadRemoteInfo,
       loadGitUser,
@@ -123,7 +156,45 @@ export function useComparisonLoader(
         // nothing and at worst reconcile the review's decisions against a
         // comparison the review isn't of.
         if (ephemeralView(useReviewStore.getState())) {
-          await Promise.all([loadFiles(), loadAllFiles(), loadGitStatus()]);
+          await Promise.all([loadFiles(), loadGitStatus()]);
+          return;
+        }
+
+        // A comparison restored from the snapshot cache is already on screen.
+        // What is owed is proof that it is still the right answer.
+        const restored = useReviewStore.getState().restoredComparison;
+        if (restored && restored.key === comparisonKey) {
+          useReviewStore.setState({ restoredComparison: null });
+          setInitialLoading(false);
+
+          // The probe's git subprocesses and the review-state file read have
+          // nothing to say to each other, so they run together. The review
+          // reload is unconditional either way: a decision an agent or the
+          // CLI made while this workspace was off screen moves nothing the
+          // probe can see.
+          const drifted = hasDrifted(restored);
+          await loadReviewState();
+          if (cancelled) return;
+
+          if (await drifted) {
+            if (cancelled) return;
+            // Cached is an optimization, never a different answer. The full
+            // pipeline runs in refresh mode — its own reconcile included —
+            // so the snapshot on screen is corrected in place rather than
+            // replaced by a skeleton.
+            await useReviewStore.getState().refresh();
+          } else {
+            await reconcileReviewState();
+            if (cancelled) return;
+            syncTotalDiffHunks();
+            classifyStaticHunks();
+            restoreGuideFromState();
+          }
+          if (cancelled) return;
+
+          loadRemoteInfo();
+          loadGitUser();
+          restoreNavigationSnapshot();
           return;
         }
 
@@ -133,7 +204,6 @@ export function useComparisonLoader(
         await Promise.all([
           loadReviewState().then(() => endActivity("load-state")),
           loadFiles(),
-          loadAllFiles(),
           loadGitStatus(),
           // Resolved early so the first annotation in this session is
           // attributed correctly even if the user is fast.

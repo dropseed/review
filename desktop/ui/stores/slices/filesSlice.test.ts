@@ -238,7 +238,7 @@ describe("loadFiles", () => {
   });
 });
 
-describe("loadAllFiles", () => {
+describe("ensureAllFiles / refreshAllFiles", () => {
   const comparison = { base: "main", head: "a", key: "main..a" };
 
   beforeEach(() => {
@@ -256,7 +256,7 @@ describe("loadAllFiles", () => {
       }),
     );
 
-    const promise = useReviewStore.getState().loadAllFiles();
+    const promise = useReviewStore.getState().ensureAllFiles();
 
     // Simulate switching comparisons while the request is in flight; the
     // new comparison's own load claims the loading flag.
@@ -274,9 +274,60 @@ describe("loadAllFiles", () => {
   it("settles loading when the comparison hasn't changed and the fetch fails", async () => {
     listAllFiles.mockRejectedValue(new Error("network error"));
 
-    await useReviewStore.getState().loadAllFiles();
+    await useReviewStore.getState().ensureAllFiles();
 
     expect(useReviewStore.getState().allFilesLoading).toBe(false);
+  });
+
+  it("refreshes only a listing something already asked for", async () => {
+    useReviewStore.setState({ allFiles: [] } as never);
+    await useReviewStore.getState().refreshAllFiles();
+    expect(listAllFiles).not.toHaveBeenCalled();
+
+    useReviewStore.setState({ allFiles: baseTree } as never);
+    listAllFiles.mockResolvedValue(baseTree);
+    await useReviewStore.getState().refreshAllFiles();
+    expect(listAllFiles).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ensureAllFiles", () => {
+  const comparison = { base: "main", head: "a", key: "main..a" };
+
+  beforeEach(() => {
+    useReviewStore.setState({
+      comparison,
+      allFiles: [],
+      allFilesLoading: false,
+    } as never);
+  });
+
+  it("fetches once and coalesces concurrent callers", async () => {
+    listAllFiles.mockResolvedValue(baseTree);
+
+    const { ensureAllFiles } = useReviewStore.getState();
+    await Promise.all([ensureAllFiles(), ensureAllFiles(), ensureAllFiles()]);
+
+    expect(listAllFiles).toHaveBeenCalledTimes(1);
+    expect(useReviewStore.getState().allFiles).toEqual(baseTree);
+  });
+
+  it("does nothing once the listing is loaded", async () => {
+    useReviewStore.setState({ allFiles: baseTree } as never);
+
+    await useReviewStore.getState().ensureAllFiles();
+
+    expect(listAllFiles).not.toHaveBeenCalled();
+  });
+
+  it("retries after a failure", async () => {
+    listAllFiles.mockRejectedValueOnce(new Error("network error"));
+    await useReviewStore.getState().ensureAllFiles();
+    expect(useReviewStore.getState().allFiles).toEqual([]);
+
+    listAllFiles.mockResolvedValue(baseTree);
+    await useReviewStore.getState().ensureAllFiles();
+    expect(useReviewStore.getState().allFiles).toEqual(baseTree);
   });
 });
 

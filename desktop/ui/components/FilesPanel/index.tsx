@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { FileNode } from "./FileNode";
 import { arePanesOnScreen, resolvePaneFiles } from "./fileSelection";
 import {
@@ -9,6 +9,7 @@ import {
 } from "./hooks";
 import { useReviewStore } from "../../stores";
 import { CheckIcon, SidebarPanelIcon } from "../ui/icons";
+import { LoadingState } from "../ui/loading-state";
 import { Spinner } from "../ui/spinner";
 import { SimpleTooltip } from "../ui/tooltip";
 import { Tabs, TabsList, TabsTrigger } from "../../components/ui/tabs";
@@ -107,6 +108,7 @@ export function FilesPanel() {
     viewMode,
     showGitTab,
     gitChangeCount,
+    hasHunks,
     setFilesPanelTab,
     expandedPaths,
     togglePath,
@@ -174,6 +176,34 @@ export function FilesPanel() {
     [refTree.entries, fileSortOrder],
   );
   const browseTree = pinnedRef ? pinnedFilesTree : allFilesTree;
+
+  // A first visit to a comparison, still loading. A refresh never sets this
+  // (that is what `isRefreshing` suppresses), and a restore from the snapshot
+  // cache never has it — its diff is already here.
+  const comparisonLoading = useReviewStore((s) => s.loadingProgress !== null);
+
+  // Browse is the surface the whole-repo listing exists for, so it is the one
+  // that pays for it. A pinned ref reads the object database instead and needs
+  // nothing from the working tree's listing.
+  //
+  // The tab starts on Browse and is auto-switched to Review once hunks arrive,
+  // so "showing Browse" is only true of a settled panel: one the user put here,
+  // or one whose comparison has arrived with nothing to review.
+  const ensureAllFiles = useReviewStore((s) => s.ensureAllFiles);
+  const tabChosen = useReviewStore((s) => s.filesPanelTabChosen);
+  useEffect(() => {
+    if (viewMode !== "browse" || pinnedRef) return;
+    if (comparisonLoading) return;
+    if (!tabChosen && hasHunks) return;
+    void ensureAllFiles();
+  }, [
+    viewMode,
+    pinnedRef,
+    comparisonLoading,
+    tabChosen,
+    hasHunks,
+    ensureAllFiles,
+  ]);
 
   // Expand-all needs the directories of the tree on screen. `allDirPaths` is
   // the working tree's, and offering those against a pinned tree would expand
@@ -257,17 +287,6 @@ export function FilesPanel() {
     ],
   );
 
-  if (allFilesLoading) {
-    return (
-      <div className="flex h-40 items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <Spinner className="h-6 w-6 border-2 border-edge-default border-t-status-modified" />
-          <span className="text-sm text-fg-muted">Loading files...</span>
-        </div>
-      </div>
-    );
-  }
-
   const tabStrip = (
     /* The panel's own header row: what this column is for on the left, and the
        control that puts it away on the right — the button sits in the thing it
@@ -329,8 +348,15 @@ export function FilesPanel() {
         <div className="flex h-full flex-col">
           <div className="px-3 py-2">{tabStrip}</div>
 
-          {/* Panel content based on view mode */}
-          {viewMode === "git" ? (
+          {/* Panel content based on view mode. A comparison still arriving
+              takes the body from all three tabs, leaving the strip above in
+              place: every list here is of that comparison, and an empty one
+              says "nothing to review" rather than "not here yet". */}
+          {comparisonLoading ? (
+            <div className="flex flex-1 items-start justify-center pt-10">
+              <LoadingState label="Loading files…" />
+            </div>
+          ) : viewMode === "git" ? (
             <GitStatusPanel
               onSelectFile={handleSelectFile}
               onSelectWorkingTreeFile={selectWorkingTreeFile}
@@ -437,7 +463,7 @@ export function FilesPanel() {
                   }
                 >
                   <div className="py-1">
-                    {refTree.loading ? (
+                    {refTree.loading || (!pinnedRef && allFilesLoading) ? (
                       <div className="flex justify-center py-6">
                         <Spinner className="size-5 border-2 border-edge-default border-t-status-modified" />
                       </div>

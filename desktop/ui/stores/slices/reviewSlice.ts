@@ -21,6 +21,7 @@ import { computeReviewProgress } from "../../hooks/useReviewProgress";
 import { makeReviewKey } from "./groupingSlice";
 import { getAllHunksFromState } from "../selectors/hunkData";
 import { ephemeralView } from "../selectors/ephemeral";
+import { invalidateSnapshots } from "../comparisonCache";
 
 // Debounced save operation (exported so cancelPendingSaves can cancel it)
 export const debouncedSave = createDebouncedFn(500);
@@ -588,6 +589,8 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
 
       try {
         await client.deleteReview(repoPath, ref);
+        // The decisions a snapshot holds are the ones just deleted.
+        invalidateSnapshots(repoPath);
         await loadSavedReviews();
       } catch (err) {
         console.error("Failed to delete review:", err);
@@ -941,7 +944,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       const {
         comparison,
         loadFiles,
-        loadAllFiles,
+        refreshAllFiles,
         loadReviewState,
         reconcileReviewState,
         loadGitStatus,
@@ -959,7 +962,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       await Promise.all([
         loadReviewState(),
         loadFiles(true),
-        loadAllFiles(true),
+        refreshAllFiles(),
         loadGitStatus(),
         loadGlobalReviews(),
         checkReviewsFreshness(),

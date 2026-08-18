@@ -90,10 +90,18 @@ export function reviewTabBadge(stats: PanelStats): {
 
 /**
  * Manages file tree data, sections, and stats for the FilesPanel.
- * Groups: repoPath, allFiles, allFilesLoading, hunks, reviewState (for hunk status)
+ * Groups: repoPath, files, allFiles, hunks, reviewState (for hunk status)
+ *
+ * Two trees, deliberately. The Review tab reads `files` — the comparison's own
+ * listing, which is the whole working tree with the changed entries marked —
+ * because everything it draws is filtered to a change, and the only thing
+ * `allFiles` adds is gitignored placeholders, which are never one. The Browse
+ * tab reads `allFiles`, is the reason that whole-repo listing is fetched at
+ * all, and asks for it itself.
  */
 export function useFilePanelFileSystem() {
   const repoPath = useReviewStore((s) => s.repoPath);
+  const files = useReviewStore((s) => s.files);
   const allFiles = useReviewStore((s) => s.allFiles);
   const allFilesLoading = useReviewStore((s) => s.allFilesLoading);
   const hunks = useAllHunks();
@@ -131,10 +139,10 @@ export function useFilePanelFileSystem() {
 
   const sectionedFiles = useMemo(
     () =>
-      processTreeWithSections(allFiles, hunkStatusMap, fileSortOrder, {
+      processTreeWithSections(files, hunkStatusMap, fileSortOrder, {
         implicitPending: !scopeActive,
       }),
-    [allFiles, hunkStatusMap, fileSortOrder, scopeActive],
+    [files, hunkStatusMap, fileSortOrder, scopeActive],
   );
 
   const allFilesTree = useMemo(
@@ -150,7 +158,7 @@ export function useFilePanelFileSystem() {
   // Build a metadata lookup map for flat view sorting
   const fileMetadataMap = useMemo(() => {
     const map = new Map<string, { size: number; modifiedAt: number }>();
-    function collect(entries: typeof allFiles) {
+    function collect(entries: typeof files) {
       for (const e of entries) {
         if (!e.isDirectory) {
           map.set(e.path, {
@@ -161,9 +169,9 @@ export function useFilePanelFileSystem() {
         if (e.children) collect(e.children);
       }
     }
-    collect(allFiles);
+    collect(files);
     return map;
-  }, [allFiles]);
+  }, [files]);
 
   const flatSectionedFiles = useMemo(() => {
     const needsReview: string[] = [];
@@ -185,7 +193,7 @@ export function useFilePanelFileSystem() {
     // Also add entries with status changes but no hunks (e.g., symlink
     // directories). Skipped when a hunk filter is active: there, "no hunks"
     // means "no matching hunks", and those files should drop out.
-    function collectStatusChanges(entries: typeof allFiles) {
+    function collectStatusChanges(entries: typeof files) {
       for (const e of entries) {
         if (
           hasChangeStatus(e.status) &&
@@ -198,7 +206,7 @@ export function useFilePanelFileSystem() {
         if (e.children) collectStatusChanges(e.children);
       }
     }
-    if (!scopeActive) collectStatusChanges(allFiles);
+    if (!scopeActive) collectStatusChanges(files);
 
     function sortPaths(paths: string[]): void {
       switch (fileSortOrder) {
@@ -226,11 +234,11 @@ export function useFilePanelFileSystem() {
     sortPaths(reviewed);
     sortPaths(trusted);
     return { needsReview, savedForLater, reviewed, trusted };
-  }, [hunkStatusMap, allFiles, fileSortOrder, fileMetadataMap, scopeActive]);
+  }, [hunkStatusMap, files, fileSortOrder, fileMetadataMap, scopeActive]);
 
   const fileStatusMap = useMemo(() => {
     const map = new Map<string, string>();
-    function collect(entries: typeof allFiles) {
+    function collect(entries: typeof files) {
       for (const e of entries) {
         // Include files and symlink directories with status
         if (e.status && (!e.isDirectory || e.isSymlink)) {
@@ -239,13 +247,13 @@ export function useFilePanelFileSystem() {
         if (e.children) collect(e.children);
       }
     }
-    collect(allFiles);
+    collect(files);
     return map;
-  }, [allFiles]);
+  }, [files]);
 
   const symlinkMap = useMemo(() => {
     const map = new Map<string, string | undefined>();
-    function collect(entries: typeof allFiles) {
+    function collect(entries: typeof files) {
       for (const e of entries) {
         if (e.isSymlink) {
           map.set(e.path, e.symlinkTarget);
@@ -253,9 +261,9 @@ export function useFilePanelFileSystem() {
         if (e.children) collect(e.children);
       }
     }
-    collect(allFiles);
+    collect(files);
     return map;
-  }, [allFiles]);
+  }, [files]);
 
   const { allDirPaths, renamedDirPaths } = useMemo(() => {
     const paths = new Set<string>();

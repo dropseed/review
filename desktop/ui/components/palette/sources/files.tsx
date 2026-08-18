@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { useReviewStore } from "../../../stores";
 import type { FileEntry } from "../../../types";
 import { scoreCandidate, foldText, HighlightedText } from "../../../lib/fuzzy";
@@ -96,6 +96,14 @@ export function useFileSource(
   const files = useReviewStore((s) => s.files);
   const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
   const closeOverlay = useReviewStore((s) => s.closeOverlay);
+  const ensureAllFiles = useReviewStore((s) => s.ensureAllFiles);
+
+  // This mode lists the whole repo, not just the diff, so opening it is what
+  // asks for the whole-repo listing — behind `active` like the walks below.
+  useEffect(() => {
+    if (!active) return;
+    void ensureAllFiles();
+  }, [active, ensureAllFiles]);
 
   // Get changed file paths for highlighting
   const changedPaths = useMemo(() => {

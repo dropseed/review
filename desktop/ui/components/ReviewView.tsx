@@ -127,9 +127,13 @@ export function ReviewView({
     const newSha = await client.resolveRef(repoPath, comparison.head);
     await client.updateWorktreeHead(repoPath, worktreePath, newSha);
     useReviewStore.getState().setWorktreeStale(false);
-    const { loadFiles, loadAllFiles, syncTotalDiffHunks, classifyStaticHunks } =
-      useReviewStore.getState();
-    await Promise.all([loadFiles(), loadAllFiles()]);
+    const {
+      loadFiles,
+      refreshAllFiles,
+      syncTotalDiffHunks,
+      classifyStaticHunks,
+    } = useReviewStore.getState();
+    await Promise.all([loadFiles(), refreshAllFiles()]);
     syncTotalDiffHunks();
     classifyStaticHunks();
   }, [repoPath, comparison, worktreePath]);

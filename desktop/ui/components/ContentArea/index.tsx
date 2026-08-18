@@ -1,6 +1,7 @@
 import { type ReactNode, useRef, useCallback, lazy, Suspense } from "react";
 import { useReviewStore } from "../../stores";
 import { FileViewer } from "../FileViewer";
+import { LoadingState } from "../ui/loading-state";
 import { ResizeHandle } from "./ResizeHandle";
 import { toggleToCanonical } from "../../utils/resize";
 import { useNeedsReviewDefaultGroup } from "./useNeedsReviewDefault";
@@ -41,6 +42,26 @@ function NoFileSelected(): ReactNode {
 }
 
 /**
+ * The first load of a comparison, said out loud.
+ *
+ * A switch to somewhere never visited has nothing to show yet, and the
+ * placeholder above reads as "this review is empty" rather than "still
+ * reading". The one thing this must not do is keep the previous workspace's
+ * diff on screen under the new one's name, so it says which comparison it is
+ * waiting on and shows nothing else.
+ */
+function LoadingComparison(): ReactNode {
+  const head = useReviewStore((s) => s.comparison?.head);
+  return (
+    <div className="flex h-full items-center justify-center">
+      <div className="max-w-xs -translate-y-[8vh] text-center">
+        <LoadingState label={head ? `Loading ${head}…` : "Loading…"} />
+      </div>
+    </div>
+  );
+}
+
+/**
  * What the content area shows when nothing is open: the comparison's
  * needs-review hunks as one rolling diff, ready to be walked top to bottom.
  * Falls back to the placeholder above when there is nothing to roll — browse
@@ -52,6 +73,10 @@ function NoFileSelected(): ReactNode {
  */
 function DefaultContent({ narrow }: { narrow: boolean }): ReactNode {
   const group = useNeedsReviewDefaultGroup();
+  const loading = useReviewStore((s) => s.loadingProgress !== null);
+  if (loading) {
+    return <LoadingComparison />;
+  }
   if (group === null || narrow) {
     return <NoFileSelected />;
   }

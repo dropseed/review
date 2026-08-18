@@ -117,13 +117,14 @@ describe("the content area with nothing open", () => {
     expect(screen.getByText("Select a file to review.")).toBeDefined();
   });
 
-  it("does not snapshot a diff that is still loading", () => {
+  it("says a comparison is still loading rather than asking for a file", () => {
     seedLoadedReview({
       loadingProgress: { phase: "hunks", current: 0, total: 1 },
     });
     render(<ContentArea />);
 
-    expect(screen.getByText("Select a file to review.")).toBeDefined();
+    expect(screen.getByText("Loading feature…")).toBeDefined();
+    expect(screen.queryByText("Select a file to review.")).toBeNull();
   });
 
   it("shows the file once there is one", () => {
