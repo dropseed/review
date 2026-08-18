@@ -5296,7 +5296,7 @@ dependencies = [
 
 [[package]]
 name = "review"
-version = "0.0.154"
+version = "0.0.155"
 dependencies = [
  "anyhow",
  "axum",
@@ -5352,7 +5352,7 @@ dependencies = [
 
 [[package]]
 name = "review-desktop"
-version = "0.0.154"
+version = "0.0.155"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
