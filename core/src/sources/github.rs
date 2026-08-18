@@ -263,7 +263,7 @@ query {
       totalCount
       nodes {
         number title isDraft url updatedAt reviewDecision headRefName baseRefName
-        repository { nameWithOwner url }
+        repository { nameWithOwner url isArchived }
         headRepository { nameWithOwner }
         commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
       }
@@ -379,6 +379,13 @@ struct ViewerPrNode {
 struct RepositoryNode {
     name_with_owner: String,
     url: String,
+    /// An archived repo is frozen: its open PRs stay open forever and can
+    /// never be merged, so they are outstanding work only in the query's
+    /// bookkeeping. Defaulted so a snapshot fixture (or an older `gh`) that
+    /// doesn't carry the field reads as "not archived" rather than failing the
+    /// whole page.
+    #[serde(default)]
+    is_archived: bool,
 }
 
 #[derive(Deserialize)]
@@ -435,6 +442,12 @@ fn parse_viewer_prs(body: &[u8]) -> Result<(Vec<ViewerPr>, bool), GhError> {
     let prs = connection
         .nodes
         .into_iter()
+        // Dropped before the flatten, not after: a PR in an archived repo is
+        // permanently unmergeable, so it is noise in a list whose whole claim
+        // is "work you still have outstanding". `truncated` is measured above
+        // against the raw page, because what GitHub withheld is unaffected by
+        // what we chose to ignore.
+        .filter(|node| !node.repository.is_archived)
         .map(|node| ViewerPr {
             number: node.number,
             title: node.title,
@@ -608,7 +621,8 @@ mod tests {
                 "baseRefName": "master",
                 "repository": {
                   "nameWithOwner": "dropseed/plain",
-                  "url": "https://github.com/dropseed/plain"
+                  "url": "https://github.com/dropseed/plain",
+                  "isArchived": false
                 },
                 "headRepository": { "nameWithOwner": "dropseed/plain" },
                 "commits": {
@@ -626,7 +640,8 @@ mod tests {
                 "baseRefName": "master",
                 "repository": {
                   "nameWithOwner": "dropseed/review",
-                  "url": "https://github.com/dropseed/review"
+                  "url": "https://github.com/dropseed/review",
+                  "isArchived": false
                 },
                 "headRepository": { "nameWithOwner": "davegaeddert/review" },
                 "commits": { "nodes": [{ "commit": { "statusCheckRollup": null } }] }
@@ -689,6 +704,35 @@ mod tests {
         let (prs, _) = parse_viewer_prs(body.as_bytes()).unwrap();
         assert_eq!(prs[0].head_repo_name_with_owner, None);
         assert_eq!(prs[0].checks_state, None);
+    }
+
+    /// An archived repo's PRs are frozen open — they can never merge, so the
+    /// sidebar has nothing to say about them. They leave the list without
+    /// changing what `truncated` reports, which is about GitHub's page, not
+    /// about our filter.
+    #[test]
+    fn prs_in_archived_repos_are_dropped() {
+        let body = r#"{"data":{"viewer":{"pullRequests":{"totalCount":2,"nodes":[{
+          "number": 1, "title": "Frozen", "isDraft": false,
+          "url": "https://github.com/dropseed/old/pull/1",
+          "updatedAt": "2026-08-01T16:10:34Z", "reviewDecision": null,
+          "headRefName": "stale", "baseRefName": "master",
+          "repository": { "nameWithOwner": "dropseed/old", "url": "https://github.com/dropseed/old", "isArchived": true },
+          "headRepository": { "nameWithOwner": "dropseed/old" },
+          "commits": { "nodes": [] }
+        },{
+          "number": 2, "title": "Live", "isDraft": false,
+          "url": "https://github.com/dropseed/review/pull/2",
+          "updatedAt": "2026-08-01T16:10:34Z", "reviewDecision": null,
+          "headRefName": "work", "baseRefName": "master",
+          "repository": { "nameWithOwner": "dropseed/review", "url": "https://github.com/dropseed/review", "isArchived": false },
+          "headRepository": { "nameWithOwner": "dropseed/review" },
+          "commits": { "nodes": [] }
+        }]}}}}"#;
+        let (prs, truncated) = parse_viewer_prs(body.as_bytes()).unwrap();
+        assert_eq!(prs.len(), 1);
+        assert_eq!(prs[0].number, 2);
+        assert!(!truncated, "both nodes arrived; one was ours to ignore");
     }
 
     #[test]
