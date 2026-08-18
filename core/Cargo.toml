@@ -46,10 +46,16 @@ env_logger = { version = "0.11", optional = true }
 #
 # `default-features = false` drops the bundled clients: the isahc one links
 # libcurl, and the hyper one pins hyper 0.14 + native-tls (a second hyper
-# alongside axum's, and OpenSSL headers on Linux). What remains is the part
-# worth having — VAPID signing and aes128gcm encryption — and `push.rs` sends
-# the built message over reqwest/rustls, which needs nothing from the system.
+# alongside axum's). What remains is the part worth having — VAPID signing and
+# aes128gcm encryption — and `push.rs` sends the built message over
+# reqwest/rustls. The one C dependency left is unavoidable: `ece` (the
+# encryption half) has no backend but OpenSSL, so it is *vendored* below —
+# built from source for whatever target is being compiled. The release
+# workflow cross-compiles x86_64 from an arm64 runner, where a system OpenSSL
+# for the target simply doesn't exist; a dev machine merely stops caring what
+# Homebrew has.
 web-push = { version = "0.11", default-features = false, optional = true }
+openssl = { version = "0.10", features = ["vendored"], optional = true }
 # Only for `ES256KeyPair::generate` — web-push reads VAPID keys but cannot mint
 # one. Same crate and features web-push itself depends on, so it adds nothing
 # to the tree.
@@ -134,7 +140,7 @@ cli = ["clap", "daemon-client", "terminal-types"]
 # reaches PTYs the same way the desktop app does — as a thin client of the
 # `review-daemon` process — so it gets terminals without linking a PTY stack
 # (and therefore without needing Zig).
-server = ["axum", "tower", "tower-http", "tokio-stream", "notify", "notify-debouncer-mini", "env_logger", "daemon-client", "dep:web-push", "dep:jwt-simple", "dep:reqwest"]
+server = ["axum", "tower", "tower-http", "tokio-stream", "notify", "notify-debouncer-mini", "env_logger", "daemon-client", "dep:web-push", "dep:jwt-simple", "dep:reqwest", "dep:openssl"]
 # Terminal session daemon. `daemon` is the server half (owns the SessionManager,
 # so it implies `terminal`); `daemon-client` is the connect side and pulls in no
 # PTY dependencies. They compose freely with each other and with `server`.
