@@ -7,6 +7,7 @@ use serde::Serialize;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -234,7 +235,13 @@ fn snapshot_current(
 ) -> Result<(), StorageError> {
     let dir = history_dir(storage_dir, ref_name);
     fs::create_dir_all(&dir)?;
-    fs::rename(path, dir.join(format!("v{version}.json")))?;
+    // Copy, never rename: the live review file must not vanish, even for the
+    // window before the superseding write lands. A rename here meant readers
+    // in that window saw an empty review, a concurrent writer's version check
+    // found no file to conflict with, and a failed write left no live file at
+    // all. If the write after this fails, the snapshot merely duplicates the
+    // still-live version — a retry overwrites the same `v{N}.json`.
+    fs::copy(path, dir.join(format!("v{version}.json")))?;
     Ok(())
 }
 
@@ -382,12 +389,31 @@ pub fn save_review_state(repo_path: &Path, state: &ReviewState) -> Result<(), St
         snapshot_current(&storage_dir, &state.ref_name, &path, existing_state.version)?;
     }
 
+    // Temp-then-rename in the same directory, so the live file goes from one
+    // complete version to the next with nothing in between (see `temp_path`
+    // in `work::storage` for why the temp name is per-writer).
     let content = serde_json::to_string_pretty(state)?;
-    fs::write(&path, content)?;
+    let tmp = temp_path(&path);
+    let write = fs::write(&tmp, content).and_then(|()| fs::rename(&tmp, &path));
+    if let Err(err) = write {
+        let _ = fs::remove_file(&tmp);
+        return Err(err.into());
+    }
 
     prune_history(&history_dir(&storage_dir, &state.ref_name))?;
 
     Ok(())
+}
+
+/// Counter behind [`temp_path`]; paired with the pid so two processes can't
+/// collide either.
+static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// A scratch path for one save, distinct from every other save's, in the
+/// target's own directory so the rename stays within one filesystem.
+fn temp_path(path: &Path) -> PathBuf {
+    let n = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    path.with_extension(format!("json.tmp.{}.{n}", std::process::id()))
 }
 
 /// List all saved reviews in the repository

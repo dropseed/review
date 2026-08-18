@@ -115,12 +115,23 @@ function applyExpansions(
   expansionByHunk: Map<string, HunkExpansion>,
   lineCache: LineCache,
 ): DiffHunk[] {
-  // No expansions for this file (the common case, and every first render):
-  // the parsed hunks are already sorted and non-touching, so pass them
-  // through instead of rebuilding every hunk's lines array.
-  if (!fileHunks.some((h) => expansionByHunk.has(h.id))) return fileHunks;
+  // The sort happens before the no-expansions early return, not after: a
+  // guide-authored group's hunkIds arrive in the order the agent named them
+  // (thematic, not positional), and skipping the sort on first render meant
+  // the file drew in that order and then re-sorted under the reader the
+  // moment any expansion was requested. Already-sorted input (the common
+  // case) keeps its identity, since this runs per render, unmemoized.
+  const inOrder = fileHunks.every(
+    (h, i) => i === 0 || fileHunks[i - 1].oldStart <= h.oldStart,
+  );
+  const sorted = inOrder
+    ? fileHunks
+    : [...fileHunks].sort((a, b) => a.oldStart - b.oldStart);
 
-  const sorted = [...fileHunks].sort((a, b) => a.oldStart - b.oldStart);
+  // No expansions for this file (the common case, and every first render):
+  // sorted, non-touching hunks pass through instead of rebuilding every
+  // hunk's lines array.
+  if (!fileHunks.some((h) => expansionByHunk.has(h.id))) return sorted;
 
   const expanded = sorted.map((hunk) => {
     const exp = expansionByHunk.get(hunk.id) ?? { above: 0, below: 0 };

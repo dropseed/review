@@ -339,14 +339,19 @@ pub fn run_undo(args: UndoArgs) -> Result<(), String> {
         // the next version, so the history it walked stays intact behind it.
         state.version = current.version;
         state.ref_name.clone_from(&current.ref_name);
-        // Undo restores review *decisions*. These two are pointers at things
-        // that exist outside the review — a worktree on disk, a PR upstream —
-        // and reverting them to what a snapshot happened to say would orphan a
-        // real directory or forget an association nothing else records. They
-        // survive an undo by definition, re-read here so a retry sees whatever
-        // the concurrent writer left.
+        // Undo restores review *decisions*. These three are not decisions:
+        // two are pointers at things that exist outside the review — a
+        // worktree on disk, a PR upstream — where reverting to what a snapshot
+        // happened to say would orphan a real directory or forget an
+        // association nothing else records. The base override is what the
+        // review *compares* (`change-base` is an in-place edit, not a
+        // decision), and silently reverting it would hand the restored
+        // decisions to a different diff — the one `hunks` below was not loaded
+        // against. All three survive an undo by definition, re-read here so a
+        // retry sees whatever the concurrent writer left.
         state.worktree_path.clone_from(&current.worktree_path);
         state.github_pr.clone_from(&current.github_pr);
+        state.base_override.clone_from(&current.base_override);
         // drop_orphans=true: `hunks` is the authoritative full diff, and the
         // snapshot may predate edits that moved hunks out of it entirely.
         state.reconcile(&hunks, true);
@@ -680,10 +685,12 @@ mod tests {
         )
         .unwrap();
 
-        // v2: the app clears the decisions and attaches a worktree and a PR.
+        // v2: the app clears the decisions, attaches a worktree and a PR, and
+        // a `change-base` lands.
         let mut state = storage::load_review_state(p, "feature").unwrap();
         state.hunks.values_mut().for_each(|hunk| hunk.status = None);
         state.worktree_path = Some("/tmp/review-worktrees/feature".to_owned());
+        state.base_override = Some("main".to_owned());
         state.github_pr = Some(crate::sources::github::GitHubPrRef {
             number: 42,
             title: "Add the thing".to_owned(),
@@ -711,6 +718,7 @@ mod tests {
             Some("/tmp/review-worktrees/feature")
         );
         assert_eq!(restored.github_pr.as_ref().map(|pr| pr.number), Some(42));
+        assert_eq!(restored.base_override.as_deref(), Some("main"));
     }
 
     #[test]

@@ -5,22 +5,28 @@ interface InFileSearchBarProps {
   content: string;
   onHighlightLine: (line: number | null) => void;
   onClose: () => void;
+  /** Bumped when ⌘F fires with the bar already open — refocus and re-select. */
+  focusSignal?: number;
 }
 
 export function InFileSearchBar({
   content,
   onHighlightLine,
   onClose,
+  focusSignal,
 }: InFileSearchBarProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
 
-  // Focus input on mount
+  // Focus on mount, and again on every ⌘F while open: the window handler's
+  // setOpenBar is a no-op then, so this signal is what carries the "take me
+  // back to the query" half the old window-level listener used to do.
   useEffect(() => {
     inputRef.current?.focus();
-  }, []);
+    inputRef.current?.select();
+  }, [focusSignal]);
 
   // Find all matching line numbers
   const matchingLines = useMemo(() => {

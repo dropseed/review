@@ -53,9 +53,16 @@ export function useNeedsReviewDefaultGroup(): HunkGroup | null {
   if (!applicable) {
     snapshotRef.current = null;
   } else if (snapshotRef.current?.key !== key) {
-    snapshotRef.current = loaded
-      ? { key, ids: new Set(byStatus.pending) }
-      : null;
+    // A diff with no hunks never latches: a failed loadFiles also lands as
+    // loaded-with-nothing (loadingProgress null, filesByPath empty), and a
+    // latched empty snapshot froze "nothing pending" past every successful
+    // retry — which only sets isRefreshing, never loadingProgress. Not
+    // latching costs nothing here: an empty snapshot and no snapshot both
+    // render null, so a genuinely change-free comparison looks the same.
+    snapshotRef.current =
+      loaded && allHunks.length > 0
+        ? { key, ids: new Set(byStatus.pending) }
+        : null;
   }
   const snapshot = snapshotRef.current;
 

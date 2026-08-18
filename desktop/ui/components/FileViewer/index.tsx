@@ -215,6 +215,7 @@ export function FileViewer({
 
   // Which floating bar (if any) is open over the file viewport.
   const [openBar, setOpenBar] = useState<"search" | "goToLine" | null>(null);
+  const [barFocusSignal, setBarFocusSignal] = useState(0);
 
   // File-level comment editor state
   const [fileCommentEditorOpen, setFileCommentEditorOpen] = useState(false);
@@ -338,9 +339,13 @@ export function FileViewer({
       if (e.key === "f") {
         e.preventDefault();
         setOpenBar("search");
+        // With the bar already open, setOpenBar bails — the signal is what
+        // sends focus back to the query.
+        setBarFocusSignal((n) => n + 1);
       } else if (e.key === "l") {
         e.preventDefault();
         setOpenBar("goToLine");
+        setBarFocusSignal((n) => n + 1);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -925,6 +930,7 @@ export function FileViewer({
               content={fileContent.content}
               onHighlightLine={handleSearchHighlightLine}
               onClose={handleCloseSearch}
+              focusSignal={barFocusSignal}
             />
           </div>
         )}
@@ -934,6 +940,7 @@ export function FileViewer({
               maxLine={totalLineCount}
               onGoToLine={handleGoToLine}
               onClose={handleCloseGoToLine}
+              focusSignal={barFocusSignal}
             />
           </div>
         )}

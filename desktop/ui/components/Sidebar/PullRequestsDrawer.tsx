@@ -162,7 +162,10 @@ interface RepoFilterProps {
  *
  * It appears only when there is more than one repo to choose between. One repo
  * is not a filter, it is a switch for the whole drawer, and the drawer already
- * has one of those in its header.
+ * has one of those in its header — unless the filter is *on*: the persisted
+ * hidden list survives repos leaving the drawer, and a drawer whittled down to
+ * one (or zero) visible repos by that list must keep the only control that can
+ * undo it, or the filtered state has no way back.
  */
 function RepoFilter({ repos, hiddenRepos }: RepoFilterProps): ReactNode {
   const [open, setOpen] = useState(false);
@@ -170,7 +173,7 @@ function RepoFilter({ repos, hiddenRepos }: RepoFilterProps): ReactNode {
   const showAll = useReviewStore((s) => s.showAllPrRepos);
   const filtering = hiddenRepos.length > 0;
 
-  if (repos.length < 2) return null;
+  if (repos.length < 2 && !filtering) return null;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

@@ -6,19 +6,23 @@ interface GoToLineBarProps {
   maxLine: number;
   onGoToLine: (line: number) => void;
   onClose: () => void;
+  /** Bumped when ⌘L fires with the bar already open — refocus and re-select. */
+  focusSignal?: number;
 }
 
 export function GoToLineBar({
   maxLine,
   onGoToLine,
   onClose,
+  focusSignal,
 }: GoToLineBarProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState("");
 
   useEffect(() => {
     inputRef.current?.focus();
-  }, []);
+    inputRef.current?.select();
+  }, [focusSignal]);
 
   const parsed = value === "" ? null : parseInt(value, 10);
   const isValid =
