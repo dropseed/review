@@ -5,6 +5,9 @@ interface RollingDiffButtonProps {
   /** Accessible label + tooltip text. Defaults to "View as rolling diff". */
   label?: string;
   onClick: () => void;
+  /** Set when the section has no hunks to view — kept visible rather than
+   * hidden, since the header row it sits in is otherwise stable. */
+  disabled?: boolean;
 }
 
 /**
@@ -15,6 +18,7 @@ interface RollingDiffButtonProps {
 export function RollingDiffButton({
   label = "View as rolling diff",
   onClick,
+  disabled = false,
 }: RollingDiffButtonProps): ReactNode {
   return (
     <button
@@ -23,8 +27,12 @@ export function RollingDiffButton({
         e.stopPropagation();
         onClick();
       }}
-      className="flex items-center justify-center w-6 h-6 rounded
-                 text-fg-muted hover:text-fg-secondary hover:bg-surface-raised transition-colors"
+      disabled={disabled}
+      className={`flex items-center justify-center w-6 h-6 rounded transition-colors ${
+        disabled
+          ? "text-fg-faint"
+          : "text-fg-muted hover:text-fg-secondary hover:bg-surface-raised"
+      }`}
       aria-label={label}
       title={label}
     >

@@ -15,6 +15,19 @@ export interface GroupHeaderQuickAction {
   tone?: "approve" | "default";
 }
 
+/** The status buckets a count pill can be tinted for. */
+export type CountTone = "trusted" | "pending" | "saved" | "approved";
+
+// Same `bg-…/20 text-…` shape and geometry as `CollapsibleSection`'s badge —
+// the Git tab's headers sit one click from these, so the two pills must not
+// diverge visibly.
+const COUNT_TONES: Record<CountTone, string> = {
+  trusted: "bg-status-trusted/20 text-status-trusted",
+  pending: "bg-status-pending/20 text-status-pending",
+  saved: "bg-status-saved/20 text-status-saved",
+  approved: "bg-status-approved/20 text-status-approved",
+};
+
 export interface GroupHeaderContext {
   isOpen: boolean;
   onToggle: (e: MouseEvent) => void;
@@ -28,6 +41,14 @@ export interface GroupHeaderProps {
   /** Muted styling for synthetic/catch-all groups ("Uncommitted", "Other changes"). */
   isPlaceholder?: boolean;
   progress: { done: number; total: number };
+  /**
+   * Tinted pill showing `progress.total`, in place of the plain `done/total`
+   * fraction — for a status section the header already says what state its
+   * hunks are in, so the count carries that section's color and a row
+   * underneath can stay dim. Unset keeps the plain fraction. Named tones,
+   * mapped to classes here, so the color decisions stay in this file.
+   */
+  countTone?: CountTone;
   isExpanded: boolean;
   onToggleExpanded: () => void;
   /** Secondary expandable info below the header row (commit body, guide description). */
@@ -35,6 +56,10 @@ export interface GroupHeaderProps {
   /** Hover-revealed icon-only action — kept compact so it never fights the
    * title for width (the thing "Approve remaining" used to do as a label). */
   quickAction?: GroupHeaderQuickAction;
+  /** Icon-only action pinned beside the overflow menu, always visible (unlike
+   * `quickAction`'s hover reveal) — for a control that must stay one click
+   * away rather than buried in the menu. */
+  actionContent?: ReactNode;
   /**
    * Render `quickAction` even when the group reads as "complete"
    * (done === total). Most groups' quick action targets the *remaining*
@@ -63,11 +88,13 @@ export function GroupHeader({
   title,
   isPlaceholder = false,
   progress,
+  countTone,
   isExpanded,
   onToggleExpanded,
   context,
   quickAction,
   showQuickActionWhenComplete = false,
+  actionContent,
   menuContent,
   children,
 }: GroupHeaderProps): ReactNode {
@@ -115,14 +142,26 @@ export function GroupHeader({
           </button>
         )}
 
-        {progress.total > 0 && (
+        {countTone ? (
           <span
-            className={`shrink-0 text-xxs tabular-nums ${
-              isComplete ? "text-status-approved" : "text-fg-faint"
+            className={`shrink-0 rounded-full px-1.5 py-0.5 text-xxs font-medium tabular-nums ${
+              progress.total === 0
+                ? "bg-fg/10 text-fg-faint"
+                : COUNT_TONES[countTone]
             }`}
           >
-            {progress.done}/{progress.total}
+            {progress.total}
           </span>
+        ) : (
+          progress.total > 0 && (
+            <span
+              className={`shrink-0 text-xxs tabular-nums ${
+                isComplete ? "text-status-approved" : "text-fg-faint"
+              }`}
+            >
+              {progress.done}/{progress.total}
+            </span>
+          )
         )}
 
         {quickAction && (!isComplete || showQuickActionWhenComplete) && (
@@ -144,6 +183,8 @@ export function GroupHeader({
             </button>
           </SimpleTooltip>
         )}
+
+        {actionContent}
 
         {menuContent && (
           <DropdownMenu>

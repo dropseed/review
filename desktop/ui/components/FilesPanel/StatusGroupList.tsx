@@ -17,7 +17,7 @@ import {
   type ReviewState,
 } from "../../types";
 import { DropdownMenuItem, DropdownMenuSeparator } from "../ui/dropdown-menu";
-import { RollingDiffIcon } from "../ui/icons";
+import { RollingDiffButton } from "../ui/rolling-diff-button";
 import { GroupHeader } from "./GroupHeader";
 import { TrustSection } from "../GuideView/TrustSection";
 import { FileListSection, CHECK_ICON } from "./FileListSection";
@@ -255,12 +255,26 @@ export function StatusGroupList({
     useReviewStore.getState().openAdhocGroup({ title, hunkIds });
   }, []);
 
-  const rollingDiffMenuItem = (title: string, hunkIds: string[]): ReactNode =>
-    hunkIds.length > 0 ? (
-      <DropdownMenuItem onClick={() => openRollingDiff(title, hunkIds)}>
-        <RollingDiffIcon />
-        View as rolling diff
-      </DropdownMenuItem>
+  // One rule for all four headers: the button stays visible with nothing to
+  // show, disabled, so the header row is stable while a section drains.
+  const rollingDiffAction = (title: string, hunkIds: string[]): ReactNode => (
+    <RollingDiffButton
+      onClick={() => openRollingDiff(title, hunkIds)}
+      disabled={hunkIds.length === 0}
+    />
+  );
+
+  // The expand/collapse pair every section's menu carries in tree mode, or
+  // null in flat mode — callers use the null to skip separators and menus
+  // that would otherwise render empty.
+  const expandCollapseItems = (dirPaths: Set<string>): ReactNode =>
+    changesDisplayMode === "tree" ? (
+      <>
+        <DropdownMenuItem onClick={() => expandAll(dirPaths, renamedDirPaths)}>
+          Expand all
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={collapseAll}>Collapse all</DropdownMenuItem>
+      </>
     ) : null;
 
   // Quick actions: approve/unapprove by file status (deleted, renamed, added)
@@ -600,29 +614,20 @@ export function StatusGroupList({
             leading={TRUST_ICON}
             title="Trusted"
             progress={{ done: stats.trusted, total: stats.trusted }}
+            countTone="trusted"
             isExpanded={trustOpen}
             onToggleExpanded={() => setTrustOpen(!trustOpen)}
+            actionContent={rollingDiffAction("Trusted", trustedHunkIds)}
             menuContent={
               <>
                 {quickActionMenuItems(trustQuickActions)}
                 {trustQuickActions.length > 0 && <DropdownMenuSeparator />}
-                {hasTrustedFiles && changesDisplayMode === "tree" && (
+                {hasTrustedFiles && (
                   <>
-                    <DropdownMenuItem
-                      onClick={() =>
-                        expandAll(trustedDirPaths, renamedDirPaths)
-                      }
-                    >
-                      Expand all
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={collapseAll}>
-                      Collapse all
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
+                    {expandCollapseItems(trustedDirPaths)}
+                    {changesDisplayMode === "tree" && <DropdownMenuSeparator />}
                   </>
                 )}
-                {rollingDiffMenuItem("Trusted", trustedHunkIds)}
-                <DropdownMenuSeparator />
                 <div className="max-h-[50vh] w-64 overflow-y-auto">
                   <div className="px-2 pb-1 pt-1.5 text-xxs font-medium uppercase tracking-wider text-fg-faint">
                     Trust patterns
@@ -650,6 +655,7 @@ export function StatusGroupList({
             done: stats.approved + stats.rejected,
             total: stats.approved + stats.rejected,
           }}
+          countTone="approved"
           isExpanded={reviewedOpen}
           onToggleExpanded={() => setReviewedOpen(!reviewedOpen)}
           quickAction={
@@ -665,25 +671,13 @@ export function StatusGroupList({
           // everything reviewed as "done") — without this the hover action
           // never renders, since GroupHeader otherwise hides it once complete.
           showQuickActionWhenComplete
+          actionContent={rollingDiffAction("Reviewed", reviewedHunkIds)}
           menuContent={
             <>
               {quickActionMenuItems(reviewedQuickActions)}
               {reviewedQuickActions.length > 0 && <DropdownMenuSeparator />}
-              {changesDisplayMode === "tree" && (
-                <>
-                  <DropdownMenuItem
-                    onClick={() => expandAll(reviewedDirPaths, renamedDirPaths)}
-                  >
-                    Expand all
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={collapseAll}>
-                    Collapse all
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                </>
-              )}
-              {rollingDiffMenuItem("Reviewed", reviewedHunkIds)}
-              <DropdownMenuSeparator />
+              {expandCollapseItems(reviewedDirPaths)}
+              {changesDisplayMode === "tree" && <DropdownMenuSeparator />}
               {viewOptionsMenuContent}
             </>
           }
@@ -702,6 +696,7 @@ export function StatusGroupList({
           leading={NEEDS_REVIEW_ICON}
           title="Needs Review"
           progress={{ done: 0, total: stats.pending }}
+          countTone="pending"
           isExpanded={needsReviewOpen}
           onToggleExpanded={() => setNeedsReviewOpen(!needsReviewOpen)}
           quickAction={
@@ -714,27 +709,20 @@ export function StatusGroupList({
                 }
               : undefined
           }
+          actionContent={rollingDiffAction("Needs Review", pendingHunkIds)}
+          // With the rolling-diff item promoted to the header, flat mode can
+          // leave this menu with nothing to say — pass nothing rather than
+          // render a ⋯ that opens onto an empty dropdown.
           menuContent={
-            <>
-              {quickActionMenuItems(needsReviewQuickActions)}
-              {needsReviewQuickActions.length > 0 && <DropdownMenuSeparator />}
-              {changesDisplayMode === "tree" && (
-                <>
-                  <DropdownMenuItem
-                    onClick={() =>
-                      expandAll(needsReviewDirPaths, renamedDirPaths)
-                    }
-                  >
-                    Expand all
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={collapseAll}>
-                    Collapse all
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                </>
-              )}
-              {rollingDiffMenuItem("Needs Review", pendingHunkIds)}
-            </>
+            needsReviewQuickActions.length > 0 ||
+            changesDisplayMode === "tree" ? (
+              <>
+                {quickActionMenuItems(needsReviewQuickActions)}
+                {needsReviewQuickActions.length > 0 &&
+                  changesDisplayMode === "tree" && <DropdownMenuSeparator />}
+                {expandCollapseItems(needsReviewDirPaths)}
+              </>
+            ) : undefined
           }
         >
           <FileListSection
@@ -754,6 +742,7 @@ export function StatusGroupList({
             leading={SAVED_FOR_LATER_ICON}
             title="Saved for Later"
             progress={{ done: 0, total: stats.savedForLater }}
+            countTone="saved"
             isExpanded={savedForLaterOpen}
             onToggleExpanded={() => setSavedForLaterOpen(!savedForLaterOpen)}
             quickAction={
@@ -765,25 +754,15 @@ export function StatusGroupList({
                   }
                 : undefined
             }
+            actionContent={rollingDiffAction(
+              "Saved for Later",
+              savedForLaterHunkIds,
+            )}
+            // Flat mode has no expand/collapse, and with the rolling-diff
+            // item promoted to the header nothing else lives here — no menu
+            // beats an empty one.
             menuContent={
-              <>
-                {changesDisplayMode === "tree" && (
-                  <>
-                    <DropdownMenuItem
-                      onClick={() =>
-                        expandAll(savedForLaterDirPaths, renamedDirPaths)
-                      }
-                    >
-                      Expand all
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={collapseAll}>
-                      Collapse all
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                  </>
-                )}
-                {rollingDiffMenuItem("Saved for Later", savedForLaterHunkIds)}
-              </>
+              expandCollapseItems(savedForLaterDirPaths) ?? undefined
             }
           >
             <FileListSection

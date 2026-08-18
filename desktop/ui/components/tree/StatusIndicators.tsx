@@ -51,59 +51,25 @@ export function HunkCount({
   const reviewed = status.approved + status.trusted + status.rejected;
   const hoverClass = hideOnHover ? "group-hover:hidden" : "";
 
-  if (context === "needs-review") {
+  // Inside a status section (needs-review/reviewed/trusted) the section
+  // header already carries the color for that bucket — a row just reports
+  // its size, dim and uncolored, so the tree doesn't shout at every level.
+  // Trusted is its own section, so "reviewed" counts only explicit human
+  // decisions, approved and rejected alike.
+  if (context !== "all") {
+    const count =
+      context === "needs-review"
+        ? status.pending
+        : context === "trusted"
+          ? status.trusted
+          : status.approved + status.rejected;
+    // needs-review states its zero — an empty queue is the goal, not noise.
+    if (count === 0 && context !== "needs-review") return null;
     return (
       <span
         className={`font-mono text-xxs tabular-nums text-fg-muted ${hoverClass}`}
       >
-        {status.pending}
-      </span>
-    );
-  }
-
-  if (context === "trusted") {
-    if (status.trusted === 0) return null;
-    return (
-      <span
-        className={`font-mono text-xxs tabular-nums text-status-trusted ${hoverClass}`}
-      >
-        {status.trusted}
-      </span>
-    );
-  }
-
-  if (context === "reviewed") {
-    // Trusted is its own section now — only show explicit human decisions here.
-    const segments: { count: number; color: string }[] = [];
-    if (status.approved > 0)
-      segments.push({ count: status.approved, color: "text-status-approved" });
-    if (status.rejected > 0)
-      segments.push({ count: status.rejected, color: "text-status-rejected" });
-
-    if (segments.length === 0) return null;
-
-    // Single status — just show the number
-    if (segments.length === 1) {
-      return (
-        <span
-          className={`font-mono text-xxs tabular-nums ${hoverClass} ${segments[0].color}`}
-        >
-          {segments[0].count}
-        </span>
-      );
-    }
-
-    // Multiple statuses — show each count in its color separated by ·
-    return (
-      <span
-        className={`font-mono text-xxs tabular-nums inline-flex items-center ${hoverClass}`}
-      >
-        {segments.map((seg, i) => (
-          <span key={i} className="inline-flex items-center">
-            {i > 0 && <span className="text-fg-faint mx-px">·</span>}
-            <span className={seg.color}>{seg.count}</span>
-          </span>
-        ))}
+        {count}
       </span>
     );
   }
