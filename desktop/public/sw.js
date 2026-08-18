@@ -6,6 +6,10 @@
  * it has nothing to show, so a cache would only buy the chance to serve stale
  * JS against a newer backend. Everything but a failed navigation goes to the
  * network untouched.
+ *
+ * The one thing it does beyond that is web push, which has nowhere else to
+ * live: a push arrives with no page open, so the worker is the only thing
+ * around to show the notification and to decide what a tap on it opens.
  */
 
 const OFFLINE_PAGE = `<!doctype html>
@@ -61,5 +65,51 @@ self.addEventListener("fetch", (event) => {
           },
         }),
     ),
+  );
+});
+
+self.addEventListener("push", (event) => {
+  // A push with no readable JSON body still gets shown: `userVisibleOnly`
+  // subscriptions owe the browser a notification for every message, and a
+  // silent drop is what gets a subscription revoked.
+  let payload = {};
+  try {
+    payload = event.data?.json() ?? {};
+  } catch {
+    payload = {};
+  }
+
+  const { title, body, url, tag } = payload;
+  event.waitUntil(
+    self.registration.showNotification(title || "Review", {
+      body: body || "Something needs your attention.",
+      tag,
+      icon: "/icons/icon-192.png",
+      data: { url },
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = event.notification.data?.url || "/";
+
+  event.waitUntil(
+    (async () => {
+      // `includeUncontrolled`: a tab loaded before this worker took over is
+      // still the window the user meant, and opening a second one beside it is
+      // the failure mode worth avoiding.
+      const clients = await self.clients.matchAll({
+        type: "window",
+        includeUncontrolled: true,
+      });
+      const existing = clients[0];
+      if (!existing) return self.clients.openWindow(url);
+
+      await existing.focus();
+      // The page routes itself, rather than the worker navigating it: a
+      // navigation would cold-start the app over a session already running.
+      existing.postMessage({ type: "open-workspace", url });
+    })(),
   );
 });

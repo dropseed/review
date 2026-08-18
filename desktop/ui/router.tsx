@@ -41,6 +41,8 @@ import {
   useTerminalFileDrop,
   useViewerPrsSync,
   usePollWhileVisible,
+  useWorkspaceDeepLink,
+  useAttentionBadge,
   type RepoStatus,
 } from "./hooks";
 import { useReviewFreshness } from "./hooks/useReviewFreshness";
@@ -213,6 +215,10 @@ function AppShell() {
   // branch onto a work card doing nothing at all.
   useTerminalFileDrop();
   useViewerPrsSync();
+  // Both halves of "a terminal stopped and nobody answered": the count the OS
+  // wears, and the landing a tapped notification asks for.
+  useAttentionBadge();
+  useWorkspaceDeepLink();
 
   useComparisonLoader(comparisonReady, setInitialLoading);
 

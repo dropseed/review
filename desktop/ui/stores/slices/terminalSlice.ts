@@ -8,8 +8,12 @@ import type {
   TerminalExit,
 } from "../../types";
 import { makeReviewKey } from "../../utils/review-key";
-import { notifyTerminalAttention } from "../../utils/terminal-notifications";
-import type { SliceCreatorWithClientAndStorage } from "../types";
+import {
+  attentionEdge,
+  notifyTerminalAttention,
+} from "../../utils/terminal-notifications";
+import { signalAttention } from "../../utils/attention";
+import type { ReviewStore, SliceCreatorWithClientAndStorage } from "../types";
 import {
   type TerminalTab,
   type PaneNode,
@@ -430,6 +434,41 @@ export function sameTerminalStatus(
     a.enteredStateAt === b.enteredStateAt &&
     a.shellIntegrationActive === b.shellIntegrationActive &&
     a.attentionMessage === b.attentionMessage
+  );
+}
+
+/**
+ * Tell the desktop app that a *workspace* is waiting on a person.
+ *
+ * The same edge the notification banner fires on, raised one level: a phone has
+ * no idea what a session id is, and the thing you would go and look at is the
+ * card, not the pane. A session the daemon hasn't placed in a workspace yet is
+ * skipped rather than escalated under a name nobody would recognize.
+ *
+ * Gated on the same preference as the banner — one switch for "tell me when a
+ * terminal stops", whichever device ends up hearing it.
+ */
+function escalateAttention(
+  state: Pick<
+    ReviewStore,
+    "terminalSessions" | "workspaces" | "terminalNotificationsEnabled"
+  >,
+  prev: TerminalStatus | undefined,
+  next: TerminalStatus,
+): void {
+  if (!state.terminalNotificationsEnabled) return;
+  if (!attentionEdge(prev, next)) return;
+
+  const workspaceId = state.terminalSessions[next.id]?.workspaceId;
+  if (!workspaceId) return;
+  const workspace = state.workspaces.find((entry) => entry.id === workspaceId);
+  if (!workspace) return;
+
+  const terminal = next.title || next.runningCommand || "A terminal";
+  signalAttention(
+    workspaceId,
+    workspace.displayTitle,
+    next.attentionMessage ?? `${terminal} needs attention`,
   );
 }
 
@@ -1316,6 +1355,7 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
       // and stays quiet.
       const prev = get().terminalStatuses[status.id];
       notifyTerminalAttention(prev, status);
+      escalateAttention(get(), prev, status);
       // ...and the redundant deliveries stop here rather than reaching the
       // store. Three channels carry each status, and a write allocates a new
       // `terminalStatuses` map, so every surface that summarizes sessions --

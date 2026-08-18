@@ -56,8 +56,7 @@ function claimSpell(status: TerminalStatus): boolean {
 }
 
 /**
- * Fire a notification when a session crosses *into* needs_attention while the
- * app is in the background.
+ * Whether this status is a *new* thing to interrupt someone for.
  *
  * `prev` is the status the store held before this one. Its absence means the
  * session arrived already needing attention -- a hydration snapshot rather than
@@ -67,20 +66,34 @@ function claimSpell(status: TerminalStatus): boolean {
  * change, and none of those are a second thing to interrupt you for. The one
  * mid-spell republish that IS a second thing is a changed attention message
  * -- "task finished" arriving after "approve this edit?" -- so that passes.
+ *
+ * Exported because two things escalate off the same moment: the banner below,
+ * and the workspace-level signal the desktop app pushes to a phone. Two copies
+ * of this rule would be two chances to interrupt someone twice.
+ */
+export function attentionEdge(
+  prev: TerminalStatus | undefined,
+  next: TerminalStatus,
+): boolean {
+  if (next.phase !== "needs_attention") return false;
+  if (!prev) return false;
+  if (prev.phase !== "needs_attention") return true;
+  return (
+    next.attentionMessage != null &&
+    prev.attentionMessage !== next.attentionMessage
+  );
+}
+
+/**
+ * Fire a notification when a session crosses into needs_attention while the app
+ * is in the background. The edge is [`attentionEdge`].
  */
 export function notifyTerminalAttention(
   prev: TerminalStatus | undefined,
   next: TerminalStatus,
 ): void {
   if (!enabled) return;
-  if (next.phase !== "needs_attention") return;
-  if (!prev) return;
-  const crossed = prev.phase !== "needs_attention";
-  const messageChanged =
-    !crossed &&
-    next.attentionMessage != null &&
-    prev.attentionMessage !== next.attentionMessage;
-  if (!crossed && !messageChanged) return;
+  if (!attentionEdge(prev, next)) return;
   if (document.hasFocus()) return;
   if (!claimSpell(next)) return;
 

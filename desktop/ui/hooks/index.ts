@@ -47,5 +47,7 @@ export { useLspClient } from "./useLspClient";
 export { useHoverInfo } from "./useHoverInfo";
 export { useSidebarTree } from "./useSidebarTree";
 export { useDeepLinkFocus } from "./useDeepLinkFocus";
+export { useWorkspaceDeepLink } from "./useWorkspaceDeepLink";
+export { useAttentionBadge } from "./useAttentionBadge";
 export { useScopeReconciliation } from "./useScopeReconciliation";
 export { useModHeld } from "./useModHeld";

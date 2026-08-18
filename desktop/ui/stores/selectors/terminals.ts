@@ -50,6 +50,18 @@ export interface WorkspaceTerminals {
    * at, even if the first one has already been acknowledged.
    */
   waitingSince: number | null;
+  /**
+   * When a terminal here most recently *raised an attention*, as epoch ms —
+   * narrower than `waitingSince`, which also counts a shell sitting at its
+   * prompt.
+   *
+   * This is what the badge counts, and the difference is the whole point: a
+   * shell waiting for you to type is not an interruption, and a dock badge that
+   * lit for every idle prompt would be on permanently. The backend's own
+   * `enteredStateAt` rather than the moment this window noticed, so a reload
+   * doesn't reset what the human has and hasn't seen.
+   */
+  needsAttentionSince: number | null;
 }
 
 const NO_TERMINALS: WorkspaceTerminals = {
@@ -57,6 +69,7 @@ const NO_TERMINALS: WorkspaceTerminals = {
   phase: null,
   waitingOn: null,
   waitingSince: null,
+  needsAttentionSince: null,
 };
 
 /**
@@ -150,6 +163,9 @@ export function getTerminalsByWorkspaceId(
       phase,
       waitingOn: blocked ? waitingLine(own) : null,
       waitingSince: blocked ? waitingSince(own) : null,
+      needsAttentionSince: newestEnteredAt(
+        own.filter((s) => s.phase === "needs_attention"),
+      ),
     };
     // One agent's status tick changes one workspace's entry; every other
     // workspace keeps the object it had, so its card's `memo` bails instead of
@@ -167,7 +183,8 @@ function sameTerminals(a: WorkspaceTerminals, b: WorkspaceTerminals): boolean {
     a.tabs === b.tabs &&
     a.phase === b.phase &&
     a.waitingOn === b.waitingOn &&
-    a.waitingSince === b.waitingSince
+    a.waitingSince === b.waitingSince &&
+    a.needsAttentionSince === b.needsAttentionSince
   );
 }
 
@@ -238,10 +255,14 @@ function waitingLine(statuses: TerminalStatus[]): string | null {
 
 /** The newest transition into a waiting phase; see `waitingSince`. */
 function waitingSince(statuses: TerminalStatus[]): number | null {
-  const moments = statuses
-    .filter((s) => wantsAHuman(s.phase))
-    .map((s) => s.enteredStateAt);
-  return moments.length === 0 ? null : Math.max(...moments);
+  return newestEnteredAt(statuses.filter((s) => wantsAHuman(s.phase)));
+}
+
+/** The newest of these statuses' transitions, or null when there are none. */
+function newestEnteredAt(statuses: TerminalStatus[]): number | null {
+  return statuses.length === 0
+    ? null
+    : Math.max(...statuses.map((s) => s.enteredStateAt));
 }
 
 /** One pane of a tab, as the row's status cluster draws it. */

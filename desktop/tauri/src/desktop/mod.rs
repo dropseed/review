@@ -7,6 +7,7 @@
 
 pub mod commands;
 pub mod daemon;
+pub mod notifications;
 pub mod remote;
 pub mod terminal_commands;
 pub mod watchers;
@@ -281,6 +282,7 @@ pub fn run() {
         .manage(commands::LspServers(tokio::sync::Mutex::new(
             std::collections::HashMap::new(),
         )))
+        .manage(notifications::NotificationHub::default())
         .plugin(tauri_plugin_single_instance::init(
             |app: &tauri::AppHandle, argv, _cwd| {
                 // Clean up signal file — the CLI may have written one before this
@@ -673,6 +675,9 @@ pub fn run() {
             remote::remote_access_status,
             remote::remote_access_enable,
             remote::remote_access_disable,
+            notifications::notify_attention,
+            notifications::notify_ack,
+            notifications::set_dock_badge,
             commands::get_current_repo,
             commands::check_github_available,
             commands::list_pull_requests,

@@ -41,6 +41,21 @@ notify = { version = "7", optional = true }
 notify-debouncer-mini = { version = "0.5", optional = true }
 env_logger = { version = "0.11", optional = true }
 
+# Web Push (feature-gated with the server, which is the only thing that serves
+# a service worker to subscribe with).
+#
+# `default-features = false` drops the bundled clients: the isahc one links
+# libcurl, and the hyper one pins hyper 0.14 + native-tls (a second hyper
+# alongside axum's, and OpenSSL headers on Linux). What remains is the part
+# worth having — VAPID signing and aes128gcm encryption — and `push.rs` sends
+# the built message over reqwest/rustls, which needs nothing from the system.
+web-push = { version = "0.11", default-features = false, optional = true }
+# Only for `ES256KeyPair::generate` — web-push reads VAPID keys but cannot mint
+# one. Same crate and features web-push itself depends on, so it adds nothing
+# to the tree.
+jwt-simple = { version = "0.12", default-features = false, features = ["pure-rust"], optional = true }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2"], optional = true }
+
 # Tree-sitter for symbol extraction
 tree-sitter = "0.25"
 
@@ -119,7 +134,7 @@ cli = ["clap", "daemon-client", "terminal-types"]
 # reaches PTYs the same way the desktop app does — as a thin client of the
 # `review-daemon` process — so it gets terminals without linking a PTY stack
 # (and therefore without needing Zig).
-server = ["axum", "tower", "tower-http", "tokio-stream", "notify", "notify-debouncer-mini", "env_logger", "daemon-client"]
+server = ["axum", "tower", "tower-http", "tokio-stream", "notify", "notify-debouncer-mini", "env_logger", "daemon-client", "dep:web-push", "dep:jwt-simple", "dep:reqwest"]
 # Terminal session daemon. `daemon` is the server half (owns the SessionManager,
 # so it implies `terminal`); `daemon-client` is the connect side and pulls in no
 # PTY dependencies. They compose freely with each other and with `server`.

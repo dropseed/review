@@ -5,7 +5,7 @@ use axum::http::StatusCode;
 use axum::response::sse::{Event, Sse};
 use axum::routing::{get, post};
 use axum::Router;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -163,6 +163,11 @@ pub fn build_api_router() -> Router {
         .route("/api/misc/path-is-file", post(misc_path_is_file))
         .route("/api/misc/vscode-theme", post(misc_vscode_theme))
         .route("/api/misc/resolve-repo-path", post(misc_resolve_repo_path))
+        // Push notifications
+        .route("/api/push/public-key", post(push_public_key))
+        .route("/api/push/subscribe", post(push_subscribe))
+        .route("/api/push/unsubscribe", post(push_unsubscribe))
+        .route("/api/push/test", post(push_test))
         // Agent usage
         .route("/api/usage/agents", post(usage_agents))
         // Streaming
@@ -1379,6 +1384,79 @@ async fn usage_agents(
     Json(req): Json<AgentUsageRequest>,
 ) -> ApiResult<Vec<crate::service::usage::AgentUsage>> {
     blocking(move || crate::service::usage::report(req.force)).await
+}
+
+// ============================================================
+// Push notification handlers
+// ============================================================
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PushSubscribeRequest {
+    subscription: crate::push::PushSubscription,
+    #[serde(default)]
+    user_agent: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PushUnsubscribeRequest {
+    endpoint: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PushPublicKey {
+    public_key: String,
+}
+
+/// What a subscribe/unsubscribe leaves behind, so the client can show how many
+/// devices this instance will reach without a second round trip.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PushCount {
+    count: usize,
+}
+
+async fn push_public_key() -> ApiResult<PushPublicKey> {
+    blocking(|| {
+        Ok(PushPublicKey {
+            public_key: crate::push::public_key()?,
+        })
+    })
+    .await
+}
+
+async fn push_subscribe(Json(req): Json<PushSubscribeRequest>) -> ApiResult<PushCount> {
+    blocking(move || {
+        crate::push::subscribe(req.subscription, req.user_agent)?;
+        Ok(PushCount {
+            count: crate::push::subscription_count()?,
+        })
+    })
+    .await
+}
+
+async fn push_unsubscribe(Json(req): Json<PushUnsubscribeRequest>) -> ApiResult<PushCount> {
+    blocking(move || {
+        crate::push::unsubscribe(&req.endpoint)?;
+        Ok(PushCount {
+            count: crate::push::subscription_count()?,
+        })
+    })
+    .await
+}
+
+async fn push_test() -> ApiResult<crate::push::SendReport> {
+    crate::push::send_to_all(&crate::push::NotificationPayload {
+        title: "Review".to_owned(),
+        body: "Test notification".to_owned(),
+        url: Some("/".to_owned()),
+        tag: None,
+    })
+    .await
+    .map(Json)
+    .map_err(internal_err)
 }
 
 // ============================================================

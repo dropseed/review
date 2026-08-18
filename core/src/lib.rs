@@ -57,5 +57,10 @@ pub mod cli;
 #[cfg(feature = "server")]
 pub mod server;
 
+// Web Push subscriptions and delivery. Gated with the server, which is what
+// serves the service worker that registers them.
+#[cfg(feature = "server")]
+pub mod push;
+
 // Re-export commonly used types
 pub use sources::traits::Comparison;

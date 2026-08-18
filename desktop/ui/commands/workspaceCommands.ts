@@ -1,6 +1,7 @@
 import { useReviewStore } from "../stores";
 import { findSidebarRow, getSidebarTree } from "../stores/selectors/sidebar";
 import type { ReviewTarget } from "../stores/selectors/workspaceData";
+import { ackAttention } from "../utils/attention";
 import { makeReviewKey, refFromReviewKey } from "../utils/review-key";
 import type { SidebarRow } from "../utils/sidebar-tree";
 import { openTerminalTab } from "../components/Terminal/newTab";
@@ -95,6 +96,9 @@ export function focusWorkspace(
     workspace.id,
     store.workspaces.map((entry) => entry.id),
   );
+  // ...and the same gesture calls off the escalation, so a workspace you have
+  // already opened never reaches your phone a minute later.
+  ackAttention(workspace.id);
 
   // `target` is the caller naming which comparison to open — a ⌘K row names a
   // branch, not just a workspace, and on a multi-repo workspace that is
