@@ -745,10 +745,6 @@ export class TauriClient implements ApiClient {
     return invoke("consume_cli_request");
   }
 
-  async openRepoWindow(repoPath: string): Promise<void> {
-    await invoke("open_repo_window", { repoPath });
-  }
-
   async checkReviewsFreshness(
     reviews: ReviewFreshnessInput[],
   ): Promise<ReviewFreshnessResult[]> {

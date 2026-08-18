@@ -7,8 +7,14 @@ export {
   findCommand,
 } from "./registry";
 export { APP_COMMANDS, nextFontSize } from "./appCommands";
+export { STATIC_COMMANDS } from "./static";
 export { reviewCommands } from "./reviewCommands";
-export { workspaceCommands, focusWorkspace } from "./workspaceCommands";
+export {
+  workspaceCommands,
+  WORKSPACE_COMMANDS,
+  focusWorkspace,
+  newWorkspace,
+} from "./workspaceCommands";
 export { useCommandDispatch, buildCommandContext } from "./useCommandDispatch";
 export {
   formatShortcut,

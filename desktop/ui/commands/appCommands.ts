@@ -310,22 +310,6 @@ export const APP_COMMANDS: readonly Command[] = [
     run: (ctx) => ctx.ui.openRepo(),
   },
   {
-    id: "app.newTab",
-    title: "New Tab",
-    category: "Application",
-    // ⌘T belongs to `terminal.new` now: opening a shell is the gesture this
-    // app is asked for constantly, and an app tab is not.
-    shortcut: { code: "KeyT", mod: true, shift: true },
-    run: (ctx) => ctx.ui.newTab(),
-  },
-  {
-    id: "app.newWindow",
-    title: "New Window",
-    category: "Application",
-    shortcut: { code: "KeyN", mod: true },
-    run: (ctx) => ctx.ui.newWindow(),
-  },
-  {
     id: "app.closeTab",
     title: "Close",
     category: "Application",

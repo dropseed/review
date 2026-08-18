@@ -25,19 +25,6 @@ export function getStoredRepoPath(): string | null {
   return sessionStorage.getItem(REPO_PATH_KEY);
 }
 
-/** Extract bootstrap parameters from URL query string (set by Tauri on window
- *  creation). The `ref` query param carries the review ref. */
-function getUrlParams(): {
-  repoPath: string | null;
-  ref: string | null;
-} {
-  const params = new URLSearchParams(window.location.search);
-  return {
-    repoPath: params.get("repo"),
-    ref: params.get("ref"),
-  };
-}
-
 /** Try to resolve a repo from the URL path (browser mode only).
  *  URL format: /:owner/:repo/... */
 async function resolveRepoFromUrl(): Promise<string | null> {
@@ -175,7 +162,6 @@ interface UseRepositoryInitReturn {
   initialLoading: boolean;
   setInitialLoading: (loading: boolean) => void;
   handleOpenRepo: () => Promise<void>;
-  handleNewWindow: () => Promise<void>;
   handleCloseRepo: () => void;
   handleSelectRepo: (path: string) => Promise<void>;
   handleActivateReview: (review: GlobalReviewSummary) => Promise<void>;
@@ -342,20 +328,9 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         return;
       }
 
-      // Check URL for repo path first (Tauri bootstrap)
-      const { repoPath: urlRepoPath, ref: urlRef } = getUrlParams();
-      if (urlRepoPath) {
-        const resolved = await resolveTarget(urlRepoPath, urlRef);
-        await initRepo(urlRepoPath, resolved, {
-          clearLogFile: true,
-          storeInSession: true,
-        });
-        return;
-      }
-
       // Check for a pending CLI open request (cold start from `review` CLI).
-      // On cold start the default window has no URL params, and the signal
-      // file written by the CLI is the only way to know what to open.
+      // The signal file the CLI writes is the only way a cold start knows what
+      // to open.
       try {
         const apiClient = getApiClient();
         const cliRequest = await apiClient.consumeCliRequest();
@@ -471,39 +446,6 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     loadGlobalReviews,
   ]);
 
-  // Listen for cli:switch-ref events from Rust (when CLI reuses an existing window for the same repo)
-  useEffect(() => {
-    const platform = getPlatformServices();
-    const unlisten = platform.menuEvents.on(
-      "cli:switch-ref",
-      async (payload) => {
-        const ref = typeof payload === "string" ? payload : null;
-        if (!ref) return;
-
-        const currentRepoPath = useReviewStore.getState().repoPath;
-        if (!currentRepoPath) return;
-
-        const resolved = await resolveTarget(currentRepoPath, ref);
-
-        // Same-repo switch — setComparison is sufficient
-        setActiveReviewKey({
-          repoPath: currentRepoPath,
-          ref: resolved.ref,
-        });
-        setComparison(resolved);
-        setComparisonReady((c) => c + 1);
-        setInitialLoading(true);
-
-        // Navigate to the review route
-        resolveRepoIdentity(currentRepoPath).then(({ routePrefix }) => {
-          navigateRef.current(reviewUrl(routePrefix, resolved.ref));
-        });
-      },
-    );
-
-    return unlisten;
-  }, [setActiveReviewKey, setComparison]);
-
   // Listen for cli:open-review events from Rust (CLI opened a review,
   // navigate this window instead of opening a new tab).
   useEffect(() => {
@@ -614,16 +556,6 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       }
     } catch (err) {
       console.error("Failed to open repository:", err);
-    }
-  }, []);
-
-  // Open a new window (Cmd+N behavior)
-  const handleNewWindow = useCallback(async () => {
-    const apiClient = getApiClient();
-    try {
-      await apiClient.openRepoWindow("");
-    } catch (err) {
-      console.error("Failed to open new window:", err);
     }
   }, []);
 
@@ -815,7 +747,6 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     initialLoading,
     setInitialLoading,
     handleOpenRepo,
-    handleNewWindow,
     handleCloseRepo,
     handleSelectRepo,
     handleActivateReview,

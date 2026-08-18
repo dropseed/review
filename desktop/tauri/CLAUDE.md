@@ -21,7 +21,6 @@ Key command groups:
 - **Classification**: `classify_hunks_static`, `get_comparison_move_pairs`
 - **Trust**: `get_trust_taxonomy`, `match_trust_pattern`
 - **Symbols**: `get_file_symbol_diffs`, `get_file_symbols`
-- **Navigation**: `open_repo_window`
 - **GitHub**: `check_github_available`, `list_pull_requests`, `get_viewer_prs`
 - **Misc**: `search_file_contents`, `generate_narrative`, `write_text_file`, `append_to_file`
 

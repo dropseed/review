@@ -18,7 +18,6 @@ import { NewReviewView } from "./components/NewReviewView";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { TerminalDock } from "./components/Terminal/TerminalDock";
 import { EmptyStage } from "./components/Stage/EmptyStage";
-import { TERMINAL_COMMANDS } from "./components/Terminal/commands";
 import { closeFocusedTerminal } from "./components/Terminal/close";
 import { useReviewStore } from "./stores";
 import { useFocusedWorkspace } from "./stores/selectors/workspaces";
@@ -48,7 +47,7 @@ import {
 import { useReviewFreshness } from "./hooks/useReviewFreshness";
 import { useIsCompact } from "./hooks/useIsCompact";
 import {
-  APP_COMMANDS,
+  STATIC_COMMANDS,
   reviewCommands,
   workspaceCommands,
   useRegisterCommands,
@@ -94,7 +93,6 @@ function AppShell() {
     comparisonReady,
     setInitialLoading,
     handleOpenRepo,
-    handleNewWindow,
     handleCloseRepo,
     handleSelectRepo,
     handleActivateReview,
@@ -152,18 +150,17 @@ function AppShell() {
   // The app's commands, and the shell-level actions they need. Shortcuts are
   // dispatched here rather than by the native menu, so they work identically
   // in the desktop app and in web mode (which has no native menu at all).
-  useRegisterCommands(APP_COMMANDS);
+  //
+  // The terminal's own commands ride in `STATIC_COMMANDS` and are registered
+  // here rather than by the review screen, for the same reason its panel is
+  // mounted here: ⌘` has to answer on the home screen too.
+  useRegisterCommands(STATIC_COMMANDS);
   useRegisterCommands(reviewCommands);
   useRegisterCommands(workspaceCommands);
-  // The terminal's own commands are registered here, not by the review screen,
-  // for the same reason its panel is mounted here: ⌘` has to answer on the
-  // home screen too.
-  useRegisterCommands(TERMINAL_COMMANDS);
   useProvideCommandUi(
     useMemo(
       () => ({
         openRepo: () => handleOpenRepoRef.current(),
-        newWindow: () => handleNewWindow(),
         closeTab: () => void handleClose(),
         navigate: (to: string) => navigate(to),
         // Activate by key the way the sidebar would: find the row and use its
@@ -197,7 +194,7 @@ function AppShell() {
           activateLocalBranchRef.current(repoPath, ref, "");
         },
       }),
-      [handleClose, handleNewWindow, navigate],
+      [handleClose, navigate],
     ),
   );
   useCommandDispatch();
@@ -263,7 +260,6 @@ function AppShell() {
                     repoPath,
                     comparisonReady,
                     handleOpenRepo,
-                    handleNewWindow,
                     handleCloseRepo,
                     handleSelectRepo,
                     handleNewReview,
@@ -299,7 +295,6 @@ interface AppContext {
   repoPath: string | null;
   comparisonReady: number;
   handleOpenRepo: () => Promise<void>;
-  handleNewWindow: () => Promise<void>;
   handleCloseRepo: () => void;
   handleSelectRepo: (path: string) => Promise<void>;
   handleNewReview: (path: string, target: ReviewTarget) => Promise<void>;

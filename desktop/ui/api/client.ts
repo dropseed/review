@@ -596,9 +596,6 @@ export interface ApiClient {
     focusedHunkHash: string | null;
   } | null>;
 
-  /** Open a new window for a repository */
-  openRepoWindow(repoPath: string): Promise<void>;
-
   /** Batch-check whether each review's diff is still non-empty */
   checkReviewsFreshness(
     reviews: ReviewFreshnessInput[],

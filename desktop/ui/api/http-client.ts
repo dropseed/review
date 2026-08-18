@@ -912,10 +912,6 @@ export class HttpClient implements ApiClient {
     return null;
   }
 
-  async openRepoWindow(_repoPath: string): Promise<void> {
-    window.open("/", "_blank");
-  }
-
   async isGitRepo(path: string): Promise<boolean> {
     return this.post("/api/misc/is-git-repo", { path });
   }

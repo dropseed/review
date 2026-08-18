@@ -3,7 +3,7 @@ import { useReviewStore } from "../../stores";
 import { useSidebarResize } from "../../hooks/useSidebarResize";
 import { useAutoUpdater } from "../../hooks/useAutoUpdater";
 import { getPlatformServices } from "../../platform";
-import { focusWorkspace } from "../../commands/workspaceCommands";
+import { newWorkspace } from "../../commands/workspaceCommands";
 import { SidebarPanelIcon, XIcon } from "../ui/icons";
 import { SidebarResizeHandle } from "../ui/sidebar-resize-handle";
 import { Spinner } from "../ui/spinner";
@@ -95,7 +95,6 @@ function SidebarHeader({
   onToggle: () => void;
   drawer?: boolean;
 }): ReactNode {
-  const addWorkspace = useReviewStore((s) => s.addWorkspace);
   const openOverlay = useReviewStore((s) => s.openOverlay);
   const terminalOverview = useReviewStore((s) => s.terminalOverview);
   const toggleTerminalOverview = useReviewStore(
@@ -105,11 +104,6 @@ function SidebarHeader({
   // are no terminals to line up, and the button would open a view whose only
   // possible answer is "nothing is running".
   const terminalsSupported = useReviewStore((s) => s.terminalsSupported);
-
-  async function create(): Promise<void> {
-    const workspace = await addWorkspace(null, []);
-    if (workspace) focusWorkspace(workspace);
-  }
 
   return (
     <div className="shrink-0 pl-3 pr-2 py-2 flex items-center justify-between gap-1">
@@ -151,7 +145,7 @@ function SidebarHeader({
         )}
         <button
           type="button"
-          onClick={() => void create()}
+          onClick={() => void newWorkspace()}
           className="flex items-center justify-center w-6 h-6 rounded
                    text-fg-muted hover:text-fg-secondary hover:bg-surface-raised
                    transition-colors"

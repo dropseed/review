@@ -101,10 +101,11 @@ export const TERMINAL_COMMANDS: readonly Command[] = [
     title: "New Terminal",
     category: "Terminal",
     keywords: ["shell", "console", "tab", "run", "command line"],
-    // ⌘T is the terminal now. It used to open an app tab unless a terminal
-    // pane happened to have DOM focus, which made the app's most common
-    // gesture depend on where the caret was; the focused workspace answers
-    // "where" instead, and app tabs moved to ⇧⌘T.
+    // ⌘T is the terminal, and there is nothing else it could be: the app has
+    // no tabs and no second window. It used to open an app tab unless a
+    // terminal pane happened to have DOM focus, which made the app's most
+    // common gesture depend on where the caret was; the focused workspace
+    // answers "where" instead.
     shortcut: { code: "KeyT", mod: true },
     // Zero questions from anywhere, including from inside a shell or a search
     // field — and never a picker: a shell that landed somewhere else than you

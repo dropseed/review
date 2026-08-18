@@ -103,8 +103,16 @@ fn read_open_request() -> Option<OpenRequest> {
     }
 }
 
-/// Emit a `cli:open-review` event to an existing window so the frontend
-/// navigates to the requested review instead of opening a new window/tab.
+/// The app's one window, as declared in `tauri.conf.json`.
+///
+/// Review is single-window on purpose — a second thing to work on is a second
+/// *workspace*, not a second copy of the app — so anything that used to pick a
+/// window out of an unordered map names this instead.
+#[cfg(desktop)]
+const MAIN_WINDOW: &str = "main";
+
+/// Emit a `cli:open-review` event to the window so the frontend navigates to
+/// the requested review in place.
 #[cfg(desktop)]
 fn emit_cli_open_review(
     app: &tauri::AppHandle,
@@ -113,7 +121,7 @@ fn emit_cli_open_review(
     focused_file: Option<&str>,
     focused_hunk_hash: Option<&str>,
 ) {
-    if let Some((_, window)) = app.webview_windows().into_iter().next() {
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         let _ = window.emit(
             "cli:open-review",
             serde_json::json!({
@@ -128,27 +136,14 @@ fn emit_cli_open_review(
     }
 }
 
-/// Emit a menu event to the focused window only.
+/// Emit a menu event to the app's window.
 ///
-/// On macOS the menu bar is app-global, so a single accelerator press (e.g.
-/// Cmd+Shift+F) fires `on_menu_event` once. Using `app.emit` would broadcast
-/// the event to every open window, so each window would react (open search,
-/// zoom, refresh, etc.). We target the focused window instead, falling back to
-/// a broadcast if none reports focus.
+/// A broadcast, because there is exactly one window to broadcast to. This used
+/// to hunt for the focused window: with several open, the app-global macOS menu
+/// bar fires `on_menu_event` once and every window would have reacted to it.
 #[cfg(desktop)]
 fn emit_menu_event<P: serde::Serialize + Clone>(app: &tauri::AppHandle, event: &str, payload: P) {
-    // `Manager::get_focused_window` would be cleaner but is gated behind Tauri's
-    // `unstable` feature, so find the focused window via the stable API instead.
-    let focused = app
-        .webview_windows()
-        .into_iter()
-        .find(|(_, w)| w.is_focused().unwrap_or(false))
-        .map(|(label, _)| label);
-    if let Some(label) = focused {
-        let _ = app.emit_to(label, event, payload);
-    } else {
-        let _ = app.emit(event, payload);
-    }
+    let _ = app.emit(event, payload);
 }
 
 /// Parse a `review://open?repo=&ref=&file=&hunk=` URL into the parts
@@ -196,7 +191,7 @@ fn handle_deep_link(app: &tauri::AppHandle, raw: &str) {
     };
     log::info!("Deep link opened: {}", raw);
 
-    if app.webview_windows().is_empty() {
+    if app.get_webview_window(MAIN_WINDOW).is_none() {
         // Cold start — frontend not ready yet. Drop a signal file the
         // startup code reads (matches the CLI's existing channel).
         write_open_request(
@@ -384,13 +379,8 @@ pub fn run() {
                 .accelerator("CmdOrCtrl+T")
                 .build(app)?;
 
-            let new_tab = MenuItemBuilder::new("New Tab")
-                .id("new_tab")
-                .accelerator("CmdOrCtrl+Shift+T")
-                .build(app)?;
-
-            let new_window = MenuItemBuilder::new("New Window")
-                .id("new_window")
+            let new_workspace = MenuItemBuilder::new("New Workspace")
+                .id("new_workspace")
                 .accelerator("CmdOrCtrl+N")
                 .build(app)?;
 
@@ -497,9 +487,8 @@ pub fn run() {
                 .build()?;
 
             let file_menu = SubmenuBuilder::new(app, "File")
+                .item(&new_workspace)
                 .item(&new_terminal)
-                .item(&new_tab)
-                .item(&new_window)
                 .item(&open_repo)
                 .separator()
                 .item(&new_review)
@@ -626,8 +615,7 @@ pub fn run() {
             match id {
                 "close" => emit_menu_event(app, "menu:close", ()),
                 "new_terminal" => emit_menu_event(app, "menu:new-terminal", ()),
-                "new_tab" => emit_menu_event(app, "menu:new-tab", ()),
-                "new_window" => emit_menu_event(app, "menu:new-window", ()),
+                "new_workspace" => emit_menu_event(app, "menu:new-workspace", ()),
                 "open_repo" => emit_menu_event(app, "menu:open-repo", ()),
                 "refresh" => emit_menu_event(app, "menu:refresh", ()),
                 "actual_size" => emit_menu_event(app, "menu:zoom-reset", ()),
@@ -753,7 +741,6 @@ pub fn run() {
             commands::work_detach,
             commands::work_route,
             commands::consume_cli_request,
-            commands::open_repo_window,
             commands::check_claude_available,
             commands::classify_hunks_static,
             commands::get_comparison_move_pairs,
@@ -819,25 +806,13 @@ pub fn run() {
                 // Clicking the dock icon of an app that is already on screen
                 // means "come to the front", and AppKit has already done that
                 // by the time this fires — so there is nothing left to do.
-                //
-                // Showing and focusing *every* window, which is what this did,
-                // walks an unordered map and leaves whichever window it happened
-                // to visit last in front. With macOS window tabbing that is a
-                // different tab than the one you left, so clicking the dock icon
-                // looked like the app had opened another one.
                 if !has_visible_windows {
                     // Nothing on screen: minimized, or hidden with ⌘H. AppKit
                     // skips its own restore when the delegate reports no visible
-                    // windows, so bringing them back is ours to do. Sorted, and
-                    // focusing exactly one, so "the app came back" doesn't mean
-                    // "on whichever window the map iterated last".
-                    let mut windows: Vec<_> = app_handle.webview_windows().into_iter().collect();
-                    windows.sort_by(|(a, _), (b, _)| a.cmp(b));
-                    for (_, window) in &windows {
+                    // windows, so bringing the window back is ours to do.
+                    if let Some(window) = app_handle.get_webview_window(MAIN_WINDOW) {
                         let _ = window.unminimize();
                         let _ = window.show();
-                    }
-                    if let Some((_, window)) = windows.first() {
                         let _ = window.set_focus();
                     }
                 }
@@ -868,7 +843,7 @@ pub fn run() {
                                     repo_path,
                                     focused_file
                                 );
-                                if app_handle.webview_windows().is_empty() {
+                                if app_handle.get_webview_window(MAIN_WINDOW).is_none() {
                                     write_open_request(
                                         &repo_path,
                                         None,

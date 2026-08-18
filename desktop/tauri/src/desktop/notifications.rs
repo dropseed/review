@@ -140,11 +140,11 @@ pub fn notify_ack(workspace_id: String, state: tauri::State<'_, NotificationHub>
 /// Set the dock badge, clearing it at zero.
 #[tauri::command]
 pub fn set_dock_badge(count: u32, app: AppHandle) -> Result<(), String> {
-    // The badge belongs to the app's dock tile, not to a window, so any one
-    // window sets it for the whole app. `None` clears it; `Some(0)` would
-    // draw a literal "0".
+    // The badge belongs to the app's dock tile, not to a window; the window is
+    // only the handle that sets it. `None` clears it; `Some(0)` would draw a
+    // literal "0".
     let badge = (count > 0).then_some(count as i64);
-    let Some((_, window)) = app.webview_windows().into_iter().next() else {
+    let Some(window) = app.get_webview_window(super::MAIN_WINDOW) else {
         return Ok(());
     };
     window.set_badge_count(badge).map_err(|e| e.to_string())

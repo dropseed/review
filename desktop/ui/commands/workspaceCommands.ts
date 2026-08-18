@@ -151,6 +151,43 @@ export async function openRowInWorkspace(
 }
 
 /**
+ * Start a fresh workspace and show it: ⌘N, the sidebar's +, and ⌘K's "New
+ * Workspace".
+ *
+ * Deliberately empty and unnamed — a workspace is a container that becomes
+ * whatever is put in it, so asking for a title or a repo up front would be
+ * asking for the one thing the user has not decided yet. Attaching a repo or
+ * starting a shell in it is what gives it both.
+ */
+export async function newWorkspace(): Promise<Workspace | null> {
+  const workspace = await useReviewStore.getState().addWorkspace(null, []);
+  if (workspace) focusWorkspace(workspace);
+  return workspace;
+}
+
+/**
+ * The queue's static commands — the per-item ones are built by
+ * [`workspaceCommands`], which rebuilds whenever the queue changes.
+ */
+export const WORKSPACE_COMMANDS: readonly Command[] = [
+  {
+    id: "workspace.new",
+    title: "New Workspace",
+    category: "Workspaces",
+    keywords: ["add", "card", "working on", "queue"],
+    // ⌘N used to open a second app window. Windows and macOS tabs are both
+    // gone: a workspace is how this app holds two things at once, so ⌘N makes
+    // one of those instead.
+    shortcut: { code: "KeyN", mod: true },
+    // Same reach as ⌘1–9 for the same reason — starting somewhere new must not
+    // depend on whether the caret is in a shell or a search field.
+    allowInInput: true,
+    allowInTerminal: true,
+    run: () => void newWorkspace(),
+  },
+];
+
+/**
  * One command per work item, ⌘1–9 for the first nine.
  *
  * The digits used to walk the sidebar's rows, which meant the app's most-used

@@ -79,6 +79,43 @@ async function confirmKill(ids: string[]): Promise<boolean> {
   );
 }
 
+/**
+ * Drop a workspace whose last terminal just went away, when there is nothing
+ * in it a person authored.
+ *
+ * "Nothing authored" is precisely: no typed title, and at most one attachment.
+ * Such a workspace says only what its own repo already says, so re-opening that
+ * repo — or starting another shell in it — mints an identical one, and leaving
+ * it behind turns the queue into a list of finished things. A typed title or a
+ * second repo is a person having built something here, and neither is ever
+ * reaped: removal stays theirs.
+ *
+ * This is the *event* half of cleanup, and deliberately not a rule
+ * `work::cleanup` could carry — a passive sweep with this predicate would also
+ * reap the branch a person queued up to read later and never ran anything in.
+ * Closing the terminal is what says the workspace is spent.
+ *
+ * `closing` is what is on its way out, named rather than waited for: "is
+ * anything left in here" answered by excluding those ids holds whether or not
+ * the teardown has reached the store yet, so this never rests on `killTerminal`
+ * happening to drop its session before it resolves.
+ */
+async function reapSpentWorkspace(
+  workspaceId: string,
+  closing: readonly string[],
+): Promise<void> {
+  const state = useReviewStore.getState();
+  const workspace = state.workspaces.find((entry) => entry.id === workspaceId);
+  if (!workspace) return;
+  if (workspace.title !== null || workspace.attachments.length > 1) return;
+  const survivor = Object.values(state.terminalSessions).some(
+    (session) =>
+      session.workspaceId === workspaceId && !closing.includes(session.id),
+  );
+  if (survivor) return;
+  await state.removeWorkspace(workspaceId);
+}
+
 /** Tear down one pane locally, killing its PTY unless it is already dead. */
 function teardown(id: string): void {
   const { terminalExited, removeTerminal, killTerminal } =
@@ -97,11 +134,9 @@ function teardown(id: string): void {
   }
 }
 
-/** Close one pane, asking first if its shell is running something. */
+/** One pane. */
 export async function closeTerminalPane(id: string): Promise<boolean> {
-  if (!(await confirmKill([id]))) return false;
-  teardown(id);
-  return true;
+  return closeTerminals([id]);
 }
 
 /**
@@ -110,7 +145,21 @@ export async function closeTerminalPane(id: string): Promise<boolean> {
  */
 export async function closeTerminals(ids: string[]): Promise<boolean> {
   if (!(await confirmKill(ids))) return false;
+  // Read the attributions before the teardown drops the sessions that carry
+  // them: after this, nothing left in the store can say where these ran.
+  const { terminalSessions } = useReviewStore.getState();
+  const workspaceIds = new Set(
+    ids
+      .map((id) => terminalSessions[id]?.workspaceId)
+      .filter((id): id is string => id != null),
+  );
   for (const id of ids) teardown(id);
+  // Serially, and not because it is slow: `removeWorkspace` takes the backend's
+  // whole-queue answer as truth, so two in flight at once each return a
+  // snapshot missing only their own removal and the loser resurrects the other.
+  for (const workspaceId of workspaceIds) {
+    await reapSpentWorkspace(workspaceId, ids);
+  }
   return true;
 }
 

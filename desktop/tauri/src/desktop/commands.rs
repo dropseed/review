@@ -36,24 +36,11 @@ use review::symbols::{self, FileSymbolDiff, Symbol};
 use review::trust::patterns::TrustCategory;
 use review::work::{Attachment, WorkspaceView};
 use serde::Serialize;
-use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
 use tokio::sync::Mutex as TokioMutex;
 
 use super::terminal_commands::TerminalState;
 
-// --- Window defaults ---
-
-/// Default window width in logical pixels.
-const DEFAULT_WINDOW_WIDTH: f64 = 1100.0;
-/// Default window height in logical pixels.
-const DEFAULT_WINDOW_HEIGHT: f64 = 750.0;
-/// Minimum window width in logical pixels.
-const MIN_WINDOW_WIDTH: f64 = 800.0;
-/// Minimum window height in logical pixels.
-const MIN_WINDOW_HEIGHT: f64 = 600.0;
-
-use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -1256,136 +1243,6 @@ pub struct CliOpenRequest {
     pub focused_file: Option<String>,
     #[serde(rename = "focusedHunkHash")]
     pub focused_hunk_hash: Option<String>,
-}
-
-/// Give a runtime-created window the same title bar the main window declares in
-/// tauri.conf.json: the system bar still owns dragging and the traffic lights,
-/// but it draws in the window's background color instead of system chrome, and
-/// the OS title text is hidden. The frontend keeps that background in step with
-/// the active theme (`set_window_background_color`), so the bar reads as the
-/// top of the app rather than a strip bolted above it. A no-op off macOS, where
-/// the style doesn't exist.
-fn transparent_title_bar<'a, R: tauri::Runtime, M: tauri::Manager<R>>(
-    builder: tauri::webview::WebviewWindowBuilder<'a, R, M>,
-) -> tauri::webview::WebviewWindowBuilder<'a, R, M> {
-    #[cfg(target_os = "macos")]
-    return builder
-        .title_bar_style(tauri::TitleBarStyle::Transparent)
-        .hidden_title(true);
-    #[cfg(not(target_os = "macos"))]
-    return builder;
-}
-
-// Multi-window support
-#[tauri::command]
-pub async fn open_repo_window(
-    app: tauri::AppHandle,
-    repo_path: String,
-    ref_name: Option<String>,
-) -> Result<(), String> {
-    use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
-
-    // Handle empty repo_path for creating a new blank window (welcome page)
-    if repo_path.is_empty() {
-        // Generate a unique label for the new window
-        // Use "repo-" prefix to match capability patterns in default.json
-        let mut hasher = DefaultHasher::new();
-        format!(
-            "new-window-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos()
-        )
-        .hash(&mut hasher);
-        let label = format!("repo-{:x}", hasher.finish());
-
-        // Inherit size from an existing window so new windows match the
-        // user's current preferred size (the window-state plugin can't
-        // restore these since each blank window gets a unique label).
-        let (width, height) = app
-            .webview_windows()
-            .values()
-            .next()
-            .and_then(|w| {
-                let size = w.inner_size().ok()?;
-                let scale = w.scale_factor().ok()?;
-                Some((size.width as f64 / scale, size.height as f64 / scale))
-            })
-            .unwrap_or((DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT));
-
-        let builder = WebviewWindowBuilder::new(&app, label, WebviewUrl::App("index.html".into()))
-            .title("Review")
-            .inner_size(width, height)
-            .min_inner_size(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
-            .tabbing_identifier("review-main");
-        transparent_title_bar(builder)
-            .build()
-            .map_err(|e: tauri::Error| e.to_string())?;
-
-        return Ok(());
-    }
-
-    // Hash window label on repo_path only — one window per repo
-    let mut hasher = DefaultHasher::new();
-    repo_path.hash(&mut hasher);
-    let label = format!("repo-{:x}", hasher.finish());
-
-    // If a window already exists for this repo, reuse it
-    if let Some(existing) = app.get_webview_window(&label) {
-        // If a review ref was provided, tell the frontend to switch
-        if let Some(ref r) = ref_name {
-            let _ = existing.emit("cli:switch-ref", r.clone());
-        }
-        existing
-            .set_focus()
-            .map_err(|e: tauri::Error| e.to_string())?;
-        return Ok(());
-    }
-
-    let repo_name = std::path::Path::new(&repo_path).file_name().map_or_else(
-        || "Repository".to_owned(),
-        |s| s.to_string_lossy().to_string(),
-    );
-
-    let url = if let Some(ref r) = ref_name {
-        WebviewUrl::App(
-            format!(
-                "index.html?repo={}&ref={}",
-                urlencoding::encode(&repo_path),
-                urlencoding::encode(r)
-            )
-            .into(),
-        )
-    } else {
-        WebviewUrl::App(format!("index.html?repo={}", urlencoding::encode(&repo_path)).into())
-    };
-
-    // Inherit size from an existing window for first-time repos (the
-    // window-state plugin will override this for previously-opened repos).
-    let (width, height) = app
-        .webview_windows()
-        .values()
-        .next()
-        .and_then(|w| {
-            let size = w.inner_size().ok()?;
-            let scale = w.scale_factor().ok()?;
-            Some((size.width as f64 / scale, size.height as f64 / scale))
-        })
-        .unwrap_or((DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT));
-
-    let builder = WebviewWindowBuilder::new(&app, label, url)
-        .title(repo_name)
-        .inner_size(width, height)
-        .min_inner_size(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
-        .tabbing_identifier("review-main");
-    let window = transparent_title_bar(builder)
-        .build()
-        .map_err(|e: tauri::Error| e.to_string())?;
-
-    let _ = window.set_focus();
-
-    Ok(())
 }
 
 #[tauri::command]

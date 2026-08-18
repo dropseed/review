@@ -1,8 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { APP_COMMANDS } from "./appCommands";
-import { TERMINAL_COMMANDS } from "../components/Terminal/commands";
+import { STATIC_COMMANDS } from "./static";
 import { toAccelerator } from "./shortcuts";
 import { MENU_COMMANDS } from "../hooks/useMenuEvents";
 
@@ -59,13 +58,11 @@ function parseMenuItems(source: string): MenuItem[] {
 const source = readFileSync(MOD_RS, "utf8");
 const menuItems = parseMenuItems(source);
 /**
- * Both statically-known command lists, because the menu can name either. The
- * terminal contributes its own set (it owns the DOM probes behind them) and
- * ⌘T — the app's most-used chord — lives there.
+ * Everything the menu could name, from the one enumeration the shell also
+ * registers — so a command list added later is covered here without anyone
+ * remembering to widen this file.
  */
-const commandsById = new Map(
-  [...APP_COMMANDS, ...TERMINAL_COMMANDS].map((c) => [c.id, c]),
-);
+const commandsById = new Map(STATIC_COMMANDS.map((c) => [c.id, c]));
 
 const commandForMenuId = new Map(
   Object.entries(MENU_COMMANDS).map(([menuId, { command }]) => [
@@ -169,7 +166,7 @@ describe("native menu parity", () => {
     const seen = new Map<string, string>();
     const conflicts: string[] = [];
 
-    for (const command of APP_COMMANDS) {
+    for (const command of STATIC_COMMANDS) {
       if (!command.shortcut) continue;
       const key = toAccelerator(command.shortcut);
       const existing = seen.get(key);
@@ -184,7 +181,7 @@ describe("native menu parity", () => {
   });
 
   it("gives every command a unique id", () => {
-    const ids = APP_COMMANDS.map((c) => c.id);
+    const ids = STATIC_COMMANDS.map((c) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
 });

@@ -181,16 +181,6 @@ export function ReviewView({
     }
   }, [isRefreshing]);
 
-  // New tab handler: open a new tab with the current repo
-  const handleNewTab = useCallback(async () => {
-    const apiClient = getApiClient();
-    try {
-      await apiClient.openRepoWindow(repoPath || "");
-    } catch (err) {
-      console.error("Failed to open new tab:", err);
-    }
-  }, [repoPath]);
-
   // Navigate to a hunk from the classifications modal
   const handleClassificationSelectHunk = useCallback(
     (filePath: string, hunkId: string) => {
@@ -204,16 +194,14 @@ export function ReviewView({
   );
 
   useKeyboardNavigation();
-  // Deliberately not `newWindow` or `closeTab` — AppShell already provides
-  // those, and the same handler registered twice makes which one wins depend on
-  // effect-run order.
+  // Deliberately not `closeTab` — AppShell already provides it, and the same
+  // handler registered twice makes which one wins depend on effect-run order.
   useProvideCommandUi(
     useMemo(
       () => ({
-        newTab: () => void handleNewTab(),
         refresh: () => void handleRefresh(),
       }),
-      [handleNewTab, handleRefresh],
+      [handleRefresh],
     ),
   );
   useMouseNavigation();

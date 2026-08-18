@@ -156,7 +156,9 @@ The **queue card** renders a derived title in italics — same colour and weight
 
 ## Cleanup, not endorsement
 
-`autoCreated` is set by the router alone and cleared by **every** mutation in `core/src/work/` (rename, move, attach, detach) — so it means, precisely, "nothing but the router has ever touched this". `work::cleanup` drops a workspace that is `autoCreated`, has no live terminal, and is past a 60s creation grace. Nothing else ever removes one, and reviewing a comparison has no effect on the queue at all.
+`autoCreated` is set by the router alone and cleared by **every** mutation in `core/src/work/` (rename, move, attach, detach) — so it means, precisely, "nothing but the router has ever touched this". `work::cleanup` drops a workspace that is `autoCreated`, has no live terminal, and is past a 60s creation grace. Reviewing a comparison has no effect on the queue at all.
+
+The other way one goes is an **event**, not a sweep, and it is the app's: closing a workspace's last terminal (`desktop/ui/components/Terminal/close.ts`) removes the workspace too, when it has no typed title and at most one attachment. That card says only what its repo already says, so re-opening the repo mints an identical one. It cannot be a `work::cleanup` rule — a passive sweep with the same predicate would also reap the branch someone queued up to read later and never ran anything in. Closing the terminal is what says the workspace is spent; a typed title or a second repo says a person built something here, and removing _that_ stays theirs.
 
 ## Shipped workspaces
 

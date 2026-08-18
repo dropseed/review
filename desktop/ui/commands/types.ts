@@ -28,8 +28,6 @@ export interface ProvidedCommandUi {
   openRepo(): void;
   navigate(to: string): void;
   closeTab(): void;
-  newTab(): void;
-  newWindow(): void;
   refresh(): void;
   /**
    * Switch the app to the review row identified by repo + ref, the same way

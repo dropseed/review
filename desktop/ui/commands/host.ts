@@ -68,8 +68,6 @@ export function getCommandUi(): CommandUi {
     navigate: resolve("navigate") ?? noop,
     activateReviewKey: resolve("activateReviewKey") ?? noop,
     closeTab: resolve("closeTab") ?? noop,
-    newTab: resolve("newTab") ?? noop,
-    newWindow: resolve("newWindow") ?? noop,
     refresh: resolve("refresh") ?? noop,
   };
 }
