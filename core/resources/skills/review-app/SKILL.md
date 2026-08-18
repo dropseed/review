@@ -36,8 +36,19 @@ review status                         # how many hunks, how many done
 review hunks --status unreviewed --json   # no --diff yet — just the shape
 ```
 
-If the human wants a different comparison than the stored default, pin it once
-with `review use <spec>` — nothing downstream then needs `-s`.
+Need a different comparison than the stored default? Scope it to yourself
+first: `export REVIEW_SPEC=<spec>` (or `-s <spec>` per command). Both are
+session-local and persist **nothing** — the human's app is unaffected.
+
+`review use <spec>` and `review change-base <base>` are different animals:
+durable repo settings that decide what the *human* lands on when they open the
+app — today and weeks from now. A base pinned to a commit keeps accumulating
+every change since, so a stale pin quietly becomes a giant rolling diff.
+Set them only when the human asked to work against that comparison, tell them
+it stays until cleared, and clear it yourself (`review use --clear`,
+`review change-base --clear`) once its purpose is done. **Never pin a base
+just so the app shows your own work** — that's what `$REVIEW_SPEC` is for, or
+ask the human to open the comparison.
 
 Count hunks per file. Scan the classification labels. Then tell the human in
 2–3 sentences what you found: *"142 unreviewed hunks across 31 files. 47 are
@@ -460,8 +471,9 @@ them do it.
 # Command reference
 
 Review state (operates on a review of a ref; the base is derived automatically,
-override with a `base..ref` spec or `review change-base`). `-s`/`--repo` are
-global — accepted anywhere within a command:
+override with a `base..ref` spec — transient — or `review change-base`, which
+persists until cleared). `-s`/`--repo` are global — accepted anywhere within a
+command:
 
 ```
 review hunks   [--status|--file|--label|--hunk] [--json] [--diff]
@@ -472,7 +484,10 @@ review history [--json]                # this review's saved versions + what eac
 review undo [--to N]                   # restore one as a new version — the safety net
                                        # under any bulk mark; undo is itself undoable
 review use [<spec>] [--clear]          # show/set the repo's default comparison
-review change-base <new-base> [--clear]
+                                       # — durable; prefer $REVIEW_SPEC / -s
+                                       # for your own session
+review change-base <new-base> [--clear]  # pin/unpin the review's base — durable,
+                                       # decides what the app shows the human
 review note show                       # the human's note — read-only for agents
 review trust list|add|remove [<pattern>]
 review comments [--file GLOB] [--unresolved|--resolved] [--author NAME]

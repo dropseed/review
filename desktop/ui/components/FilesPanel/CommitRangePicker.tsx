@@ -109,15 +109,28 @@ export function CommitRangePicker(): ReactNode {
 
   // Always attributed against the *review* comparison, never the active range —
   // otherwise narrowing would shrink the list you narrow from.
+  //
+  // Deferred a macrotask past mount: attribution blames every changed file and
+  // on a large comparison can run for seconds, occupying one of the browser's
+  // few connections to the backend for the whole call. Firing it in the same
+  // tick as the initial load would race it against get-all-hunks and friends
+  // for those connections and make the diff itself wait behind it. A
+  // `setTimeout` queues this after every effect from the same mount has
+  // already issued its own fetch, so the hunks the user is here to see win
+  // the race; this only changes *when* the request goes out, not whether.
   useEffect(() => {
     if (
-      repoPath &&
-      reviewComparison &&
-      !attributionLoaded &&
-      !attributionLoading
+      !repoPath ||
+      !reviewComparison ||
+      attributionLoaded ||
+      attributionLoading
     ) {
-      loadAttribution(repoPath, reviewComparison.base, reviewComparison.head);
+      return;
     }
+    const timer = setTimeout(() => {
+      loadAttribution(repoPath, reviewComparison.base, reviewComparison.head);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [
     repoPath,
     reviewComparison,
@@ -155,7 +168,7 @@ export function CommitRangePicker(): ReactNode {
   const clearBase = async (repo: string, ref: string): Promise<void> => {
     const resolved = await setBaseOverride(repo, ref, null);
     if (!resolved) {
-      toast.error(`Couldn't compare ${ref} against ${defaultBranch}`);
+      toast.error(`Couldn't clear the pinned base of ${ref}`);
       return;
     }
     setCommitRange(null);
@@ -205,7 +218,16 @@ export function CommitRangePicker(): ReactNode {
   // the single most common review in the app describing itself as its
   // opposite.
   const wholeSlice = {
-    override: { label: `Since ${reviewComparison.base}`, hint: "pinned" },
+    override: {
+      label: `Since ${reviewComparison.base}`,
+      // The commit count is the label's answer to "why is this review so
+      // big": a pin outlives the moment it was set and keeps accumulating,
+      // and "pinned" alone gave no hint of how far it had drifted.
+      hint:
+        commits.length > 0
+          ? `pinned · ${commits.length} commit${commits.length === 1 ? "" : "s"}`
+          : "pinned",
+    },
     trunkWorkingTree: { label: "Uncommitted", hint: reviewComparison.base },
     branchVsDefault: {
       label: "Whole branch",
@@ -214,14 +236,24 @@ export function CommitRangePicker(): ReactNode {
     singleCommit: { label: "This commit", hint: reviewComparison.base },
   }[baseReason ?? "branchVsDefault"];
 
-  // The trunk review *is* its working tree, so the uncommitted row would be
-  // the row above it a second time, and "uncommitted work is included in the
-  // whole branch" would be describing it as being inside itself.
-  const uncommittedRow = showUncommitted && baseReason !== "trunkWorkingTree";
   // Every condition the pinned row itself renders under: counting it from
   // `pinned` alone let the two disagree, and a menu could reach the "nothing to
   // choose" case below with a chevron still on it.
   const unpinRow = pinned && !!defaultBranch && !!reviewRef && !!repoPath;
+  // Where clearing a pin lands: the ladder's trunk arm for the default
+  // branch — its working tree — and the whole branch vs the default for
+  // everything else. The unpin row is named for this, not for "whole branch"
+  // unconditionally, which on a pinned trunk promised a comparison that
+  // clearing doesn't produce. Derived from `unpinRow` so it can't be true
+  // while no unpin row renders.
+  const unpinToTrunk = unpinRow && reviewRef === defaultBranch;
+  // The trunk review *is* its working tree, so the uncommitted row would be
+  // the row above it a second time, and "uncommitted work is included in the
+  // whole branch" would be describing it as being inside itself. A pinned
+  // trunk hides it for the same reason: the unpin row already lands on the
+  // working tree, and two rows reading "Uncommitted" is one claim twice.
+  const uncommittedRow =
+    showUncommitted && baseReason !== "trunkWorkingTree" && !unpinToTrunk;
 
   // "All commits" named the *contents* and left out what they were being
   // compared against, which is the half nobody could see. The base is the
@@ -285,15 +317,19 @@ export function CommitRangePicker(): ReactNode {
               and it left the row above it reading "Whole branch · vs e14efa9",
               which is two claims that contradict each other.
 
-              Clearing the override *is* what "whole branch" means, so the row
-              that says so is the row that does it. */}
+              Clearing the override *is* picking the derived slice, so the row
+              is named for where clearing actually lands: a trunk review falls
+              back to its working tree (the ladder's trunk arm), everything
+              else to the whole branch vs the default. */}
           {unpinRow && (
             <DropdownMenuItem
               onClick={() => void clearBase(repoPath!, reviewRef!)}
             >
-              <span className="flex-1">Whole branch</span>
+              <span className="flex-1">
+                {unpinToTrunk ? "Uncommitted" : "Whole branch"}
+              </span>
               <span className="shrink-0 text-xxs text-fg-faint">
-                vs {defaultBranch}
+                {unpinToTrunk ? "working tree" : `vs ${defaultBranch}`}
               </span>
             </DropdownMenuItem>
           )}

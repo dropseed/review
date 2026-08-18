@@ -199,9 +199,10 @@ describe("a pinned base", () => {
   /**
    * A pinned base is named for what it shows, not for the mechanism that set
    * it — "Whole branch · vs e14efa9" was two claims contradicting each other
-   * in one line.
+   * in one line. The commit count is the staleness signal: a pin set weeks ago
+   * keeps accumulating, and "pinned" alone never said how far it had drifted.
    */
-  it("names itself by the commit it is pinned to", () => {
+  it("names itself by the commit it is pinned to, and how far it has grown", () => {
     seed([branch("feature", { isCurrent: true })]);
     useReviewStore.setState({
       baseReason: "override",
@@ -210,7 +211,7 @@ describe("a pinned base", () => {
     render(<CommitRangePicker />);
 
     expect(screen.getByRole("button").textContent).toContain(
-      "Since e14efa9 · pinned",
+      "Since e14efa9 · pinned · 4 commits",
     );
   });
 
@@ -233,6 +234,32 @@ describe("a pinned base", () => {
     fireEvent.click(screen.getByText("Whole branch"));
 
     expect(setBaseOverride).toHaveBeenCalledWith(REPO, "feature", null);
+  });
+
+  /**
+   * Clearing a *trunk* pin lands on the working tree (the ladder's trunk arm),
+   * not "whole branch vs itself" — so the escape row is named for where it
+   * lands, and the narrowing "Uncommitted" row is absorbed into it rather
+   * than rendering the same words twice with different mechanics.
+   */
+  it("escapes a trunk pin by picking uncommitted, where clearing lands", () => {
+    const setBaseOverride = vi.fn().mockResolvedValue(null);
+    seed([branch("main", { isCurrent: true })]);
+    useReviewStore.setState({
+      currentBranch: "main",
+      baseReason: "override",
+      reviewRef: "main",
+      reviewComparison: makeComparison("e14efa9", "main"),
+      setBaseOverride,
+    } as never);
+    openMenu();
+
+    expect(screen.queryByText("Whole branch")).toBeNull();
+    const rows = screen.getAllByText("Uncommitted");
+    expect(rows).toHaveLength(1);
+    fireEvent.click(rows[0]);
+
+    expect(setBaseOverride).toHaveBeenCalledWith(REPO, "main", null);
   });
 
   it("says nothing about pinning when the base was derived", () => {
