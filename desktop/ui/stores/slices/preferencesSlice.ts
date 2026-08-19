@@ -229,6 +229,14 @@ const defaults = {
   // fact about one pair of eyes, not about the work. A second machine
   // reasonably has its own answer, and nothing here is worth a queue write.
   workspaceSeenAt: {} as Record<string, number>,
+  // The workspace the stage was last showing, so a relaunch can come back to
+  // it. The focus itself is derived from the comparison on screen, and a cold
+  // start has no comparison to derive it from — see `useWorkspaceRestore`.
+  //
+  // A preference for the same reason `workspaceSeenAt` is one: it says where
+  // this window was, not what the work is, and the queue is shared with the
+  // CLI and with any other machine reading the same `work.json`.
+  lastWorkspaceId: null as string | null,
   fileSortOrder: "name" as FileSortOrder,
   guideSideNavCollapsed: false,
   guideSideNavWidth: 240,
@@ -311,6 +319,9 @@ export interface PreferencesSlice {
 
   // When each workspace was last focused, as epoch ms. Absent = never looked.
   workspaceSeenAt: Record<string, number>;
+
+  /** The workspace the stage was last showing, or null on a first run. */
+  lastWorkspaceId: string | null;
 
   // File sort order (shared across browse + changes tabs)
   fileSortOrder: FileSortOrder;
@@ -398,6 +409,15 @@ export interface PreferencesSlice {
    * exist go with the write rather than accumulating forever.
    */
   markWorkspaceSeen: (workspaceId: string, live: readonly string[]) => void;
+
+  /**
+   * Remember which workspace the stage is showing, for the next launch.
+   *
+   * Deliberately not `setFocusedWorkspace`'s job: the focus is usually derived
+   * rather than set, so the id worth remembering is the one on screen — which
+   * only `useWorkspaceRestore` is in a position to see.
+   */
+  rememberLastWorkspace: (workspaceId: string) => void;
 
   // File sort order actions
   setFileSortOrder: (order: FileSortOrder) => void;
@@ -719,6 +739,15 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       }
       set({ workspaceSeenAt: next });
       storage.set("workspaceSeenAt", next);
+    },
+
+    rememberLastWorkspace: (workspaceId) => {
+      // Guarded because this is written on every focus change, and an
+      // unconditional `set` notifies every subscriber in the app for a value
+      // that is usually the one already stored.
+      if (get().lastWorkspaceId === workspaceId) return;
+      set({ lastWorkspaceId: workspaceId });
+      storage.set("lastWorkspaceId", workspaceId);
     },
 
     setFileSortOrder: (order) => {

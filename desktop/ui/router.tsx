@@ -35,6 +35,7 @@ import {
   useMenuState,
   useRepoActivitySync,
   useWorkspaceSync,
+  useWorkspaceRestore,
   useTerminalCheckoutSync,
   useTerminalEvents,
   useTerminalFileDrop,
@@ -203,6 +204,8 @@ function AppShell() {
   useReviewFreshness();
   useRepoActivitySync();
   useWorkspaceSync();
+  // After the queue's own sync: the restore reads what that load produces.
+  useWorkspaceRestore(repoStatus);
   useTerminalCheckoutSync();
   useTerminalEvents();
   // Tauri's window-level drag-and-drop, which is the *only* drop channel in the
