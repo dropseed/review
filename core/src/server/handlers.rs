@@ -214,7 +214,7 @@ struct GetFileContentRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct GetAllHunksRequest {
+struct ComparisonFilesRequest {
     repo_path: String,
     comparison: Comparison,
     file_paths: Vec<String>,
@@ -241,14 +241,7 @@ struct SearchRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ListFilesRequest {
-    repo_path: String,
-    comparison: Comparison,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ListAllFilesRequest {
+struct ComparisonRequest {
     repo_path: String,
     comparison: Comparison,
 }
@@ -323,14 +316,6 @@ struct TrustMatchRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct SymbolDiffsRequest {
-    repo_path: String,
-    file_paths: Vec<String>,
-    comparison: Comparison,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct SymbolDefinitionsRequest {
     repo_path: String,
     symbol_name: String,
@@ -356,30 +341,9 @@ struct CommitsRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct HunkAttributionRequest {
-    repo_path: String,
-    comparison: Comparison,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct CommitDetailRequest {
     repo_path: String,
     hash: String,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct DiffRequest {
-    repo_path: String,
-    comparison: Comparison,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct DiffShortStatRequest {
-    repo_path: String,
-    comparison: Comparison,
 }
 
 #[derive(Deserialize)]
@@ -410,12 +374,6 @@ struct WorkingTreeFileContentRequest {
 struct GitCommitRequest {
     repo_path: String,
     message: String,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GenerateCommitMessageRequest {
-    repo_path: String,
 }
 
 #[derive(Deserialize)]
@@ -631,7 +589,7 @@ async fn git_commits(Json(req): Json<CommitsRequest>) -> ApiResult<Vec<CommitEnt
 }
 
 async fn git_hunk_attribution(
-    Json(req): Json<HunkAttributionRequest>,
+    Json(req): Json<ComparisonRequest>,
 ) -> ApiResult<crate::sources::local_git::HunkAttribution> {
     blocking(move || {
         let source = LocalGitSource::new(PathBuf::from(&req.repo_path))?;
@@ -656,7 +614,7 @@ async fn git_commit_comparison(Json(req): Json<ResolveRefRequest>) -> ApiResult<
     .await
 }
 
-async fn git_diff(Json(req): Json<DiffRequest>) -> ApiResult<String> {
+async fn git_diff(Json(req): Json<ComparisonRequest>) -> ApiResult<String> {
     blocking(move || {
         let source = LocalGitSource::new(PathBuf::from(&req.repo_path))?;
         source.get_diff(&req.comparison, None).map_err(Into::into)
@@ -664,7 +622,7 @@ async fn git_diff(Json(req): Json<DiffRequest>) -> ApiResult<String> {
     .await
 }
 
-async fn git_diff_shortstat(Json(req): Json<DiffShortStatRequest>) -> ApiResult<DiffShortStat> {
+async fn git_diff_shortstat(Json(req): Json<ComparisonRequest>) -> ApiResult<DiffShortStat> {
     blocking(move || {
         let source = LocalGitSource::new(PathBuf::from(&req.repo_path))?;
         source
@@ -815,14 +773,14 @@ async fn github_viewer_prs(
 // File handlers
 // ============================================================
 
-async fn files_list(Json(req): Json<ListFilesRequest>) -> ApiResult<Vec<FileEntry>> {
+async fn files_list(Json(req): Json<ComparisonRequest>) -> ApiResult<Vec<FileEntry>> {
     blocking(move || {
         crate::service::files::list_files(&PathBuf::from(&req.repo_path), &req.comparison)
     })
     .await
 }
 
-async fn files_list_all(Json(req): Json<ListAllFilesRequest>) -> ApiResult<Vec<FileEntry>> {
+async fn files_list_all(Json(req): Json<ComparisonRequest>) -> ApiResult<Vec<FileEntry>> {
     blocking(move || {
         crate::service::files::list_all_files(&PathBuf::from(&req.repo_path), &req.comparison)
     })
@@ -874,7 +832,7 @@ async fn files_content(Json(req): Json<GetFileContentRequest>) -> ApiResult<File
     .await
 }
 
-async fn files_all_hunks(Json(req): Json<GetAllHunksRequest>) -> ApiResult<Vec<DiffHunk>> {
+async fn files_all_hunks(Json(req): Json<ComparisonFilesRequest>) -> ApiResult<Vec<DiffHunk>> {
     blocking(move || {
         crate::service::files::get_all_hunks(
             &PathBuf::from(&req.repo_path),
@@ -886,7 +844,7 @@ async fn files_all_hunks(Json(req): Json<GetAllHunksRequest>) -> ApiResult<Vec<D
 }
 
 async fn files_move_pairs(
-    Json(req): Json<ListFilesRequest>,
+    Json(req): Json<ComparisonRequest>,
 ) -> ApiResult<Vec<crate::diff::parser::MovePair>> {
     blocking(move || {
         crate::service::files::comparison_move_pairs(
@@ -897,7 +855,9 @@ async fn files_move_pairs(
     .await
 }
 
-async fn files_delta(Json(req): Json<GetAllHunksRequest>) -> ApiResult<crate::service::FilesDelta> {
+async fn files_delta(
+    Json(req): Json<ComparisonFilesRequest>,
+) -> ApiResult<crate::service::FilesDelta> {
     blocking(move || {
         crate::service::files::files_delta(
             &PathBuf::from(&req.repo_path),
@@ -1254,7 +1214,7 @@ async fn trust_skip_file(Json(req): Json<FilePathRequest>) -> Json<bool> {
 // Symbol handlers
 // ============================================================
 
-async fn symbols_diffs(Json(req): Json<SymbolDiffsRequest>) -> ApiResult<Vec<FileSymbolDiff>> {
+async fn symbols_diffs(Json(req): Json<ComparisonFilesRequest>) -> ApiResult<Vec<FileSymbolDiff>> {
     blocking(move || {
         crate::service::symbols::get_file_symbol_diffs(
             &PathBuf::from(&req.repo_path),
@@ -1497,7 +1457,7 @@ async fn streaming_git_commit(
 }
 
 async fn streaming_generate_commit_message(
-    Json(req): Json<GenerateCommitMessageRequest>,
+    Json(req): Json<RepoPathRequest>,
 ) -> Sse<impl futures::Stream<Item = Result<Event, Infallible>>> {
     use tokio_stream::wrappers::ReceiverStream;
     use tokio_stream::StreamExt;

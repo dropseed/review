@@ -142,6 +142,386 @@ fn emit_cli_open_review(
 /// to hunt for the focused window: with several open, the app-global macOS menu
 /// bar fires `on_menu_event` once and every window would have reacted to it.
 #[cfg(desktop)]
+/// Everything that happens once the app exists: consent restore, the menu bar,
+/// and the two watchers that are global rather than per-repo.
+///
+/// Split out of `run` so that function reads as the builder chain it is. The
+/// `consent` flag comes in by reference because `init_sentry` already holds a
+/// clone of it in its `before_send` hook.
+#[cfg(desktop)]
+fn setup_app(
+    app: &mut tauri::App,
+    consent: &Arc<AtomicBool>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Restore Sentry consent from persisted settings
+    if let Some(serde_json::Value::Bool(true)) = commands::read_setting("sentryEnabled") {
+        consent.store(true, Ordering::Relaxed);
+    }
+
+    let close = MenuItemBuilder::new("Close")
+        .id("close")
+        .accelerator("CmdOrCtrl+W")
+        .build(app)?;
+
+    let open_repo = MenuItemBuilder::new("Open Repository…")
+        .id("open_repo")
+        .accelerator("CmdOrCtrl+O")
+        .build(app)?;
+
+    let new_terminal = MenuItemBuilder::new("New Terminal")
+        .id("new_terminal")
+        .accelerator("CmdOrCtrl+T")
+        .build(app)?;
+
+    let new_workspace = MenuItemBuilder::new("New Workspace")
+        .id("new_workspace")
+        .accelerator("CmdOrCtrl+N")
+        .build(app)?;
+
+    let refresh = MenuItemBuilder::new("Refresh Review")
+        .id("refresh")
+        .accelerator("CmdOrCtrl+Shift+R")
+        .enabled(false)
+        .build(app)?;
+
+    let actual_size = MenuItemBuilder::new("Actual Size")
+        .id("actual_size")
+        .accelerator("CmdOrCtrl+0")
+        .build(app)?;
+
+    let zoom_in = MenuItemBuilder::new("Zoom In")
+        .id("zoom_in")
+        .accelerator("CmdOrCtrl+=")
+        .build(app)?;
+
+    let zoom_out = MenuItemBuilder::new("Zoom Out")
+        .id("zoom_out")
+        .accelerator("CmdOrCtrl+-")
+        .build(app)?;
+
+    let show_debug = MenuItemBuilder::new("Show Debug Data")
+        .id("show_debug")
+        .build(app)?;
+
+    let restart_lsp = MenuItemBuilder::new("Restart Language Servers")
+        .id("restart_lsp")
+        .build(app)?;
+
+    let check_for_updates = MenuItemBuilder::new("Check for Updates...")
+        .id("check_for_updates")
+        .build(app)?;
+
+    let settings = MenuItemBuilder::new("Settings…")
+        .id("settings")
+        .accelerator("CmdOrCtrl+,")
+        .build(app)?;
+
+    let review_help = MenuItemBuilder::new("Review Help")
+        .id("review_help")
+        .build(app)?;
+
+    let report_issue = MenuItemBuilder::new("Report Issue...")
+        .id("report_issue")
+        .build(app)?;
+
+    let find_file = MenuItemBuilder::new("Go to File…")
+        .id("find_file")
+        .accelerator("CmdOrCtrl+P")
+        .enabled(false)
+        .build(app)?;
+
+    let find_symbols = MenuItemBuilder::new("Go to Symbol…")
+        .id("find_symbols")
+        .accelerator("CmdOrCtrl+R")
+        .enabled(false)
+        .build(app)?;
+
+    let search_in_files = MenuItemBuilder::new("Search in Files…")
+        .id("search_in_files")
+        .accelerator("CmdOrCtrl+Shift+F")
+        .enabled(false)
+        .build(app)?;
+
+    let toggle_sidebar = MenuItemBuilder::new("Toggle Sidebar")
+        .id("toggle_sidebar")
+        .accelerator("CmdOrCtrl+B")
+        .enabled(false)
+        .build(app)?;
+
+    let toggle_files_panel = MenuItemBuilder::new("Toggle Files Panel")
+        .id("toggle_files_panel")
+        .accelerator("CmdOrCtrl+Alt+B")
+        .enabled(false)
+        .build(app)?;
+
+    let reveal_in_browse = MenuItemBuilder::new("Reveal in Browse")
+        .id("reveal_in_browse")
+        .accelerator("CmdOrCtrl+Alt+\\")
+        .enabled(false)
+        .build(app)?;
+
+    let new_review = MenuItemBuilder::new("New Review…")
+        .id("new_review")
+        .accelerator("CmdOrCtrl+Shift+N")
+        .build(app)?;
+
+    let app_menu = SubmenuBuilder::new(app, &app.package_info().name)
+        .about(None)
+        .item(&check_for_updates)
+        .separator()
+        .item(&settings)
+        .separator()
+        .services()
+        .separator()
+        .hide()
+        .hide_others()
+        .show_all()
+        .separator()
+        .quit()
+        .build()?;
+
+    let file_menu = SubmenuBuilder::new(app, "File")
+        .item(&new_workspace)
+        .item(&new_terminal)
+        .item(&open_repo)
+        .separator()
+        .item(&new_review)
+        .separator()
+        .item(&close)
+        .build()?;
+
+    let edit_menu = SubmenuBuilder::new(app, "Edit")
+        .undo()
+        .redo()
+        .separator()
+        .cut()
+        .copy()
+        .paste()
+        .item(&PredefinedMenuItem::select_all(app, None)?)
+        .build()?;
+
+    let view_menu = SubmenuBuilder::new(app, "View")
+        .item(&refresh)
+        .separator()
+        .item(&find_file)
+        .item(&find_symbols)
+        .item(&search_in_files)
+        .separator()
+        .item(&toggle_sidebar)
+        .item(&toggle_files_panel)
+        .item(&reveal_in_browse)
+        .separator()
+        .item(&actual_size)
+        .item(&zoom_in)
+        .item(&zoom_out)
+        .separator()
+        .item(&show_debug)
+        .item(&restart_lsp)
+        .build()?;
+
+    let window_menu = SubmenuBuilder::new(app, "Window")
+        .minimize()
+        .maximize()
+        .separator()
+        .fullscreen()
+        .build()?;
+
+    #[allow(
+        unused_mut,
+        reason = "only the release build adds items to this submenu"
+    )]
+    let mut help_menu_builder = SubmenuBuilder::new(app, "Help");
+
+    #[cfg(not(debug_assertions))]
+    {
+        let install_cli = MenuItemBuilder::new("Install 'review' Command in PATH...")
+            .id("install_cli")
+            .build(app)?;
+        help_menu_builder = help_menu_builder.item(&install_cli).separator();
+    }
+
+    let help_menu = help_menu_builder
+        .item(&review_help)
+        .item(&report_issue)
+        .build()?;
+
+    let menu = MenuBuilder::new(app)
+        .item(&app_menu)
+        .item(&file_menu)
+        .item(&edit_menu)
+        .item(&view_menu)
+        .item(&window_menu)
+        .item(&help_menu)
+        .build()?;
+
+    app.set_menu(menu)?;
+
+    app.manage(MenuItems(std::collections::HashMap::from([
+        ("refresh".to_owned(), refresh),
+        ("find_file".to_owned(), find_file),
+        ("find_symbols".to_owned(), find_symbols),
+        ("search_in_files".to_owned(), search_in_files),
+        ("toggle_sidebar".to_owned(), toggle_sidebar),
+        ("toggle_files_panel".to_owned(), toggle_files_panel),
+        ("reveal_in_browse".to_owned(), reveal_in_browse),
+    ])));
+
+    // Terminals live in a separate `review-daemon` process so they
+    // survive quitting — or crashing — this app. Nothing is spawned or
+    // connected here: the daemon is attached to (or started) on the
+    // first terminal command, which keeps a respawn after an app update
+    // — seconds of quit-and-spawn — off the path the window waits on,
+    // and leaves a failed first attempt retryable. See
+    // `TerminalState::client`.
+    app.manage(terminal_commands::TerminalState::new());
+
+    // The tailnet server, and its restart if the user left it on. Off
+    // the startup path deliberately: binding a port is fast, but the
+    // window must not wait on it, and a failure here is a settings
+    // toggle to look at rather than a launch to abort.
+    app.manage(remote::RemoteServer::default());
+    let remote_handle = app.handle().clone();
+    tauri::async_runtime::spawn(async move {
+        remote::restore(&remote_handle).await;
+    });
+
+    // Start lightweight watchers for local activity on registered repos
+    let app_handle = app.handle().clone();
+    std::thread::spawn(move || {
+        if let Err(e) = crate::desktop::watchers::start_local_activity_watchers(app_handle) {
+            log::error!("[setup] Failed to start local activity watchers: {e}");
+        }
+    });
+
+    // The work queue is global, so its watcher is started once here
+    // rather than alongside any repo's — off the startup path for the
+    // same reason as the one above: `new_debouncer` blocks on the
+    // platform watcher's handshake.
+    let work_app_handle = app.handle().clone();
+    std::thread::spawn(move || {
+        if let Err(e) = crate::desktop::watchers::start_work_watcher(work_app_handle) {
+            log::error!("[setup] Failed to start work queue watcher: {e}");
+        }
+    });
+
+    Ok(())
+}
+
+/// A second launch of the app, forwarded here by the single-instance plugin.
+///
+/// The CLI reaches the running app this way: it launches the binary with the
+/// repo path (or a `review://` URL) and the plugin hands the argv over rather
+/// than starting a second process.
+fn handle_second_instance(app: &tauri::AppHandle, argv: Vec<String>) {
+    // Clean up signal file — the CLI may have written one before this
+    // second process was intercepted by the single-instance plugin.
+    let _ = std::fs::remove_file(open_request_path());
+
+    // If the second instance was launched with a review:// URL
+    // (e.g. clicking a link in another app), the deep-link plugin
+    // forwards it via argv. Handle it before the positional-arg
+    // path below.
+    if let Some(deep_link) = argv.iter().skip(1).find(|a| a.starts_with("review://")) {
+        handle_deep_link(app, deep_link);
+        return;
+    }
+
+    // When a second instance is launched, its CLI args are forwarded here.
+    // Find non-flag args after the binary name: first is repo path,
+    // optional second is the review ref.
+    let non_flag_args: Vec<String> = argv
+        .iter()
+        .skip(1)
+        .filter(|a| !a.starts_with('-'))
+        .cloned()
+        .collect();
+    if let Some(repo) = non_flag_args.first().cloned() {
+        let ref_name = non_flag_args.get(1).cloned();
+        let focused_file = non_flag_args.get(2).cloned();
+        emit_cli_open_review(
+            app,
+            &repo,
+            ref_name.as_deref(),
+            focused_file.as_deref(),
+            None,
+        );
+    }
+}
+
+/// Menu items are addressed by string id, so this is the one place the ids the
+/// menu builder writes have to agree with the events the frontend listens for.
+///
+/// The `_ => {}` fallthrough means a renamed id fails silently rather than
+/// failing to compile; keep the two halves in view of each other.
+fn handle_menu_event(app: &tauri::AppHandle, id: &str) {
+    match id {
+        "close" => emit_menu_event(app, "menu:close", ()),
+        "new_terminal" => emit_menu_event(app, "menu:new-terminal", ()),
+        "new_workspace" => emit_menu_event(app, "menu:new-workspace", ()),
+        "open_repo" => emit_menu_event(app, "menu:open-repo", ()),
+        "refresh" => emit_menu_event(app, "menu:refresh", ()),
+        "actual_size" => emit_menu_event(app, "menu:zoom-reset", ()),
+        "zoom_in" => emit_menu_event(app, "menu:zoom-in", ()),
+        "zoom_out" => emit_menu_event(app, "menu:zoom-out", ()),
+        "show_debug" => emit_menu_event(app, "menu:show-debug", ()),
+        "restart_lsp" => emit_menu_event(app, "menu:restart-lsp", ()),
+        "settings" => emit_menu_event(app, "menu:open-settings", ()),
+        "check_for_updates" => emit_menu_event(app, "menu:check-for-updates", ()),
+        "install_cli" => match commands::install_cli(app.clone()) {
+            Ok(_) => emit_menu_event(app, "cli:installed", ()),
+            Err(e) => emit_menu_event(app, "cli:install-error", e),
+        },
+        "review_help" => {
+            let _ = app
+                .opener()
+                .open_url("https://github.com/dropseed/review", None::<&str>);
+        }
+        "report_issue" => {
+            let _ = app
+                .opener()
+                .open_url("https://github.com/dropseed/review/issues", None::<&str>);
+        }
+        "find_file" => emit_menu_event(app, "menu:find-file", ()),
+        "find_symbols" => emit_menu_event(app, "menu:find-symbols", ()),
+        "search_in_files" => emit_menu_event(app, "menu:search-in-files", ()),
+        "toggle_sidebar" => emit_menu_event(app, "menu:toggle-sidebar", ()),
+        "toggle_files_panel" => emit_menu_event(app, "menu:toggle-files-panel", ()),
+        "reveal_in_browse" => emit_menu_event(app, "menu:reveal-in-browse", ()),
+        "new_review" => emit_menu_event(app, "menu:new-review", ()),
+        _ => {}
+    }
+}
+
+/// Sentry, reporting nothing until the user opts in.
+///
+/// Release builds only — a debug build returns `None` and never initializes the
+/// client at all. The `before_send` hook is the consent gate: it drops every
+/// event while the flag is false, and strips the user and hostname fields from
+/// the ones it does let through.
+fn init_sentry(consent: &Arc<AtomicBool>) -> Option<sentry::ClientInitGuard> {
+    if cfg!(debug_assertions) {
+        return None;
+    }
+    let consent_for_hook = Arc::clone(consent);
+    Some(sentry::init(sentry::ClientOptions {
+        dsn: "https://4c45659990b56ebdb601e459f324d2a7@o77283.ingest.us.sentry.io/4510829448462336"
+            .parse()
+            .ok(),
+        release: sentry::release_name!(),
+        environment: Some("production".into()),
+        before_send: Some(Arc::new(move |mut event| {
+            if !consent_for_hook.load(Ordering::Relaxed) {
+                return None;
+            }
+            // Strip PII fields
+            event.user = None;
+            event.server_name = None;
+            Some(event)
+        })),
+        ..Default::default()
+    }))
+}
+
 fn emit_menu_event<P: serde::Serialize + Clone>(app: &tauri::AppHandle, event: &str, payload: P) {
     let _ = app.emit(event, payload);
 }
@@ -247,73 +627,16 @@ pub fn run() {
     // Initialize Sentry early so it captures any panics during setup.
     // Events are silently dropped until the user opts in via preferences.
     let consent = Arc::new(AtomicBool::new(false));
-
-    // Only initialize Sentry in release builds
-    let _sentry_guard = if cfg!(debug_assertions) {
-        None
-    } else {
-        let consent_for_hook = consent.clone();
-        Some(sentry::init(sentry::ClientOptions {
-            dsn: "https://4c45659990b56ebdb601e459f324d2a7@o77283.ingest.us.sentry.io/4510829448462336"
-                .parse()
-                .ok(),
-            release: sentry::release_name!(),
-            environment: Some("production".into()),
-            before_send: Some(Arc::new(move |mut event| {
-                if !consent_for_hook.load(Ordering::Relaxed) {
-                    return None;
-                }
-                // Strip PII fields
-                event.user = None;
-                event.server_name = None;
-                Some(event)
-            })),
-            ..Default::default()
-        }))
-    };
+    let _sentry_guard = init_sentry(&consent);
 
     let builder = tauri::Builder::default()
-        .manage(SentryConsent(consent.clone()))
+        .manage(SentryConsent(Arc::clone(&consent)))
         .manage(commands::LspServers(tokio::sync::Mutex::new(
             std::collections::HashMap::new(),
         )))
         .manage(notifications::NotificationHub::default())
         .plugin(tauri_plugin_single_instance::init(
-            |app: &tauri::AppHandle, argv, _cwd| {
-                // Clean up signal file — the CLI may have written one before this
-                // second process was intercepted by the single-instance plugin.
-                let _ = std::fs::remove_file(open_request_path());
-
-                // If the second instance was launched with a review:// URL
-                // (e.g. clicking a link in another app), the deep-link plugin
-                // forwards it via argv. Handle it before the positional-arg
-                // path below.
-                if let Some(deep_link) = argv.iter().skip(1).find(|a| a.starts_with("review://")) {
-                    handle_deep_link(app, deep_link);
-                    return;
-                }
-
-                // When a second instance is launched, its CLI args are forwarded here.
-                // Find non-flag args after the binary name: first is repo path,
-                // optional second is the review ref.
-                let non_flag_args: Vec<String> = argv
-                    .iter()
-                    .skip(1)
-                    .filter(|a| !a.starts_with('-'))
-                    .cloned()
-                    .collect();
-                if let Some(repo) = non_flag_args.first().cloned() {
-                    let ref_name = non_flag_args.get(1).cloned();
-                    let focused_file = non_flag_args.get(2).cloned();
-                    emit_cli_open_review(
-                        app,
-                        &repo,
-                        ref_name.as_deref(),
-                        focused_file.as_deref(),
-                        None,
-                    );
-                }
-            },
+            |app: &tauri::AppHandle, argv, _cwd| handle_second_instance(app, argv),
         ))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
@@ -358,300 +681,8 @@ pub fn run() {
     let builder = builder
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .setup(move |app| {
-            // Restore Sentry consent from persisted settings
-            if let Some(serde_json::Value::Bool(true)) = commands::read_setting("sentryEnabled") {
-                consent.store(true, Ordering::Relaxed);
-            }
-
-            let close = MenuItemBuilder::new("Close")
-                .id("close")
-                .accelerator("CmdOrCtrl+W")
-                .build(app)?;
-
-            let open_repo = MenuItemBuilder::new("Open Repository…")
-                .id("open_repo")
-                .accelerator("CmdOrCtrl+O")
-                .build(app)?;
-
-            let new_terminal = MenuItemBuilder::new("New Terminal")
-                .id("new_terminal")
-                .accelerator("CmdOrCtrl+T")
-                .build(app)?;
-
-            let new_workspace = MenuItemBuilder::new("New Workspace")
-                .id("new_workspace")
-                .accelerator("CmdOrCtrl+N")
-                .build(app)?;
-
-            let refresh = MenuItemBuilder::new("Refresh Review")
-                .id("refresh")
-                .accelerator("CmdOrCtrl+Shift+R")
-                .enabled(false)
-                .build(app)?;
-
-            let actual_size = MenuItemBuilder::new("Actual Size")
-                .id("actual_size")
-                .accelerator("CmdOrCtrl+0")
-                .build(app)?;
-
-            let zoom_in = MenuItemBuilder::new("Zoom In")
-                .id("zoom_in")
-                .accelerator("CmdOrCtrl+=")
-                .build(app)?;
-
-            let zoom_out = MenuItemBuilder::new("Zoom Out")
-                .id("zoom_out")
-                .accelerator("CmdOrCtrl+-")
-                .build(app)?;
-
-            let show_debug = MenuItemBuilder::new("Show Debug Data")
-                .id("show_debug")
-                .build(app)?;
-
-            let restart_lsp = MenuItemBuilder::new("Restart Language Servers")
-                .id("restart_lsp")
-                .build(app)?;
-
-            let check_for_updates = MenuItemBuilder::new("Check for Updates...")
-                .id("check_for_updates")
-                .build(app)?;
-
-            let settings = MenuItemBuilder::new("Settings…")
-                .id("settings")
-                .accelerator("CmdOrCtrl+,")
-                .build(app)?;
-
-            let review_help = MenuItemBuilder::new("Review Help")
-                .id("review_help")
-                .build(app)?;
-
-            let report_issue = MenuItemBuilder::new("Report Issue...")
-                .id("report_issue")
-                .build(app)?;
-
-            let find_file = MenuItemBuilder::new("Go to File…")
-                .id("find_file")
-                .accelerator("CmdOrCtrl+P")
-                .enabled(false)
-                .build(app)?;
-
-            let find_symbols = MenuItemBuilder::new("Go to Symbol…")
-                .id("find_symbols")
-                .accelerator("CmdOrCtrl+R")
-                .enabled(false)
-                .build(app)?;
-
-            let search_in_files = MenuItemBuilder::new("Search in Files…")
-                .id("search_in_files")
-                .accelerator("CmdOrCtrl+Shift+F")
-                .enabled(false)
-                .build(app)?;
-
-            let toggle_sidebar = MenuItemBuilder::new("Toggle Sidebar")
-                .id("toggle_sidebar")
-                .accelerator("CmdOrCtrl+B")
-                .enabled(false)
-                .build(app)?;
-
-            let toggle_files_panel = MenuItemBuilder::new("Toggle Files Panel")
-                .id("toggle_files_panel")
-                .accelerator("CmdOrCtrl+Alt+B")
-                .enabled(false)
-                .build(app)?;
-
-            let reveal_in_browse = MenuItemBuilder::new("Reveal in Browse")
-                .id("reveal_in_browse")
-                .accelerator("CmdOrCtrl+Alt+\\")
-                .enabled(false)
-                .build(app)?;
-
-            let new_review = MenuItemBuilder::new("New Review…")
-                .id("new_review")
-                .accelerator("CmdOrCtrl+Shift+N")
-                .build(app)?;
-
-            let app_menu = SubmenuBuilder::new(app, &app.package_info().name)
-                .about(None)
-                .item(&check_for_updates)
-                .separator()
-                .item(&settings)
-                .separator()
-                .services()
-                .separator()
-                .hide()
-                .hide_others()
-                .show_all()
-                .separator()
-                .quit()
-                .build()?;
-
-            let file_menu = SubmenuBuilder::new(app, "File")
-                .item(&new_workspace)
-                .item(&new_terminal)
-                .item(&open_repo)
-                .separator()
-                .item(&new_review)
-                .separator()
-                .item(&close)
-                .build()?;
-
-            let edit_menu = SubmenuBuilder::new(app, "Edit")
-                .undo()
-                .redo()
-                .separator()
-                .cut()
-                .copy()
-                .paste()
-                .item(&PredefinedMenuItem::select_all(app, None)?)
-                .build()?;
-
-            let view_menu = SubmenuBuilder::new(app, "View")
-                .item(&refresh)
-                .separator()
-                .item(&find_file)
-                .item(&find_symbols)
-                .item(&search_in_files)
-                .separator()
-                .item(&toggle_sidebar)
-                .item(&toggle_files_panel)
-                .item(&reveal_in_browse)
-                .separator()
-                .item(&actual_size)
-                .item(&zoom_in)
-                .item(&zoom_out)
-                .separator()
-                .item(&show_debug)
-                .item(&restart_lsp)
-                .build()?;
-
-            let window_menu = SubmenuBuilder::new(app, "Window")
-                .minimize()
-                .maximize()
-                .separator()
-                .fullscreen()
-                .build()?;
-
-            #[allow(
-                unused_mut,
-                reason = "only the release build adds items to this submenu"
-            )]
-            let mut help_menu_builder = SubmenuBuilder::new(app, "Help");
-
-            #[cfg(not(debug_assertions))]
-            {
-                let install_cli = MenuItemBuilder::new("Install 'review' Command in PATH...")
-                    .id("install_cli")
-                    .build(app)?;
-                help_menu_builder = help_menu_builder.item(&install_cli).separator();
-            }
-
-            let help_menu = help_menu_builder
-                .item(&review_help)
-                .item(&report_issue)
-                .build()?;
-
-            let menu = MenuBuilder::new(app)
-                .item(&app_menu)
-                .item(&file_menu)
-                .item(&edit_menu)
-                .item(&view_menu)
-                .item(&window_menu)
-                .item(&help_menu)
-                .build()?;
-
-            app.set_menu(menu)?;
-
-            app.manage(MenuItems(std::collections::HashMap::from([
-                ("refresh".to_owned(), refresh),
-                ("find_file".to_owned(), find_file),
-                ("find_symbols".to_owned(), find_symbols),
-                ("search_in_files".to_owned(), search_in_files),
-                ("toggle_sidebar".to_owned(), toggle_sidebar),
-                ("toggle_files_panel".to_owned(), toggle_files_panel),
-                ("reveal_in_browse".to_owned(), reveal_in_browse),
-            ])));
-
-            // Terminals live in a separate `review-daemon` process so they
-            // survive quitting — or crashing — this app. Nothing is spawned or
-            // connected here: the daemon is attached to (or started) on the
-            // first terminal command, which keeps a respawn after an app update
-            // — seconds of quit-and-spawn — off the path the window waits on,
-            // and leaves a failed first attempt retryable. See
-            // `TerminalState::client`.
-            app.manage(terminal_commands::TerminalState::new());
-
-            // The tailnet server, and its restart if the user left it on. Off
-            // the startup path deliberately: binding a port is fast, but the
-            // window must not wait on it, and a failure here is a settings
-            // toggle to look at rather than a launch to abort.
-            app.manage(remote::RemoteServer::default());
-            let remote_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                remote::restore(&remote_handle).await;
-            });
-
-            // Start lightweight watchers for local activity on registered repos
-            let app_handle = app.handle().clone();
-            std::thread::spawn(move || {
-                if let Err(e) = crate::desktop::watchers::start_local_activity_watchers(app_handle)
-                {
-                    log::error!("[setup] Failed to start local activity watchers: {e}");
-                }
-            });
-
-            // The work queue is global, so its watcher is started once here
-            // rather than alongside any repo's — off the startup path for the
-            // same reason as the one above: `new_debouncer` blocks on the
-            // platform watcher's handshake.
-            let work_app_handle = app.handle().clone();
-            std::thread::spawn(move || {
-                if let Err(e) = crate::desktop::watchers::start_work_watcher(work_app_handle) {
-                    log::error!("[setup] Failed to start work queue watcher: {e}");
-                }
-            });
-
-            Ok(())
-        })
-        .on_menu_event(|app, event| {
-            let id = event.id().as_ref();
-            match id {
-                "close" => emit_menu_event(app, "menu:close", ()),
-                "new_terminal" => emit_menu_event(app, "menu:new-terminal", ()),
-                "new_workspace" => emit_menu_event(app, "menu:new-workspace", ()),
-                "open_repo" => emit_menu_event(app, "menu:open-repo", ()),
-                "refresh" => emit_menu_event(app, "menu:refresh", ()),
-                "actual_size" => emit_menu_event(app, "menu:zoom-reset", ()),
-                "zoom_in" => emit_menu_event(app, "menu:zoom-in", ()),
-                "zoom_out" => emit_menu_event(app, "menu:zoom-out", ()),
-                "show_debug" => emit_menu_event(app, "menu:show-debug", ()),
-                "restart_lsp" => emit_menu_event(app, "menu:restart-lsp", ()),
-                "settings" => emit_menu_event(app, "menu:open-settings", ()),
-                "check_for_updates" => emit_menu_event(app, "menu:check-for-updates", ()),
-                "install_cli" => match commands::install_cli(app.clone()) {
-                    Ok(_) => emit_menu_event(app, "cli:installed", ()),
-                    Err(e) => emit_menu_event(app, "cli:install-error", e),
-                },
-                "review_help" => {
-                    let _ = app
-                        .opener()
-                        .open_url("https://github.com/dropseed/review", None::<&str>);
-                }
-                "report_issue" => {
-                    let _ = app
-                        .opener()
-                        .open_url("https://github.com/dropseed/review/issues", None::<&str>);
-                }
-                "find_file" => emit_menu_event(app, "menu:find-file", ()),
-                "find_symbols" => emit_menu_event(app, "menu:find-symbols", ()),
-                "search_in_files" => emit_menu_event(app, "menu:search-in-files", ()),
-                "toggle_sidebar" => emit_menu_event(app, "menu:toggle-sidebar", ()),
-                "toggle_files_panel" => emit_menu_event(app, "menu:toggle-files-panel", ()),
-                "reveal_in_browse" => emit_menu_event(app, "menu:reveal-in-browse", ()),
-                "new_review" => emit_menu_event(app, "menu:new-review", ()),
-                _ => {}
-            }
-        });
+        .setup(move |app| setup_app(app, &consent))
+        .on_menu_event(|app, event| handle_menu_event(app, event.id().as_ref()));
 
     #[cfg(target_os = "macos")]
     let builder = builder.on_window_event(|window, event| {
