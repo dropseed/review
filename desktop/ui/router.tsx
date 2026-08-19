@@ -25,7 +25,7 @@ import { findSidebarRow } from "./stores/selectors/sidebar";
 import { activateSidebarRow } from "./utils/sidebar-tree";
 import { makeReviewKey } from "./utils/review-key";
 import { getErrorMessage } from "./utils/errors";
-import { getPlatformServices } from "./platform";
+import { closeWindowWithConfirmation } from "./utils/close-window";
 import { prReviewTarget, type ReviewTarget, type ViewerPr } from "./types";
 import {
   useRepositoryInit,
@@ -134,6 +134,11 @@ function AppShell() {
   // Cascading close (terminal pane → split → file → window). Shell-level
   // because the terminal is: ⌘W over a shell means "close this shell" wherever
   // that shell is on screen, and it must not reach past it to the window.
+  //
+  // The window rung asks first — see `utils/close-window`. It is the one rung
+  // that isn't a small, obvious undo, and ⌘W arrives there by falling through
+  // everything else, which is exactly when the keystroke was aimed at
+  // something that had already gone.
   const handleClose = useCallback(async () => {
     if (await closeFocusedTerminal()) return;
     const state = useReviewStore.getState();
@@ -142,8 +147,7 @@ function AppShell() {
     } else if (state.selectedFile !== null) {
       useReviewStore.setState({ selectedFile: null });
     } else {
-      const platform = getPlatformServices();
-      await platform.window.close();
+      await closeWindowWithConfirmation();
     }
   }, []);
 

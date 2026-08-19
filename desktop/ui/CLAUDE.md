@@ -136,6 +136,8 @@ Adding a command means adding one entry to `APP_COMMANDS` — or to `TERMINAL_CO
 
 **⌘T is `terminal.new`**: a terminal in the focused workspace, from anywhere, with no dialog ever. It is `openTerminalTab(focusedWorkspace(...))` and nothing else — the cwd follows the repo tab on screen (its first tab otherwise), and with no workspace focused, or one showing no repo, it names no directory at all, so the backend starts in `$HOME` and the router places the session by cwd exactly as it would a shell started outside the app. There is nothing else it could open: the app has no tabs and no second window. **⌘N is `workspace.new`**, the other half of that — a fresh card in the queue, focused, empty.
 
+**⌘W cascades and asks at the bottom**: `handleClose` in `router.tsx` closes the focused terminal pane, else the split, else the file — and when nothing is left, the window itself, which is the one rung that confirms first (`utils/close-window.ts`). Everything above it is a small undo; the window is not, and ⌘W reaches it precisely by falling through everything the keystroke was probably aimed at. The prompt names the terminals that outlive it, because they are the daemon's and closing the window kills none of them.
+
 `lib/fuzzy/` is the one fuzzy matcher — a Smith-Waterman DP producing scores normalized to 0..1, so several weighted fields and an extrinsic boost can be blended without one term swamping the others.
 
 ### The palette's five modes
