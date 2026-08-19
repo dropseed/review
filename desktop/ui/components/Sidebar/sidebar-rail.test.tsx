@@ -113,7 +113,9 @@ describe("the collapsed sidebar rail", () => {
     );
 
     // `working` outranks `idle`; the workspace with no terminals is dormant.
-    expect(first.querySelector("span")?.className).toContain("bg-pr-open");
+    expect(first.querySelector("span")?.className).toContain(
+      "bg-phase-working",
+    );
     expect(second.querySelector("span")?.className).toContain("border");
   });
 
