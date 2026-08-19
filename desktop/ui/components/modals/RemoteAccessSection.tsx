@@ -157,9 +157,17 @@ export function RemoteAccessSection(): ReactNode {
             <button
               type="button"
               onClick={() => {
-                void navigator.clipboard.writeText(state.url!);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 1500);
+                // Through the platform service, and "Copied" only once it
+                // actually was — see `ErrorBoundary.handleCopy`.
+                void getPlatformServices()
+                  .clipboard.writeText(state.url!)
+                  .then(() => {
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1500);
+                  })
+                  .catch((err: unknown) => {
+                    console.error("Failed to copy the tailnet URL:", err);
+                  });
               }}
               className="block w-full truncate text-left text-xs text-fg-secondary hover:text-fg"
               title="Copy"

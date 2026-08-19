@@ -8,6 +8,7 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { useReviewStore } from "../../stores";
+import type { BaseReason } from "../../types";
 import { openCommitView } from "./openCommit";
 import {
   commitRangeFor,
@@ -28,6 +29,70 @@ import {
 import { Spinner } from "../ui/spinner";
 import { WarningIcon } from "../ui/icons";
 import { SELECTED_CHECK } from "./PanelToolbar";
+
+interface WholeSlice {
+  /** What the review's own comparison is, in the words of the intent behind it. */
+  label: string;
+  /** What it is measured against, said quietly beside the label. */
+  hint: string;
+  /**
+   * How the label reads mid-sentence, where lowercasing it isn't enough — an
+   * acronym is not a word, and "included in whole pr" is not a sentence.
+   */
+  inline?: string;
+}
+
+/**
+ * The review's *own* comparison, named by the arm of the backend ladder that
+ * produced it. This is what `BaseReason` was added for — "so the UI can label
+ * the comparison honestly" — and it had never been read, which is why one label
+ * had to cover four different comparisons and got at least two of them wrong.
+ * The trunk case especially: the default branch against itself is nothing but a
+ * working tree, and calling that "whole branch" is the single most common
+ * review in the app describing itself as its opposite.
+ *
+ * Total over `BaseReason`, in both directions, because this is a wire value:
+ *
+ * - The `Record` makes a new arm on the backend a *compile* error here the
+ *   moment it lands in the union, rather than a row nobody wrote.
+ * - The `??` covers the other direction — an app meeting a daemon newer than
+ *   itself. `pullRequest` arrived that way and this lookup returned
+ *   `undefined`, so opening a PR from the sidebar didn't mislabel one line, it
+ *   took the whole window down. A wrong-but-derived label is a bug; a crash on
+ *   a string nobody has taught the UI yet is a category error.
+ */
+function wholeSliceFor(
+  baseReason: BaseReason | null,
+  base: string,
+  commitCount: number,
+): WholeSlice {
+  const slices: Record<BaseReason, WholeSlice> = {
+    override: {
+      label: `Since ${base}`,
+      // The commit count is the label's answer to "why is this review so
+      // big": a pin outlives the moment it was set and keeps accumulating,
+      // and "pinned" alone gave no hint of how far it had drifted.
+      hint:
+        commitCount > 0
+          ? `pinned · ${commitCount} commit${commitCount === 1 ? "" : "s"}`
+          : "pinned",
+    },
+    // A PR is reviewed at its fetched head (`refs/review/pr/N`) against the
+    // base branch GitHub says it targets — not against this repo's default,
+    // which is what "whole branch" would be claiming on a PR into a release
+    // branch.
+    pullRequest: {
+      label: "Whole PR",
+      hint: `vs ${base}`,
+      inline: "the whole PR",
+    },
+    trunkWorkingTree: { label: "Uncommitted", hint: base },
+    branchVsDefault: { label: "Whole branch", hint: `vs ${base}` },
+    singleCommit: { label: "This commit", hint: base },
+  };
+  const slice: WholeSlice | undefined = slices[baseReason ?? "branchVsDefault"];
+  return slice ?? slices.branchVsDefault;
+}
 
 const CHEVRON_DOWN = (
   <svg
@@ -210,31 +275,12 @@ export function CommitRangePicker(): ReactNode {
   const unpushedSlice = unpushedRange(commits, reviewComparison.base, unpushed);
 
   // What the review's *own* comparison is, named by the arm of the backend
-  // ladder that produced it. This is what `BaseReason` was added for — "so the
-  // UI can label the comparison honestly" — and it had never been read, which
-  // is why one label had to cover four different comparisons and got at least
-  // two of them wrong. The trunk case especially: the default branch against
-  // itself is nothing but a working tree, and calling that "whole branch" is
-  // the single most common review in the app describing itself as its
-  // opposite.
-  const wholeSlice = {
-    override: {
-      label: `Since ${reviewComparison.base}`,
-      // The commit count is the label's answer to "why is this review so
-      // big": a pin outlives the moment it was set and keeps accumulating,
-      // and "pinned" alone gave no hint of how far it had drifted.
-      hint:
-        commits.length > 0
-          ? `pinned · ${commits.length} commit${commits.length === 1 ? "" : "s"}`
-          : "pinned",
-    },
-    trunkWorkingTree: { label: "Uncommitted", hint: reviewComparison.base },
-    branchVsDefault: {
-      label: "Whole branch",
-      hint: `vs ${reviewComparison.base}`,
-    },
-    singleCommit: { label: "This commit", hint: reviewComparison.base },
-  }[baseReason ?? "branchVsDefault"];
+  // ladder that produced it. See `wholeSliceFor`.
+  const wholeSlice = wholeSliceFor(
+    baseReason,
+    reviewComparison.base,
+    commits.length,
+  );
 
   // Every condition the pinned row itself renders under: counting it from
   // `pinned` alone let the two disagree, and a menu could reach the "nothing to
@@ -360,7 +406,8 @@ export function CommitRangePicker(): ReactNode {
               it is half of why a review reads bigger than the branch is. */}
           {uncommittedRow && (
             <p className="px-2 pb-1 pt-0.5 text-xxs leading-4 text-fg-faint/70">
-              Uncommitted work is included in {wholeSlice.label.toLowerCase()}.
+              Uncommitted work is included in{" "}
+              {wholeSlice.inline ?? wholeSlice.label.toLowerCase()}.
             </p>
           )}
 
