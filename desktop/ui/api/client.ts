@@ -505,7 +505,7 @@ export interface ApiClient {
   // priority order, so a reorder or a removal changes entries the caller never
   // named, and the canonical list is the only answer that can't drift. The
   // caller reconciles against it instead of replaying its own optimistic edit,
-  // which keeps it correct when a `review work` command or another window wrote
+  // which keeps it correct when a `review workspace` command or another window wrote
   // in between. Both transports and the two Rust backends follow this; they
   // don't restate it.
 
