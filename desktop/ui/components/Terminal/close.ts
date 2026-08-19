@@ -1,12 +1,16 @@
 /**
  * Closing a terminal, from every entrance that can do it: the pane ×, the tab
- * ×, and ⌘W. They share one implementation so the confirmation for a running
- * command can't be attached to some of them and not the others.
+ * ×, and ⌘W. They share one implementation so the confirmation for a busy
+ * shell can't be attached to some of them and not the others.
  */
 
 import { getPlatformServices } from "../../platform";
 import { useReviewStore } from "../../stores";
-import { findTabForTerminal } from "../../stores/slices/terminalSlice";
+import {
+  findTab,
+  findTabForTerminal,
+  tabWorkspaceId,
+} from "../../stores/slices/terminalSlice";
 import { collectLeafIds, type TerminalTab } from "./pane-tree";
 import { disposeTerminal } from "./registry";
 
@@ -38,24 +42,95 @@ export function focusedTerminalTab(): {
 }
 
 /**
- * The commands running in `ids`, named. A session sitting at its prompt has no
- * running command, which is what keeps the confirmation off the common path.
+ * Whether the keyboard is anywhere in the terminal panel — a pane, or the
+ * chrome around it: a tab in the strip, the "+", the focus toggle.
+ *
+ * Wider than `focusedTerminalId` on purpose. Clicking a tab or a pane's own
+ * buttons is not leaving the terminal, but it does move `document.activeElement`
+ * out of the pane, and a rule that read the pane alone made ⌘W stop meaning
+ * "close this shell" the moment you touched the panel's own controls.
  */
-function runningCommands(ids: string[]): { title: string; command: string }[] {
+function focusWithinTerminalPanel(): boolean {
+  const active = document.activeElement;
+  return (
+    active instanceof Element &&
+    active.closest("[data-terminal-panel]") !== null
+  );
+}
+
+/**
+ * The pane ⌘W means when nothing inside a terminal holds the keyboard.
+ *
+ * DOM focus is a poor witness for "what am I working in". It lands on `body`
+ * when a dialog closes, when the ⌘K palette dismisses, when a click hits any
+ * chrome that isn't focusable — and it sits in the sidebar for as long as it
+ * takes to read a workspace card. None of that is the user leaving the shell,
+ * yet each one used to send ⌘W past the terminal to close the diff, the file,
+ * or — with nothing else left in the cascade — the window itself.
+ *
+ * So the panel is asked what it is showing, the same way ⌘T asks the focused
+ * workspace where to start a shell rather than asking where the caret is. The
+ * one thing that still decides against the terminal is the *code* holding the
+ * content region: there the diff and its file are the nouns ⌘W is for. In the
+ * shared view both are on screen and neither can claim the keystroke on layout
+ * alone, so focus arbitrates — the panel's own chrome counts, anything else
+ * falls through.
+ */
+function shownTerminalPane(): string | null {
+  const state = useReviewStore.getState();
+  // The overview draws every workspace's tabs at once, with a × on each card.
+  // "The one the panel is showing" has no answer there, and guessing at one
+  // would kill a shell the user never pointed at.
+  if (state.terminalOverview) return null;
+  if (state.contentFocus === "code") return null;
+  if (state.contentFocus === "split" && !focusWithinTerminalPanel())
+    return null;
+
+  const tab = state.activeTabId
+    ? findTab(state.terminalTabs, state.activeTabId)
+    : null;
+  if (!tab) return null;
+  // The strip shows one workspace's tabs, so an active tab belonging to another
+  // one is drawing nothing (see `showingTabId` in TerminalPanel) — closing it
+  // would be closing a terminal that is not on screen.
+  const workspaceId = tabWorkspaceId(state, tab);
+  if (workspaceId !== null && workspaceId !== state.focusedWorkspaceId) {
+    return null;
+  }
+  return tab.focused;
+}
+
+/**
+ * The sessions in `ids` that still have something going on, said in words.
+ *
+ * Two ways to look busy, in the order they are worth reporting. A named
+ * foreground command is the good answer: the poller resolves one for every
+ * session that isn't sitting at its prompt, agents included (`claude` is a
+ * running command like any other). A `working` phase with no name is the same
+ * fact with the name missing — `ps` didn't report the process group, or the
+ * session hasn't been polled yet — and it used to close in silence, which is
+ * the one shape of this question you can't afford to get wrong.
+ *
+ * `waiting_for_input` and `idle` are a prompt, not work, and `needs_attention`
+ * on its own is a bell — zsh rings one at every ambiguous completion, so asking
+ * on it would put a dialog in front of the common case.
+ */
+function busyReasons(ids: string[]): string[] {
   const { terminalStatuses, terminalSessions, terminalExited } =
     useReviewStore.getState();
-  const out: { title: string; command: string }[] = [];
+  const reasons: string[] = [];
   for (const id of ids) {
     if (id in terminalExited) continue;
-    const command = terminalStatuses[id]?.runningCommand;
-    if (!command) continue;
-    const session = terminalSessions[id];
-    out.push({
-      title: terminalStatuses[id]?.title || session?.title || "shell",
-      command,
-    });
+    const status = terminalStatuses[id];
+    if (!status) continue;
+    const name = status.title || terminalSessions[id]?.title || "shell";
+    if (status.runningCommand) {
+      reasons.push(`${name} is running \`${status.runningCommand}\``);
+    } else if (status.phase === "working") {
+      reasons.push(`${name} is still working`);
+    }
   }
-  return out;
+  return reasons;
 }
 
 /**
@@ -64,18 +139,17 @@ function runningCommands(ids: string[]): { title: string; command: string }[] {
  * "zsh is running `npm test`" is one they can.
  */
 async function confirmKill(ids: string[]): Promise<boolean> {
-  const running = runningCommands(ids);
-  if (running.length === 0) return true;
+  const reasons = busyReasons(ids);
+  if (reasons.length === 0) return true;
   const { dialogs } = getPlatformServices();
-  const lines = running.map((r) => `${r.title} is running \`${r.command}\``);
   // A dialog that fails to open answers false and says so itself — see
   // DialogService.confirm. Declining is right either way: closing would kill
   // the running command without ever asking.
   return dialogs.confirm(
-    `${lines.join("\n")}\n\nClosing ${
-      running.length === 1 ? "it" : "them"
-    } will kill the command. Close anyway?`,
-    running.length === 1 ? "Terminal is busy" : "Terminals are busy",
+    `${reasons.join("\n")}\n\nClosing ${
+      reasons.length === 1 ? "it" : "them"
+    } will kill what is running. Close anyway?`,
+    reasons.length === 1 ? "Terminal is busy" : "Terminals are busy",
   );
 }
 
@@ -169,14 +243,18 @@ export async function closeTerminalTab(tab: TerminalTab): Promise<boolean> {
 }
 
 /**
- * ⌘W inside a terminal closes that pane — and the tab with it, when it was the
+ * ⌘W over a terminal closes that pane — and the tab with it, when it was the
  * last one. Returns whether it handled the keystroke, so the caller can fall
  * through to closing the split, the file, or the window.
+ *
+ * "Over a terminal" is the pane with the keyboard, and failing that the pane
+ * the panel is showing — see `shownTerminalPane` for why the second one is not
+ * a fallback so much as the honest question.
  */
 export async function closeFocusedTerminal(): Promise<boolean> {
-  const focused = focusedTerminalTab();
-  if (!focused) return false;
-  await closeTerminalPane(focused.terminalId);
+  const target = focusedTerminalId() ?? shownTerminalPane();
+  if (!target) return false;
+  await closeTerminalPane(target);
   // Handled either way: a declined confirmation means "don't close this", not
   // "close my window instead".
   return true;
