@@ -21,6 +21,7 @@
   --animate-accordion-up: accordion-up 0.2s ease-out;
   --animate-sidebar-slide-in: sidebar-slide-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   --animate-sidebar-slide-out: sidebar-slide-out 0.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  --animate-attention-knock: attention-knock 0.6s ease-out;
 
   @keyframes fade-in {
     from {
@@ -81,6 +82,28 @@
     to {
       opacity: 0;
       transform: translateX(100%);
+    }
+  }
+
+  /* Two beats and done — the one-shot a terminal marker plays when its session
+     stops for a person. Transform only, so it costs the compositor a few
+     frames at the transition rather than a steady animation for as long as the
+     window is open (see PhaseDot on why nothing here loops). */
+  @keyframes attention-knock {
+    0% {
+      transform: scale(1);
+    }
+    20% {
+      transform: scale(1.45);
+    }
+    45% {
+      transform: scale(1);
+    }
+    65% {
+      transform: scale(1.25);
+    }
+    100% {
+      transform: scale(1);
     }
   }
 }
