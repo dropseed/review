@@ -203,115 +203,15 @@ function Segmented<T extends string | number>({
   );
 }
 
-export function SettingsModal({
-  isOpen,
-  onClose,
-}: SettingsModalProps): ReactNode {
-  const codeFontSize = useReviewStore((s) => s.codeFontSize);
-  const setCodeFontSize = useReviewStore((s) => s.setCodeFontSize);
-  const codeFontFamily = useReviewStore((s) => s.codeFontFamily);
-  const setCodeFontFamily = useReviewStore((s) => s.setCodeFontFamily);
-  const terminalFontFamily = useReviewStore((s) => s.terminalFontFamily);
-  const setTerminalFontFamily = useReviewStore((s) => s.setTerminalFontFamily);
-  const terminalFontSize = useReviewStore((s) => s.terminalFontSize);
-  const setTerminalFontSize = useReviewStore((s) => s.setTerminalFontSize);
-  const terminalFontWeight = useReviewStore((s) => s.terminalFontWeight);
-  const setTerminalFontWeight = useReviewStore((s) => s.setTerminalFontWeight);
-  const terminalLineHeight = useReviewStore((s) => s.terminalLineHeight);
-  const setTerminalLineHeight = useReviewStore((s) => s.setTerminalLineHeight);
-  const terminalLetterSpacing = useReviewStore((s) => s.terminalLetterSpacing);
-  const setTerminalLetterSpacing = useReviewStore(
-    (s) => s.setTerminalLetterSpacing,
-  );
-  const terminalLaunchCommand = useReviewStore((s) => s.terminalLaunchCommand);
-  const setTerminalLaunchCommand = useReviewStore(
-    (s) => s.setTerminalLaunchCommand,
-  );
-  const uiTheme = useReviewStore((s) => s.uiTheme);
-  const setUiTheme = useReviewStore((s) => s.setUiTheme);
-  const matchVscodeTheme = useReviewStore((s) => s.matchVscodeTheme);
-  const setMatchVscodeTheme = useReviewStore((s) => s.setMatchVscodeTheme);
-  const resolvedVscodeTheme = useReviewStore((s) => s.resolvedVscodeTheme);
-  const sentryEnabled = useReviewStore((s) => s.sentryEnabled);
-  const setSentryEnabled = useReviewStore((s) => s.setSentryEnabled);
-  const soundEffectsEnabled = useReviewStore((s) => s.soundEffectsEnabled);
-  const setSoundEffectsEnabled = useReviewStore(
-    (s) => s.setSoundEffectsEnabled,
-  );
-  const terminalNotificationsEnabled = useReviewStore(
-    (s) => s.terminalNotificationsEnabled,
-  );
-  const setTerminalNotificationsEnabled = useReviewStore(
-    (s) => s.setTerminalNotificationsEnabled,
-  );
-  const lspDisabledLanguages = useReviewStore((s) => s.lspDisabledLanguages);
-  const setLspDisabledLanguages = useReviewStore(
-    (s) => s.setLspDisabledLanguages,
-  );
-  const repoPath = useReviewStore((s) => s.repoPath);
+/**
+ * Every live terminal session the daemon holds, across all repos and windows.
+ *
+ * Its own component because it is a small session manager that happens to live
+ * in a settings dialog — four pieces of state, two async handlers and a
+ * refresh, none of which any other section reads.
+ */
+function BackgroundSessionsSection({ isOpen }: { isOpen: boolean }): ReactNode {
   const terminalsSupported = useReviewStore((s) => s.terminalsSupported);
-
-  const [fontFamilyDraft, setFontFamilyDraft] = useState(codeFontFamily);
-  const [terminalFontDraft, setTerminalFontDraft] =
-    useState(terminalFontFamily);
-  const [launchCommandDraft, setLaunchCommandDraft] = useState(
-    terminalLaunchCommand,
-  );
-  const [discoveredServers, setDiscoveredServers] = useState<
-    { name: string; language: string }[]
-  >([]);
-
-  useEffect(() => {
-    if (isOpen) setFontFamilyDraft(codeFontFamily);
-  }, [isOpen, codeFontFamily]);
-
-  useEffect(() => {
-    if (isOpen) setTerminalFontDraft(terminalFontFamily);
-  }, [isOpen, terminalFontFamily]);
-
-  useEffect(() => {
-    if (isOpen) setLaunchCommandDraft(terminalLaunchCommand);
-  }, [isOpen, terminalLaunchCommand]);
-
-  // CLI install status (hidden in dev mode)
-  const [devMode, setDevMode] = useState(false);
-  const [cliInstalled, setCliInstalled] = useState(false);
-  const [cliSymlinkTarget, setCliSymlinkTarget] = useState<string | null>(null);
-  const [cliError, setCliError] = useState<string | null>(null);
-  const [cliLoading, setCliLoading] = useState(false);
-
-  const refreshCliStatus = useCallback(async () => {
-    try {
-      const isDev = await invoke<boolean>("is_dev_mode");
-      setDevMode(isDev);
-      if (isDev) return;
-
-      const status = await invoke<{
-        installed: boolean;
-        symlink_target: string | null;
-      }>("get_cli_install_status");
-      setCliInstalled(status.installed);
-      setCliSymlinkTarget(status.symlink_target);
-    } catch {
-      // Ignore errors checking status
-    }
-  }, []);
-
-  useEffect(() => {
-    if (isOpen) {
-      refreshCliStatus();
-    }
-  }, [isOpen, refreshCliStatus]);
-
-  useEffect(() => {
-    if (isOpen && repoPath) {
-      getApiClient()
-        .discoverLspServers(repoPath)
-        .then(setDiscoveredServers)
-        .catch(() => {});
-    }
-  }, [isOpen, repoPath]);
-
   // Background sessions (governance) — every live terminal session across
   // every repo/window, so forgotten sessions in the daemon don't accumulate
   // invisibly.
@@ -372,6 +272,147 @@ export function SettingsModal({
     }
   }
 
+  if (!terminalsSupported) return null;
+
+  return (
+    <div className="px-5 py-4">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <svg
+            className="h-4 w-4 text-fg-muted"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <line x1="8" y1="6" x2="21" y2="6" />
+            <line x1="8" y1="12" x2="21" y2="12" />
+            <line x1="8" y1="18" x2="21" y2="18" />
+            <line x1="3" y1="6" x2="3.01" y2="6" />
+            <line x1="3" y1="12" x2="3.01" y2="12" />
+            <line x1="3" y1="18" x2="3.01" y2="18" />
+          </svg>
+          <span className="text-xs font-medium text-fg-secondary">
+            Background Sessions
+          </span>
+        </div>
+        <button
+          onClick={refreshBackgroundSessions}
+          disabled={sessionsLoading}
+          className="text-xxs text-fg-muted transition-colors hover:text-fg-secondary disabled:opacity-50"
+        >
+          {sessionsLoading ? "Refreshing…" : "Refresh"}
+        </button>
+      </div>
+
+      {sessionsError && <ErrorBanner message={sessionsError} />}
+
+      {backgroundSessions.length === 0 ? (
+        <div className="flex items-center justify-between rounded-lg bg-surface-raised/30 px-3 py-2.5">
+          <span className="text-xs text-fg-muted">No background sessions.</span>
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {backgroundSessions
+            .map(toBackgroundSessionRow)
+            .map((row: BackgroundSessionRow) => (
+              <div
+                key={row.id}
+                className="flex items-center justify-between gap-2 rounded-lg bg-surface-raised/30 px-3 py-2.5"
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  <span
+                    className={`h-2 w-2 shrink-0 rounded-full ${phaseDotClass(row.phase)}`}
+                  />
+                  <div className="min-w-0">
+                    <div className="truncate text-xs text-fg-secondary">
+                      {row.label}
+                    </div>
+                    <div className="truncate text-xxs text-fg-faint">
+                      {row.repoName}
+                      {row.cwdLabel ? ` · ${row.cwdLabel}` : ""}
+                      {row.lastExitCode != null && (
+                        <span
+                          className={
+                            row.lastExitCode === 0
+                              ? "text-status-approved"
+                              : "text-status-rejected"
+                          }
+                        >
+                          {" "}
+                          · exit {row.lastExitCode}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleKillSession(row.id)}
+                  className="shrink-0 rounded-md px-2.5 py-1.5 text-xxs text-fg-muted transition-colors hover:bg-status-rejected/15 hover:text-status-rejected"
+                >
+                  Kill
+                </button>
+              </div>
+            ))}
+        </div>
+      )}
+
+      <button
+        onClick={handleShutdownAllSessions}
+        disabled={backgroundSessions.length === 0}
+        className={`mt-3 w-full rounded-md px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+          confirmShutdownAll
+            ? "bg-status-rejected/25 text-status-rejected"
+            : "bg-status-rejected/15 text-status-rejected hover:bg-status-rejected/25"
+        }`}
+      >
+        {confirmShutdownAll
+          ? "Click again to confirm"
+          : "Shut down all background sessions"}
+      </button>
+    </div>
+  );
+}
+
+/**
+ * The `review` CLI's install state, and the button that changes it.
+ *
+ * Hidden entirely in a dev build, where the binary on PATH is whatever the
+ * developer built rather than something this dialog should be managing.
+ */
+function CommandLineSection({ isOpen }: { isOpen: boolean }): ReactNode {
+  // CLI install status (hidden in dev mode)
+  const [devMode, setDevMode] = useState(false);
+  const [cliInstalled, setCliInstalled] = useState(false);
+  const [cliSymlinkTarget, setCliSymlinkTarget] = useState<string | null>(null);
+  const [cliError, setCliError] = useState<string | null>(null);
+  const [cliLoading, setCliLoading] = useState(false);
+
+  const refreshCliStatus = useCallback(async () => {
+    try {
+      const isDev = await invoke<boolean>("is_dev_mode");
+      setDevMode(isDev);
+      if (isDev) return;
+
+      const status = await invoke<{
+        installed: boolean;
+        symlink_target: string | null;
+      }>("get_cli_install_status");
+      setCliInstalled(status.installed);
+      setCliSymlinkTarget(status.symlink_target);
+    } catch {
+      // Ignore errors checking status
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      refreshCliStatus();
+    }
+  }, [isOpen, refreshCliStatus]);
+
   async function handleCliAction(command: "install_cli" | "uninstall_cli") {
     setCliLoading(true);
     setCliError(null);
@@ -384,6 +425,194 @@ export function SettingsModal({
       setCliLoading(false);
     }
   }
+
+  if (devMode) return null;
+
+  return (
+    <div className="px-5 py-4">
+      <SectionHeader
+        label="Command Line"
+        icon={
+          <>
+            <polyline points="4 17 10 11 4 5" />
+            <line x1="12" y1="19" x2="20" y2="19" />
+          </>
+        }
+      />
+
+      {cliInstalled ? (
+        <div className="flex items-center justify-between rounded-lg bg-surface-raised/30 px-3 py-2.5">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <div className="h-1.5 w-1.5 rounded-full bg-status-approved" />
+              <span className="text-xs text-fg-secondary">
+                Installed at{" "}
+                <code className="text-xxs text-fg-muted">
+                  /usr/local/bin/review
+                </code>
+              </span>
+            </div>
+            {cliSymlinkTarget && (
+              <p className="mt-1 truncate pl-3.5 text-xxs text-fg-faint">
+                {cliSymlinkTarget}
+              </p>
+            )}
+          </div>
+          <button
+            onClick={() => handleCliAction("uninstall_cli")}
+            disabled={cliLoading}
+            className="ml-3 shrink-0 rounded-md px-2.5 py-1.5 text-xxs text-fg-muted transition-colors hover:bg-surface-raised hover:text-fg-secondary disabled:opacity-50"
+          >
+            Uninstall
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center justify-between rounded-lg bg-surface-raised/30 px-3 py-2.5">
+            <span className="text-xs text-fg-muted">
+              <code className="text-xxs">review</code> command not installed
+            </span>
+            <button
+              onClick={() => handleCliAction("install_cli")}
+              disabled={cliLoading}
+              className="ml-3 shrink-0 rounded-md bg-surface-hover/50 px-2.5 py-1.5 text-xxs text-fg-secondary transition-colors hover:bg-surface-hover disabled:opacity-50"
+            >
+              {cliLoading ? "Installing..." : "Install"}
+            </button>
+          </div>
+          <p className="mt-2 text-xxs text-fg-faint leading-relaxed">
+            Creates a symlink at{" "}
+            <code className="text-fg-muted">/usr/local/bin/review</code> so you
+            can run <code className="text-fg-muted">review</code> from any
+            terminal.
+          </p>
+        </>
+      )}
+
+      {cliError && <ErrorBanner message={cliError} preserveWhitespace />}
+    </div>
+  );
+}
+
+/** Language servers discovered for the open repo, each toggleable. */
+function LanguageServersSection({ isOpen }: { isOpen: boolean }): ReactNode {
+  const repoPath = useReviewStore((s) => s.repoPath);
+  const lspDisabledLanguages = useReviewStore((s) => s.lspDisabledLanguages);
+  const setLspDisabledLanguages = useReviewStore(
+    (s) => s.setLspDisabledLanguages,
+  );
+  const [discoveredServers, setDiscoveredServers] = useState<
+    { name: string; language: string }[]
+  >([]);
+
+  useEffect(() => {
+    if (isOpen && repoPath) {
+      getApiClient()
+        .discoverLspServers(repoPath)
+        .then(setDiscoveredServers)
+        .catch(() => {});
+    }
+  }, [isOpen, repoPath]);
+
+  if (discoveredServers.length === 0) return null;
+
+  return (
+    <div className="px-5 py-4">
+      <SectionHeader
+        label="Language Servers"
+        icon={
+          <>
+            <path d="M5 12h14" />
+            <path d="M12 5v14" />
+          </>
+        }
+      />
+      <div className="space-y-2">
+        {discoveredServers.map((server) => {
+          const enabled = !lspDisabledLanguages.includes(server.language);
+          return (
+            <ToggleRow
+              key={server.language}
+              label={`${server.name} (${server.language})`}
+              checked={enabled}
+              onCheckedChange={(checked) => {
+                const updated = checked
+                  ? lspDisabledLanguages.filter((l) => l !== server.language)
+                  : [...lspDisabledLanguages, server.language];
+                setLspDisabledLanguages(updated);
+              }}
+            />
+          );
+        })}
+      </div>
+      <p className="mt-2 text-xxs text-fg-faint leading-relaxed">
+        Disabled servers will not start automatically. Restart the app for
+        changes to take effect.
+      </p>
+    </div>
+  );
+}
+
+export function SettingsModal({
+  isOpen,
+  onClose,
+}: SettingsModalProps): ReactNode {
+  const codeFontSize = useReviewStore((s) => s.codeFontSize);
+  const setCodeFontSize = useReviewStore((s) => s.setCodeFontSize);
+  const codeFontFamily = useReviewStore((s) => s.codeFontFamily);
+  const setCodeFontFamily = useReviewStore((s) => s.setCodeFontFamily);
+  const terminalFontFamily = useReviewStore((s) => s.terminalFontFamily);
+  const setTerminalFontFamily = useReviewStore((s) => s.setTerminalFontFamily);
+  const terminalFontSize = useReviewStore((s) => s.terminalFontSize);
+  const setTerminalFontSize = useReviewStore((s) => s.setTerminalFontSize);
+  const terminalFontWeight = useReviewStore((s) => s.terminalFontWeight);
+  const setTerminalFontWeight = useReviewStore((s) => s.setTerminalFontWeight);
+  const terminalLineHeight = useReviewStore((s) => s.terminalLineHeight);
+  const setTerminalLineHeight = useReviewStore((s) => s.setTerminalLineHeight);
+  const terminalLetterSpacing = useReviewStore((s) => s.terminalLetterSpacing);
+  const setTerminalLetterSpacing = useReviewStore(
+    (s) => s.setTerminalLetterSpacing,
+  );
+  const terminalLaunchCommand = useReviewStore((s) => s.terminalLaunchCommand);
+  const setTerminalLaunchCommand = useReviewStore(
+    (s) => s.setTerminalLaunchCommand,
+  );
+  const uiTheme = useReviewStore((s) => s.uiTheme);
+  const setUiTheme = useReviewStore((s) => s.setUiTheme);
+  const matchVscodeTheme = useReviewStore((s) => s.matchVscodeTheme);
+  const setMatchVscodeTheme = useReviewStore((s) => s.setMatchVscodeTheme);
+  const resolvedVscodeTheme = useReviewStore((s) => s.resolvedVscodeTheme);
+  const sentryEnabled = useReviewStore((s) => s.sentryEnabled);
+  const setSentryEnabled = useReviewStore((s) => s.setSentryEnabled);
+  const soundEffectsEnabled = useReviewStore((s) => s.soundEffectsEnabled);
+  const setSoundEffectsEnabled = useReviewStore(
+    (s) => s.setSoundEffectsEnabled,
+  );
+  const terminalNotificationsEnabled = useReviewStore(
+    (s) => s.terminalNotificationsEnabled,
+  );
+  const setTerminalNotificationsEnabled = useReviewStore(
+    (s) => s.setTerminalNotificationsEnabled,
+  );
+
+  const [fontFamilyDraft, setFontFamilyDraft] = useState(codeFontFamily);
+  const [terminalFontDraft, setTerminalFontDraft] =
+    useState(terminalFontFamily);
+  const [launchCommandDraft, setLaunchCommandDraft] = useState(
+    terminalLaunchCommand,
+  );
+
+  useEffect(() => {
+    if (isOpen) setFontFamilyDraft(codeFontFamily);
+  }, [isOpen, codeFontFamily]);
+
+  useEffect(() => {
+    if (isOpen) setTerminalFontDraft(terminalFontFamily);
+  }, [isOpen, terminalFontFamily]);
+
+  useEffect(() => {
+    if (isOpen) setLaunchCommandDraft(terminalLaunchCommand);
+  }, [isOpen, terminalLaunchCommand]);
 
   function decreaseFontSize() {
     setCodeFontSize(
@@ -775,109 +1004,7 @@ export function SettingsModal({
             </div>
           </div>
 
-          {/* Background Sessions */}
-          {terminalsSupported && (
-            <div className="px-5 py-4">
-              <div className="mb-3 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <svg
-                    className="h-4 w-4 text-fg-muted"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <line x1="8" y1="6" x2="21" y2="6" />
-                    <line x1="8" y1="12" x2="21" y2="12" />
-                    <line x1="8" y1="18" x2="21" y2="18" />
-                    <line x1="3" y1="6" x2="3.01" y2="6" />
-                    <line x1="3" y1="12" x2="3.01" y2="12" />
-                    <line x1="3" y1="18" x2="3.01" y2="18" />
-                  </svg>
-                  <span className="text-xs font-medium text-fg-secondary">
-                    Background Sessions
-                  </span>
-                </div>
-                <button
-                  onClick={refreshBackgroundSessions}
-                  disabled={sessionsLoading}
-                  className="text-xxs text-fg-muted transition-colors hover:text-fg-secondary disabled:opacity-50"
-                >
-                  {sessionsLoading ? "Refreshing…" : "Refresh"}
-                </button>
-              </div>
-
-              {sessionsError && <ErrorBanner message={sessionsError} />}
-
-              {backgroundSessions.length === 0 ? (
-                <div className="flex items-center justify-between rounded-lg bg-surface-raised/30 px-3 py-2.5">
-                  <span className="text-xs text-fg-muted">
-                    No background sessions.
-                  </span>
-                </div>
-              ) : (
-                <div className="space-y-1.5">
-                  {backgroundSessions
-                    .map(toBackgroundSessionRow)
-                    .map((row: BackgroundSessionRow) => (
-                      <div
-                        key={row.id}
-                        className="flex items-center justify-between gap-2 rounded-lg bg-surface-raised/30 px-3 py-2.5"
-                      >
-                        <div className="flex min-w-0 items-center gap-2">
-                          <span
-                            className={`h-2 w-2 shrink-0 rounded-full ${phaseDotClass(row.phase)}`}
-                          />
-                          <div className="min-w-0">
-                            <div className="truncate text-xs text-fg-secondary">
-                              {row.label}
-                            </div>
-                            <div className="truncate text-xxs text-fg-faint">
-                              {row.repoName}
-                              {row.cwdLabel ? ` · ${row.cwdLabel}` : ""}
-                              {row.lastExitCode != null && (
-                                <span
-                                  className={
-                                    row.lastExitCode === 0
-                                      ? "text-status-approved"
-                                      : "text-status-rejected"
-                                  }
-                                >
-                                  {" "}
-                                  · exit {row.lastExitCode}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => handleKillSession(row.id)}
-                          className="shrink-0 rounded-md px-2.5 py-1.5 text-xxs text-fg-muted transition-colors hover:bg-status-rejected/15 hover:text-status-rejected"
-                        >
-                          Kill
-                        </button>
-                      </div>
-                    ))}
-                </div>
-              )}
-
-              <button
-                onClick={handleShutdownAllSessions}
-                disabled={backgroundSessions.length === 0}
-                className={`mt-3 w-full rounded-md px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                  confirmShutdownAll
-                    ? "bg-status-rejected/25 text-status-rejected"
-                    : "bg-status-rejected/15 text-status-rejected hover:bg-status-rejected/25"
-                }`}
-              >
-                {confirmShutdownAll
-                  ? "Click again to confirm"
-                  : "Shut down all background sessions"}
-              </button>
-            </div>
-          )}
+          <BackgroundSessionsSection isOpen={isOpen} />
 
           {/* Sound Effects + Crash Reporting */}
           <div className="px-5 py-4 space-y-3">
@@ -921,115 +1048,9 @@ export function SettingsModal({
 
           <RemoteAccessSection />
 
-          {/* Command Line */}
-          {!devMode && (
-            <div className="px-5 py-4">
-              <SectionHeader
-                label="Command Line"
-                icon={
-                  <>
-                    <polyline points="4 17 10 11 4 5" />
-                    <line x1="12" y1="19" x2="20" y2="19" />
-                  </>
-                }
-              />
+          <CommandLineSection isOpen={isOpen} />
 
-              {cliInstalled ? (
-                <div className="flex items-center justify-between rounded-lg bg-surface-raised/30 px-3 py-2.5">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <div className="h-1.5 w-1.5 rounded-full bg-status-approved" />
-                      <span className="text-xs text-fg-secondary">
-                        Installed at{" "}
-                        <code className="text-xxs text-fg-muted">
-                          /usr/local/bin/review
-                        </code>
-                      </span>
-                    </div>
-                    {cliSymlinkTarget && (
-                      <p className="mt-1 truncate pl-3.5 text-xxs text-fg-faint">
-                        {cliSymlinkTarget}
-                      </p>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => handleCliAction("uninstall_cli")}
-                    disabled={cliLoading}
-                    className="ml-3 shrink-0 rounded-md px-2.5 py-1.5 text-xxs text-fg-muted transition-colors hover:bg-surface-raised hover:text-fg-secondary disabled:opacity-50"
-                  >
-                    Uninstall
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <div className="flex items-center justify-between rounded-lg bg-surface-raised/30 px-3 py-2.5">
-                    <span className="text-xs text-fg-muted">
-                      <code className="text-xxs">review</code> command not
-                      installed
-                    </span>
-                    <button
-                      onClick={() => handleCliAction("install_cli")}
-                      disabled={cliLoading}
-                      className="ml-3 shrink-0 rounded-md bg-surface-hover/50 px-2.5 py-1.5 text-xxs text-fg-secondary transition-colors hover:bg-surface-hover disabled:opacity-50"
-                    >
-                      {cliLoading ? "Installing..." : "Install"}
-                    </button>
-                  </div>
-                  <p className="mt-2 text-xxs text-fg-faint leading-relaxed">
-                    Creates a symlink at{" "}
-                    <code className="text-fg-muted">/usr/local/bin/review</code>{" "}
-                    so you can run <code className="text-fg-muted">review</code>{" "}
-                    from any terminal.
-                  </p>
-                </>
-              )}
-
-              {cliError && (
-                <ErrorBanner message={cliError} preserveWhitespace />
-              )}
-            </div>
-          )}
-
-          {/* Language Servers */}
-          {discoveredServers.length > 0 && (
-            <div className="px-5 py-4">
-              <SectionHeader
-                label="Language Servers"
-                icon={
-                  <>
-                    <path d="M5 12h14" />
-                    <path d="M12 5v14" />
-                  </>
-                }
-              />
-              <div className="space-y-2">
-                {discoveredServers.map((server) => {
-                  const enabled = !lspDisabledLanguages.includes(
-                    server.language,
-                  );
-                  return (
-                    <ToggleRow
-                      key={server.language}
-                      label={`${server.name} (${server.language})`}
-                      checked={enabled}
-                      onCheckedChange={(checked) => {
-                        const updated = checked
-                          ? lspDisabledLanguages.filter(
-                              (l) => l !== server.language,
-                            )
-                          : [...lspDisabledLanguages, server.language];
-                        setLspDisabledLanguages(updated);
-                      }}
-                    />
-                  );
-                })}
-              </div>
-              <p className="mt-2 text-xxs text-fg-faint leading-relaxed">
-                Disabled servers will not start automatically. Restart the app
-                for changes to take effect.
-              </p>
-            </div>
-          )}
+          <LanguageServersSection isOpen={isOpen} />
         </div>
 
         <div className="border-t border-edge bg-surface-panel/50 px-5 py-3 flex items-center justify-between">
