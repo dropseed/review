@@ -1,6 +1,7 @@
 import { effectiveHunkStatus, EMPTY_TRUST_LIST } from "../../types";
 import type { DiffHunk, FileDiff, ReviewState } from "../../types";
 
+import { memoOnIdentity } from "./memo";
 /**
  * Derived views over hunk state, as plain functions.
  *
@@ -15,21 +16,10 @@ import type { DiffHunk, FileDiff, ReviewState } from "../../types";
 // the underlying flatten / Map-build runs once per actual state change rather
 // than once per subscriber-render.
 
-let allHunksCache: {
-  filesByPath: Record<string, FileDiff>;
-  flatFileList: string[];
-  output: DiffHunk[];
-} | null = null;
-
-let hunkByIdCache: {
-  filesByPath: Record<string, FileDiff>;
-  output: Map<string, DiffHunk>;
-} | null = null;
-
-let hunkLocationCache: {
-  filesByPath: Record<string, FileDiff>;
-  output: Map<string, { filePath: string; indexInFile: number }>;
-} | null = null;
+const allHunksMemo = memoOnIdentity<DiffHunk[]>();
+const hunkByIdMemo = memoOnIdentity<Map<string, DiffHunk>>();
+const hunkLocationMemo =
+  memoOnIdentity<Map<string, { filePath: string; indexInFile: number }>>();
 
 /**
  * Flat hunks list in `flatFileList` order. Cached on input identity so all
@@ -39,31 +29,21 @@ export function getAllHunksFromState(state: {
   filesByPath: Record<string, FileDiff>;
   flatFileList: string[];
 }): DiffHunk[] {
-  if (
-    allHunksCache &&
-    allHunksCache.filesByPath === state.filesByPath &&
-    allHunksCache.flatFileList === state.flatFileList
-  ) {
-    return allHunksCache.output;
-  }
-  const out: DiffHunk[] = [];
-  const seen = new Set<string>();
-  for (const path of state.flatFileList) {
-    const fd = state.filesByPath[path];
-    if (fd) {
-      out.push(...fd.hunks);
-      seen.add(path);
+  return allHunksMemo([state.filesByPath, state.flatFileList], () => {
+    const out: DiffHunk[] = [];
+    const seen = new Set<string>();
+    for (const path of state.flatFileList) {
+      const fd = state.filesByPath[path];
+      if (fd) {
+        out.push(...fd.hunks);
+        seen.add(path);
+      }
     }
-  }
-  for (const [path, fd] of Object.entries(state.filesByPath)) {
-    if (!seen.has(path)) out.push(...fd.hunks);
-  }
-  allHunksCache = {
-    filesByPath: state.filesByPath,
-    flatFileList: state.flatFileList,
-    output: out,
-  };
-  return out;
+    for (const [path, fd] of Object.entries(state.filesByPath)) {
+      if (!seen.has(path)) out.push(...fd.hunks);
+    }
+    return out;
+  });
 }
 
 /**
@@ -72,15 +52,13 @@ export function getAllHunksFromState(state: {
 export function getHunkByIdMap(
   filesByPath: Record<string, FileDiff>,
 ): Map<string, DiffHunk> {
-  if (hunkByIdCache && hunkByIdCache.filesByPath === filesByPath) {
-    return hunkByIdCache.output;
-  }
-  const map = new Map<string, DiffHunk>();
-  for (const fd of Object.values(filesByPath)) {
-    for (const h of fd.hunks) map.set(h.id, h);
-  }
-  hunkByIdCache = { filesByPath, output: map };
-  return map;
+  return hunkByIdMemo([filesByPath], () => {
+    const map = new Map<string, DiffHunk>();
+    for (const fd of Object.values(filesByPath)) {
+      for (const h of fd.hunks) map.set(h.id, h);
+    }
+    return map;
+  });
 }
 
 /**
@@ -91,17 +69,15 @@ export function getHunkByIdMap(
 export function getHunkLocationMap(
   filesByPath: Record<string, FileDiff>,
 ): Map<string, { filePath: string; indexInFile: number }> {
-  if (hunkLocationCache && hunkLocationCache.filesByPath === filesByPath) {
-    return hunkLocationCache.output;
-  }
-  const map = new Map<string, { filePath: string; indexInFile: number }>();
-  for (const [filePath, fd] of Object.entries(filesByPath)) {
-    fd.hunks.forEach((h, indexInFile) => {
-      map.set(h.id, { filePath, indexInFile });
-    });
-  }
-  hunkLocationCache = { filesByPath, output: map };
-  return map;
+  return hunkLocationMemo([filesByPath], () => {
+    const map = new Map<string, { filePath: string; indexInFile: number }>();
+    for (const [filePath, fd] of Object.entries(filesByPath)) {
+      fd.hunks.forEach((h, indexInFile) => {
+        map.set(h.id, { filePath, indexInFile });
+      });
+    }
+    return map;
+  });
 }
 
 export interface HunkIdsByStatus {
@@ -122,11 +98,7 @@ const EMPTY_HUNK_IDS_BY_STATUS: HunkIdsByStatus = {
   trusted: [],
 };
 
-let hunkIdsByStatusCache: {
-  allHunks: DiffHunk[];
-  reviewState: ReviewState | null;
-  output: HunkIdsByStatus;
-} | null = null;
+const hunkIdsByStatusMemo = memoOnIdentity<HunkIdsByStatus>();
 
 /**
  * Categorize all hunks by review status. Cached on (allHunks, reviewState)
@@ -136,45 +108,33 @@ export function getHunkIdsByStatus(
   allHunks: DiffHunk[],
   reviewState: ReviewState | null,
 ): HunkIdsByStatus {
-  if (
-    hunkIdsByStatusCache &&
-    hunkIdsByStatusCache.allHunks === allHunks &&
-    hunkIdsByStatusCache.reviewState === reviewState
-  ) {
-    return hunkIdsByStatusCache.output;
-  }
-  if (allHunks.length === 0) {
-    hunkIdsByStatusCache = {
-      allHunks,
-      reviewState,
-      output: EMPTY_HUNK_IDS_BY_STATUS,
-    };
-    return EMPTY_HUNK_IDS_BY_STATUS;
-  }
-  const pending: string[] = [];
-  const reviewed: string[] = [];
-  const savedForLater: string[] = [];
-  const trusted: string[] = [];
-  const hunkStates = reviewState?.hunks;
-  const trustList = reviewState?.trustList ?? EMPTY_TRUST_LIST;
-  for (const hunk of allHunks) {
-    const state = hunkStates?.[hunk.id];
-    switch (effectiveHunkStatus(state, trustList)) {
-      case "approved":
-      case "rejected":
-        reviewed.push(hunk.id);
-        break;
-      case "saved":
-        savedForLater.push(hunk.id);
-        break;
-      case "trusted":
-        trusted.push(hunk.id);
-        break;
-      default:
-        pending.push(hunk.id);
+  return hunkIdsByStatusMemo([allHunks, reviewState], () => {
+    if (allHunks.length === 0) {
+      return EMPTY_HUNK_IDS_BY_STATUS;
     }
-  }
-  const output: HunkIdsByStatus = { pending, reviewed, savedForLater, trusted };
-  hunkIdsByStatusCache = { allHunks, reviewState, output };
-  return output;
+    const pending: string[] = [];
+    const reviewed: string[] = [];
+    const savedForLater: string[] = [];
+    const trusted: string[] = [];
+    const hunkStates = reviewState?.hunks;
+    const trustList = reviewState?.trustList ?? EMPTY_TRUST_LIST;
+    for (const hunk of allHunks) {
+      const state = hunkStates?.[hunk.id];
+      switch (effectiveHunkStatus(state, trustList)) {
+        case "approved":
+        case "rejected":
+          reviewed.push(hunk.id);
+          break;
+        case "saved":
+          savedForLater.push(hunk.id);
+          break;
+        case "trusted":
+          trusted.push(hunk.id);
+          break;
+        default:
+          pending.push(hunk.id);
+      }
+    }
+    return { pending, reviewed, savedForLater, trusted };
+  });
 }
