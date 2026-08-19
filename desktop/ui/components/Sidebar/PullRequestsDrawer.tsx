@@ -182,13 +182,16 @@ function RepoFilter({ repos, hiddenRepos }: RepoFilterProps): ReactNode {
           type="button"
           className={clsx(
             `flex h-5 w-5 shrink-0 items-center justify-center rounded
-             transition-opacity hover:bg-surface-raised hover:text-fg-secondary`,
-            // A filter that is on stays visible: it is the explanation for a
-            // list being shorter than you expect, and an explanation you have
-            // to hover to find is one nobody finds.
-            filtering
-              ? "text-fg-secondary opacity-100"
-              : "text-fg-faint opacity-0 focus-visible:opacity-100 group-hover:opacity-100",
+             transition-opacity hover:bg-surface-raised hover:text-fg-secondary
+             focus-visible:opacity-100 group-hover:opacity-100`,
+            // Hover-only, like the refresh button beside it: the drawer's
+            // header is a label, not a toolbar, and a control parked there
+            // permanently reads as something to do rather than something to
+            // glance at. It stays put while its own popover is open — an icon
+            // that vanishes out from under the click leaves the list of repos
+            // anchored to nothing.
+            open ? "opacity-100" : "opacity-0",
+            filtering || open ? "text-fg-secondary" : "text-fg-faint",
           )}
           aria-label="Filter pull requests by repo"
           title={
