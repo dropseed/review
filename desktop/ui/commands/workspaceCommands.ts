@@ -80,6 +80,7 @@ export function activateAttachment(attachment: Attachment): boolean {
 export function focusWorkspace(
   workspace: Workspace,
   target?: ReviewTarget,
+  options: { acknowledge?: boolean } = {},
 ): void {
   const store = useReviewStore.getState();
   // Naming a workspace is asking to be shown it, so it also ends the
@@ -92,13 +93,22 @@ export function focusWorkspace(
   // Looking at it *is* the acknowledgement — there is no dismiss button for an
   // attention accent, because a second gesture to say "yes, I saw that" is a
   // notification tray, and this is a queue.
-  store.markWorkspaceSeen(
-    workspace.id,
-    store.workspaces.map((entry) => entry.id),
-  );
-  // ...and the same gesture calls off the escalation, so a workspace you have
-  // already opened never reaches your phone a minute later.
-  ackAttention(workspace.id);
+  //
+  // Which is why `acknowledge` exists, and why the launch restore is the one
+  // caller that passes false: every other route in here is a person doing
+  // something, so presence is implied by the gesture. An app coming back up on
+  // its own implies nobody — and `useAttentionBadge` acknowledges the focused
+  // workspace the moment the window actually has focus, so the signal is still
+  // cleared as soon as there is someone to clear it for.
+  if (options.acknowledge !== false) {
+    store.markWorkspaceSeen(
+      workspace.id,
+      store.workspaces.map((entry) => entry.id),
+    );
+    // ...and the same gesture calls off the escalation, so a workspace you have
+    // already opened never reaches your phone a minute later.
+    ackAttention(workspace.id);
+  }
 
   // `target` is the caller naming which comparison to open — a ⌘K row names a
   // branch, not just a workspace, and on a multi-repo workspace that is

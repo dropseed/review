@@ -48,6 +48,9 @@ export function useWorkspaceRestore(repoStatus: RepoStatus): void {
   const workspaces = useReviewStore((s) => s.workspaces);
   const focused = useFocusedWorkspace();
   const activeReviewKey = useReviewStore((s) => s.activeReviewKey);
+  // Browse and standalone mode both open a repo and no comparison, so the
+  // stage is claimed by one without the other.
+  const repoPath = useReviewStore((s) => s.repoPath);
   const lastWorkspaceId = useReviewStore((s) => s.lastWorkspaceId);
   const rememberLastWorkspace = useReviewStore((s) => s.rememberLastWorkspace);
   // A tick from the two loads that build the sidebar's rows, not the rows
@@ -84,7 +87,8 @@ export function useWorkspaceRestore(repoStatus: RepoStatus): void {
       lastWorkspaceId,
       workspaces,
       focused,
-      hasComparison: activeReviewKey !== null,
+      stageClaimed: activeReviewKey !== null || repoPath !== null,
+      dismissed: repoStatus === "welcome",
       initSettled: repoStatus !== "loading",
       target: openableTarget(workspaces, lastWorkspaceId),
       expired,
@@ -104,13 +108,20 @@ export function useWorkspaceRestore(repoStatus: RepoStatus): void {
     // `focusWorkspace` resolves its own target when none is given, which is the
     // right fallback for a workspace with nothing openable: it lands on the
     // empty state rather than leaving the stage on nobody's workspace.
-    focusWorkspace(decision.workspace, decision.target ?? undefined);
+    //
+    // `acknowledge: false` because nobody did this — see `focusWorkspace`. It
+    // is what keeps the two branches here consistent: neither clears an
+    // attention signal the human has not been present for.
+    focusWorkspace(decision.workspace, decision.target ?? undefined, {
+      acknowledge: false,
+    });
   }, [
     repoStatus,
     lastWorkspaceId,
     workspaces,
     focused,
     activeReviewKey,
+    repoPath,
     expired,
     rowSources,
   ]);

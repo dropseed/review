@@ -20,7 +20,8 @@ function decide(overrides: Partial<RestoreInput> = {}) {
     lastWorkspaceId: "bbb",
     workspaces: queue,
     focused: null,
-    hasComparison: false,
+    stageClaimed: false,
+    dismissed: false,
     initSettled: true,
     target: { repoPath: "/repo/b", ref: "main" },
     expired: false,
@@ -55,14 +56,22 @@ describe("restoreDecision", () => {
     expect(decide({ lastWorkspaceId: "gone" })).toEqual({ kind: "done" });
   });
 
-  it("takes only the focus when a comparison is already on screen", () => {
+  it("takes only the focus when the launch already claimed the stage", () => {
     // A URL, a `review` invocation or the launch directory put that there, and
     // a person naming what to look at outranks where the app was last time.
-    // The tabs coming back is the whole of what was missing.
-    expect(decide({ hasComparison: true })).toEqual({
+    // The tabs coming back is the whole of what was missing. `stageClaimed`
+    // covers browse and standalone mode too, which open a repo and no
+    // comparison — navigating over those was the same bug in another costume.
+    expect(decide({ stageClaimed: true })).toEqual({
       kind: "focus",
       workspace: queue[1],
     });
+  });
+
+  it("leaves a closed repo closed", () => {
+    // "Show me nothing" is a statement about the stage, and a stronger one
+    // than where the app happened to be last time.
+    expect(decide({ dismissed: true })).toEqual({ kind: "done" });
   });
 
   it("waits for the launch to decide which repo it opens", () => {

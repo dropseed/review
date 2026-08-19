@@ -47,6 +47,8 @@ function seed(state: Partial<Record<string, unknown>> = {}) {
     workspaces: queue,
     focusedWorkspaceId: null,
     activeReviewKey: null,
+    repoPath: null,
+    isStandaloneFile: false,
     lastWorkspaceId: "bbb",
     localActivity: [],
     globalReviews: [],
@@ -66,10 +68,13 @@ describe("useWorkspaceRestore", () => {
   it("comes back to the workspace the stage was last showing", () => {
     renderHook(() => useWorkspaceRestore("found"));
 
-    expect(focusWorkspace).toHaveBeenCalledWith(queue[1], {
-      repoPath: "/repo/b",
-      ref: "main",
-    });
+    expect(focusWorkspace).toHaveBeenCalledWith(
+      queue[1],
+      { repoPath: "/repo/b", ref: "main" },
+      // Nobody did this, so it acknowledges nothing — `useAttentionBadge`
+      // clears the signal once the window actually has focus.
+      { acknowledge: false },
+    );
   });
 
   it("leaves an open comparison alone and only takes the focus", () => {
@@ -100,7 +105,11 @@ describe("useWorkspaceRestore", () => {
     act(() => useReviewStore.setState({ workspaces: queue } as never));
     rerender();
 
-    expect(focusWorkspace).toHaveBeenCalledWith(queue[1], expect.anything());
+    expect(focusWorkspace).toHaveBeenCalledWith(
+      queue[1],
+      expect.anything(),
+      expect.anything(),
+    );
   });
 
   it("waits for the sidebar to resolve the repo before opening", () => {
@@ -116,10 +125,11 @@ describe("useWorkspaceRestore", () => {
     act(() => useReviewStore.setState({ localActivity: [{}] } as never));
     rerender();
 
-    expect(focusWorkspace).toHaveBeenCalledWith(queue[1], {
-      repoPath: "/repo/b",
-      ref: "main",
-    });
+    expect(focusWorkspace).toHaveBeenCalledWith(
+      queue[1],
+      { repoPath: "/repo/b", ref: "main" },
+      expect.anything(),
+    );
   });
 
   it("waits for the launch's own repo decision", () => {
@@ -131,7 +141,29 @@ describe("useWorkspaceRestore", () => {
 
     rerender({ status: "not_found" });
 
-    expect(focusWorkspace).toHaveBeenCalledWith(queue[1], expect.anything());
+    expect(focusWorkspace).toHaveBeenCalledWith(
+      queue[1],
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it("stays off a repo opened in browse mode", () => {
+    // Browse and standalone mode open a repo and no comparison at all, so the
+    // stage is claimed without `activeReviewKey` saying so.
+    seed({ repoPath: "/repo/a" });
+
+    renderHook(() => useWorkspaceRestore("found"));
+
+    expect(focusWorkspace).not.toHaveBeenCalled();
+    expect(useReviewStore.getState().focusedWorkspaceId).toBe("bbb");
+  });
+
+  it("leaves a closed repo closed", () => {
+    renderHook(() => useWorkspaceRestore("welcome"));
+
+    expect(focusWorkspace).not.toHaveBeenCalled();
+    expect(useReviewStore.getState().focusedWorkspaceId).toBeNull();
   });
 
   it("remembers the workspace on screen, derived focus included", () => {

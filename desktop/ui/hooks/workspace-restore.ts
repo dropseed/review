@@ -16,10 +16,11 @@ export type RestoreDecision =
   /** Nothing to restore, now or ever. */
   | { kind: "done" }
   /**
-   * Take the focus, and leave the screen alone — a comparison is already open,
-   * put there by a URL, the CLI, or the directory the app was launched from.
-   * That is a person naming what to look at, and it outranks a restore; the
-   * workspace's tabs coming back is the part that was missing.
+   * Take the focus, and leave the screen alone — the launch already put
+   * something there: a comparison, or a repo being browsed, from a URL, the
+   * CLI, or the directory the app was launched from. That is a person naming
+   * what to look at, and it outranks a restore; the workspace's tabs coming
+   * back is the part that was missing.
    */
   | { kind: "focus"; workspace: Workspace }
   /** Focus it and open `target` — the app comes back where it was. */
@@ -32,8 +33,25 @@ export interface RestoreInput {
   workspaces: readonly Workspace[];
   /** The workspace the stage is showing now, explicit or derived. */
   focused: Workspace | null;
-  /** Whether a comparison is on screen. */
-  hasComparison: boolean;
+  /**
+   * Whether the launch put anything on the stage — a comparison, or a repo in
+   * browse or standalone mode, which carry no comparison at all.
+   *
+   * Read off `repoPath` as well as `activeReviewKey` for exactly that reason:
+   * `review <path>` and `review <file>` both land with a repo open and
+   * `activeReviewKey` deliberately null, and treating that as an empty stage
+   * would navigate the restore straight over the screen they asked for.
+   */
+  stageClaimed: boolean;
+  /**
+   * Whether the person closed the repo in this session — `repoStatus` of
+   * "welcome", which nothing but that reaches.
+   *
+   * Only a page refresh can see it (the sentinel is `sessionStorage`), and
+   * restoring over it would undo the close: they said "show me nothing", which
+   * is a stronger statement about the stage than where the app was last time.
+   */
+  dismissed: boolean;
   /**
    * The comparison the restored workspace would open — its first attachment
    * the sidebar can actually resolve, or null while it can resolve none.
@@ -66,12 +84,13 @@ export interface RestoreInput {
  * without the restore ever running.
  */
 export function restoreDecision(input: RestoreInput): RestoreDecision {
-  const { lastWorkspaceId, workspaces, focused, hasComparison } = input;
+  const { lastWorkspaceId, workspaces, focused, stageClaimed } = input;
 
   // Someone got here first. That includes derivation succeeding on its own,
   // which is the ordinary case and the reason this is cheap.
   if (focused) return { kind: "done" };
   if (!lastWorkspaceId) return { kind: "done" };
+  if (input.dismissed) return { kind: "done" };
 
   // The launch's own repo decision goes first, always: it is what the person
   // typed (or the directory they launched from), and it navigates when it
@@ -86,7 +105,7 @@ export function restoreDecision(input: RestoreInput): RestoreDecision {
     return workspaces.length === 0 ? { kind: "wait" } : { kind: "done" };
   }
 
-  if (hasComparison) return { kind: "focus", workspace };
+  if (stageClaimed) return { kind: "focus", workspace };
 
   // A workspace showing no repo has nothing to wait for — its stage is the
   // empty state either way.
