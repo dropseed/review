@@ -256,7 +256,7 @@ describe("ensureAllFiles / refreshAllFiles", () => {
       }),
     );
 
-    const promise = useReviewStore.getState().ensureAllFiles();
+    const promise = useReviewStore.getState().refreshAllFiles();
 
     // Simulate switching comparisons while the request is in flight; the
     // new comparison's own load claims the loading flag.
