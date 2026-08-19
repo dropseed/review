@@ -11,7 +11,7 @@ import { useReviewStore } from "../../stores";
 import { useHunkById } from "../../stores/selectors/hunks";
 import { computeGroupFiles } from "../../stores/selectors/groups";
 import { getApiClient } from "../../api";
-import { isHunkReviewed } from "../../types";
+import { isHunkReviewed, EMPTY_TRUST_LIST } from "../../types";
 import { countLines } from "../../utils/count-lines";
 import type {
   Comparison,
@@ -35,6 +35,7 @@ import {
   useResponsiveDiffViewMode,
 } from "../../hooks";
 
+import { XIcon } from "../ui/icons";
 function CheckIcon(): ReactNode {
   return (
     <svg
@@ -244,8 +245,6 @@ function buildFilteredPatch(hunks: DiffHunk[], filePath: string): string {
  */
 type FileLoadState =
   { kind: "ok"; content: FileContent } | { kind: "error"; message: string };
-
-const EMPTY_TRUST_LIST: string[] = [];
 
 function getUnreviewedIds(
   ids: string[],
@@ -710,14 +709,7 @@ export function GroupDiffViewer({
         });
       }
     },
-    [
-      repoPath,
-      comparison,
-      expansionByHunk,
-      fileLineCounts,
-      hunksPerFile,
-      reviewState?.githubPr,
-    ],
+    [repoPath, comparison, expansionByHunk, fileLineCounts, hunksPerFile],
   );
 
   const unreviewedIds = useMemo(
@@ -968,17 +960,7 @@ export function GroupDiffViewer({
               onClick={onClose}
               className="flex items-center justify-center w-6 h-6 rounded text-fg-muted hover:text-fg-secondary hover:bg-surface-raised transition-colors shrink-0"
             >
-              <svg
-                className="w-3.5 h-3.5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M18 6L6 18M6 6l12 12" />
-              </svg>
+              <XIcon className="w-3.5 h-3.5" />
             </button>
           )}
         </div>

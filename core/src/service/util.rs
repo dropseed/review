@@ -231,6 +231,23 @@ pub fn bytes_to_file_content(bytes: Vec<u8>, file_path: &str) -> anyhow::Result<
     })
 }
 
+/// Whether `path` is inside a git repository.
+///
+/// Asks git itself rather than looking for a `.git` directory, which is what
+/// makes it right for worktrees, submodules, bare repos and repos whose git
+/// directory lives elsewhere — all cases where the directory either isn't
+/// there or isn't a directory.
+pub fn is_git_repo(path: &Path) -> bool {
+    std::process::Command::new("git")
+        .args(["rev-parse", "--git-dir"])
+        .current_dir(path)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
 /// Codex's home directory: `$CODEX_HOME` when set, else `~/.codex`.
 ///
 /// Codex honours the override for everything it stores, so anything reading or

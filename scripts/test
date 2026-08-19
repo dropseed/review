@@ -21,13 +21,15 @@ WORKSPACE_FEATURES="review/${CORE_FEATURES//,/,review/}"
 
 RUN_TS=1
 RUN_RUST=1
+RUN_CLIPPY=1
 BUILD_SIDECARS=0
 
 usage() {
-    echo "usage: scripts/test [--ts|--rust] [--build-sidecars]"
+    echo "usage: scripts/test [--ts|--rust] [--no-clippy] [--build-sidecars]"
     echo ""
     echo "  --ts              TypeScript type check and tests only"
     echo "  --rust            Rust tests only"
+    echo "  --no-clippy       Skip the clippy gate (tests only)"
     echo "  --build-sidecars  Build the host sidecars the desktop tests need"
     echo "                    (CI; locally scripts/dev has already made them)"
 }
@@ -35,6 +37,7 @@ usage() {
 while [ $# -gt 0 ]; do
     case "$1" in
         --ts) RUN_TS=1; RUN_RUST=0 ;;
+        --no-clippy) RUN_CLIPPY=0 ;;
         --rust) RUN_TS=0; RUN_RUST=1 ;;
         --build-sidecars) BUILD_SIDECARS=1 ;;
         -h|--help) usage; exit 0 ;;
@@ -47,6 +50,13 @@ if [ "$RUN_TS" = 1 ]; then
     echo "=== TypeScript Type Check ==="
     (cd desktop && npx tsc --noEmit)
     echo "TypeScript type check passed!"
+
+    echo ""
+    echo "=== ESLint ==="
+    # Narrow by design — hook correctness is the part tsc and prettier cannot
+    # see. See desktop/eslint.config.js.
+    (cd desktop && npx eslint ui)
+    echo "ESLint passed!"
 
     echo ""
     echo "=== TypeScript Tests ==="
@@ -76,6 +86,16 @@ if [ "$RUN_RUST" = 1 ]; then
         mkdir -p desktop/tauri/binaries
         cp "target/debug/review" "desktop/tauri/binaries/review-cli-$TRIPLE"
         cp "target/debug/review-daemon" "desktop/tauri/binaries/review-daemon-$TRIPLE"
+        echo ""
+    fi
+
+    if [ "$RUN_CLIPPY" = 1 ]; then
+        echo "=== Clippy ==="
+        # The workspace lint policy lives in Cargo.toml's [workspace.lints];
+        # this is what makes it a gate rather than a preference.
+        cargo clippy -p review -p review-desktop --all-targets \
+            --features "$WORKSPACE_FEATURES" -- -D warnings
+        echo "Clippy passed!"
         echo ""
     fi
 

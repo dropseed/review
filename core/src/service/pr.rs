@@ -62,7 +62,7 @@ pub fn resolve_checkout(
 ) -> Option<String> {
     if let Some(path) = recorded {
         if Path::new(path).is_dir() {
-            return Some(path.to_string());
+            return Some(path.to_owned());
         }
     }
     branch_checkout(ref_name).filter(|path| Path::new(path).is_dir())

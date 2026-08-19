@@ -438,6 +438,11 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     };
 
     init();
+    // `enterStandaloneMode` is a plain function declared in the hook body, so
+    // it is a new value every render — listing it here would turn a one-shot
+    // init into an every-render one. Everything else in this list is a stable
+    // Zustand action, which is what keeps the effect one-shot.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     switchReview,
     addRecentRepository,
@@ -518,6 +523,9 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     );
 
     return unlisten;
+    // Same as above: `enterStandaloneMode` is re-created each render, and this
+    // effect registers a listener that must be registered once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     switchReview,
     setComparison,

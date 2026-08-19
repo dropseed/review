@@ -219,6 +219,35 @@ pub struct WorktreeCheckout {
     pub created: bool,
 }
 
+/// A parsed `git status`: each path's status, plus the old→new pairs for the
+/// renames among them.
+type StatusAndRenames = (HashMap<String, FileStatus>, HashMap<String, String>);
+
+/// The working-tree facts a branch row is resolved against, gathered once per
+/// listing. Five parameters that always travelled together, and had to be
+/// threaded through three functions to reach the one that reads them.
+struct WorkingTreeFacts<'a> {
+    has_changes: bool,
+    stats: &'a Option<DiffShortStat>,
+    last_modified: &'a Option<u64>,
+    worktree_map: &'a HashMap<String, String>,
+    dirty_by_worktree: &'a HashMap<String, bool>,
+}
+
+/// One branch as `for-each-ref` reported it, before working-tree state is
+/// joined onto it. Both the batch path and the pre-2.36 fallback parse a line
+/// into this and hand it to `build_branch_info`.
+struct BranchRef<'a> {
+    name: String,
+    is_current: bool,
+    commits_ahead: u32,
+    unpushed_commits: u32,
+    behind_upstream: u32,
+    last_commit_date: String,
+    last_commit_message: String,
+    committer_email: &'a str,
+}
+
 /// Tracked + untracked files and change statuses for a comparison, gathered
 /// from the directory its head branch is checked out in. Shared by
 /// `list_files` and `list_all_files`.
@@ -920,32 +949,23 @@ impl LocalGitSource {
         let batch_format = format!(
             "%(refname:short)\t%(ahead-behind:{default_branch})\t%(committerdate:iso-strict)\t%(committeremail)\t%(upstream)\t%(upstream:track,nobracket)\t%(subject)"
         );
+        let wt_facts = WorkingTreeFacts {
+            has_changes: has_wt_changes,
+            stats: &wt_stats,
+            last_modified: &wt_last_modified,
+            worktree_map: &worktree_map,
+            dirty_by_worktree: &dirty_by_worktree,
+        };
+
         let mut branches = match self.run_git(&[
             "for-each-ref",
             &format!("--format={batch_format}"),
             "refs/heads/",
         ]) {
-            Ok(output) => self.parse_branches_batch(
-                &output,
-                default_branch,
-                &current_branch,
-                has_wt_changes,
-                &wt_stats,
-                &wt_last_modified,
-                &worktree_map,
-                &dirty_by_worktree,
-            ),
+            Ok(output) => self.parse_branches_batch(&output, &current_branch, &wt_facts),
             Err(_) => {
                 // Fall back to N+1 approach for older Git versions
-                self.list_branches_ahead_fallback(
-                    default_branch,
-                    &current_branch,
-                    has_wt_changes,
-                    &wt_stats,
-                    &wt_last_modified,
-                    &worktree_map,
-                    &dirty_by_worktree,
-                )?
+                self.list_branches_ahead_fallback(default_branch, &current_branch, &wt_facts)?
             }
         };
 
@@ -956,21 +976,19 @@ impl LocalGitSource {
         // its other branches, so this is not just the fresh-`git init` case.
         if let Some(name) = self.unborn_branch() {
             branches.push(self.build_branch_info(
-                name,
-                true,
-                0,
-                0,
-                // An unborn branch has no commits, so there is no upstream it
-                // could have fallen behind.
-                0,
-                String::new(),
-                String::new(),
-                "",
-                has_wt_changes,
-                &wt_stats,
-                &wt_last_modified,
-                &worktree_map,
-                &dirty_by_worktree,
+                BranchRef {
+                    name,
+                    is_current: true,
+                    commits_ahead: 0,
+                    unpushed_commits: 0,
+                    // An unborn branch has no commits, so there is no upstream
+                    // it could have fallen behind.
+                    behind_upstream: 0,
+                    last_commit_date: String::new(),
+                    last_commit_message: String::new(),
+                    committer_email: "",
+                },
+                &wt_facts,
             ));
         }
 
@@ -1022,13 +1040,8 @@ impl LocalGitSource {
     fn parse_branches_batch(
         &self,
         output: &str,
-        _default_branch: &str,
         current_branch: &str,
-        has_wt_changes: bool,
-        wt_stats: &Option<DiffShortStat>,
-        wt_last_modified: &Option<u64>,
-        worktree_map: &HashMap<String, String>,
-        dirty_by_worktree: &HashMap<String, bool>,
+        wt: &WorkingTreeFacts,
     ) -> Vec<LocalBranchInfo> {
         let mut branches = Vec::new();
 
@@ -1072,26 +1085,24 @@ impl LocalGitSource {
 
             // Include branch if it holds unpushed work, is ahead, is the
             // current branch, or is in a worktree
-            let in_worktree = worktree_map.contains_key(&name);
+            let in_worktree = wt.worktree_map.contains_key(&name);
             let include = unpushed_commits > 0 || commits_ahead > 0 || is_current || in_worktree;
             if !include {
                 continue;
             }
 
             branches.push(self.build_branch_info(
-                name,
-                is_current,
-                commits_ahead,
-                unpushed_commits,
-                behind_upstream,
-                last_commit_date,
-                last_commit_message,
-                committer_email,
-                has_wt_changes,
-                wt_stats,
-                wt_last_modified,
-                worktree_map,
-                dirty_by_worktree,
+                BranchRef {
+                    name,
+                    is_current,
+                    commits_ahead,
+                    unpushed_commits,
+                    behind_upstream,
+                    last_commit_date,
+                    last_commit_message,
+                    committer_email,
+                },
+                wt,
             ));
         }
 
@@ -1099,46 +1110,31 @@ impl LocalGitSource {
     }
 
     /// Build a `LocalBranchInfo` for a single branch, resolving worktree change status.
-    fn build_branch_info(
-        &self,
-        name: String,
-        is_current: bool,
-        commits_ahead: u32,
-        unpushed_commits: u32,
-        behind_upstream: u32,
-        last_commit_date: String,
-        last_commit_message: String,
-        committer_email: &str,
-        has_wt_changes: bool,
-        wt_stats: &Option<DiffShortStat>,
-        wt_last_modified: &Option<u64>,
-        worktree_map: &HashMap<String, String>,
-        dirty_by_worktree: &HashMap<String, bool>,
-    ) -> LocalBranchInfo {
-        let wt_path = worktree_map.get(&name);
-        let (has_changes, last_mod, stats) = if is_current {
-            (has_wt_changes, *wt_last_modified, wt_stats.clone())
+    fn build_branch_info(&self, branch: BranchRef, wt: &WorkingTreeFacts) -> LocalBranchInfo {
+        let wt_path = wt.worktree_map.get(&branch.name);
+        let (has_changes, last_mod, stats) = if branch.is_current {
+            (wt.has_changes, *wt.last_modified, wt.stats.clone())
         } else if let Some(path) = wt_path {
             // Read off the map resolved once per checkout by `worktree_dirt`,
             // which asks git directly so worktrees the user made themselves
             // report their dirt too — not just review-managed ones.
-            let changed = dirty_by_worktree.get(path).copied().unwrap_or(false);
+            let changed = wt.dirty_by_worktree.get(path).copied().unwrap_or(false);
             (changed, None, None)
         } else {
             (false, None, None)
         };
 
         LocalBranchInfo {
-            is_current,
+            is_current: branch.is_current,
             has_working_tree_changes: has_changes,
             worktree_path: wt_path.cloned(),
-            name,
-            commits_ahead,
-            unpushed_commits,
-            behind_upstream,
-            last_commit_date,
-            last_commit_message,
-            last_commit_by_user: self.commit_is_by_user(committer_email),
+            name: branch.name,
+            commits_ahead: branch.commits_ahead,
+            unpushed_commits: branch.unpushed_commits,
+            behind_upstream: branch.behind_upstream,
+            last_commit_date: branch.last_commit_date,
+            last_commit_message: branch.last_commit_message,
+            last_commit_by_user: self.commit_is_by_user(branch.committer_email),
             last_modified_at: last_mod,
             working_tree_stats: stats,
         }
@@ -1150,11 +1146,7 @@ impl LocalGitSource {
         &self,
         default_branch: &str,
         current_branch: &str,
-        has_wt_changes: bool,
-        wt_stats: &Option<DiffShortStat>,
-        wt_last_modified: &Option<u64>,
-        worktree_map: &HashMap<String, String>,
-        dirty_by_worktree: &HashMap<String, bool>,
+        wt: &WorkingTreeFacts,
     ) -> Result<Vec<LocalBranchInfo>, LocalGitError> {
         let output = self.run_git(&[
             "for-each-ref",
@@ -1198,36 +1190,27 @@ impl LocalGitSource {
 
             // Include branch if it holds unpushed work, is ahead, is the
             // current branch, or is in a worktree
-            let in_worktree = worktree_map.contains_key(&name);
+            let in_worktree = wt.worktree_map.contains_key(&name);
             let include = unpushed_commits > 0 || commits_ahead > 0 || is_current || in_worktree;
             if !include {
                 continue;
             }
 
-            let wt_path = worktree_map.get(&name);
-            let (has_changes, last_mod, stats) = if is_current {
-                (has_wt_changes, *wt_last_modified, wt_stats.clone())
-            } else if let Some(path) = wt_path {
-                let changed = dirty_by_worktree.get(path).copied().unwrap_or(false);
-                (changed, None, None)
-            } else {
-                (false, None, None)
-            };
-
-            branches.push(LocalBranchInfo {
-                is_current,
-                has_working_tree_changes: has_changes,
-                worktree_path: wt_path.cloned(),
-                unpushed_commits,
-                behind_upstream,
-                name,
-                commits_ahead,
-                last_commit_date,
-                last_commit_message,
-                last_commit_by_user: self.commit_is_by_user(committer_email),
-                last_modified_at: last_mod,
-                working_tree_stats: stats,
-            });
+            // Was an inline copy of `build_branch_info`'s body, drifting on its
+            // own; now the same call the batch path makes.
+            branches.push(self.build_branch_info(
+                BranchRef {
+                    name,
+                    is_current,
+                    commits_ahead,
+                    unpushed_commits,
+                    behind_upstream,
+                    last_commit_date,
+                    last_commit_message,
+                    committer_email,
+                },
+                wt,
+            ));
         }
 
         Ok(branches)
@@ -2273,7 +2256,7 @@ impl LocalGitSource {
     pub fn get_changed_files(
         &self,
         comparison: &Comparison,
-    ) -> Result<(HashMap<String, FileStatus>, HashMap<String, String>), LocalGitError> {
+    ) -> Result<StatusAndRenames, LocalGitError> {
         let mut changes = HashMap::new();
         let mut rename_map = HashMap::new();
 

@@ -140,7 +140,7 @@ mod tests {
 
     #[test]
     fn test_matches_any_pattern() {
-        let patterns = vec!["imports:*".to_string(), "formatting:*".to_string()];
+        let patterns = vec!["imports:*".to_owned(), "formatting:*".to_owned()];
 
         assert!(matches_any_pattern("imports:added", &patterns));
         assert!(matches_any_pattern("formatting:whitespace", &patterns));
@@ -149,12 +149,12 @@ mod tests {
 
     #[test]
     fn test_any_label_matches_any_pattern() {
-        let labels = vec!["imports:added".to_string(), "code:logic".to_string()];
-        let patterns = vec!["imports:*".to_string()];
+        let labels = vec!["imports:added".to_owned(), "code:logic".to_owned()];
+        let patterns = vec!["imports:*".to_owned()];
 
         assert!(any_label_matches_any_pattern(&labels, &patterns));
 
-        let labels2 = vec!["code:logic".to_string(), "comments:added".to_string()];
+        let labels2 = vec!["code:logic".to_owned(), "comments:added".to_owned()];
         assert!(!any_label_matches_any_pattern(&labels2, &patterns));
     }
 

@@ -65,6 +65,9 @@ jobs:
         with:
           version: 0.16.0
 
+      - name: Install clippy
+        run: rustup component add clippy
+
       - uses: Swatinem/rust-cache@v2
 
       # No Node setup here: `cargo test -p review-desktop` compiles the Tauri

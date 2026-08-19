@@ -179,20 +179,7 @@ fn working_tree_of(ref_name: &str) -> (Comparison, BaseReason) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::Command;
-
-    fn git(dir: &Path, args: &[&str]) {
-        let status = Command::new("git")
-            .args(args)
-            .current_dir(dir)
-            .output()
-            .expect("run git");
-        assert!(
-            status.status.success(),
-            "git {args:?} failed: {}",
-            String::from_utf8_lossy(&status.stderr)
-        );
-    }
+    use crate::test_git::git;
 
     /// A repo on `main` with one commit, plus a `feature` branch a commit ahead.
     fn repo() -> (tempfile::TempDir, LocalGitSource) {

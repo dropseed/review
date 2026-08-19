@@ -10,6 +10,7 @@ import {
   DropdownMenuSeparator,
 } from "../ui/dropdown-menu";
 
+import { XIcon } from "../ui/icons";
 interface NodeOverflowMenuProps {
   path: string;
   isDirectory: boolean;
@@ -80,18 +81,7 @@ export function NodeOverflowMenu({
               Approve all hunks
             </DropdownMenuItem>
             <DropdownMenuItem onClick={onRejectAll}>
-              <svg
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
+              <XIcon />
               Reject all hunks
             </DropdownMenuItem>
           </>

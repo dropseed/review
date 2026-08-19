@@ -29,11 +29,10 @@ function makeSlice(reads: Record<string, unknown> = {}) {
     set: (key: string, value: unknown) => {
       writes[key] = value;
     },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   let state: any = {};
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   const set = (partial: any) => {
     state = {
       ...state,
@@ -41,7 +40,7 @@ function makeSlice(reads: Record<string, unknown> = {}) {
     };
   };
   const get = () => state;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   state = createPreferencesSlice(storage)(set, get, {} as any);
   return { get, writes, reads };
 }

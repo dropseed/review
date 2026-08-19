@@ -12,6 +12,7 @@ import type {
 } from "../../types";
 import { makeReviewKey } from "../../utils/review-key";
 
+import { memoOnIdentity } from "./memo";
 /** Everything `buildSidebarTree` needs that lives in the store. */
 export interface SidebarTreeState {
   localActivity: RepoLocalActivity[];
@@ -43,13 +44,7 @@ export function availablePrs(snapshot: ViewerPrSnapshot | null): ViewerPr[] {
   return snapshot == null || !snapshot.available ? NO_PRS : snapshot.prs;
 }
 
-interface CacheEntry {
-  /** Compared positionally against a freshly built list — see `deps` below. */
-  deps: readonly unknown[];
-  output: RepoNode[];
-}
-
-let cache: CacheEntry | null = null;
+const treeMemo = memoOnIdentity<RepoNode[]>();
 
 /**
  * The sidebar tree, built from store state.
@@ -59,7 +54,7 @@ let cache: CacheEntry | null = null;
  * palette's list of reviews, and the freshness check. Two of those used to call
  * the builder themselves and so couldn't see inputs the others had.
  *
- * Cached on input identity (the pattern in `selectors/hunks.ts`) so multiple
+ * Cached on input identity (see `selectors/memo.ts`) so multiple
  * subscribers share one build per state change rather than one per render. The
  * tree reads no clock, so identity is the whole story: it is rebuilt when git,
  * review state or the PR snapshot changes, and at no other time.
@@ -76,24 +71,17 @@ export function getSidebarTree(state: SidebarTreeState): RepoNode[] {
     viewerPrs,
   ];
 
-  const hit = cache;
-  if (hit && deps.every((dep, i) => dep === hit.deps[i])) {
-    return hit.output;
-  }
-
-  const output = buildSidebarTree(
-    state.localActivity,
-    state.globalReviews,
-    state.globalReviewsByKey,
-    viewerPrs,
+  return treeMemo(deps, () =>
+    buildSidebarTree(
+      state.localActivity,
+      state.globalReviews,
+      state.globalReviewsByKey,
+      viewerPrs,
+    ),
   );
-
-  cache = { deps, output };
-  return output;
 }
 
-let rowsCache: { tree: RepoNode[]; rows: Map<string, SidebarRow> } | null =
-  null;
+const rowsMemo = memoOnIdentity<Map<string, SidebarRow>>();
 
 /**
  * The tree's rows indexed by review key.
@@ -105,14 +93,13 @@ let rowsCache: { tree: RepoNode[]; rows: Map<string, SidebarRow> } | null =
  * each answering "does this ref have a row" their own way.
  */
 export function sidebarRowsByKey(tree: RepoNode[]): Map<string, SidebarRow> {
-  if (rowsCache?.tree === tree) return rowsCache.rows;
-  const rows = new Map(allSidebarRows(tree).map((row) => [row.reviewKey, row]));
-  rowsCache = { tree, rows };
-  return rows;
+  return rowsMemo(
+    [tree],
+    () => new Map(allSidebarRows(tree).map((row) => [row.reviewKey, row])),
+  );
 }
 
-let byRefCache: { tree: RepoNode[]; rows: Map<string, SidebarRow> } | null =
-  null;
+const byRefMemo = memoOnIdentity<Map<string, SidebarRow>>();
 
 /**
  * The tree's rows indexed by repo path and **branch**, which is not the same
@@ -135,15 +122,15 @@ let byRefCache: { tree: RepoNode[]; rows: Map<string, SidebarRow> } | null =
 export function sidebarRowsByRepoRef(
   tree: RepoNode[],
 ): Map<string, SidebarRow> {
-  if (byRefCache?.tree === tree) return byRefCache.rows;
-  const rows = new Map<string, SidebarRow>();
-  for (const row of allSidebarRows(tree)) {
-    const key = makeReviewKey(row.repoPath, row.ref);
-    const held = rows.get(key);
-    if (!held || newerPr(row, held)) rows.set(key, row);
-  }
-  byRefCache = { tree, rows };
-  return rows;
+  return byRefMemo([tree], () => {
+    const rows = new Map<string, SidebarRow>();
+    for (const row of allSidebarRows(tree)) {
+      const key = makeReviewKey(row.repoPath, row.ref);
+      const held = rows.get(key);
+      if (!held || newerPr(row, held)) rows.set(key, row);
+    }
+    return rows;
+  });
 }
 
 /** Whether `row` carries a more recently updated PR than `held` does. */
@@ -153,8 +140,7 @@ function newerPr(row: SidebarRow, held: SidebarRow): boolean {
   return Date.parse(row.openPr.updatedAt) > Date.parse(held.openPr.updatedAt);
 }
 
-let byPrCache: { tree: RepoNode[]; rows: Map<string, SidebarRow> } | null =
-  null;
+const byPrMemo = memoOnIdentity<Map<string, SidebarRow>>();
 
 /**
  * The tree's rows indexed by the PR they stand for, `repoPath#number`.
@@ -166,13 +152,13 @@ let byPrCache: { tree: RepoNode[]; rows: Map<string, SidebarRow> } | null =
  * otherwise re-derive that join and get a third answer.
  */
 export function sidebarRowsByPr(tree: RepoNode[]): Map<string, SidebarRow> {
-  if (byPrCache?.tree === tree) return byPrCache.rows;
-  const rows = new Map<string, SidebarRow>();
-  for (const row of allSidebarRows(tree)) {
-    if (row.openPr) rows.set(`${row.repoPath}#${row.openPr.number}`, row);
-  }
-  byPrCache = { tree, rows };
-  return rows;
+  return byPrMemo([tree], () => {
+    const rows = new Map<string, SidebarRow>();
+    for (const row of allSidebarRows(tree)) {
+      if (row.openPr) rows.set(`${row.repoPath}#${row.openPr.number}`, row);
+    }
+    return rows;
+  });
 }
 
 /** The row a review key names, or null when nothing represents it. */

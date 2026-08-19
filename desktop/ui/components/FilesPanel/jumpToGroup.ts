@@ -11,7 +11,7 @@
 import { useReviewStore } from "../../stores";
 import { getHunkByIdMap } from "../../stores/selectors/hunkData";
 import type { Group } from "../../stores/selectors/groups";
-import { effectiveHunkStatus } from "../../types";
+import { effectiveHunkStatus, EMPTY_TRUST_LIST } from "../../types";
 import type { ReviewStore } from "../../stores/types";
 
 /**
@@ -39,7 +39,7 @@ function firstUnreviewed(
   state: ReviewStore,
   ids: string[],
 ): string | undefined {
-  const trustList = state.reviewState?.trustList ?? [];
+  const trustList = state.reviewState?.trustList ?? EMPTY_TRUST_LIST;
   return (
     ids.find(
       (id) =>

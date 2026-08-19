@@ -14,7 +14,7 @@ import { getApiClient } from "../../api";
 import { useFileViewerState } from "./hooks/useFileViewerState";
 import type { DiffHunk, FileContent, FileEntry } from "../../types";
 import { Spinner } from "../ui/spinner";
-import { isHunkReviewed, makeComparison } from "../../types";
+import { isHunkReviewed, makeComparison, EMPTY_TRUST_LIST } from "../../types";
 import { FileContentRenderer } from "./FileContentRenderer";
 import {
   DiffMinimap,
@@ -357,7 +357,7 @@ export function FileViewer({
   const reviewProgress = useMemo(() => {
     const total = fileHunks.length;
     if (total === 0) return { reviewed: 0, total: 0 };
-    const trustList = reviewState?.trustList ?? [];
+    const trustList = reviewState?.trustList ?? EMPTY_TRUST_LIST;
     const reviewed = fileHunks.filter((hunk) =>
       isHunkReviewed(reviewState?.hunks[hunk.id], trustList, {
         autoApproveStaged: reviewState?.autoApproveStaged,
@@ -412,8 +412,11 @@ export function FileViewer({
     const isFileSwitch = prevFilePathRef.current !== filePath;
     prevFilePathRef.current = filePath;
 
-    // Only show spinner on file switch or initial load
-    const showSpinner = isFileSwitch || !fileContent;
+    // Only show spinner on file switch or initial load. Read through the ref
+    // (kept in sync just above) rather than `fileContent` itself: this effect
+    // is what sets the content, so depending on it would re-run the fetch on
+    // its own result.
+    const showSpinner = isFileSwitch || !fileContentRef.current;
     if (showSpinner) {
       setLoading(true);
     }
@@ -549,7 +552,7 @@ export function FileViewer({
     [fileContent?.oldContent, newLineCount, viewMode],
   );
 
-  const trustList = reviewState?.trustList ?? [];
+  const trustList = reviewState?.trustList ?? EMPTY_TRUST_LIST;
 
   const minimapMarkers = useMemo<MinimapMarker[]>(() => {
     if (!fileContent || totalLineCount === 0) return [];

@@ -7,6 +7,7 @@ import {
   hunkLabels,
   type HunkState,
   type TrustCategory,
+  EMPTY_TRUST_LIST,
 } from "../../types";
 import { getApiClient } from "../../api";
 import { Checkbox } from "../ui/checkbox";
@@ -134,7 +135,7 @@ export function TrustSection(): ReactNode {
       .catch((err) => console.error("Failed to load taxonomy:", err));
   }, []);
 
-  const trustList = reviewState?.trustList ?? [];
+  const trustList = reviewState?.trustList ?? EMPTY_TRUST_LIST;
 
   const patterns = useMemo(
     () =>

@@ -16,6 +16,16 @@ use super::util::reject_path_traversal;
 use super::util::reject_relative_path_traversal;
 use super::RepoFileSymbols;
 
+/// What pass 1 hands to pass 2 for one file: its symbol diff, the old and new
+/// contents it was computed from (kept so pass 2 need not re-read them), and
+/// the file's hunks.
+type Pass1 = (
+    FileSymbolDiff,
+    Option<String>,
+    Option<String>,
+    Vec<DiffHunk>,
+);
+
 /// Compute symbol-level diffs for files.
 pub fn get_file_symbol_diffs(
     repo_path: &Path,
@@ -60,20 +70,13 @@ pub fn get_file_symbol_diffs(
     let rename_map = crate::diff::parser::extract_rename_map(&full_diff);
 
     // Pass 1: compute FileSymbolDiff per file (parallel), also return file contents for reuse
-    let pass1_results: Vec<(
-        FileSymbolDiff,
-        Option<String>,
-        Option<String>,
-        Vec<DiffHunk>,
-    )> = std::thread::scope(|s| {
+    let pass1_results: Vec<Pass1> = std::thread::scope(|s| {
         let handles: Vec<_> = file_paths
             .iter()
             .map(|file_path| {
                 let source = &source;
                 let all_hunks = &all_hunks;
                 let old_ref = old_ref.as_str();
-                let comparison = comparison;
-                let repo_path = repo_path;
                 let rename_map = &rename_map;
                 s.spawn(move || {
                     // Get old content (use old path for renamed files)
@@ -363,9 +366,9 @@ pub fn find_symbol_definitions(
             .map(|l| {
                 // When searching a ref, git grep outputs "ref:path" — strip the ref prefix
                 if git_ref.is_some() {
-                    l.splitn(2, ':').nth(1).unwrap_or(l).to_string()
+                    l.split_once(':').map_or(l, |x| x.1).to_owned()
                 } else {
-                    l.to_string()
+                    l.to_owned()
                 }
             })
             .collect()

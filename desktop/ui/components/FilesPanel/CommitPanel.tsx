@@ -12,6 +12,7 @@ import { useReviewStore } from "../../stores";
 import { CollapsibleSection } from "../ui/collapsible-section";
 import { MOD_SYMBOL as MOD_KEY_SYMBOL } from "../../commands";
 
+import { XIcon } from "../ui/icons";
 const MAX_OUTPUT_LINES = 8;
 
 const COMMIT_ICON = (
@@ -60,17 +61,7 @@ const TRASH_ICON = (
   </svg>
 );
 
-const DISMISS_ICON = (
-  <svg
-    className="h-3 w-3"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-  >
-    <path d="M18 6L6 18M6 6l12 12" />
-  </svg>
-);
+const DISMISS_ICON = <XIcon className="h-3 w-3" />;
 
 function SpinnerIcon({ className }: { className?: string }): ReactNode {
   return (

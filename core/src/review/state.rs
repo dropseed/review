@@ -703,10 +703,10 @@ mod tests {
         assert!(state.hunks.is_empty());
         // All taxonomy patterns are enabled by default
         assert!(!state.trust_list.is_empty());
-        assert!(state.trust_list.contains(&"imports:added".to_string()));
+        assert!(state.trust_list.contains(&"imports:added".to_owned()));
         assert!(state
             .trust_list
-            .contains(&"formatting:whitespace".to_string()));
+            .contains(&"formatting:whitespace".to_owned()));
         assert!(state.notes.is_empty());
         assert!(state.annotations.is_empty());
     }
@@ -727,7 +727,7 @@ mod tests {
 
         // Add an approved hunk
         state.hunks.insert(
-            "file.rs:abc123".to_string(),
+            "file.rs:abc123".to_owned(),
             HunkState {
                 status: Some(Attributed::new(HunkStatus::Approved, Source::Ui)),
                 ..Default::default()
@@ -737,7 +737,7 @@ mod tests {
         // Add a pending hunk
         state
             .hunks
-            .insert("file.rs:def456".to_string(), HunkState::default());
+            .insert("file.rs:def456".to_owned(), HunkState::default());
 
         let summary = state.to_summary();
         assert_eq!(summary.total_hunks, 2);
@@ -748,14 +748,14 @@ mod tests {
     fn test_review_state_to_summary_with_trusted_labels() {
         let mut state = new_state();
         state.total_diff_hunks = 2;
-        state.trust_list = vec!["imports:*".to_string()];
+        state.trust_list = vec!["imports:*".to_owned()];
 
         // Add a hunk with trusted label (should count as reviewed)
         state.hunks.insert(
-            "file.rs:abc123".to_string(),
+            "file.rs:abc123".to_owned(),
             HunkState {
                 classification: Some(Attributed::new(
-                    vec!["imports:added".to_string()],
+                    vec!["imports:added".to_owned()],
                     Source::Static,
                 )),
                 ..Default::default()
@@ -764,10 +764,10 @@ mod tests {
 
         // Add a hunk with non-trusted label
         state.hunks.insert(
-            "file.rs:def456".to_string(),
+            "file.rs:def456".to_owned(),
             HunkState {
                 classification: Some(Attributed::new(
-                    vec!["code:logic".to_string()],
+                    vec!["code:logic".to_owned()],
                     Source::Static,
                 )),
                 ..Default::default()
@@ -784,23 +784,23 @@ mod tests {
         let mut state = new_state();
         // Simulate 200 total hunks in the diff but only 2 classified
         state.total_diff_hunks = 200;
-        state.trust_list = vec!["imports:*".to_string()];
+        state.trust_list = vec!["imports:*".to_owned()];
 
         state.hunks.insert(
-            "file.rs:abc123".to_string(),
+            "file.rs:abc123".to_owned(),
             HunkState {
                 classification: Some(Attributed::new(
-                    vec!["imports:added".to_string()],
+                    vec!["imports:added".to_owned()],
                     Source::Static,
                 )),
                 ..Default::default()
             },
         );
         state.hunks.insert(
-            "file.rs:def456".to_string(),
+            "file.rs:def456".to_owned(),
             HunkState {
                 classification: Some(Attributed::new(
-                    vec!["code:logic".to_string()],
+                    vec!["code:logic".to_owned()],
                     Source::Static,
                 )),
                 status: Some(Attributed::new(HunkStatus::Approved, Source::Ui)),
@@ -824,7 +824,7 @@ mod tests {
         // total_diff_hunks defaults to 0 — progress shows empty until synced
 
         state.hunks.insert(
-            "file.rs:abc123".to_string(),
+            "file.rs:abc123".to_owned(),
             HunkState {
                 status: Some(Attributed::new(HunkStatus::Approved, Source::Ui)),
                 ..Default::default()
@@ -962,7 +962,7 @@ mod tests {
             .insert(a.id.clone(), approved_entry(Some(a.stable_hash())));
 
         // The diff now contains `b` (same change, drifted context) instead of `a`.
-        let recon = state.reconcile(&[b.clone()], true);
+        let recon = state.reconcile(std::slice::from_ref(&b), true);
 
         assert_eq!(recon.carried_forward, 1);
         assert_eq!(recon.dropped, 0);
@@ -1019,7 +1019,7 @@ mod tests {
         let mut state = new_state();
         state.hunks.insert(a.id.clone(), approved_entry(None));
 
-        let recon = state.reconcile(&[a.clone()], true);
+        let recon = state.reconcile(std::slice::from_ref(&a), true);
 
         assert_eq!(recon.carried_forward, 0);
         assert_eq!(recon.dropped, 0);

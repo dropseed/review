@@ -26,9 +26,9 @@ import { DiffOptionsPopover } from "./DiffOptionsPopover";
 import { SimilarFilesModal } from "./annotations/SimilarFilesModal";
 import type { ContentMode } from "./content-mode";
 
+import { XIcon } from "../ui/icons";
+import { EMPTY_TRUST_LIST } from "../../types";
 const EMPTY_HUNK_STATES: Record<string, never> = {};
-const EMPTY_TRUST_LIST: string[] = [];
-
 /** Known path segments that indicate a meaningful boundary in external paths. */
 const EXTERNAL_PATH_MARKERS = [
   ".venv/",
@@ -431,19 +431,7 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
               className="ml-0.5 rounded hover:bg-fg-muted/20 transition-colors"
               aria-label="Close external file"
             >
-              <svg
-                className="h-3 w-3"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2.5}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
+              <XIcon className="h-3 w-3" strokeWidth={2.5} />
             </button>
           )}
         </span>
@@ -461,19 +449,7 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
               className="ml-0.5 rounded hover:bg-status-renamed/20 transition-colors"
               aria-label="Exit working tree view"
             >
-              <svg
-                className="h-3 w-3"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2.5}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
+              <XIcon className="h-3 w-3" strokeWidth={2.5} />
             </button>
           )}
         </span>
@@ -857,17 +833,7 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
               onClick={onClose}
               className="flex items-center justify-center w-6 h-6 rounded text-fg-muted hover:text-fg-secondary hover:bg-surface-raised transition-colors"
             >
-              <svg
-                className="w-3.5 h-3.5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M18 6L6 18M6 6l12 12" />
-              </svg>
+              <XIcon className="w-3.5 h-3.5" />
             </button>
           </SimpleTooltip>
         )}

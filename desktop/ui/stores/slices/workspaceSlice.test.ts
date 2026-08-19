@@ -47,16 +47,14 @@ describe("reorderWorkspaces", () => {
   });
 });
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function makeSlice(client: any = {}) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let state: any = {};
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   const set = (partial: any) => {
     state = { ...state, ...partial };
   };
   const get = () => state;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   state = createWorkspaceSlice(client)(set, get, {} as any);
   return { get, set };
 }

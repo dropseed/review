@@ -541,6 +541,6 @@ export function useTerminalFileDrop(): void {
  * character the shell would act on.
  */
 export function quoteShellPath(path: string): string {
-  if (/^[A-Za-z0-9_@%+=:,.\/-]+$/.test(path)) return path;
+  if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(path)) return path;
   return `'${path.replace(/'/g, `'\\''`)}'`;
 }

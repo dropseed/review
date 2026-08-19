@@ -21,7 +21,7 @@ fn spawn_stream_reader(
     std::thread::spawn(move || {
         let Some(pipe) = pipe else { return };
         let reader = std::io::BufReader::new(pipe);
-        for line in reader.lines().flatten() {
+        for line in reader.lines().map_while(Result::ok) {
             let s = seq.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             on_line(CommitOutputLine {
                 text: line,
@@ -49,13 +49,15 @@ pub fn git_commit_streaming(
         .context("Failed to spawn git commit")?;
 
     let seq = Arc::new(AtomicU64::new(0));
-    let on_line = Arc::new(on_line);
+    // Typed as the trait object the reader takes, so the two `Arc::clone`s
+    // below are plain refcount bumps rather than unsizing coercions.
+    let on_line: Arc<dyn Fn(CommitOutputLine) + Send + Sync> = Arc::new(on_line);
 
     let stdout_thread = spawn_stream_reader(
         child.stdout.take(),
         CommitStream::Stdout,
-        on_line.clone(),
-        seq.clone(),
+        Arc::clone(&on_line),
+        Arc::clone(&seq),
     );
     let stderr_thread =
         spawn_stream_reader(child.stderr.take(), CommitStream::Stderr, on_line, seq);

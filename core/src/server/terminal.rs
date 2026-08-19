@@ -961,7 +961,10 @@ mod daemon_tests {
 
     /// A throwaway review home, so routing writes its `work.json` into a
     /// tempdir rather than the machine's real queue.
-    struct HomeGuard(#[allow(dead_code)] tempfile::TempDir);
+    struct HomeGuard(
+        #[allow(dead_code, reason = "held only so the tempdir outlives the test")]
+        tempfile::TempDir,
+    );
 
     impl Drop for HomeGuard {
         fn drop(&mut self) {
@@ -978,6 +981,14 @@ mod daemon_tests {
     /// The whole web-mode terminal path in one go: probe, start (which routes),
     /// type into the socket, watch the output come back, then kill.
     #[tokio::test]
+    // `ENV_LOCK` is a std mutex shared with this crate's synchronous tests, so
+    // it cannot become a tokio one, and the guard has to span the whole body —
+    // serialising process-wide env mutation is the entire point of taking it.
+    // `#[tokio::test]` is single-threaded, so the non-Send future is fine.
+    #[allow(
+        clippy::await_holding_lock,
+        reason = "serialises $REVIEW_HOME for the test body; single-threaded runtime"
+    )]
     async fn a_session_round_trips_over_the_websocket() {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _home = isolated_home();

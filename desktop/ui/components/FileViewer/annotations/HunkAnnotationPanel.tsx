@@ -18,6 +18,7 @@ import { MovePairModal } from "./MovePairModal";
 import { SimilarHunksModal } from "./SimilarHunksModal";
 import { HunkCommitTags } from "./HunkCommitTags";
 
+import { XIcon } from "../../ui/icons";
 /** "· set by agent" provenance suffix, shown only when something other than
  *  the human-in-this-app set the value. */
 function setBySuffix(source: Source | undefined): string {
@@ -173,19 +174,7 @@ export function HunkAnnotationPanel({
             onClick={() => onUnreject(hunk.id)}
             className="group flex items-center gap-1.5 rounded-md bg-status-rejected/20 px-2.5 py-1 text-xs font-medium text-status-rejected transition-colors hover:bg-status-rejected/30 inset-ring-1 inset-ring-status-rejected/30 animate-in fade-in zoom-in-95 duration-200"
           >
-            <svg
-              className="h-3.5 w-3.5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2.5}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
+            <XIcon className="h-3.5 w-3.5" strokeWidth={2.5} />
             <span className="hidden @md:inline">Rejected</span>
           </button>
         </SimpleTooltip>
@@ -258,19 +247,10 @@ export function HunkAnnotationPanel({
               }`}
               aria-label="Reject change"
             >
-              <svg
+              <XIcon
                 className={`h-3 w-3${isTrusted ? " opacity-50" : ""}`}
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
                 strokeWidth={2.5}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
+              />
               <span className="hidden @md:inline">Reject</span>
               <span className="hidden @md:inline">
                 <kbd className="ml-0.5 text-xxs opacity-0 group-data-[scroll-focused]/panel:opacity-60">

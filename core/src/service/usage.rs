@@ -165,8 +165,8 @@ fn claude_usage() -> Option<AgentUsage> {
     // Empty means logged out, or billing through an API key rather than a
     // subscription — there are no limit windows to show.
     (!windows.is_empty()).then(|| AgentUsage {
-        id: "claude".to_string(),
-        name: "Claude".to_string(),
+        id: "claude".to_owned(),
+        name: "Claude".to_owned(),
         windows,
         plan: None,
         observed_at_unix: None,
@@ -244,7 +244,7 @@ fn parse_claude_windows(text: &str) -> Vec<UsageWindow> {
             resets_at_unix: None,
             resets_at_text: after
                 .split_once("resets ")
-                .map(|(_, resets)| resets.trim().to_string()),
+                .map(|(_, resets)| resets.trim().to_owned()),
         });
     }
 
@@ -355,7 +355,7 @@ fn recent_session_files(sessions_dir: &Path, limit: usize) -> Vec<(PathBuf, Opti
         })
         .collect();
 
-    files.sort_by(|a, b| b.1.cmp(&a.1));
+    files.sort_by_key(|f| std::cmp::Reverse(f.1));
     files.truncate(limit);
     files
         .into_iter()
@@ -405,8 +405,8 @@ fn build_codex_usage(snapshot: &Value, observed_at_unix: Option<i64>) -> AgentUs
         .collect();
 
     AgentUsage {
-        id: "codex".to_string(),
-        name: "Codex".to_string(),
+        id: "codex".to_owned(),
+        name: "Codex".to_owned(),
         windows,
         plan: snapshot
             .get("plan_type")
@@ -434,12 +434,12 @@ fn parse_codex_window(window: &Value) -> Option<UsageWindow> {
 /// one vocabulary in the UI rather than two.
 fn codex_window_label(minutes: Option<u64>) -> String {
     match minutes {
-        Some(300) => "Session".to_string(),
-        Some(WEEK_MINUTES) => "Weekly".to_string(),
+        Some(300) => "Session".to_owned(),
+        Some(WEEK_MINUTES) => "Weekly".to_owned(),
         Some(m) if m % 1440 == 0 => format!("{}d", m / 1440),
         Some(m) if m % 60 == 0 => format!("{}h", m / 60),
         Some(m) => format!("{m}m"),
-        None => "Limit".to_string(),
+        None => "Limit".to_owned(),
     }
 }
 

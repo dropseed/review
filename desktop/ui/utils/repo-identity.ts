@@ -11,6 +11,12 @@ export function reviewUrl(routePrefix: string, ref: string): string {
 }
 
 /**
+ * The org an unresolvable repo belongs to — the trailing group in the sidebar,
+ * and the org half `splitRoutePrefix` invents for a `local/dirname` prefix.
+ */
+const LOCAL_ORG = "local";
+
+/**
  * Split a route prefix ("owner/repo" or "local/dirname") into its org and repo
  * segments. Used by sidebar grouping and repo header display.
  */
@@ -19,18 +25,12 @@ export function splitRoutePrefix(routePrefix: string): {
   repo: string;
 } {
   const slash = routePrefix.indexOf("/");
-  if (slash <= 0) return { org: "local", repo: routePrefix };
+  if (slash <= 0) return { org: LOCAL_ORG, repo: routePrefix };
   return {
     org: routePrefix.slice(0, slash),
     repo: routePrefix.slice(slash + 1),
   };
 }
-
-/**
- * The org an unresolvable repo belongs to — the trailing group in the sidebar,
- * and the org half `splitRoutePrefix` invents for a `local/dirname` prefix.
- */
-export const LOCAL_ORG = "local";
 
 /**
  * The org's avatar, from any URL on its forge: `https://host/org.png?size=64`.

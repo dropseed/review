@@ -597,7 +597,7 @@ describe("tab reducers", () => {
 // Minimal harness: drive the real slice actions with an in-memory store and a
 // stub storage that records writes and answers reads, so we can assert both
 // halves of persistence.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 function makeSlice(client: any = {}) {
   const writes: Record<string, unknown> = {};
   const reads: Record<string, unknown> = {};
@@ -606,11 +606,10 @@ function makeSlice(client: any = {}) {
     set: (key: string, value: unknown) => {
       writes[key] = value;
     },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   let state: any = {};
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   const set = (partial: any) => {
     state = {
       ...state,
@@ -618,7 +617,7 @@ function makeSlice(client: any = {}) {
     };
   };
   const get = () => state;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   state = createTerminalSlice(client, storage)(set, get, {} as any);
   return { get, set, writes, reads };
 }
@@ -1238,7 +1237,7 @@ describe("tab layout across relaunches", () => {
   const settle = () => vi.advanceTimersByTime(1_000);
 
   /** The slice harness on fake timers, primed with `savedLayout` on disk. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   function relaunched(): any {
     vi.useFakeTimers();
     const slice = makeSlice();

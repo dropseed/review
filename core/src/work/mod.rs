@@ -836,7 +836,7 @@ mod tests {
 
         // The wire adds the derived title beside the stored one, so a rename
         // field can prefill with what the human typed.
-        let view = serde_json::to_value(&WorkspaceView::from(workspace)).unwrap();
+        let view = serde_json::to_value(WorkspaceView::from(workspace)).unwrap();
         assert_eq!(view["title"], "Ship it");
         assert_eq!(view["displayTitle"], "Ship it");
         assert_eq!(view["id"], "0a1b2c3d");

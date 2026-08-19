@@ -192,22 +192,9 @@ pub fn land(location: &Location, explicit: Option<&str>) -> Result<Landing, Work
 mod tests {
     use super::*;
     use crate::review::central::tests::{setup_test, ENV_LOCK};
+    use crate::test_git::git;
     use crate::work::{add, attach, list, move_workspace};
-    use std::process::Command;
     use tempfile::TempDir;
-
-    fn git(dir: &Path, args: &[&str]) {
-        let out = Command::new("git")
-            .args(args)
-            .current_dir(dir)
-            .output()
-            .expect("git");
-        assert!(
-            out.status.success(),
-            "git {args:?}: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-    }
 
     /// A repo on `trunk` with one commit, plus a `feature` branch.
     fn repo() -> TempDir {

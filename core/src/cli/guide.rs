@@ -249,7 +249,7 @@ pub fn run_add(args: AddArgs) -> Result<(), String> {
 
     let group_count = Cell::new(0usize);
     let state = mutate_review(&repo, &review.ref_name, &hunks, |state| {
-        let guide = state.guide.get_or_insert_with(|| Guide { state: None });
+        let guide = state.guide.get_or_insert(Guide { state: None });
         let generated = guide.state.get_or_insert_with(|| GuideGenerated {
             groups: Vec::new(),
             hunk_ids: snapshot.clone(),

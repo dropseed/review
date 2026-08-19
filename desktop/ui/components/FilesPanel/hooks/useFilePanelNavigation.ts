@@ -127,7 +127,7 @@ export function useFilePanelNavigation({
     if (viewMode === "git" && !showGitTab) {
       setFilesPanelTab("changes");
     }
-  }, [viewMode, showGitTab]);
+  }, [viewMode, showGitTab, setFilesPanelTab]);
 
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const fileRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
@@ -186,6 +186,7 @@ export function useFilePanelNavigation({
     sectionedFiles,
     viewMode,
     expandAndScrollTo,
+    setFilesPanelTab,
   ]);
 
   const loadDirectoryContents = useReviewStore((s) => s.loadDirectoryContents);

@@ -182,7 +182,7 @@ export function GitStatusPanel({
           setGitDisplayMode(gitDisplayMode === "tree" ? "flat" : "tree"),
       },
     ],
-    [gitDisplayMode],
+    [gitDisplayMode, setGitDisplayMode],
   );
 
   const {

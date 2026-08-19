@@ -12,10 +12,25 @@ correctness = { level = "deny", priority = -1 }
 # Warn on broad lint groups
 cargo = { level = "warn", priority = -1 }
 complexity = { level = "warn", priority = -1 }
-pedantic = { level = "warn", priority = -1 }
 perf = { level = "warn", priority = -1 }
 style = { level = "warn", priority = -1 }
 suspicious = { level = "warn", priority = -1 }
+
+# `pedantic` is off, and this is the honest version of what was here before.
+#
+# It was set to `warn` with an override list underneath, but nothing ever ran
+# clippy — so the list was never tested against the code. The first run scored
+# 139 pedantic violations in `core` alone, across 30-odd lints that the
+# override list does not mention: `needless_pass_by_value` (35),
+# `map_unwrap_or` (17), `redundant_closure_for_method_calls` (13),
+# `manual_let_else` (8), `implicit_hasher` and `default_trait_access` (6 each),
+# and a long tail.
+#
+# Several of those (`needless_pass_by_value`, `ref_option`) want signature
+# changes across the service layer, which is a deliberate design pass and not
+# something to fold into turning the gate on. So: off, with the number written
+# down. Re-enable a lint at a time, burning down its count.
+pedantic = { level = "allow", priority = -1 }
 
 # Restriction lints (opt-in, warn)
 allow_attributes_without_reason = "warn"
@@ -24,7 +39,7 @@ dbg_macro = "warn"
 str_to_string = "warn"
 undocumented_unsafe_blocks = "warn"
 
-# Pedantic overrides — these are too noisy for this codebase
+# Pedantic overrides — kept for when `pedantic` comes back on above
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 module_name_repetitions = "allow"

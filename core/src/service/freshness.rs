@@ -284,14 +284,14 @@ mod tests {
     fn missing_refs_flags_base_resolved_to_empty_tree() {
         let comparison = Comparison::new("deleted-branch", "feature");
         let missing = missing_refs_from_resolved(&comparison, LocalGitSource::EMPTY_TREE, "def456");
-        assert_eq!(missing, vec!["deleted-branch".to_string()]);
+        assert_eq!(missing, vec!["deleted-branch".to_owned()]);
     }
 
     #[test]
     fn missing_refs_flags_head_resolved_to_empty_tree() {
         let comparison = Comparison::new("main", "deleted-branch");
         let missing = missing_refs_from_resolved(&comparison, "abc123", LocalGitSource::EMPTY_TREE);
-        assert_eq!(missing, vec!["deleted-branch".to_string()]);
+        assert_eq!(missing, vec!["deleted-branch".to_owned()]);
     }
 
     #[test]
@@ -304,7 +304,7 @@ mod tests {
         );
         assert_eq!(
             missing,
-            vec!["deleted-base".to_string(), "deleted-head".to_string()]
+            vec!["deleted-base".to_owned(), "deleted-head".to_owned()]
         );
     }
 

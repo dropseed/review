@@ -565,7 +565,7 @@ pub fn run_list(args: ListArgs) -> Result<(), String> {
 /// tree).
 fn review_label(ref_name: &str, base_override: Option<&str>) -> String {
     match base_override {
-        Some(base) if base.is_empty() => format!("{ref_name} (snapshot)"),
+        Some("") => format!("{ref_name} (snapshot)"),
         Some(base) => format!("{ref_name} (vs {base})"),
         None => ref_name.to_owned(),
     }

@@ -1026,6 +1026,7 @@ fn verify_matches(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_git::{git, git_out};
 
     #[test]
     fn is_identifier_query_accepts_typical_identifiers() {
@@ -1073,33 +1074,6 @@ mod tests {
     /// The diff view renders from `old_content` vs the new content, so when the
     /// head is behind its base, `old_content` must come from the merge-base —
     /// otherwise the base's newer, unrelated changes show up as diff noise.
-    fn git(dir: &Path, args: &[&str]) {
-        let ok = std::process::Command::new("git")
-            .args(args)
-            .current_dir(dir)
-            .env("GIT_AUTHOR_NAME", "t")
-            .env("GIT_AUTHOR_EMAIL", "t@t")
-            .env("GIT_COMMITTER_NAME", "t")
-            .env("GIT_COMMITTER_EMAIL", "t@t")
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_CONFIG_SYSTEM", "/dev/null")
-            .status()
-            .unwrap()
-            .success();
-        assert!(ok, "git {args:?} failed");
-    }
-
-    fn git_out(dir: &Path, args: &[&str]) -> String {
-        let out = std::process::Command::new("git")
-            .args(args)
-            .current_dir(dir)
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_CONFIG_SYSTEM", "/dev/null")
-            .output()
-            .unwrap();
-        String::from_utf8_lossy(&out.stdout).trim().to_owned()
-    }
-
     #[test]
     fn get_file_content_old_side_uses_merge_base_not_base_tip() {
         use crate::sources::traits::Comparison;

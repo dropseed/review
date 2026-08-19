@@ -147,7 +147,7 @@ export function DiffView({
     }
     oldFileRef.current = nextFile;
     return nextFile;
-  }, [hasFileContents, fileName, oldContent, language]);
+  }, [hasFileContents, fileName, oldContent, oldContentHash, language]);
 
   const newFileRef = useRef<FileContents | undefined>(undefined);
   const newFile = useMemo<FileContents | undefined>(() => {
@@ -164,7 +164,7 @@ export function DiffView({
     }
     newFileRef.current = nextFile;
     return nextFile;
-  }, [hasFileContents, fileName, newContent, language]);
+  }, [hasFileContents, fileName, newContent, newContentHash, language]);
 
   // Parse patch for FileDiff when no file contents available (patch-only path)
   // This allows us to override language for syntax highlighting (e.g., shebang detection)

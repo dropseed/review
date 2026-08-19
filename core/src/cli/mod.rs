@@ -406,7 +406,10 @@ enum StartTarget {
 impl StartTarget {
     /// Pick the target from the parsed flags. clap's `conflicts_with` guarantees
     /// at most one selector is set; the order here is just a defensive tiebreak.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one parameter per mutually-exclusive clap selector flag"
+    )]
     fn from_args(
         spec: Option<String>,
         old: Option<String>,
@@ -709,29 +712,7 @@ fn open_app(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::Command as Cmd;
-
-    fn git(dir: &Path, args: &[&str]) -> String {
-        let out = Cmd::new("git")
-            .args(args)
-            .current_dir(dir)
-            .env("GIT_AUTHOR_NAME", "t")
-            .env("GIT_AUTHOR_EMAIL", "t@t")
-            .env("GIT_COMMITTER_NAME", "t")
-            .env("GIT_COMMITTER_EMAIL", "t@t")
-            // Isolate from the developer's global/system git config (e.g. forced
-            // signed tags) so the tests are deterministic.
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_CONFIG_SYSTEM", "/dev/null")
-            .output()
-            .unwrap();
-        assert!(
-            out.status.success(),
-            "git {args:?} failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        String::from_utf8_lossy(&out.stdout).trim().to_owned()
-    }
+    use crate::test_git::{git, git_out};
 
     /// Temp repo with `first` (root) and `second` commits; returns (dir, first_sha, second_sha).
     fn two_commit_repo() -> (tempfile::TempDir, String, String) {
@@ -741,10 +722,10 @@ mod tests {
         std::fs::write(p.join("a.txt"), "one\n").unwrap();
         git(p, &["add", "."]);
         git(p, &["commit", "-qm", "first"]);
-        let first = git(p, &["rev-parse", "HEAD"]);
+        let first = git_out(p, &["rev-parse", "HEAD"]);
         std::fs::write(p.join("a.txt"), "one\ntwo\n").unwrap();
         git(p, &["commit", "-aqm", "second"]);
-        let second = git(p, &["rev-parse", "HEAD"]);
+        let second = git_out(p, &["rev-parse", "HEAD"]);
         (dir, first, second)
     }
 
@@ -894,7 +875,7 @@ mod tests {
         // default..branch review rather than browse mode.
         let (dir, _first, _second) = two_commit_repo();
         let p = dir.path();
-        let default_branch = git(p, &["rev-parse", "--abbrev-ref", "HEAD"]);
+        let default_branch = git_out(p, &["rev-parse", "--abbrev-ref", "HEAD"]);
         git(p, &["checkout", "-q", "-b", "feature"]);
         let review =
             default_open_review(&p.to_string_lossy()).expect("feature branch should open a review");
@@ -929,7 +910,7 @@ mod tests {
         // ladder yields branch..branch — working-tree changes only.
         let (dir, _first, _second) = two_commit_repo();
         let p = dir.path();
-        let branch = git(p, &["rev-parse", "--abbrev-ref", "HEAD"]);
+        let branch = git_out(p, &["rev-parse", "--abbrev-ref", "HEAD"]);
         let c = start_comparison(p, StartTarget::Working);
         assert_eq!(c.base, branch);
         assert_eq!(c.head, branch);
@@ -984,7 +965,7 @@ mod tests {
         let p = dir.path();
         // Generate a real patch via git (add a line), then revert the worktree.
         std::fs::write(p.join("a.txt"), "one\ntwo\nthree\n").unwrap();
-        let patch = git(p, &["diff"]);
+        let patch = git_out(p, &["diff"]);
         git(p, &["checkout", "--", "a.txt"]);
         let patch_file = p.join("change.patch");
         std::fs::write(&patch_file, format!("{patch}\n")).unwrap();

@@ -112,7 +112,7 @@ mod tests {
             .insert(a.id.clone(), approved_with_key(Some(a.stable_hash())));
 
         // Live diff now contains B (same change, shifted context).
-        let result = reconcile_review(state, &[b.clone()]);
+        let result = reconcile_review(state, std::slice::from_ref(&b));
         assert_eq!(result.carried_forward, 1);
         assert!(
             result.state.hunks.contains_key(&b.id),
@@ -139,7 +139,7 @@ mod tests {
         // Decision with no stable key yet (as if just recorded in the UI).
         state.hunks.insert(a.id.clone(), approved_with_key(None));
 
-        let version = save_review(p, state, Some(&[a.clone()])).unwrap();
+        let version = save_review(p, state, Some(std::slice::from_ref(&a))).unwrap();
         assert_eq!(version, 1);
 
         let loaded = storage::load_review_state(p, TEST_REF).unwrap();

@@ -24,12 +24,10 @@ pub fn collapse_ws(text: &str) -> String {
 
 /// True if `chars[i..]` starts with `pat`.
 pub fn chars_start_with(chars: &[char], i: usize, pat: &str) -> bool {
-    let mut k = i;
-    for c in pat.chars() {
+    for (k, c) in (i..).zip(pat.chars()) {
         if k >= chars.len() || chars[k] != c {
             return false;
         }
-        k += 1;
     }
     true
 }

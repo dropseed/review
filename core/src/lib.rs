@@ -12,6 +12,10 @@
 //! - `cli`: Command-line interface
 
 // Core modules (always compiled, no Tauri dependencies)
+// Shared git fixture for tests in this crate — see `test_git`.
+#[cfg(test)]
+pub(crate) mod test_git;
+
 pub mod ai;
 pub mod classify;
 pub mod diff;

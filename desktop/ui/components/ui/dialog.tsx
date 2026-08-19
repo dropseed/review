@@ -2,6 +2,7 @@ import type * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 
 import { cn } from "@/lib/utils";
+import { XIcon } from "./icons";
 
 const Dialog = DialogPrimitive.Root;
 
@@ -108,6 +109,53 @@ function DialogDescription({
   );
 }
 
+/**
+ * The panel-shaped dialog four call sites had each written out by hand:
+ * `MovePairModal`, `SimilarHunksModal`, `SimilarFilesModal` and
+ * `FilenameModal`. Same 600px column, same `max-h-[80vh]`, same
+ * stop-propagation on Escape (these open over a file view that has its own
+ * Escape handling), same header row of title + close.
+ *
+ * `count` is the pill three of them show beside the title ("12 hunks");
+ * omitting it just omits the pill.
+ */
+function PanelDialog({
+  title,
+  count,
+  className,
+  children,
+  ...props
+}: Omit<React.ComponentPropsWithoutRef<typeof DialogContent>, "title"> & {
+  title: React.ReactNode;
+  count?: React.ReactNode;
+}) {
+  return (
+    <DialogContent
+      className={cn(
+        "flex max-h-[80vh] w-[600px] max-w-[90vw] flex-col rounded-lg",
+        className,
+      )}
+      onEscapeKeyDown={(e) => e.stopPropagation()}
+      {...props}
+    >
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-3">
+          <span>{title}</span>
+          {count != null && (
+            <span className="rounded-full bg-surface-hover/50 px-2 py-0.5 text-xs font-normal text-fg-muted tabular-nums">
+              {count}
+            </span>
+          )}
+        </DialogTitle>
+        <DialogClose className="rounded p-1 text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg-secondary">
+          <XIcon className="h-4 w-4" />
+        </DialogClose>
+      </DialogHeader>
+      {children}
+    </DialogContent>
+  );
+}
+
 export {
   Dialog,
   DialogPortal,
@@ -118,4 +166,5 @@ export {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  PanelDialog,
 };
