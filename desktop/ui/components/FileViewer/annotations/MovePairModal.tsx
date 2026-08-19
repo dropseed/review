@@ -10,6 +10,7 @@ import {
 import { SimpleTooltip } from "../../ui/tooltip";
 import { HunkPreview } from "./HunkPreview";
 
+import { XIcon } from "../../ui/icons";
 interface MovePairModalProps {
   /** The current hunk being viewed */
   currentHunk: DiffHunk;
@@ -122,19 +123,7 @@ export function MovePairModal({
             <span>Move Pair</span>
           </DialogTitle>
           <DialogClose className="rounded p-1 text-fg-muted hover:bg-surface-hover hover:text-fg-secondary transition-colors">
-            <svg
-              className="h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
+            <XIcon className="h-4 w-4" />
           </DialogClose>
         </DialogHeader>
 
@@ -238,19 +227,7 @@ export function MovePairModal({
               onClick={handleRejectPair}
               className="flex items-center gap-1.5 rounded-md bg-status-rejected/15 px-3 py-1.5 text-sm font-medium text-status-rejected transition-colors hover:bg-status-rejected/25 active:scale-[0.98]"
             >
-              <svg
-                className="h-4 w-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
+              <XIcon className="h-4 w-4" />
               Reject Pair
             </button>
             <button

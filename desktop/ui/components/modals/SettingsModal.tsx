@@ -34,6 +34,7 @@ import {
 } from "./background-sessions";
 import type { TerminalSessionInfo } from "../../types";
 
+import { XIcon } from "../ui/icons";
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -451,19 +452,7 @@ export function SettingsModal({
             onClick={onClose}
             className="relative rounded-md p-1.5 text-fg-muted transition-colors hover:bg-surface-raised hover:text-fg-secondary"
           >
-            <svg
-              className="h-5 w-5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
+            <XIcon className="h-5 w-5" />
           </button>
         </DialogHeader>
 

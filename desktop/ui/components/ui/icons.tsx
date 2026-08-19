@@ -4,15 +4,26 @@ export interface IconProps {
   className?: string;
 }
 
-/** Close / X icon. */
-export function XIcon({ className = "w-4 h-4" }: IconProps) {
+/**
+ * Close / X icon.
+ *
+ * `strokeWidth` is a prop because the callers genuinely differ: a 2.5 stroke is
+ * what keeps the glyph visible at `h-3 w-3` on a hunk badge, while the 24px
+ * dialog close wants 2. Everything else is fixed here, which is the point —
+ * this shape was previously drawn from scratch at 25 call sites, in two
+ * windings and with three different linecap treatments.
+ */
+export function XIcon({
+  className = "w-4 h-4",
+  strokeWidth = 2,
+}: IconProps & { strokeWidth?: number }) {
   return (
     <svg
       className={className}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="2"
+      strokeWidth={strokeWidth}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"

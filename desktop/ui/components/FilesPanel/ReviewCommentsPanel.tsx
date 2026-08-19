@@ -13,6 +13,7 @@ import { FilePathLabel } from "./file-path-label";
 import { lineRangeRef } from "../../utils/line-range";
 import type { Source, LineAnnotation } from "../../types";
 
+import { XIcon } from "../ui/icons";
 const COMMENTS_ICON = (
   <svg
     className="h-3.5 w-3.5 text-fg-muted"
@@ -136,19 +137,7 @@ function CommentRow({
             className="rounded p-0.5 text-fg-faint hover:bg-status-rejected/15 hover:text-status-rejected"
             aria-label="Delete comment"
           >
-            <svg
-              className="h-2.5 w-2.5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
+            <XIcon className="h-2.5 w-2.5" />
           </button>
         </SimpleTooltip>
       </div>

@@ -15,6 +15,7 @@ import { DiffView, DiffErrorBoundary } from "../FileViewer/DiffView";
 import { ImageViewer } from "../FileViewer/ImageViewer";
 import { FileDiffStackItem } from "../ui/file-diff-stack-item";
 
+import { XIcon } from "../ui/icons";
 const VIRTUALIZER_STYLE = { overflow: "auto" } as const;
 
 type FileLoadState =
@@ -234,17 +235,7 @@ export function WorkingTreeMultiFileDiffViewer(): ReactNode {
                 className="flex items-center justify-center w-6 h-6 rounded text-fg-muted hover:text-fg-secondary hover:bg-surface-raised transition-colors shrink-0"
                 aria-label="Close rolling diff"
               >
-                <svg
-                  className="w-3.5 h-3.5"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M18 6L6 18M6 6l12 12" />
-                </svg>
+                <XIcon className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
