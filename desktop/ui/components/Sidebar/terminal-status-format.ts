@@ -6,7 +6,15 @@ import type { TerminalPhase, TerminalStatus } from "../../types";
  * singletons (which have import-time side effects under Vite/Vitest).
  */
 
-/** Tailwind background class for a phase's status dot. */
+/**
+ * Tailwind background class for a phase's status dot.
+ *
+ * `working` wears `phase-working` rather than `status-warning`, which is the
+ * same amber the workspace dot uses for "waiting for you". Those two are the
+ * pair that most needs telling apart — one says a machine has this, the other
+ * says you do — and they were being drawn one line apart in the same #fbbf24.
+ * Amber is now spent only on wanting a human.
+ */
 export function phaseDotClass(phase: TerminalPhase): string {
   switch (phase) {
     case "needs_attention":
@@ -14,7 +22,7 @@ export function phaseDotClass(phase: TerminalPhase): string {
     case "waiting_for_input":
       return "bg-blue";
     case "working":
-      return "bg-status-warning";
+      return "bg-phase-working";
     case "idle":
       return "bg-fg-faint";
   }
@@ -32,7 +40,7 @@ export function phaseTextClass(phase: TerminalPhase): string {
     case "waiting_for_input":
       return "text-blue";
     case "working":
-      return "text-status-warning";
+      return "text-phase-working";
     case "idle":
       return "text-fg-faint";
   }

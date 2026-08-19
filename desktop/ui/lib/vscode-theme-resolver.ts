@@ -199,6 +199,12 @@ const COLOR_MAP: [keyof UiThemeTokens, string[]][] = [
   // Diagnostic status
   ["status-warning", ["editorWarning.foreground", "list.warningForeground"]],
   ["status-info", ["editorInfo.foreground"]],
+
+  // Terminal phase — "a machine is working on this". Borrowed from the git
+  // "added" green rather than progressBar.background, which most themes paint
+  // in their accent blue: that is the colour `waiting_for_input` already wears,
+  // and those two phases are the pair a glance has to tell apart.
+  ["phase-working", ["gitDecoration.addedResourceForeground"]],
 ];
 
 // ---------------------------------------------------------------------------
@@ -319,6 +325,7 @@ const DARK_FALLBACK_TOKENS: UiThemeTokens = {
   "status-moved": "#38bdf8",
   "status-warning": "#fbbf24",
   "status-info": "#38bdf8",
+  "phase-working": "#34d399",
   ...PR_TOKENS_DARK,
   "diff-added": "#7aad8a",
   "diff-removed": "#e0776b",
@@ -362,6 +369,7 @@ const LIGHT_FALLBACK_TOKENS: UiThemeTokens = {
   "status-moved": "#0284c7",
   "status-warning": "#d97706",
   "status-info": "#0284c7",
+  "phase-working": "#059669",
   ...PR_TOKENS_LIGHT,
   "diff-added": "#5a9e6f",
   "diff-removed": "#c9584c",
