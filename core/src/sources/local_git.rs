@@ -1251,7 +1251,7 @@ impl LocalGitSource {
             let full_path = self.repo_path.join(actual_path);
             if let Ok(metadata) = std::fs::metadata(&full_path) {
                 if let Ok(modified) = metadata.modified() {
-                    if latest.is_none() || modified > latest.unwrap() {
+                    if latest.is_none_or(|l| modified > l) {
                         latest = Some(modified);
                     }
                 }

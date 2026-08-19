@@ -431,6 +431,21 @@ mod tests {
     }
 
     #[test]
+    fn line_range_single_line_has_no_end() {
+        assert_eq!(line_range(42, None), "42");
+    }
+
+    #[test]
+    fn line_range_spans_start_and_end() {
+        assert_eq!(line_range(42, Some(48)), "42-48");
+    }
+
+    #[test]
+    fn line_range_collapses_redundant_end() {
+        assert_eq!(line_range(42, Some(42)), "42");
+    }
+
+    #[test]
     fn effective_spec_falls_through_blank_levels() {
         let _lock = crate::review::central::tests::ENV_LOCK.lock().unwrap();
         let (_guard, _review_home, repo) = crate::review::central::tests::setup_test();
