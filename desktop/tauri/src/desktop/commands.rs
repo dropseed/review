@@ -96,6 +96,29 @@ const MAX_WARM_LSP_ROOTS: usize = 3;
 
 // --- Tauri Commands ---
 
+/// Run a blocking body on the blocking pool, flattening the join error into the
+/// command's own `String` error.
+///
+/// Every async command here was spelling out the same two conversions by hand —
+/// one for the `JoinHandle`, one for the body's own result. `server/handlers.rs`
+/// has had this helper on the Axum side all along; this is its twin.
+async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// [`blocking`] for a body that cannot fail, where only the join can.
+async fn blocking_infallible<T: Send + 'static>(
+    f: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, String> {
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn get_current_repo() -> Result<String, String> {
     // Check command-line arguments first (for `review open` CLI command)
@@ -145,7 +168,7 @@ pub fn list_pull_requests(repo_path: String) -> Result<Vec<PullRequest>, String>
 /// disk, which is what the sidebar paints with before `gh` has answered.
 #[tauri::command]
 pub async fn get_viewer_prs(refresh: bool) -> Result<ViewerPrSnapshot, String> {
-    tokio::task::spawn_blocking(move || {
+    blocking_infallible(move || {
         let t0 = Instant::now();
         let snapshot = review::service::viewer_prs::get_viewer_prs(refresh);
         info!(
@@ -157,7 +180,6 @@ pub async fn get_viewer_prs(refresh: bool) -> Result<ViewerPrSnapshot, String> {
         snapshot
     })
     .await
-    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -165,9 +187,7 @@ pub async fn list_files(
     repo_path: String,
     comparison: Comparison,
 ) -> Result<Vec<FileEntry>, String> {
-    tokio::task::spawn_blocking(move || list_files_sync(repo_path, comparison))
-        .await
-        .map_err(|e| e.to_string())?
+    blocking(move || list_files_sync(repo_path, comparison)).await
 }
 
 /// Synchronous implementation of `list_files`, callable from blocking contexts.
@@ -184,9 +204,7 @@ pub async fn list_all_files(
     repo_path: String,
     comparison: Comparison,
 ) -> Result<Vec<FileEntry>, String> {
-    tokio::task::spawn_blocking(move || list_all_files_sync(repo_path, comparison))
-        .await
-        .map_err(|e| e.to_string())?
+    blocking(move || list_all_files_sync(repo_path, comparison)).await
 }
 
 /// Synchronous implementation of `list_all_files`, callable from blocking contexts.
@@ -200,9 +218,7 @@ pub fn list_all_files_sync(
 
 #[tauri::command]
 pub async fn list_repo_files(repo_path: String) -> Result<Vec<FileEntry>, String> {
-    tokio::task::spawn_blocking(move || list_repo_files_sync(repo_path))
-        .await
-        .map_err(|e| e.to_string())?
+    blocking(move || list_repo_files_sync(repo_path)).await
 }
 
 /// Synchronous implementation of `list_repo_files`, callable from blocking contexts.
@@ -216,12 +232,11 @@ pub async fn list_files_at_ref(
     repo_path: String,
     git_ref: String,
 ) -> Result<Vec<FileEntry>, String> {
-    tokio::task::spawn_blocking(move || {
+    blocking(move || {
         review::service::files::list_files_at_ref(&PathBuf::from(&repo_path), &git_ref)
             .map_err(|e| e.to_string())
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -229,9 +244,7 @@ pub async fn list_directory_contents(
     repo_path: String,
     dir_path: String,
 ) -> Result<Vec<FileEntry>, String> {
-    tokio::task::spawn_blocking(move || list_directory_contents_sync(repo_path, dir_path))
-        .await
-        .map_err(|e| e.to_string())?
+    blocking(move || list_directory_contents_sync(repo_path, dir_path)).await
 }
 
 /// Synchronous implementation of `list_directory_contents`, callable from blocking contexts.
@@ -249,7 +262,7 @@ pub async fn get_file_content(
     file_path: String,
     comparison: Comparison,
 ) -> Result<FileContent, String> {
-    tokio::task::spawn_blocking(move || {
+    blocking(move || {
         review::service::files::get_file_content(
             &PathBuf::from(&repo_path),
             &file_path,
@@ -258,7 +271,6 @@ pub async fn get_file_content(
         .map_err(|e| e.to_string())
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 /// Batch-load all hunks for multiple files in a single IPC call.
@@ -268,9 +280,7 @@ pub async fn get_all_hunks(
     comparison: Comparison,
     file_paths: Vec<String>,
 ) -> Result<Vec<DiffHunk>, String> {
-    tokio::task::spawn_blocking(move || get_all_hunks_sync(repo_path, comparison, file_paths))
-        .await
-        .map_err(|e| e.to_string())?
+    blocking(move || get_all_hunks_sync(repo_path, comparison, file_paths)).await
 }
 
 /// Synchronous implementation of `get_all_hunks`, callable from blocking contexts.
@@ -290,12 +300,11 @@ pub async fn get_files_delta(
     comparison: Comparison,
     file_paths: Vec<String>,
 ) -> Result<review::service::FilesDelta, String> {
-    tokio::task::spawn_blocking(move || {
+    blocking(move || {
         review::service::files::files_delta(&PathBuf::from(&repo_path), &comparison, &file_paths)
             .map_err(|e| e.to_string())
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 /// Detect the comparison's move pairs from the diff on disk.
@@ -304,12 +313,11 @@ pub async fn get_comparison_move_pairs(
     repo_path: String,
     comparison: Comparison,
 ) -> Result<Vec<review::diff::parser::MovePair>, String> {
-    tokio::task::spawn_blocking(move || {
+    blocking(move || {
         review::service::files::comparison_move_pairs(&PathBuf::from(&repo_path), &comparison)
             .map_err(|e| e.to_string())
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -699,7 +707,7 @@ pub fn remove_review_worktree(repo_path: String, worktree_path: String) -> Resul
 /// situational awareness, batched so listing twenty repos is one call.
 #[tauri::command]
 pub async fn list_worktree_status(repo_paths: Vec<String>) -> Result<Vec<RepoWorktrees>, String> {
-    tokio::task::spawn_blocking(move || {
+    blocking(move || {
         let t0 = std::time::Instant::now();
         let result = review::service::worktrees::status(&repo_paths);
         info!(
@@ -710,7 +718,6 @@ pub async fn list_worktree_status(repo_paths: Vec<String>) -> Result<Vec<RepoWor
         Ok(result)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 /// Give a branch a worktree, or report the one it already has.
@@ -719,7 +726,7 @@ pub async fn create_worktree(
     repo_path: String,
     branch: String,
 ) -> Result<WorktreeCheckout, String> {
-    tokio::task::spawn_blocking(move || {
+    blocking(move || {
         let t0 = std::time::Instant::now();
         let result = review::service::worktrees::create(&PathBuf::from(&repo_path), &branch)
             .map_err(|e| e.to_string())?;
@@ -733,14 +740,13 @@ pub async fn create_worktree(
         Ok(result)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 /// Remove a worktree. Refuses the main checkout, a path outside this repo, and
 /// anything holding uncommitted work — see `LocalGitSource::remove_worktree`.
 #[tauri::command]
 pub async fn remove_worktree(repo_path: String, worktree_path: String) -> Result<(), String> {
-    tokio::task::spawn_blocking(move || {
+    blocking(move || {
         let t0 = std::time::Instant::now();
         review::service::worktrees::remove(&PathBuf::from(&repo_path), &worktree_path)
             .map_err(|e| e.to_string())?;
@@ -752,7 +758,6 @@ pub async fn remove_worktree(repo_path: String, worktree_path: String) -> Result
         Ok(())
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -765,17 +770,13 @@ pub fn get_review_tier(repo_path: String, r#ref: String) -> Result<ReviewTierInf
 /// `force` bypasses the service-side cache, for the refresh button.
 #[tauri::command]
 pub async fn get_agent_usage(force: bool) -> Result<Vec<AgentUsage>, String> {
-    tokio::task::spawn_blocking(move || {
-        review::service::usage::report(force).map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    blocking(move || review::service::usage::report(force).map_err(|e| e.to_string())).await
 }
 
 /// Listed → Fetched: pull a PR's head (and base) so its diff can be read locally.
 #[tauri::command]
 pub async fn fetch_pull_request(repo_path: String, pr: GitHubPrRef) -> Result<String, String> {
-    tokio::task::spawn_blocking(move || {
+    blocking(move || {
         let t0 = std::time::Instant::now();
         let result = review::service::pr::fetch(&PathBuf::from(&repo_path), &pr)
             .map_err(|e| e.to_string())?;
@@ -788,14 +789,13 @@ pub async fn fetch_pull_request(repo_path: String, pr: GitHubPrRef) -> Result<St
         Ok(result)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 /// Fetched → Materialized: provision a worktree so terminals, LSP, and staging
 /// have files on disk to work with.
 #[tauri::command]
 pub async fn materialize_review(repo_path: String, r#ref: String) -> Result<String, String> {
-    tokio::task::spawn_blocking(move || {
+    blocking(move || {
         let t0 = std::time::Instant::now();
         let path = review::service::pr::materialize(&PathBuf::from(&repo_path), &r#ref)
             .map_err(|e| e.to_string())?;
@@ -808,7 +808,6 @@ pub async fn materialize_review(repo_path: String, r#ref: String) -> Result<Stri
         Ok(path)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 /// Materialized → Fetched: drop the worktree, keep the review record.
@@ -820,11 +819,10 @@ pub fn release_review_worktree(repo_path: String, r#ref: String) -> Result<(), S
 /// Reclaim disk from PR reviews whose PR has merged or closed.
 #[tauri::command]
 pub async fn reclaim_closed_prs(repo_path: String) -> Result<Vec<String>, String> {
-    tokio::task::spawn_blocking(move || {
+    blocking(move || {
         review::service::pr::reclaim_closed(&PathBuf::from(&repo_path)).map_err(|e| e.to_string())
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -1076,14 +1074,13 @@ pub async fn get_hunk_attribution(
     repo_path: String,
     comparison: Comparison,
 ) -> Result<HunkAttribution, String> {
-    tokio::task::spawn_blocking(move || {
+    blocking(move || {
         let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
         source
             .attribute_hunks_to_commits(&comparison)
             .map_err(|e| e.to_string())
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -1213,7 +1210,7 @@ pub async fn get_file_symbol_diffs(
     file_paths: Vec<String>,
     comparison: Comparison,
 ) -> Result<Vec<FileSymbolDiff>, String> {
-    tokio::task::spawn_blocking(move || {
+    blocking(move || {
         review::service::symbols::get_file_symbol_diffs(
             &PathBuf::from(&repo_path),
             &file_paths,
@@ -1222,17 +1219,15 @@ pub async fn get_file_symbol_diffs(
         .map_err(|e| e.to_string())
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 pub async fn get_repo_symbols(repo_path: String) -> Result<Vec<RepoFileSymbols>, String> {
-    tokio::task::spawn_blocking(move || {
+    blocking(move || {
         review::service::symbols::get_repo_symbols(&PathBuf::from(&repo_path))
             .map_err(|e| e.to_string())
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -1241,7 +1236,7 @@ pub async fn get_file_symbols(
     file_path: String,
     git_ref: Option<String>,
 ) -> Result<Option<Vec<Symbol>>, String> {
-    tokio::task::spawn_blocking(move || {
+    blocking(move || {
         review::service::symbols::get_file_symbols(
             &PathBuf::from(&repo_path),
             &file_path,
@@ -1250,7 +1245,6 @@ pub async fn get_file_symbols(
         .map_err(|e| e.to_string())
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -1259,7 +1253,7 @@ pub async fn find_symbol_definitions(
     symbol_name: String,
     git_ref: Option<String>,
 ) -> Result<Vec<symbols::SymbolDefinition>, String> {
-    tokio::task::spawn_blocking(move || {
+    blocking(move || {
         review::service::symbols::find_symbol_definitions(
             &PathBuf::from(&repo_path),
             &symbol_name,
@@ -1268,7 +1262,6 @@ pub async fn find_symbol_definitions(
         .map_err(|e| e.to_string())
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -1317,12 +1310,11 @@ pub fn path_is_file(path: String) -> bool {
 
 #[tauri::command]
 pub async fn read_raw_file(path: String) -> Result<FileContent, String> {
-    tokio::task::spawn_blocking(move || {
+    blocking(move || {
         review::service::files::read_raw_file(std::path::Path::new(&path))
             .map_err(|e| e.to_string())
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 /// Get a file's content as of a ref (no diff, no working-tree read).
@@ -1332,7 +1324,7 @@ pub async fn get_file_content_at_ref(
     file_path: String,
     git_ref: String,
 ) -> Result<FileContent, String> {
-    tokio::task::spawn_blocking(move || {
+    blocking(move || {
         review::service::files::get_file_content_at_ref(
             &PathBuf::from(&repo_path),
             &file_path,
@@ -1341,7 +1333,6 @@ pub async fn get_file_content_at_ref(
         .map_err(|e| e.to_string())
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 // --- CLI sidecar install ---
@@ -1628,12 +1619,11 @@ pub fn set_window_background_color(
 /// List files in a plain directory (no git needed).
 #[tauri::command]
 pub async fn list_directory_plain(dir_path: String) -> Result<Vec<FileEntry>, String> {
-    tokio::task::spawn_blocking(move || {
+    blocking(move || {
         review::service::files::list_directory_plain(std::path::Path::new(&dir_path))
             .map_err(|e| e.to_string())
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 // --- LSP Commands ---
