@@ -454,7 +454,7 @@ pub fn stop_local_activity_watcher(repo_path: &str) {
 }
 
 /// Watch the global work queue (`~/.review/work.json`) and emit `work-changed`
-/// so `review work ...` edits — and edits from another window — land live.
+/// so `review workspace ...` edits — and edits from another window — land live.
 ///
 /// One watcher for the whole app, not one per repo: the queue is cross-repo and
 /// lives at the central root, not under `repos/<repo-id>/`, so no repo watcher

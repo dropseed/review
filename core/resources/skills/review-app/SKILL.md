@@ -15,7 +15,7 @@ Three surfaces, one binary:
   saves for later. Hunk IDs are `filepath:hash`.
 - **The terminals** — daemon-backed sessions the app embeds, which you can
   start, type into, and read.
-- **The work queue** — the user-ordered "Working on" list in the sidebar.
+- **The workspaces** — the user-ordered "Working on" queue in the sidebar.
 
 Run `review --help` first to confirm the CLI is installed.
 
@@ -372,10 +372,10 @@ can peek at the scrollback in the app.
 
 ---
 
-# Part 3 — The work queue
+# Part 3 — Workspaces
 
-`review work` is the global, cross-repo list of what the human intends to work
-on, in their order. It's the "Working on" section at the top of the app's
+`review workspace` is the global, cross-repo list of what the human intends to
+work on, in their order. It's the "Working on" section at the top of the app's
 sidebar, stored at `~/.review/work.json`; every change lands live through the
 file watcher.
 
@@ -386,12 +386,12 @@ by joining against those attachments, so the queue stays stable while the world
 underneath it moves.
 
 ```
-review work [list] [--json]                        # priority order, top first
-review work add ["title"]                          # title optional
-review work attach <id> [PATH] [--ref REF]         # show a repo in a workspace
-review work detach <id> [PATH]
-review work rename <id> ["title"]                  # no title = derive one
-review work resolve [DIR] [--json]                 # what DIR routes to
+review workspace [list] [--json]                   # priority order, top first
+review workspace add ["title"]                     # title optional
+review workspace attach <id> [PATH] [--ref REF]    # show a repo in a workspace
+review workspace detach <id> [PATH]
+review workspace rename <id> ["title"]             # no title = derive one
+review workspace resolve [DIR] [--json]            # what DIR routes to
 ```
 
 `--json` is global to the subcommand (either side of it) and gives you
@@ -427,7 +427,7 @@ next. When someone asks "what should I work on?", or when you're about to start
 something on your own initiative, read the queue first:
 
 ```
-review work list --json
+review workspace list --json
 ```
 
 Act on the top item that isn't already handled, and say which one you took. If
@@ -441,24 +441,24 @@ an item, and attach the repo so the app can join terminals, PRs, and review
 state onto it:
 
 ```
-review work add "Fix the flaky terminal wait test"
-review work attach 3f9a ~/code/other-repo --ref fix/flaky-wait
+review workspace add "Fix the flaky terminal wait test"
+review workspace attach 3f9a ~/code/other-repo --ref fix/flaky-wait
 ```
 
 `add` **always appends to the end** — the newest thing is the least prioritized
 until the human moves it. That's deliberate; don't work around it.
 
-Before adding, check whether the work is already on the queue (`review work
-list`) — nothing stops two workspaces covering the same repo, so duplicates are
+Before adding, check whether the work is already on the queue (`review
+workspace list`) — nothing stops two workspaces covering the same repo, so duplicates are
 yours to avoid. If one is already there, use it and tell the human you found
 it.
 
 ## What is the human's, not yours
 
-- **Never reorder.** `review work reorder` exists for the human (they drag the list
-  in the app). Their ordering is their prioritization; silently promoting your
+- **Never reorder.** `review workspace reorder` exists for the human (they drag
+  the list in the app). Their ordering is their prioritization; silently promoting your
   own item steals that decision.
-- **Never remove.** `review work remove` is the human's acknowledgment moment —
+- **Never remove.** `review workspace remove` is the human's acknowledgment moment —
   taking something off the queue is how they register that it's done or
   abandoned. An agent deleting it means they never see it land.
 - **Rename only what you added**, to sharpen a title you wrote yourself.

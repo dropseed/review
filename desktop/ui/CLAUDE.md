@@ -52,7 +52,7 @@ The stage is **two tab strips**, drawn to match: terminals on the left (`Termina
 
 `autoCreated` is backend plumbing for cleanup. It is never rendered and nothing branches on it — a router-made workspace and a human-made one are the same thing on screen.
 
-The *other* half of cleanup is an event: closing a workspace's last terminal drops the workspace too, when it has no typed title and at most one attachment. `reapSpentWorkspace` in `components/Terminal/close.ts` holds the rule and the argument for why it is an event rather than a sweep.
+The _other_ half of cleanup is an event: closing a workspace's last terminal drops the workspace too, when it has no typed title and at most one attachment. `reapSpentWorkspace` in `components/Terminal/close.ts` holds the rule and the argument for why it is an event rather than a sweep.
 
 ## Phone width is a degraded desktop, never a mode
 
@@ -63,7 +63,7 @@ It is split by what CSS can reach. Structure is JS, because the widths come from
 - **The stage** shows one half (`TerminalDock`). `Stage/compact.ts` resolves `contentFocus`'s "split" to the terminal, since a running agent is why this gets opened on a phone. The other half stays mounted and hidden, for the reason `contentRail` keeps the content mounted.
 - **The sidebar** becomes `Sidebar/QueueDrawer` — the same component with `drawer`, over the stage. Its open state is the shell's `useState`, deliberately **not** `tabRailCollapsed`: that one is persisted, and a phone must not open into whatever a laptop last chose.
 - **The code half** is list-or-detail, derived from `selectedFile` alone. `filesPanelCollapsed` is the obvious lever and the wrong one — a persisted desktop preference a thumb must not edit.
-- **A terminal pane** becomes a viewer: it draws the PTY's true grid scaled to fit and never resizes it (see "One PTY grid" in the root CLAUDE.md). The PTY's size is the degraded-desktop rule applied to a resource *shared with other machines* — a phone visit must not reflow the session under the desktop that is sized to it. The one write is the explicit "Fit to screen" tap.
+- **A terminal pane** becomes a viewer: it draws the PTY's true grid scaled to fit and never resizes it (see "One PTY grid" in the root CLAUDE.md). The PTY's size is the degraded-desktop rule applied to a resource _shared with other machines_ — a phone visit must not reflow the session under the desktop that is sized to it. The one write is the explicit "Fit to screen" tap.
 
 `Stage/CompactBar` is the whole navigation: the queue, and which half is on screen, at the bottom where a thumb is, padded by `env(safe-area-inset-bottom)`.
 
@@ -83,8 +83,11 @@ Stored globally via Tauri Store (persists across all repositories, stored in Tau
 
 - Font size, theme, and split sizes (`tabRailWidth`, `filesPanelWidth`, `diffSplitFraction`)
 - `workspaceSeenAt` — when each workspace was last focused, epoch ms
+- `terminalTabLayout` — the terminal strip's tabs, active tab, and tab recency
 
 `workspaceSeenAt` is what makes an attention signal _unseen_. `attentionSignalAt` (in `Sidebar/workspace-status`) is the newest moment a workspace did something that wants a person — a terminal stopped and waiting, a PR asking for changes or failing CI, a merge — and `isUnseen` compares it against that entry. A card carrying an unseen signal wears an accent bar on its outer edge; `focusWorkspace` writes the timestamp, so **looking at it is the acknowledgement** and there is no dismiss gesture. It lives in preferences and never in `work.json`: this is a fact about one pair of eyes, not about the work, and a second machine reasonably has its own answer.
+
+`terminalTabLayout` is the largest thing in here, and the split is the point: the **sessions** are the daemon's record and are never written to it, while **which sessions share a tab and how that tab is split** is this window's own answer and lives nowhere else. So it stores grouping and geometry only, and the restore is reconciled against the daemon's session list rather than trusted — panes whose session died while the app was closed are pruned, and a session the layout never saw still gets a tab. It is read back as unverified JSON (`sanitizeTabs` in `components/Terminal/pane-tree.ts`), and saving is held until that restore has run, or startup's flat tab-per-session list would overwrite the layout it is about to replace. One consequence worth knowing: preferences are per-client, so a phone attached over the tailnet keeps its own grouping rather than mirroring the desktop's.
 
 Split sizes follow one rule, in `utils/resize.ts`: side panels are absolute (rem, so they track the UI scale) and clamped to the current window at render, while content splits are fractions. The _chosen_ size is what's persisted, so a width picked on a large display survives a stint on a laptop.
 
@@ -133,7 +136,13 @@ Adding a command means adding one entry to `APP_COMMANDS` — or to `TERMINAL_CO
 
 **⌘T is `terminal.new`**: a terminal in the focused workspace, from anywhere, with no dialog ever. It is `openTerminalTab(focusedWorkspace(...))` and nothing else — the cwd follows the repo tab on screen (its first tab otherwise), and with no workspace focused, or one showing no repo, it names no directory at all, so the backend starts in `$HOME` and the router places the session by cwd exactly as it would a shell started outside the app. There is nothing else it could open: the app has no tabs and no second window. **⌘N is `workspace.new`**, the other half of that — a fresh card in the queue, focused, empty.
 
-**⌘W is a cascade** — terminal pane, then the split, then the file, then the window — and `handleClose` in `router.tsx` runs it. Its first rung asks `closeFocusedTerminal` (`components/Terminal/close.ts`), which resolves the terminal the same way ⌘T resolves a workspace: DOM focus if a pane has it, otherwise **what the panel is showing**. Reading `document.activeElement` alone is what made the keystroke unreliable — focus sits on `body` after a dialog or the palette, and in the sidebar for as long as it takes to read a card, none of which is leaving the shell, and each of which used to send ⌘W all the way down to closing the window. The code half holding the content region is the one thing that still decides against the terminal; in the shared view, where both halves are on screen, focus arbitrates and the panel's own chrome (`data-terminal-panel`) counts as being in it. Closing a terminal at all — by ⌘W, the pane ×, the tab ×, or a menu verb over several — goes through `closeTerminals`, which asks first when a session looks busy: a named foreground command ("zsh is running `npm test`"), or a `working` phase with no name, which is the same fact with `ps` unable to supply it. A prompt is not work and a bare bell is not either, so neither asks.
+**⌘W is a cascade**, run by `handleClose` in `router.tsx`: the focused terminal pane, else the split, else the file — and when nothing is left, the window itself.
+
+Its **first** rung asks `closeFocusedTerminal` (`components/Terminal/close.ts`), which resolves the terminal the same way ⌘T resolves a workspace: DOM focus if a pane has it, otherwise **what the panel is showing**. Reading `document.activeElement` alone is what made the keystroke unreliable — focus sits on `body` after a dialog or the palette, and in the sidebar for as long as it takes to read a card, none of which is leaving the shell, and each of which used to send ⌘W straight down the cascade. The code half holding the content region is the one thing that still decides against the terminal; in the shared view, where both halves are on screen, focus arbitrates and the panel's own chrome (`data-terminal-panel`) counts as being in it.
+
+Its **last** rung confirms first (`utils/close-window.ts`). Everything above it is a small undo; the window is not, and ⌘W reaches it precisely by falling through everything the keystroke was probably aimed at. The prompt names the terminals that outlive it, because they are the daemon's and closing the window kills none of them.
+
+Closing a terminal at all — by ⌘W, the pane ×, the tab ×, or a menu verb over several — goes through `closeTerminals`, which asks first when a session looks busy: a named foreground command ("zsh is running `npm test`"), or a `working` phase with no name, which is the same fact with `ps` unable to supply it. A prompt is not work and a bare bell is not either, so neither asks.
 
 `lib/fuzzy/` is the one fuzzy matcher — a Smith-Waterman DP producing scores normalized to 0..1, so several weighted fields and an extrinsic boost can be blended without one term swamping the others.
 

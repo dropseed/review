@@ -1,8 +1,8 @@
-//! Work subcommands: `work [list] | add | remove | rename | reorder | attach |
-//! detach | resolve`.
+//! Workspace subcommands: `workspace [list] | add | remove | rename | reorder |
+//! attach | detach | resolve` (aliased as `work`).
 //!
-//! The work queue is the global, user-ordered list of the workspaces you intend
-//! to work on next (see [`crate::work`]). It is cross-repo, so nothing here
+//! The queue is the global, user-ordered list of the workspaces you intend to
+//! work on next (see [`crate::work`]). It is cross-repo, so nothing here
 //! resolves a comparison — `--repo` only says which repository an [`Attachment`]
 //! points at, defaulting to the repo the command was run in.
 //!
@@ -22,9 +22,9 @@ use crate::work::{self, Attachment, Workspace};
 use super::common::{print_json, resolve_cwd_arg};
 
 #[derive(Debug, Args)]
-pub struct WorkArgs {
+pub struct WorkspaceArgs {
     #[command(subcommand)]
-    pub action: Option<WorkAction>,
+    pub action: Option<WorkspaceAction>,
     /// Output as JSON
     ///
     /// Global, like `--home` and `--repo` elsewhere in the CLI, so it is
@@ -34,8 +34,8 @@ pub struct WorkArgs {
 }
 
 #[derive(Debug, Subcommand)]
-pub enum WorkAction {
-    /// List the work queue in priority order
+pub enum WorkspaceAction {
+    /// List your workspaces in priority order
     List,
     /// Add a workspace to the end of the queue
     Add(AddArgs),
@@ -106,18 +106,18 @@ pub struct ResolveArgs {
     pub cwd: Option<String>,
 }
 
-/// Dispatch a `review work ...` invocation. No subcommand lists the queue.
-pub fn run_work(args: WorkArgs) -> Result<(), String> {
+/// Dispatch a `review workspace ...` invocation. No subcommand lists the queue.
+pub fn run_workspace(args: WorkspaceArgs) -> Result<(), String> {
     let json = args.json;
     match args.action {
-        None | Some(WorkAction::List) => run_list(json),
-        Some(WorkAction::Add(a)) => run_add(a, json),
-        Some(WorkAction::Remove(a)) => run_remove(a, json),
-        Some(WorkAction::Rename(a)) => run_rename(a, json),
-        Some(WorkAction::Reorder(a)) => run_reorder(a, json),
-        Some(WorkAction::Attach(a)) => run_attach(a, json),
-        Some(WorkAction::Detach(a)) => run_detach(a, json),
-        Some(WorkAction::Resolve(a)) => run_resolve(a, json),
+        None | Some(WorkspaceAction::List) => run_list(json),
+        Some(WorkspaceAction::Add(a)) => run_add(a, json),
+        Some(WorkspaceAction::Remove(a)) => run_remove(a, json),
+        Some(WorkspaceAction::Rename(a)) => run_rename(a, json),
+        Some(WorkspaceAction::Reorder(a)) => run_reorder(a, json),
+        Some(WorkspaceAction::Attach(a)) => run_attach(a, json),
+        Some(WorkspaceAction::Detach(a)) => run_detach(a, json),
+        Some(WorkspaceAction::Resolve(a)) => run_resolve(a, json),
     }
 }
 
@@ -142,8 +142,8 @@ fn daemon_runtime() -> Option<tokio::runtime::Runtime> {
 /// What the daemon can say about the queue, or `None` when it is not running.
 ///
 /// The distinction is the whole point: `None` means "unknown", and cleanup on
-/// unknown liveness would reap every workspace the app is using. The work queue
-/// is a plain file, so `review work` keeps working either way.
+/// unknown liveness would reap every workspace the app is using. The queue is
+/// a plain file, so `review workspace` keeps working either way.
 fn live_workspaces() -> Option<HashSet<String>> {
     let runtime = daemon_runtime()?;
     runtime.block_on(async {
@@ -158,7 +158,7 @@ fn run_list(json: bool) -> Result<(), String> {
     //
     // Unlike the app's, this read cannot spare the workspace the human is
     // *looking at*: which one that is belongs to a window this process has no
-    // handle on. So a `review work list` from a shell can reap a workspace the
+    // handle on. So a `review workspace list` from a shell can reap a workspace the
     // app has open on the stage — an accepted race. It costs a peek that could
     // be re-made in one keystroke, and closing it would mean the queue file
     // carrying per-window UI state.
@@ -170,7 +170,7 @@ fn run_list(json: bool) -> Result<(), String> {
         return Ok(());
     }
     if views.is_empty() {
-        println!("Nothing in the work queue. Add one with `review work add \"...\"`.");
+        println!("No workspaces. Add one with `review workspace add \"...\"`.");
         return Ok(());
     }
     for (i, view) in views.iter().enumerate() {
@@ -284,4 +284,37 @@ fn run_resolve(args: ResolveArgs, json: bool) -> Result<(), String> {
         println!("{line}");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Parse an argv into the workspace action it names.
+    fn action(argv: &[&str]) -> Option<WorkspaceAction> {
+        use clap::Parser;
+        let cli = crate::cli::Cli::try_parse_from(argv).unwrap();
+        let Some(crate::cli::Commands::Workspace(w)) = cli.command else {
+            panic!("expected the workspace subcommand");
+        };
+        w.action
+    }
+
+    #[test]
+    fn work_still_names_the_workspace_command() {
+        // The rename is a rename of the word, not of the surface: every
+        // `review work ...` in a shell history, a script, or an older skill
+        // keeps landing on the same subcommand.
+        assert!(matches!(
+            action(&["review", "work", "add", "a title"]),
+            Some(WorkspaceAction::Add(_))
+        ));
+        assert!(matches!(
+            action(&["review", "workspace", "add", "a title"]),
+            Some(WorkspaceAction::Add(_))
+        ));
+        // Bare, under either name, is the listing.
+        assert!(action(&["review", "work"]).is_none());
+        assert!(action(&["review", "workspace"]).is_none());
+    }
 }

@@ -14,7 +14,11 @@ vi.mock("../../platform", () => ({
   getPlatformServices: () => ({ dialogs: { confirm } }),
 }));
 
-import { closeFocusedTerminal, closeTerminalPane } from "./close";
+import {
+  closeFocusedTerminal,
+  closeTerminalPane,
+  removeWorkspaceAndTerminals,
+} from "./close";
 import { useReviewStore } from "../../stores";
 import { makeTab } from "./pane-tree";
 import { attachment, terminalStatus, workspace } from "../../test/fixtures";
@@ -53,6 +57,8 @@ function seed(
   sessionIds: string[],
 ): void {
   REMOVED.length = 0;
+  confirm.mockClear();
+  confirm.mockResolvedValue(true);
   const item = workspace("ws-1", {
     title: overrides.title ?? null,
     attachments: overrides.attachments ?? [attachment("/repo", "main")],
@@ -144,6 +150,8 @@ describe("⌘W picks a terminal", () => {
   function panel(overrides: Record<string, unknown> = {}): void {
     KILLED.length = 0;
     document.body.innerHTML = "";
+    confirm.mockClear();
+    confirm.mockResolvedValue(true);
     useReviewStore.setState({
       workspaces: [workspace("ws-1", { title: "kept" })],
       focusedWorkspaceId: "ws-1",
@@ -240,10 +248,7 @@ describe("⌘W picks a terminal", () => {
 });
 
 describe("asking before killing a busy shell", () => {
-  beforeEach(() => {
-    confirm.mockClear().mockResolvedValue(true);
-    seed({ title: "kept" }, ["t1"]);
-  });
+  beforeEach(() => seed({ title: "kept" }, ["t1"]));
 
   const status = (overrides: Partial<ReturnType<typeof terminalStatus>>) =>
     useReviewStore.setState({
@@ -290,5 +295,67 @@ describe("asking before killing a busy shell", () => {
     useReviewStore.setState({ terminalExited: { t1: 0 } });
     expect(await closeTerminalPane("t1")).toBe(true);
     expect(confirm).not.toHaveBeenCalled();
+  });
+});
+
+describe("removing a workspace", () => {
+  it("kills the terminals in it", async () => {
+    seed({ title: "the migration" }, ["t1", "t2"]);
+    // A workspace with someone's title on it — the reap never touches this
+    // one, so what removes it is the removal itself.
+    expect(await removeWorkspaceAndTerminals("ws-1")).toBe(true);
+    expect(Object.keys(useReviewStore.getState().terminalSessions)).toEqual([]);
+    expect(REMOVED).toEqual(["ws-1"]);
+  });
+
+  it("asks first, naming what is running", async () => {
+    seed({ title: "the migration" }, ["t1"]);
+    useReviewStore.setState({
+      terminalStatuses: {
+        t1: { runningCommand: "npm test", title: "claude" } as never,
+      },
+    });
+    await removeWorkspaceAndTerminals("ws-1");
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(confirm.mock.calls[0][0]).toContain("claude is running `npm test`");
+    expect(confirm.mock.calls[0][0]).toContain("its terminal");
+  });
+
+  it("keeps everything when the answer is no", async () => {
+    seed({ title: "the migration" }, ["t1"]);
+    confirm.mockResolvedValue(false);
+    expect(await removeWorkspaceAndTerminals("ws-1")).toBe(false);
+    expect(Object.keys(useReviewStore.getState().terminalSessions)).toEqual([
+      "t1",
+    ]);
+    expect(REMOVED).toEqual([]);
+  });
+
+  it("does not ask when there is nothing live to lose", async () => {
+    seed({ title: "the migration" }, []);
+    await removeWorkspaceAndTerminals("ws-1");
+    expect(confirm).not.toHaveBeenCalled();
+    expect(REMOVED).toEqual(["ws-1"]);
+
+    // ...nor for panes whose shell has already exited.
+    seed({ title: "the migration" }, ["t1"]);
+    useReviewStore.setState({ terminalExited: { t1: {} as never } });
+    await removeWorkspaceAndTerminals("ws-1");
+    expect(confirm).not.toHaveBeenCalled();
+    expect(REMOVED).toEqual(["ws-1"]);
+  });
+
+  it("leaves another workspace's terminals alone", async () => {
+    seed({ title: "the migration" }, ["t1", "t2"]);
+    useReviewStore.setState({
+      terminalSessions: {
+        ...useReviewStore.getState().terminalSessions,
+        t3: session("t3", "ws-2"),
+      },
+    });
+    await removeWorkspaceAndTerminals("ws-1");
+    expect(Object.keys(useReviewStore.getState().terminalSessions)).toEqual([
+      "t3",
+    ]);
   });
 });

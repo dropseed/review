@@ -259,3 +259,67 @@ export async function closeFocusedTerminal(): Promise<boolean> {
   // "close my window instead".
   return true;
 }
+
+/**
+ * Remove a workspace, killing the terminals in it — the "Remove" verb on a
+ * card, from every entrance that offers it.
+ *
+ * The mirror of `reapSpentWorkspace`: there the last terminal going away takes
+ * the workspace with it, here the workspace going away takes its terminals. A
+ * card is the only place its shells are reachable from — the strip, the card's
+ * rows and the overview all group by the daemon's `workspaceId` — so a removal
+ * that left them running would leave them running *invisibly*, still holding
+ * whatever they were doing, findable only from the CLI.
+ *
+ * Which is why this asks first, and asks with the terminals named: the card
+ * says how many shells are in it, but not that removing it ends them.
+ * Confirmation is skipped when there is nothing live to lose, so removing a
+ * dormant card stays the single click it is today.
+ */
+export async function removeWorkspaceAndTerminals(
+  workspaceId: string,
+): Promise<boolean> {
+  const state = useReviewStore.getState();
+  // The daemon's attribution, not the tab list's: a session the store knows
+  // about but no tab is drawing is still a shell this card is responsible for.
+  const ids = Object.values(state.terminalSessions)
+    .filter((session) => session.workspaceId === workspaceId)
+    .map((session) => session.id);
+  const title =
+    state.workspaces.find((entry) => entry.id === workspaceId)?.displayTitle ??
+    "this workspace";
+  if (!(await confirmRemove(title, ids))) return false;
+  for (const id of ids) teardown(id);
+  await state.removeWorkspace(workspaceId);
+  return true;
+}
+
+/**
+ * Ask before a removal that ends running shells, naming what it would end.
+ *
+ * Sessions that have already exited are torn down without a word — their panes
+ * are a dead terminal's remains, and a dialog about closing them is a question
+ * with one answer. A card with nothing live in it is removed silently.
+ */
+async function confirmRemove(title: string, ids: string[]): Promise<boolean> {
+  const { terminalStatuses, terminalSessions, terminalExited } =
+    useReviewStore.getState();
+  const live = ids.filter((id) => !(id in terminalExited));
+  if (live.length === 0) return true;
+  const lines = live.map((id) => {
+    const name =
+      terminalStatuses[id]?.title || terminalSessions[id]?.title || "shell";
+    const command = terminalStatuses[id]?.runningCommand;
+    return command ? `${name} is running \`${command}\`` : name;
+  });
+  const { dialogs } = getPlatformServices();
+  // A dialog that fails to open answers false and says so itself — see
+  // DialogService.confirm. Declining is right either way: removing would kill
+  // these shells without ever asking.
+  return dialogs.confirm(
+    `Removing ${title} will kill ${
+      live.length === 1 ? "its terminal" : `its ${live.length} terminals`
+    }:\n${lines.join("\n")}\n\nRemove it?`,
+    live.length === 1 ? "Terminal is still open" : "Terminals are still open",
+  );
+}

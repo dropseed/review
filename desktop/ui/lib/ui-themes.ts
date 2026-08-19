@@ -69,6 +69,14 @@ export interface UiThemeTokens {
   "status-info": string;
 
   /**
+   * A machine is working on this — the terminal `working` phase, and the
+   * workspace dot that rolls it up. Its own token rather than `status-warning`
+   * because amber has to mean "waiting for you" and nothing else; see the note
+   * in `index.css`. Themes that spell out every token pick their own green.
+   */
+  "phase-working": string;
+
+  /**
    * Pull request states, in GitHub's palette rather than the app's.
    *
    * A theme still owns them — a light theme on a light surface needs Primer's
@@ -149,6 +157,7 @@ const DARK_DEFAULT_TOKENS: UiThemeTokens = {
   "status-moved": "#38bdf8",
   "status-warning": "#fbbf24",
   "status-info": "#38bdf8",
+  "phase-working": "#34d399",
   ...PR_TOKENS_DARK,
   "diff-added": "#7aad8a",
   "diff-removed": "#e0776b",
@@ -589,6 +598,7 @@ export const UI_THEMES: UiTheme[] = [
       "status-moved": "#0284c7",
       "status-warning": "#d97706",
       "status-info": "#0284c7",
+      "phase-working": "#059669",
       ...PR_TOKENS_LIGHT,
       "diff-added": "#5a9e6f",
       "diff-removed": "#c9584c",
@@ -818,6 +828,7 @@ export const UI_THEMES: UiTheme[] = [
       "status-moved": "#4385BE",
       "status-warning": "#D0A215",
       "status-info": "#4385BE",
+      "phase-working": "#879A39",
       ...PR_TOKENS_DARK,
       "diff-added": "#879A39",
       "diff-removed": "#D14D41",
@@ -867,6 +878,7 @@ export const UI_THEMES: UiTheme[] = [
       "status-moved": "#205EA6",
       "status-warning": "#AD8301",
       "status-info": "#205EA6",
+      "phase-working": "#66800B",
       ...PR_TOKENS_LIGHT,
       "diff-added": "#66800B",
       "diff-removed": "#AF3029",
@@ -916,6 +928,7 @@ export const UI_THEMES: UiTheme[] = [
       "status-moved": "#268bd2",
       "status-warning": "#b58900",
       "status-info": "#268bd2",
+      "phase-working": "#859900",
       ...PR_TOKENS_LIGHT,
       "diff-added": "#5a9e6f",
       "diff-removed": "#c9584c",
@@ -1007,6 +1020,7 @@ const TOKEN_TO_CSS_VAR: Record<keyof UiThemeTokens, string> = {
   "status-moved": "--color-status-moved",
   "status-warning": "--color-status-warning",
   "status-info": "--color-status-info",
+  "phase-working": "--color-phase-working",
   "pr-open": "--color-pr-open",
   "pr-draft": "--color-pr-draft",
   "pr-attention": "--color-pr-attention",

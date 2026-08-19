@@ -1593,7 +1593,7 @@ async fn events_sse(
 
     let repo_path = PathBuf::from(&params.repo_path);
     let repo_path_str = params.repo_path.clone();
-    // The central root, watched alongside this repo so `review work ...` edits
+    // The central root, watched alongside this repo so `review workspace ...` edits
     // reach the browser. `categorize_change` needs it to tell the app's own
     // global state apart from a repo's files.
     // Canonical, because the paths it is compared against arrive from the OS
@@ -1738,7 +1738,7 @@ async fn events_sse(
         }
 
         // …and the central root itself (non-recursively) for the global work
-        // queue, so `review work ...` edits reach the browser. The watch is on
+        // queue, so `review workspace ...` edits reach the browser. The watch is on
         // the directory because the atomic temp+rename write replaces
         // `work.json`'s inode on every save.
         if let Some(root) = central_root.as_deref() {

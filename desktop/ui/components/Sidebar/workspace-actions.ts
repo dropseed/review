@@ -23,7 +23,7 @@ import {
   focusWorkspace,
   activateAttachment,
 } from "../../commands/workspaceCommands";
-import { closeTerminals } from "../Terminal/close";
+import { closeTerminals, removeWorkspaceAndTerminals } from "../Terminal/close";
 import { jumpToTerminal } from "../Terminal/jump";
 import { openTerminalTab } from "../Terminal/newTab";
 import type { ViewerPr, Workspace } from "../../types";
@@ -202,7 +202,9 @@ export function workspaceActions({
       id: "workspace.remove",
       label: "Remove",
       danger: true,
-      run: () => void store().removeWorkspace(workspace.id),
+      // Takes the workspace's terminals with it, asking first — see
+      // `removeWorkspaceAndTerminals`.
+      run: () => void removeWorkspaceAndTerminals(workspace.id),
     },
   ];
 }

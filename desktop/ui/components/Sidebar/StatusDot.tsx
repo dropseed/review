@@ -11,7 +11,9 @@ import type { TerminalPhase } from "../../types";
  * are looking at the shell. A workspace's dot is read from across the room and
  * only has to answer "does this want me": both of the phases that have stopped
  * for a person collapse into one amber, which is why amber can be the loudest
- * thing in the window instead of one of four colours competing.
+ * thing in the window instead of one of four colours competing. That only holds
+ * if amber says nothing else, so `working` — here and on `PhaseDot` — is
+ * `phase-working` green rather than the amber it used to share with this dot.
  */
 export type WorkspaceState = "running" | "waiting" | "idle" | "dormant";
 
@@ -41,10 +43,11 @@ export const STATE_LABEL: Record<WorkspaceState, string> = {
 /**
  * Running and waiting carry a glow; idle and dormant carry none. The glow is
  * what makes one card findable in a list of ten without any of them animating —
- * see the `PhaseDot` note on why nothing in this app pulses.
+ * see the `PhaseDot` note on why nothing here loops, and why the one-shot it
+ * does play on a transition is its alone rather than this dot's too.
  */
 const DOT_CLASS: Record<WorkspaceState, string> = {
-  running: "bg-pr-open shadow-[0_0_6px_var(--color-pr-open)]",
+  running: "bg-phase-working shadow-[0_0_6px_var(--color-phase-working)]",
   waiting: "bg-status-saved shadow-[0_0_6px_var(--color-status-saved)]",
   idle: "bg-fg-faint/50",
   dormant: "border border-fg-faint/50",

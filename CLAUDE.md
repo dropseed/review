@@ -24,6 +24,8 @@ scripts/dev-web          # Run UI in browser (Axum backend + Vite) — no Tauri 
 # Testing
 scripts/test             # TypeScript type check + Rust tests (no API calls; needs Zig,
                          # and pays a one-time libghostty build on a cold target/)
+scripts/test --ts        # Just the TypeScript half — no Rust toolchain, no Zig
+scripts/test --rust      # Just the Rust half (what CI's macOS job runs)
 
 # Linting/Formatting
 scripts/fix              # Auto-fix: prettier + cargo fmt
@@ -160,6 +162,8 @@ The **queue card** renders a derived title in italics — same colour and weight
 
 The other way one goes is an **event**, not a sweep, and it is the app's: closing a workspace's last terminal (`desktop/ui/components/Terminal/close.ts`) removes the workspace too, when it has no typed title and at most one attachment. That card says only what its repo already says, so re-opening the repo mints an identical one. It cannot be a `work::cleanup` rule — a passive sweep with the same predicate would also reap the branch someone queued up to read later and never ran anything in. Closing the terminal is what says the workspace is spent; a typed title or a second repo says a person built something here, and removing _that_ stays theirs.
 
+Removal runs that event backwards: removing a card kills the terminals in it (`removeWorkspaceAndTerminals`, same file), after a confirmation naming each shell and what it is running. The card is the only place they are reachable from — the strip, the card's rows and the overview all group by the daemon's `workspaceId` — so a removal that spared them would leave them running invisibly, still holding whatever they were doing. Nothing live to lose means no dialog, so a dormant card is still one click. `review work remove` is deliberately unchanged: a non-interactive surface has nobody to ask, and a terminal it orphans is still adoptable with `review terminal move`.
+
 ## Shipped workspaces
 
 The viewer-PR query asks GitHub for `states: OPEN`, so a merged PR does not change in the snapshot — it disappears from it. `service::viewer_prs::refresh_now` diffs each refresh against the previous cached snapshot, hands the departures to `service::shipped::record_departed`, and that asks `gh pr view` once per departure and keeps the answer in `~/.review/shipped_prs.json` (a merged or closed PR stays that way). Confirmed merges ride back on `ViewerPrSnapshot.shipped`, keyed by repo path and head branch so a workspace card can find its own attachment. No `gh` means no answer, which shows as nothing new.
@@ -189,18 +193,18 @@ The `review` binary (built with `--features cli`, source in `core/src/cli/`) is 
 
 The **guide** is an agent-authored grouping of a comparison's hunks into a themed walkthrough. The desktop app renders it but no longer generates it — agents compose it via `review guide add` (each add lands live through the file watcher); `guide show` reconciles the stored groups against the current diff and reports any unplaced hunks as `ungrouped`.
 
-**Work queue** — the sidebar's user-ordered "Working on" list, a priority queue of **workspaces**. Global (cross-repo), stored at `~/.review/work.json`; array order is the priority order. A workspace stores an optional title and its attachments; everything live (terminals, PRs, review state) is derived. Agents may read priorities and add/attach workspaces, but the ordering belongs to the user; only the user removes them in the UI (removal is their acknowledgment moment).
+**Workspaces** — the sidebar's user-ordered "Working on" list, a priority queue of **workspaces**. The CLI says `workspace` throughout (`review work` stays as an alias): the queue is the list, the workspace is the thing in it, and only the storage behind it is still named for the queue. Global (cross-repo), stored at `~/.review/work.json`; array order is the priority order. A workspace stores an optional title and its attachments; everything live (terminals, PRs, review state) is derived. Agents may read priorities and add/attach workspaces, but the ordering belongs to the user; only the user removes them in the UI (removal is their acknowledgment moment).
 
-- `review work [list] [--json]` — numbered list; `--json` is global to the subcommand
-- `review work add ["title"]` — the title is optional; adds always append
-- `review work reorder <id> <position>` (1-based) · `review work rename <id> ["title"]` (no title clears it) · `review work remove <id>`
-- `review work attach <id> [PATH] [--ref REF]` · `review work detach <id> [PATH]` — PATH defaults to the current directory
-- `review work resolve [DIR]` — preview a route without writing
+- `review workspace [list] [--json]` — numbered list; `--json` is global to the subcommand
+- `review workspace add ["title"]` — the title is optional; adds always append
+- `review workspace reorder <id> <position>` (1-based) · `review workspace rename <id> ["title"]` (no title clears it) · `review workspace remove <id>`
+- `review workspace attach <id> [PATH] [--ref REF]` · `review workspace detach <id> [PATH]` — PATH defaults to the current directory
+- `review workspace resolve [DIR]` — preview a route without writing
 - `<id>` accepts unique prefixes
 
 `core/src/work/router.rs` resolves any cwd to a workspace: the first one in queue order attached to that repo root (or plain directory when outside a repo), else a fresh one it mints (`autoCreated: true`) attached to it — so nothing the app shows is ever unattached. Because attachments are not exclusive, that tie-break is a heuristic: a wrong guess costs one drag of a terminal onto the right card. Naming a workspace explicitly (⌘T, `review terminal start --workspace`, ⌘K) lands there and **writes nothing** — what a workspace is about is answered by `attach`, not by where a shell happened to open.
 
-A workspace's terminals are the daemon's record, not the queue's: each session carries a `workspaceId`, set by whoever started it (`review terminal start`, the app's `terminal_start` — both route first). That is what every surface groups by, what `DaemonClient::reassign_sessions` moves when a terminal is dragged to another card, and what keeps a router-made workspace alive. `work::cleanup` is lazy — it runs on the two reads that hold both the queue and the daemon's liveness answer, `review work list` and the app's `work_list` — so the daemon never writes `work.json`. **With no daemon reachable, neither read cleans anything up**: an empty liveness set means "nothing is running", never "I don't know".
+A workspace's terminals are the daemon's record, not the queue's: each session carries a `workspaceId`, set by whoever started it (`review terminal start`, the app's `terminal_start` — both route first). That is what every surface groups by, what `DaemonClient::reassign_sessions` moves when a terminal is dragged to another card, and what keeps a router-made workspace alive. `work::cleanup` is lazy — it runs on the two reads that hold both the queue and the daemon's liveness answer, `review workspace list` and the app's `work_list` — so the daemon never writes `work.json`. **With no daemon reachable, neither read cleans anything up**: an empty liveness set means "nothing is running", never "I don't know".
 
 **Git index** — stage individual hunks (the thing `git add` can't do non-interactively):
 
@@ -220,7 +224,7 @@ A workspace's terminals are the daemon's record, not the queue's: each session c
 
 **Skills**: one bundled skill, `review-app`, covering all three surfaces an agent touches — reviewing a diff (hunks, trust, guide, comments), driving the app's terminals, and reading/feeding the work queue. The canonical source is `core/resources/skills/review-app/SKILL.md`, `include_str!`-embedded into the binary so the shipped CLI carries it. `review skill install` writes it into `~/.claude/skills/` and `$CODEX_HOME/skills/` (defaulting to `~/.codex/skills/`), and deletes the superseded `review-guide` / `review-terminals` skills it previously installed.
 
-Source layout: `mod.rs` (Cli, Commands enum, dispatch, comparison resolution shared with `review start`, `review use`); `common.rs` (`EffectiveStatus`, `mutate_review` retry, hunk-target parsing, spec-resolution precedence, `sync_classification`); `staging.rs`; `review_state.rs`; `comments.rs` (line-level comments / annotations + batch `comments submit`); `guide.rs` (guide grouping); `history.rs` (version history + undo); `skill.rs`; `terminal.rs` (daemon-backed terminal control). Mutations use optimistic version-conflict retry against `~/.review/.../*.json`.
+Source layout: `mod.rs` (Cli, Commands enum, dispatch, comparison resolution shared with `review start`, `review use`); `common.rs` (`EffectiveStatus`, `mutate_review` retry, hunk-target parsing, spec-resolution precedence, `sync_classification`); `staging.rs`; `review_state.rs`; `comments.rs` (line-level comments / annotations + batch `comments submit`); `guide.rs` (guide grouping); `history.rs` (version history + undo); `skill.rs`; `terminal.rs` (daemon-backed terminal control); `workspace.rs` (the `review workspace` queue commands). Mutations use optimistic version-conflict retry against `~/.review/.../*.json`.
 
 ## Debugging / Traces
 

@@ -16,7 +16,7 @@ mod skill;
 mod staging;
 mod terminal;
 mod url;
-mod work;
+mod workspace;
 
 #[derive(Debug, Parser)]
 #[command(name = "review")]
@@ -151,8 +151,11 @@ pub enum Commands {
     /// Inspect and drive the app's terminal sessions (list, start, send, peek, wait)
     Terminal(terminal::TerminalArgs),
 
-    /// Inspect and edit the global work queue (what you're working on, in order)
-    Work(work::WorkArgs),
+    /// Inspect and edit your workspaces — the global "Working on" queue, in order
+    // `work` stays as an alias. The command was named for the queue before the
+    // thing in it had a name; every noun under it was already `workspace`.
+    #[command(alias = "work")]
+    Workspace(workspace::WorkspaceArgs),
 }
 
 /// `review use [spec]` — the repo's stored default comparison. With a spec,
@@ -310,7 +313,7 @@ pub fn run(cli: Cli) -> Result<(), String> {
         Some(Commands::Skill(args)) => skill::run_skill(args),
         Some(Commands::Use(args)) => run_use(args),
         Some(Commands::Terminal(args)) => terminal::run_terminal(args),
-        Some(Commands::Work(args)) => work::run_work(args),
+        Some(Commands::Workspace(args)) => workspace::run_workspace(args),
         None => run_open(cli.path, has_home_override),
     }
 }
