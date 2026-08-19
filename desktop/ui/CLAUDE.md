@@ -52,7 +52,7 @@ The stage is **two tab strips**, drawn to match: terminals on the left (`Termina
 
 `autoCreated` is backend plumbing for cleanup. It is never rendered and nothing branches on it — a router-made workspace and a human-made one are the same thing on screen.
 
-The *other* half of cleanup is an event: closing a workspace's last terminal drops the workspace too, when it has no typed title and at most one attachment. `reapSpentWorkspace` in `components/Terminal/close.ts` holds the rule and the argument for why it is an event rather than a sweep.
+The _other_ half of cleanup is an event: closing a workspace's last terminal drops the workspace too, when it has no typed title and at most one attachment. `reapSpentWorkspace` in `components/Terminal/close.ts` holds the rule and the argument for why it is an event rather than a sweep.
 
 ## Phone width is a degraded desktop, never a mode
 
@@ -63,7 +63,7 @@ It is split by what CSS can reach. Structure is JS, because the widths come from
 - **The stage** shows one half (`TerminalDock`). `Stage/compact.ts` resolves `contentFocus`'s "split" to the terminal, since a running agent is why this gets opened on a phone. The other half stays mounted and hidden, for the reason `contentRail` keeps the content mounted.
 - **The sidebar** becomes `Sidebar/QueueDrawer` — the same component with `drawer`, over the stage. Its open state is the shell's `useState`, deliberately **not** `tabRailCollapsed`: that one is persisted, and a phone must not open into whatever a laptop last chose.
 - **The code half** is list-or-detail, derived from `selectedFile` alone. `filesPanelCollapsed` is the obvious lever and the wrong one — a persisted desktop preference a thumb must not edit.
-- **A terminal pane** becomes a viewer: it draws the PTY's true grid scaled to fit and never resizes it (see "One PTY grid" in the root CLAUDE.md). The PTY's size is the degraded-desktop rule applied to a resource *shared with other machines* — a phone visit must not reflow the session under the desktop that is sized to it. The one write is the explicit "Fit to screen" tap.
+- **A terminal pane** becomes a viewer: it draws the PTY's true grid scaled to fit and never resizes it (see "One PTY grid" in the root CLAUDE.md). The PTY's size is the degraded-desktop rule applied to a resource _shared with other machines_ — a phone visit must not reflow the session under the desktop that is sized to it. The one write is the explicit "Fit to screen" tap.
 
 `Stage/CompactBar` is the whole navigation: the queue, and which half is on screen, at the bottom where a thumb is, padded by `env(safe-area-inset-bottom)`.
 
@@ -83,8 +83,11 @@ Stored globally via Tauri Store (persists across all repositories, stored in Tau
 
 - Font size, theme, and split sizes (`tabRailWidth`, `filesPanelWidth`, `diffSplitFraction`)
 - `workspaceSeenAt` — when each workspace was last focused, epoch ms
+- `terminalTabLayout` — the terminal strip's tabs, active tab, and tab recency
 
 `workspaceSeenAt` is what makes an attention signal _unseen_. `attentionSignalAt` (in `Sidebar/workspace-status`) is the newest moment a workspace did something that wants a person — a terminal stopped and waiting, a PR asking for changes or failing CI, a merge — and `isUnseen` compares it against that entry. A card carrying an unseen signal wears an accent bar on its outer edge; `focusWorkspace` writes the timestamp, so **looking at it is the acknowledgement** and there is no dismiss gesture. It lives in preferences and never in `work.json`: this is a fact about one pair of eyes, not about the work, and a second machine reasonably has its own answer.
+
+`terminalTabLayout` is the largest thing in here, and the split is the point: the **sessions** are the daemon's record and are never written to it, while **which sessions share a tab and how that tab is split** is this window's own answer and lives nowhere else. So it stores grouping and geometry only, and the restore is reconciled against the daemon's session list rather than trusted — panes whose session died while the app was closed are pruned, and a session the layout never saw still gets a tab. It is read back as unverified JSON (`sanitizeTabs` in `components/Terminal/pane-tree.ts`), and saving is held until that restore has run, or startup's flat tab-per-session list would overwrite the layout it is about to replace. One consequence worth knowing: preferences are per-client, so a phone attached over the tailnet keeps its own grouping rather than mirroring the desktop's.
 
 Split sizes follow one rule, in `utils/resize.ts`: side panels are absolute (rem, so they track the UI scale) and clamped to the current window at render, while content splits are fractions. The _chosen_ size is what's persisted, so a width picked on a large display survives a stint on a laptop.
 

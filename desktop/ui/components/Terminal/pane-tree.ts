@@ -47,9 +47,53 @@ export function makeTab(id: string, terminalId: string): TerminalTab {
   return { id, root: leaf(terminalId), focused: terminalId };
 }
 
+/**
+ * `tab` re-rooted at `root`, keeping its focus if that pane survived. Null when
+ * nothing survived.
+ *
+ * The one place the "repair the focus" rule is written: closing a pane, moving
+ * one to another tab, reconciling against the daemon's session list and
+ * rebuilding a stored layout all end up here, so a tab can't pick its next
+ * focused pane four different ways.
+ */
+export function withRepairedFocus(
+  tab: Pick<TerminalTab, "id" | "focused">,
+  root: PaneNode | null,
+): TerminalTab | null {
+  if (!root) return null;
+  // Repaired against the panes still *drawn*, not merely still present: a
+  // folded pane holds no keyboard focus and shows no cursor, so landing focus
+  // there leaves the tab with a dimmed terminal and nothing typing into it.
+  const showing = expandedLeafIds(root);
+  return {
+    ...tab,
+    root,
+    focused: showing.includes(tab.focused)
+      ? tab.focused
+      : (showing[0] ?? firstLeafId(root)),
+  };
+}
+
 /** Even fractions for `n` children (sums to 1). */
 export function evenSizes(n: number): number[] {
   return Array.from({ length: n }, () => 1 / n);
+}
+
+/**
+ * A split rebuilt around the children that survived, with their sizes.
+ *
+ * The "a split of one *is* that child, and a split of none is nothing" rule,
+ * written once: removals, prunes and the rebuild from storage all fold their
+ * trees back up through here.
+ */
+function rebuildSplit(
+  direction: SplitDirection,
+  children: PaneNode[],
+  sizes: number[],
+): PaneNode | null {
+  if (children.length === 0) return null;
+  if (children.length === 1) return children[0];
+  return { type: "split", direction, children, sizes: normalize(sizes) };
 }
 
 /** Renormalize sizes to sum to 1 (guards against drift after removals). */
@@ -265,9 +309,7 @@ function removeLeafFrom(node: PaneNode, targetId: string): PaneNode | null {
     }
   });
 
-  if (children.length === 0) return null;
-  if (children.length === 1) return children[0];
-  return { ...node, children, sizes: normalize(sizes) };
+  return rebuildSplit(node.direction, children, sizes);
 }
 
 /**
@@ -297,9 +339,7 @@ function pruneLeavesOf(
       sizes.push(node.sizes[i]);
     }
   });
-  if (children.length === 0) return null;
-  if (children.length === 1) return children[0];
-  return { ...node, children, sizes: normalize(sizes) };
+  return rebuildSplit(node.direction, children, sizes);
 }
 
 /**
@@ -354,4 +394,82 @@ export function setSizesAtPath(
   if (nextChild === child) return node;
   const children = node.children.map((c, i) => (i === head ? nextChild : c));
   return { ...node, children };
+}
+
+// ----- Persisted layout -----
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+/**
+ * Rebuild one pane tree from unverified JSON, dropping anything that doesn't
+ * describe a tree the panel can draw. `seen` carries the terminal ids already
+ * claimed, so no session ends up in two panes.
+ */
+function sanitizeNode(value: unknown, seen: Set<string>): PaneNode | null {
+  if (!isRecord(value)) return null;
+
+  if (value.type === "leaf") {
+    const terminalId = value.terminalId;
+    if (typeof terminalId !== "string" || !terminalId) return null;
+    if (seen.has(terminalId)) return null;
+    seen.add(terminalId);
+    return value.collapsed === true
+      ? { type: "leaf", terminalId, collapsed: true }
+      : leaf(terminalId);
+  }
+
+  if (value.type !== "split" || !Array.isArray(value.children)) return null;
+
+  const rawSizes = Array.isArray(value.sizes) ? value.sizes : [];
+  const children: PaneNode[] = [];
+  const sizes: number[] = [];
+  value.children.forEach((child, i) => {
+    const node = sanitizeNode(child, seen);
+    if (!node) return;
+    children.push(node);
+    const size = rawSizes[i];
+    sizes.push(Number.isFinite(size) && size > 0 ? size : 0);
+  });
+
+  return rebuildSplit(
+    value.direction === "column" ? "column" : "row",
+    children,
+    // One unusable fraction discards the whole row rather than mixing a stored
+    // size with an invented one, which would draw a layout nobody dragged.
+    sizes.every((s) => s > 0) ? sizes : evenSizes(children.length),
+  );
+}
+
+/**
+ * Rebuild a tab list from the persisted layout — unverified JSON, since it is
+ * a file on disk written by an older version of this app or edited by hand.
+ *
+ * Nothing here trusts its input: a malformed pane, a size array that doesn't
+ * line up with its children, the same terminal claimed twice, a tab of nothing
+ * but folded panes — each is repaired or dropped rather than restored into a
+ * tree the renderer would trip over. Sessions are *not* checked here; that is
+ * the daemon's answer, and the caller reconciles against it.
+ */
+export function sanitizeTabs(value: unknown): TerminalTab[] {
+  if (!Array.isArray(value)) return [];
+  const seenTabs = new Set<string>();
+  const seenTerminals = new Set<string>();
+  const tabs: TerminalTab[] = [];
+
+  for (const raw of value) {
+    if (!isRecord(raw)) continue;
+    const id = raw.id;
+    if (typeof id !== "string" || !id || seenTabs.has(id)) continue;
+    const tab = withRepairedFocus(
+      { id, focused: typeof raw.focused === "string" ? raw.focused : "" },
+      ensureSomethingShows(sanitizeNode(raw.root, seenTerminals)),
+    );
+    if (!tab) continue;
+    seenTabs.add(id);
+    tabs.push(tab);
+  }
+
+  return tabs;
 }
