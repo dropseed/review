@@ -1,5 +1,5 @@
 import type { FileEntry, ReviewState, StatusEntry } from "../../types";
-import { isHunkTrusted } from "../../types";
+import { isHunkTrusted, EMPTY_TRUST_LIST } from "../../types";
 import type { FileSortOrder } from "../../stores/slices/preferencesSlice";
 import type {
   FileHunkStatus,
@@ -42,7 +42,7 @@ export function calculateFileHunkStatus(
     const current = statusMap.get(hunk.filePath) ?? { ...EMPTY_HUNK_STATUS };
 
     const hunkState = reviewState?.hunks[hunk.id];
-    const trustList = reviewState?.trustList ?? [];
+    const trustList = reviewState?.trustList ?? EMPTY_TRUST_LIST;
 
     if (hunkState?.status?.value === "rejected") {
       current.rejected++;

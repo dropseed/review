@@ -232,6 +232,10 @@ export function GuideModePanel(): ReactNode {
 
   const staleness = useMemo(
     () => getGroupingStaleness(),
+    // `getGroupingStaleness` reads live store state, so the two extra entries
+    // are what tell this memo the answer may have changed. Removing them
+    // freezes staleness at whatever it was on first render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [getGroupingStaleness, hunks, reviewState?.guide?.state],
   );
 

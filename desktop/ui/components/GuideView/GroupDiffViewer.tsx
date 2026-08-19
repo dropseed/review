@@ -11,7 +11,7 @@ import { useReviewStore } from "../../stores";
 import { useHunkById } from "../../stores/selectors/hunks";
 import { computeGroupFiles } from "../../stores/selectors/groups";
 import { getApiClient } from "../../api";
-import { isHunkReviewed } from "../../types";
+import { isHunkReviewed, EMPTY_TRUST_LIST } from "../../types";
 import { countLines } from "../../utils/count-lines";
 import type {
   Comparison,
@@ -245,8 +245,6 @@ function buildFilteredPatch(hunks: DiffHunk[], filePath: string): string {
  */
 type FileLoadState =
   { kind: "ok"; content: FileContent } | { kind: "error"; message: string };
-
-const EMPTY_TRUST_LIST: string[] = [];
 
 function getUnreviewedIds(
   ids: string[],
@@ -711,14 +709,7 @@ export function GroupDiffViewer({
         });
       }
     },
-    [
-      repoPath,
-      comparison,
-      expansionByHunk,
-      fileLineCounts,
-      hunksPerFile,
-      reviewState?.githubPr,
-    ],
+    [repoPath, comparison, expansionByHunk, fileLineCounts, hunksPerFile],
   );
 
   const unreviewedIds = useMemo(

@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { useReviewStore } from "../stores";
 import { useAllHunks } from "../stores/selectors/hunks";
-import { anyLabelMatchesPattern, hunkLabels } from "../types";
+import { anyLabelMatchesPattern, hunkLabels, EMPTY_TRUST_LIST } from "../types";
 import { getApiClient } from "../api";
 
 // `getTrustTaxonomy` is in the client's coalesced-reads set, so overlapping
@@ -49,7 +49,7 @@ export function useTrustCounts(knownPatternIds?: Set<string>): TrustCounts {
   const hunks = useAllHunks();
   const reviewState = useReviewStore((s) => s.reviewState);
 
-  const trustList = reviewState?.trustList ?? [];
+  const trustList = reviewState?.trustList ?? EMPTY_TRUST_LIST;
 
   const trustedHunkCount = useMemo(() => {
     if (trustList.length === 0) return 0;

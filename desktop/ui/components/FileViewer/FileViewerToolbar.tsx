@@ -27,9 +27,8 @@ import { SimilarFilesModal } from "./annotations/SimilarFilesModal";
 import type { ContentMode } from "./content-mode";
 
 import { XIcon } from "../ui/icons";
+import { EMPTY_TRUST_LIST } from "../../types";
 const EMPTY_HUNK_STATES: Record<string, never> = {};
-const EMPTY_TRUST_LIST: string[] = [];
-
 /** Known path segments that indicate a meaningful boundary in external paths. */
 const EXTERNAL_PATH_MARKERS = [
   ".venv/",

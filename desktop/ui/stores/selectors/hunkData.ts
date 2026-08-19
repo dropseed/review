@@ -1,4 +1,4 @@
-import { effectiveHunkStatus } from "../../types";
+import { effectiveHunkStatus, EMPTY_TRUST_LIST } from "../../types";
 import type { DiffHunk, FileDiff, ReviewState } from "../../types";
 
 /**
@@ -156,7 +156,7 @@ export function getHunkIdsByStatus(
   const savedForLater: string[] = [];
   const trusted: string[] = [];
   const hunkStates = reviewState?.hunks;
-  const trustList = reviewState?.trustList ?? [];
+  const trustList = reviewState?.trustList ?? EMPTY_TRUST_LIST;
   for (const hunk of allHunks) {
     const state = hunkStates?.[hunk.id];
     switch (effectiveHunkStatus(state, trustList)) {

@@ -18,7 +18,7 @@ import type {
   HunkState,
   LineAnnotation,
 } from "../../types";
-import { isHunkTrusted } from "../../types";
+import { isHunkTrusted, EMPTY_TRUST_LIST } from "../../types";
 import { hunkInScope } from "../../types/scope";
 import { commitRangeForSha } from "../../types/commitRange";
 import { getChangedLinesKey as getChangedLinesKeyUtil } from "../../utils/changed-lines-key";
@@ -148,7 +148,7 @@ export function useSyntaxHighlightReady(
       clearInterval(interval);
       clearTimeout(timeout);
     };
-  }, [contentKey]);
+  }, [contentKey, containerRef]);
 
   return ready;
 }
@@ -600,7 +600,7 @@ export function useDiffAnnotationModel({
             );
           }
 
-          const trustList = deps.reviewState?.trustList ?? [];
+          const trustList = deps.reviewState?.trustList ?? EMPTY_TRUST_LIST;
           const hunkShas = deps.attribution?.hunkCommits[hunk.id];
           const commitTags: CommitEntry[] | null = deps.attribution
             ? (hunkShas ?? [])
@@ -667,7 +667,7 @@ export function useDiffAnnotationModel({
               hunkState={hunkState}
               pairedHunk={pairedHunk}
               isSource={isSource}
-              trustList={deps.reviewState?.trustList ?? []}
+              trustList={deps.reviewState?.trustList ?? EMPTY_TRUST_LIST}
               hunkPosition={hunkIndex >= 0 ? hunkIndex + 1 : undefined}
               totalHunksInFile={deps.hunks.length}
               similarHunks={similarHunks}
@@ -852,7 +852,10 @@ export function useDiffAnnotationModel({
   const renderRevision = useMemo(
     () => ++renderRevisionRef.current,
     // Everything renderAnnotation reads through the deps ref that is not
-    // already part of lineAnnotations' identity.
+    // already part of lineAnnotations' identity. None of it is read in the
+    // body — bumping the counter is the whole point — so the rule sees a list
+    // of unnecessary deps where the list *is* the mechanism.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       editingAnnotationId,
       newAnnotationLine,

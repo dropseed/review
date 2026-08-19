@@ -7,6 +7,7 @@ import {
   matchesAnyPattern,
   type DiffHunk,
   type HunkState,
+  EMPTY_TRUST_LIST,
 } from "../../types";
 import {
   Dialog,
@@ -208,7 +209,7 @@ export function ClassificationsModal({
 }: ClassificationsModalProps): ReactNode {
   const hunks = useAllHunks();
   const reviewState = useReviewStore((s) => s.reviewState);
-  const trustList = reviewState?.trustList ?? [];
+  const trustList = reviewState?.trustList ?? EMPTY_TRUST_LIST;
 
   const [selectedFilter, setSelectedFilter] = useState<string | null>(null);
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(

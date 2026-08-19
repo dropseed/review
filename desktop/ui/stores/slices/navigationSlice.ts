@@ -1,4 +1,4 @@
-import { isHunkReviewed } from "../../types";
+import { isHunkReviewed, EMPTY_TRUST_LIST } from "../../types";
 import type { FilesPanelTab } from "../../components/FilesPanel/types";
 import type { DiffHunk, HunkGroup } from "../../types";
 import {
@@ -227,7 +227,7 @@ function isHunkUnreviewedFor(
   state: ReviewStore,
 ): (h: DiffHunk) => boolean {
   const { reviewState, stagedFilePaths } = state;
-  const trustList = reviewState?.trustList ?? [];
+  const trustList = reviewState?.trustList ?? EMPTY_TRUST_LIST;
   const autoApproveStaged = reviewState?.autoApproveStaged ?? false;
 
   return (h) => {
@@ -274,7 +274,7 @@ function shouldSkipHunkInState(hunkId: string, state: ReviewStore): boolean {
   return shouldSkipHunkForNavigation({
     hunkId,
     hunkState: reviewState?.hunks[hunkId],
-    trustList: reviewState?.trustList ?? [],
+    trustList: reviewState?.trustList ?? EMPTY_TRUST_LIST,
     scope,
   });
 }

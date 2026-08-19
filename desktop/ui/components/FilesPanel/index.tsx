@@ -39,6 +39,7 @@ import { browseRef } from "../../stores/selectors/browse";
 import { ephemeralView } from "../../stores/selectors/ephemeral";
 import type { FileHunkStatus } from "./types";
 
+import { EMPTY_TRUST_LIST } from "../../types";
 /** No file at a ref has a review status — there is nothing to compare it to. */
 const NO_HUNK_STATUS: Map<string, FileHunkStatus> = new Map();
 
@@ -223,7 +224,7 @@ export function FilesPanel() {
   const reviewDataContextValue = useMemo(
     () => ({
       hunkStates: reviewState?.hunks ?? {},
-      trustList: reviewState?.trustList ?? [],
+      trustList: reviewState?.trustList ?? EMPTY_TRUST_LIST,
       onNavigate: handleNavigateToHunk,
     }),
     [reviewState?.hunks, reviewState?.trustList, handleNavigateToHunk],

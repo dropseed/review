@@ -15,6 +15,7 @@ import {
   hunkLabels,
   type DiffHunk,
   type ReviewState,
+  EMPTY_TRUST_LIST,
 } from "../../types";
 import { DropdownMenuItem, DropdownMenuSeparator } from "../ui/dropdown-menu";
 import { RollingDiffButton } from "../ui/rolling-diff-button";
@@ -443,7 +444,7 @@ export function StatusGroupList({
   const trustQuickActions = useMemo(() => {
     const actions: QuickActionItem[] = [];
 
-    const currentTrustList = reviewState?.trustList ?? [];
+    const currentTrustList = reviewState?.trustList ?? EMPTY_TRUST_LIST;
     const currentTrustSet = new Set(currentTrustList);
     const matchedArray = Array.from(matchedPatternIds);
     const allTrusted =
@@ -767,7 +768,7 @@ export function StatusGroupList({
         mode={filenameModalMode}
         hunks={hunks}
         hunkStates={reviewState?.hunks ?? {}}
-        trustList={reviewState?.trustList ?? []}
+        trustList={reviewState?.trustList ?? EMPTY_TRUST_LIST}
         onApproveAll={(ids) => useReviewStore.getState().approveHunkIds(ids)}
         onRejectAll={(ids) => useReviewStore.getState().rejectHunkIds(ids)}
         onUnapproveAll={(ids) =>

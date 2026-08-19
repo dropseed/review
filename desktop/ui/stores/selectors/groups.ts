@@ -4,7 +4,7 @@
 // the only grouping left. Scoping to a group (see ../../types/scope) is a
 // separate step layered on top by the consumers.
 
-import { effectiveHunkStatus } from "../../types";
+import { effectiveHunkStatus, EMPTY_TRUST_LIST } from "../../types";
 import type { DiffHunk, HunkGroup, ReviewState } from "../../types";
 import type { ScopeSource } from "../../types/scope";
 
@@ -26,7 +26,7 @@ export function countUnreviewed(
   hunkIds: string[],
   reviewState: ReviewState | null,
 ): number {
-  const trustList = reviewState?.trustList ?? [];
+  const trustList = reviewState?.trustList ?? EMPTY_TRUST_LIST;
   let n = 0;
   for (const id of hunkIds) {
     if (

@@ -457,14 +457,15 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     },
 
     saveReviewState: async () => {
-      let {
+      const {
         repoPath,
-        reviewState,
         comparison,
         reviewRef,
         reviewBaseOverride,
         readOnlyPreview,
       } = get();
+      // Reassigned below to stamp the hunk total onto the state being saved.
+      let { reviewState } = get();
       if (readOnlyPreview) return;
       // Belt to `loadReviewState`'s braces: a null review state already stops
       // every caller, but a save is the one thing that must never slip through

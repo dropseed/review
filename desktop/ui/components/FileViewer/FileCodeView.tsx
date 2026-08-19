@@ -278,7 +278,18 @@ export function FileCodeView({
       ];
     }
     return [];
+    // `renderRevision` is an invalidation key, not something the body reads:
+    // it bumps when the annotation renderer's inputs change, which is the only
+    // way pierre re-runs `renderAnnotation` for items it already holds.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemId, fileDiff, plainFile, annotations, renderRevision]);
+
+  // Destructured so the deps below name plain variables: depending on
+  // `diffModel.renderAnnotation` is the intent (the model object itself is
+  // rebuilt more often than its renderer), but a member expression is
+  // something the hooks rule cannot check.
+  const { renderAnnotation: renderDiffAnnotation } = diffModel;
+  const { renderAnnotation: renderPlainAnnotation } = plainModel;
 
   const renderAnnotation = useCallback(
     (
@@ -288,28 +299,27 @@ export function FileCodeView({
       item: CodeViewItem<AnnotationMeta>,
     ): ReactNode => {
       if (item.type === "diff") {
-        return diffModel.renderAnnotation(
+        return renderDiffAnnotation(
           annotation as DiffLineAnnotation<AnnotationMeta>,
         );
       }
-      return plainModel.renderAnnotation(annotation);
+      return renderPlainAnnotation(annotation);
     },
-    [diffModel.renderAnnotation, plainModel.renderAnnotation],
+    [renderDiffAnnotation, renderPlainAnnotation],
   );
+
+  const { handleGutterUtilityClick: diffGutterUtilityClick } = diffModel;
+  const { handleGutterUtilityClick: plainGutterUtilityClick } = plainModel;
 
   const handleGutterUtilityClick = useCallback(
     (range: { start: number; end: number; side?: string }) => {
       if (isDiff) {
-        diffModel.handleGutterUtilityClick(range);
+        diffGutterUtilityClick(range);
       } else {
-        plainModel.handleGutterUtilityClick(range);
+        plainGutterUtilityClick(range);
       }
     },
-    [
-      isDiff,
-      diffModel.handleGutterUtilityClick,
-      plainModel.handleGutterUtilityClick,
-    ],
+    [isDiff, diffGutterUtilityClick, plainGutterUtilityClick],
   );
 
   const lineDiffType = useAdaptiveLineDiffType(
@@ -334,9 +344,14 @@ export function FileCodeView({
     ? diffModel.annotationHighlightCSS
     : (content.extraCSS ?? "");
 
+  // Hoisted out of the deps array below: a ternary there is something the
+  // hooks rule cannot check, and both are read inside the memo.
+  const diffStyle = isDiff ? content.viewMode : "unified";
+  const expandUnchanged = isDiff ? content.expandUnchanged : true;
+
   const options = useMemo<CodeViewOptions<AnnotationMeta>>(
     () => ({
-      diffStyle: isDiff ? content.viewMode : "unified",
+      diffStyle,
       theme: { dark: theme, light: theme },
       themeType: "dark",
       diffIndicators: "none",
@@ -357,7 +372,7 @@ export function FileCodeView({
       onTokenLeave: shapeMode ? undefined : onTokenLeave,
       onTokenClick: shapeMode ? undefined : onTokenClick,
       unsafeCSS: fontCSS + extraCSS,
-      expandUnchanged: isDiff ? content.expandUnchanged : true,
+      expandUnchanged,
       expansionLineCount: 20,
       hunkSeparators: "line-info",
       // Performance optimizations
@@ -374,8 +389,9 @@ export function FileCodeView({
     }),
     [
       isDiff,
-      isDiff ? content.viewMode : null,
-      isDiff ? content.expandUnchanged : null,
+      diffStyle,
+      expandUnchanged,
+      readOnly,
       shapeMode,
       theme,
       fontCSS,
@@ -649,6 +665,8 @@ function usePlainAnnotationModel(filePath: string) {
     () => ++renderRevisionRef.current,
     // State the renderer reads through the deps ref that is not already
     // part of lineAnnotations' identity (see DiffAnnotationModel.renderRevision).
+    // Listed to invalidate on, not read in the body — hence the suppression.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [editingAnnotationId, newAnnotationLine, filePath],
   );
 

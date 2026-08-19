@@ -49,6 +49,13 @@ if [ "$RUN_TS" = 1 ]; then
     echo "TypeScript type check passed!"
 
     echo ""
+    echo "=== ESLint ==="
+    # Narrow by design — hook correctness is the part tsc and prettier cannot
+    # see. See desktop/eslint.config.js.
+    (cd desktop && npx eslint ui)
+    echo "ESLint passed!"
+
+    echo ""
     echo "=== TypeScript Tests ==="
     (cd desktop && npm test)
     echo "TypeScript tests passed!"

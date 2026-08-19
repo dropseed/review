@@ -544,6 +544,15 @@ export function isHunkUnclassified(hunkState: HunkState | undefined): boolean {
   return !hunkState?.classification;
 }
 
+// A stable empty trust list.
+//
+// `reviewState?.trustList ?? []` allocates a fresh array on every render, so
+// any memo or effect keyed on it recomputes every render for a review that has
+// no trust list — which the hooks linter flags. Sharing one frozen-by-
+// convention array keeps that identity stable. Nothing mutates a trust list;
+// it is replaced wholesale.
+export const EMPTY_TRUST_LIST: string[] = [];
+
 // Whether a hunk is auto-approved by the trust list — i.e. its label is
 // trust-listed. (An explicit approve/reject still wins — callers check
 // `status` before this.) This is the single chokepoint every "is it
