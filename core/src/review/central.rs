@@ -534,12 +534,12 @@ pub(crate) mod tests {
             ("only-id-cccc", "/repos/two", "2024-01-01T00:00:00Z"),
         ] {
             index.repos.insert(
-                id.to_string(),
+                id.to_owned(),
                 RepoIndexEntry {
-                    repo_id: id.to_string(),
-                    path: path.to_string(),
-                    name: "x".to_string(),
-                    last_accessed: accessed.to_string(),
+                    repo_id: id.to_owned(),
+                    path: path.to_owned(),
+                    name: "x".to_owned(),
+                    last_accessed: accessed.to_owned(),
                 },
             );
         }

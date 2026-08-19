@@ -688,67 +688,67 @@ mod tests {
     fn test_detect_move_pairs() {
         // Create a deletion hunk (code removed from file_a.rs)
         let del_hunk = DiffHunk {
-            id: "file_a.rs:abc123".to_string(),
-            file_path: "file_a.rs".to_string(),
+            id: "file_a.rs:abc123".to_owned(),
+            file_path: "file_a.rs".to_owned(),
             old_start: 1,
             old_count: 3,
             new_start: 1,
             new_count: 0,
-            content: "fn hello() {\n    println!(\"Hello\");\n}\n".to_string(),
+            content: "fn hello() {\n    println!(\"Hello\");\n}\n".to_owned(),
             lines: vec![
                 DiffLine {
                     line_type: LineType::Removed,
-                    content: "fn hello() {".to_string(),
+                    content: "fn hello() {".to_owned(),
                     old_line_number: Some(1),
                     new_line_number: None,
                 },
                 DiffLine {
                     line_type: LineType::Removed,
-                    content: "    println!(\"Hello\");".to_string(),
+                    content: "    println!(\"Hello\");".to_owned(),
                     old_line_number: Some(2),
                     new_line_number: None,
                 },
                 DiffLine {
                     line_type: LineType::Removed,
-                    content: "}".to_string(),
+                    content: "}".to_owned(),
                     old_line_number: Some(3),
                     new_line_number: None,
                 },
             ],
-            content_hash: "abc123".to_string(),
+            content_hash: "abc123".to_owned(),
             move_pair_id: None,
         };
 
         // Create an addition hunk (same code added to file_b.rs)
         let add_hunk = DiffHunk {
-            id: "file_b.rs:def456".to_string(),
-            file_path: "file_b.rs".to_string(),
+            id: "file_b.rs:def456".to_owned(),
+            file_path: "file_b.rs".to_owned(),
             old_start: 1,
             old_count: 0,
             new_start: 1,
             new_count: 3,
-            content: "fn hello() {\n    println!(\"Hello\");\n}\n".to_string(),
+            content: "fn hello() {\n    println!(\"Hello\");\n}\n".to_owned(),
             lines: vec![
                 DiffLine {
                     line_type: LineType::Added,
-                    content: "fn hello() {".to_string(),
+                    content: "fn hello() {".to_owned(),
                     old_line_number: None,
                     new_line_number: Some(1),
                 },
                 DiffLine {
                     line_type: LineType::Added,
-                    content: "    println!(\"Hello\");".to_string(),
+                    content: "    println!(\"Hello\");".to_owned(),
                     old_line_number: None,
                     new_line_number: Some(2),
                 },
                 DiffLine {
                     line_type: LineType::Added,
-                    content: "}".to_string(),
+                    content: "}".to_owned(),
                     old_line_number: None,
                     new_line_number: Some(3),
                 },
             ],
-            content_hash: "def456".to_string(),
+            content_hash: "def456".to_owned(),
             move_pair_id: None,
         };
 

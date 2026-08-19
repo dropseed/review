@@ -608,15 +608,15 @@ mod tests {
 
         // Create a state with some data
         let mut state = ReviewState::new(TEST_REF, Some("main".to_owned()));
-        state.notes = "Test notes".to_string();
-        state.trust_list = vec!["imports:*".to_string(), "formatting:*".to_string()];
+        state.notes = "Test notes".to_owned();
+        state.trust_list = vec!["imports:*".to_owned(), "formatting:*".to_owned()];
         state.hunks.insert(
-            "file.rs:abc123".to_string(),
+            "file.rs:abc123".to_owned(),
             HunkState {
                 classification: Some(Attributed {
-                    value: vec!["imports:added".to_string()],
+                    value: vec!["imports:added".to_owned()],
                     source: Source::Static,
-                    reasoning: Some("Added import".to_string()),
+                    reasoning: Some("Added import".to_owned()),
                 }),
                 ..Default::default()
             },
@@ -633,9 +633,9 @@ mod tests {
         assert_eq!(loaded_state.trust_list.len(), 2);
         assert!(loaded_state.hunks.contains_key("file.rs:abc123"));
         let hunk = loaded_state.hunks.get("file.rs:abc123").unwrap();
-        assert_eq!(hunk.labels(), &["imports:added".to_string()]);
+        assert_eq!(hunk.labels(), &["imports:added".to_owned()]);
         let classification = hunk.classification.as_ref().unwrap();
-        assert_eq!(classification.reasoning, Some("Added import".to_string()));
+        assert_eq!(classification.reasoning, Some("Added import".to_owned()));
     }
 
     #[test]
@@ -647,28 +647,28 @@ mod tests {
         let mut state = ReviewState::new(TEST_REF, None);
         // A fully-populated, resolved annotation.
         state.annotations.push(LineAnnotation {
-            id: "file.rs:42:new:t123-0".to_string(),
-            file_path: "file.rs".to_string(),
+            id: "file.rs:42:new:t123-0".to_owned(),
+            file_path: "file.rs".to_owned(),
             line_number: 42,
             end_line_number: Some(45),
             side: AnnotationSide::New,
-            content: "needs work".to_string(),
-            created_at: "2026-01-01T00:00:00.000Z".to_string(),
-            author: Some("claude".to_string()),
+            content: "needs work".to_owned(),
+            created_at: "2026-01-01T00:00:00.000Z".to_owned(),
+            author: Some("claude".to_owned()),
             source: Some(Source::Agent),
-            updated_at: Some("2026-01-02T00:00:00.000Z".to_string()),
-            resolved_at: Some("2026-01-03T00:00:00.000Z".to_string()),
-            resolved_by: Some("Dave".to_string()),
+            updated_at: Some("2026-01-02T00:00:00.000Z".to_owned()),
+            resolved_at: Some("2026-01-03T00:00:00.000Z".to_owned()),
+            resolved_by: Some("Dave".to_owned()),
         });
         // A legacy annotation: no author/source/updated/resolved fields.
         state.annotations.push(LineAnnotation {
-            id: "file.rs:7:old:legacy".to_string(),
-            file_path: "file.rs".to_string(),
+            id: "file.rs:7:old:legacy".to_owned(),
+            file_path: "file.rs".to_owned(),
             line_number: 7,
             end_line_number: None,
             side: AnnotationSide::Old,
-            content: "old comment".to_string(),
-            created_at: "2025-01-01T00:00:00.000Z".to_string(),
+            content: "old comment".to_owned(),
+            created_at: "2025-01-01T00:00:00.000Z".to_owned(),
             author: None,
             source: None,
             updated_at: None,

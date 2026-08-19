@@ -2483,7 +2483,7 @@ type (
     fn test_map_hunks_to_symbols() {
         let symbols = vec![
             Symbol {
-                name: "hello".to_string(),
+                name: "hello".to_owned(),
                 kind: SymbolKind::Function,
                 start_line: 2,
                 end_line: 5,
@@ -2492,7 +2492,7 @@ type (
                 depth: None,
             },
             Symbol {
-                name: "world".to_string(),
+                name: "world".to_owned(),
                 kind: SymbolKind::Function,
                 start_line: 10,
                 end_line: 15,
@@ -2504,8 +2504,8 @@ type (
 
         let hunks = vec![
             DiffHunk {
-                id: "test.rs:abc".to_string(),
-                file_path: "test.rs".to_string(),
+                id: "test.rs:abc".to_owned(),
+                file_path: "test.rs".to_owned(),
                 old_start: 2,
                 old_count: 3,
                 new_start: 3,
@@ -2516,8 +2516,8 @@ type (
                 move_pair_id: None,
             },
             DiffHunk {
-                id: "test.rs:def".to_string(),
-                file_path: "test.rs".to_string(),
+                id: "test.rs:def".to_owned(),
+                file_path: "test.rs".to_owned(),
                 old_start: 20,
                 old_count: 2,
                 new_start: 20,
@@ -2532,8 +2532,8 @@ type (
         let (hunk_syms, top_level) = map_hunks_to_symbols(&hunks, &symbols, "test.rs");
 
         assert!(hunk_syms.contains_key("test.rs:abc"));
-        assert_eq!(hunk_syms["test.rs:abc"], vec!["hello".to_string()]);
-        assert_eq!(top_level, vec!["test.rs:def".to_string()]);
+        assert_eq!(hunk_syms["test.rs:abc"], vec!["hello".to_owned()]);
+        assert_eq!(top_level, vec!["test.rs:def".to_owned()]);
     }
 
     #[cfg(feature = "symbols-typescript")]
@@ -2695,8 +2695,8 @@ const greet = (name: string) => {
             });
         }
         DiffHunk {
-            id: id.to_string(),
-            file_path: file.to_string(),
+            id: id.to_owned(),
+            file_path: file.to_owned(),
             old_start,
             old_count,
             new_start,
