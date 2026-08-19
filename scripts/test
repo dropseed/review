@@ -2,24 +2,92 @@
 set -e
 cd "$(dirname "$0")/.."
 
-echo "=== TypeScript Type Check ==="
-(cd desktop && npx tsc --noEmit)
-echo "TypeScript type check passed!"
+# The feature set the Rust tests build under: the union of what `review`'s own
+# tests need and what `review-desktop` declares on its `review` dependency.
+# The features are additive (symbols-dev ⊂ symbols-all, terminal-types ⊂
+# terminal), so the union builds the same code either crate would have been
+# built with alone — which is what lets one cargo invocation test both.
+#
+# It must stay the *exact* union, redundancies included: `symbols-dev` and
+# `terminal-types` are already implied by `symbols-all` and `daemon`, but cargo
+# fingerprints a build by the feature names resolved for it, so dropping them
+# would make the sidecar build below resolve a different set from the test
+# build and recompile `review` a second time — the thing this list exists to
+# avoid.
+CORE_FEATURES="symbols-all,symbols-dev,cli,server,daemon,daemon-client,lsp,terminal-types"
+# cargo requires package-qualified features once more than one package is
+# selected. Same list, spelled the way that invocation needs it.
+WORKSPACE_FEATURES="review/${CORE_FEATURES//,/,review/}"
 
-echo ""
-echo "=== TypeScript Tests ==="
-(cd desktop && npm test)
-echo "TypeScript tests passed!"
+RUN_TS=1
+RUN_RUST=1
+BUILD_SIDECARS=0
 
-echo ""
-echo "=== Rust Tests ==="
-# `daemon` implies `terminal`, which links the zig-built VT engine.
-scripts/check-vt-toolchain
-cargo test -p review --features symbols-all,cli,server,daemon,daemon-client
-# The desktop crate owns the daemon lifecycle (attach-vs-spawn, version respawn)
-# and the terminal event payloads — both worth gating on.
-cargo test -p review-desktop
-echo "Rust tests passed!"
+usage() {
+    echo "usage: scripts/test [--ts|--rust] [--build-sidecars]"
+    echo ""
+    echo "  --ts              TypeScript type check and tests only"
+    echo "  --rust            Rust tests only"
+    echo "  --build-sidecars  Build the host sidecars the desktop tests need"
+    echo "                    (CI; locally scripts/dev has already made them)"
+}
 
-echo ""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --ts) RUN_TS=1; RUN_RUST=0 ;;
+        --rust) RUN_TS=0; RUN_RUST=1 ;;
+        --build-sidecars) BUILD_SIDECARS=1 ;;
+        -h|--help) usage; exit 0 ;;
+        *) echo "error: unknown argument '$1'"; echo ""; usage; exit 1 ;;
+    esac
+    shift
+done
+
+if [ "$RUN_TS" = 1 ]; then
+    echo "=== TypeScript Type Check ==="
+    (cd desktop && npx tsc --noEmit)
+    echo "TypeScript type check passed!"
+
+    echo ""
+    echo "=== TypeScript Tests ==="
+    (cd desktop && npm test)
+    echo "TypeScript tests passed!"
+    echo ""
+fi
+
+if [ "$RUN_RUST" = 1 ]; then
+    echo "=== Rust Tests ==="
+    # `daemon` implies `terminal`, which links the zig-built VT engine.
+    scripts/check-vt-toolchain
+
+    if [ "$BUILD_SIDECARS" = 1 ]; then
+        # `cargo test -p review-desktop` builds the Tauri crate, whose
+        # externalBin config requires sidecar binaries on disk for the host
+        # triple. Built here with neither --release nor --target, deliberately:
+        # an implicit host build in the dev profile shares target/debug with
+        # the test build below, so the two binaries cost a link instead of
+        # dragging a whole second (release) build of the dependency tree into
+        # the job and its cache. Tauri only cares that a file exists under each
+        # name. scripts/build-cli and scripts/build-daemon-sidecar stay release
+        # builds — those are the ones that ship.
+        TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
+        echo "Building host sidecars for $TRIPLE..."
+        cargo build -p review --features "$CORE_FEATURES" --bin review --bin review-daemon
+        mkdir -p desktop/tauri/binaries
+        cp "target/debug/review" "desktop/tauri/binaries/review-cli-$TRIPLE"
+        cp "target/debug/review-daemon" "desktop/tauri/binaries/review-daemon-$TRIPLE"
+        echo ""
+    fi
+
+    # One invocation for both packages. Two — `-p review` then `-p
+    # review-desktop` — resolve different feature sets for `review` and so each
+    # rebuilds what the other just built, which cost a little over two minutes
+    # of every CI run. The desktop crate owns the daemon lifecycle (attach-vs-
+    # spawn, version respawn) and the terminal event payloads, both worth
+    # gating on.
+    cargo test -p review -p review-desktop --features "$WORKSPACE_FEATURES"
+    echo "Rust tests passed!"
+    echo ""
+fi
+
 echo "=== All tests passed! ==="

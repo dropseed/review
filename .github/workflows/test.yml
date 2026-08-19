@@ -1,7 +1,10 @@
 # Same gates the Release workflow runs, on every push/PR, so a release
-# dispatch is rarely the first time CI sees the code. macOS runner because the
-# desktop crate is a macOS Tauri crate and the daemon links the zig-built VT
-# engine.
+# dispatch is rarely the first time CI sees the code.
+#
+# Two jobs, because only half of this needs a Mac. The Node and formatting
+# gates run on Linux and report in about a minute; the Rust half needs macOS
+# because the desktop crate is a macOS Tauri crate and the daemon links the
+# zig-built VT engine.
 
 name: Test
 
@@ -18,25 +21,20 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  test:
-    runs-on: macos-15
-    timeout-minutes: 60
+  # Nothing here compiles Rust — `cargo fmt` parses, it does not build — so
+  # this needs no Zig, no submodule, and no cargo cache, and it runs beside the
+  # macOS job instead of queueing behind ten minutes of it.
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: true
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: desktop/package-lock.json
-
-      - uses: mlugg/setup-zig@v2
-        with:
-          version: 0.16.0
-
-      - uses: Swatinem/rust-cache@v2
 
       - name: Install npm dependencies
         run: npm ci
@@ -45,13 +43,38 @@ jobs:
       - name: Pre-commit checks
         run: scripts/pre-commit
 
-      # cargo test -p review-desktop builds the Tauri crate, whose externalBin
-      # config requires sidecar binaries on disk for the host triple.
-      - name: Build host sidecars
-        run: |
-          HOST_TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
-          TAURI_TARGET_TRIPLE="$HOST_TRIPLE" scripts/build-cli
-          TAURI_TARGET_TRIPLE="$HOST_TRIPLE" scripts/build-daemon-sidecar
+      - name: Frontend tests
+        run: scripts/test --ts
 
+  # Kept named `test` so the required status check keeps its name.
+  test:
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      # CI reads backtraces, never a debugger. Line tables keep file and line
+      # in a panic while dropping most of what made the cached target/ 2.4 GB,
+      # and that size is upload and download time on every single run.
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      - uses: Swatinem/rust-cache@v2
+
+      # No Node setup here: `cargo test -p review-desktop` compiles the Tauri
+      # crate but never runs its beforeBuildCommand, so nothing on this job
+      # touches the frontend.
+      #
+      # --build-sidecars makes the host sidecars that same test needs (Tauri's
+      # externalBin wants them on disk) in the dev profile and under the tests'
+      # own feature set, so they share target/debug with the test build instead
+      # of pulling a second, release-profile build of the dependency tree into
+      # the job and its cache.
       - name: Tests
-        run: scripts/test
+        run: scripts/test --rust --build-sidecars

@@ -24,6 +24,8 @@ scripts/dev-web          # Run UI in browser (Axum backend + Vite) — no Tauri 
 # Testing
 scripts/test             # TypeScript type check + Rust tests (no API calls; needs Zig,
                          # and pays a one-time libghostty build on a cold target/)
+scripts/test --ts        # Just the TypeScript half — no Rust toolchain, no Zig
+scripts/test --rust      # Just the Rust half (what CI's macOS job runs)
 
 # Linting/Formatting
 scripts/fix              # Auto-fix: prettier + cargo fmt
