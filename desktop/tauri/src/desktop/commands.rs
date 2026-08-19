@@ -1377,9 +1377,9 @@ fn run_admin_shell_command(shell_command: &str, cancel_message: &str) -> Result<
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         if stderr.contains("User canceled") || stderr.contains("(-128)") {
-            return Err(cancel_message.to_string());
+            return Err(cancel_message.to_owned());
         }
-        return Err(stderr.trim().to_string());
+        return Err(stderr.trim().to_owned());
     }
 
     Ok(())
@@ -1636,7 +1636,7 @@ async fn get_lsp_client(
     let servers = state.0.lock().await;
     servers
         .get(key)
-        .map(|h| h.client.clone())
+        .map(|h| std::sync::Arc::clone(&h.client))
         .ok_or_else(|| "No LSP server running for this file".to_owned())
 }
 
@@ -1799,7 +1799,7 @@ async fn evict_cold_lsp_roots(state: &tauri::State<'_, LspServers>) {
         // Everything past the newest N roots goes, servers and all.
         let cold: std::collections::HashSet<String> = {
             let mut by_recency: Vec<(&str, Instant)> = roots.into_iter().collect();
-            by_recency.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+            by_recency.sort_unstable_by_key(|r| std::cmp::Reverse(r.1));
             by_recency[MAX_WARM_LSP_ROOTS..]
                 .iter()
                 .map(|(root, _)| (*root).to_owned())

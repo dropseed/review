@@ -16,7 +16,7 @@ fn main() {
     let (old_ref, new_ref) = if args.len() >= 3 {
         (args[1].clone(), args[2].clone())
     } else {
-        ("HEAD~5".to_string(), "HEAD".to_string())
+        ("HEAD~5".to_owned(), "HEAD".to_owned())
     };
 
     let repo_path = std::env::current_dir().expect("no cwd");

@@ -355,6 +355,11 @@ pub struct LandedIn {
 }
 
 #[tauri::command]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "these parameters are the IPC signature the two clients call; \
+              collapsing them into a struct changes the wire shape"
+)]
 pub async fn terminal_start(
     app: AppHandle,
     state: tauri::State<'_, TerminalState>,

@@ -526,11 +526,21 @@ fn emit_menu_event<P: serde::Serialize + Clone>(app: &tauri::AppHandle, event: &
     let _ = app.emit(event, payload);
 }
 
+/// Where a `review://` link points: the repo it resolved to, plus whatever of
+/// the ref, file and hunk the URL named.
+#[cfg(desktop)]
+struct DeepLinkTarget {
+    repo_path: String,
+    review_ref: Option<String>,
+    file: Option<String>,
+    hunk: Option<String>,
+}
+
 /// Parse a `review://open?repo=&ref=&file=&hunk=` URL into the parts
 /// `emit_cli_open_review` needs. Returns `None` for unrecognized URLs
 /// (wrong scheme, missing or unknown repo id, etc.).
 #[cfg(desktop)]
-fn parse_review_url(raw: &str) -> Option<(String, Option<String>, Option<String>, Option<String>)> {
+fn parse_review_url(raw: &str) -> Option<DeepLinkTarget> {
     let url = url::Url::parse(raw).ok()?;
     if url.scheme() != "review" {
         return None;
@@ -556,7 +566,12 @@ fn parse_review_url(raw: &str) -> Option<(String, Option<String>, Option<String>
         .ok()
         .flatten()?;
 
-    Some((entry.path, review_ref, file, hunk))
+    Some(DeepLinkTarget {
+        repo_path: entry.path,
+        review_ref,
+        file,
+        hunk,
+    })
 }
 
 /// Handle a `review://` URL: parse it, then either navigate the running
@@ -565,7 +580,13 @@ fn parse_review_url(raw: &str) -> Option<(String, Option<String>, Option<String>
 /// cold-start case where no webview exists yet.
 #[cfg(desktop)]
 fn handle_deep_link(app: &tauri::AppHandle, raw: &str) {
-    let Some((repo_path, review_ref, file, hunk)) = parse_review_url(raw) else {
+    let Some(DeepLinkTarget {
+        repo_path,
+        review_ref,
+        file,
+        hunk,
+    }) = parse_review_url(raw)
+    else {
         log::warn!("Ignoring unrecognized deep link: {}", raw);
         return;
     };
