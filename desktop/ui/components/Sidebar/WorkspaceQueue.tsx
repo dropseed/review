@@ -38,6 +38,7 @@ import { activateOnKey } from "./row-chrome";
 import { prBadgeClass } from "./pr-format";
 import { prNeedsAttention } from "../../utils/sidebar-tree";
 import { workspaceActions } from "./workspace-actions";
+import { removeWorkspaceAndTerminals } from "../Terminal/close";
 import { useWorkspaceContext } from "./workspace-context";
 import {
   describeWorkspace,
@@ -230,7 +231,6 @@ const QueueEntry = memo(function QueueEntry({
   focused,
 }: QueueEntryProps): ReactNode {
   const [renaming, setRenaming] = useState(false);
-  const removeWorkspace = useReviewStore((s) => s.removeWorkspace);
   const isOver = useIsWorkDropTarget(
     useMemo(
       () => ({ kind: "card", itemId: workspace.id }) as const,
@@ -370,7 +370,7 @@ const QueueEntry = memo(function QueueEntry({
                   aria-label={`Remove ${workspace.displayTitle}`}
                   onClick={(e) => {
                     e.stopPropagation();
-                    void removeWorkspace(workspace.id);
+                    void removeWorkspaceAndTerminals(workspace.id);
                   }}
                   className="text-[11px] leading-none text-fg-faint opacity-0
                              transition-opacity duration-100 hover:text-fg-secondary
