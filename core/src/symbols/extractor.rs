@@ -802,10 +802,10 @@ fn c_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol> 
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
                 match child.kind() {
-                    "struct_specifier" | "enum_specifier" => {
-                        if child.child_by_field_name("body").is_some() {
-                            return c_node_to_symbol(child, source, child.kind());
-                        }
+                    "struct_specifier" | "enum_specifier"
+                        if child.child_by_field_name("body").is_some() =>
+                    {
+                        return c_node_to_symbol(child, source, child.kind());
                     }
                     _ => {}
                 }
@@ -892,10 +892,10 @@ fn cpp_node_to_symbol(node: Node, source: &str, kind_str: &str) -> Option<Symbol
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
                 match child.kind() {
-                    "class_specifier" | "struct_specifier" | "enum_specifier" => {
-                        if child.child_by_field_name("body").is_some() {
-                            return cpp_node_to_symbol(child, source, child.kind());
-                        }
+                    "class_specifier" | "struct_specifier" | "enum_specifier"
+                        if child.child_by_field_name("body").is_some() =>
+                    {
+                        return cpp_node_to_symbol(child, source, child.kind());
                     }
                     _ => {}
                 }

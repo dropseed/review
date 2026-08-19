@@ -264,7 +264,7 @@ fn prune_history(dir: &Path) -> Result<(), StorageError> {
     if snapshots.len() <= HISTORY_LIMIT {
         return Ok(());
     }
-    snapshots.sort_by(|a, b| b.0.cmp(&a.0));
+    snapshots.sort_by_key(|s| std::cmp::Reverse(s.0));
     for (_, path) in snapshots.drain(HISTORY_LIMIT..) {
         // Housekeeping: a snapshot we can't remove must not fail the save that
         // just succeeded.
@@ -305,7 +305,7 @@ pub fn list_review_history(
         }
     }
 
-    snapshots.sort_by(|a, b| b.version.cmp(&a.version));
+    snapshots.sort_by_key(|s| std::cmp::Reverse(s.version));
     Ok(snapshots)
 }
 

@@ -21,7 +21,7 @@ fn spawn_stream_reader(
     std::thread::spawn(move || {
         let Some(pipe) = pipe else { return };
         let reader = std::io::BufReader::new(pipe);
-        for line in reader.lines().flatten() {
+        for line in reader.lines().map_while(Result::ok) {
             let s = seq.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             on_line(CommitOutputLine {
                 text: line,

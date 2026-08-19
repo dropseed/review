@@ -181,7 +181,7 @@ fn changes_between(before: &ReviewState, after: &ReviewState) -> Changes {
         .collect();
     // Biggest group first; ties fall back to the alphabetical order the
     // BTreeMap already gave us.
-    statuses.sort_by(|a, b| b.count.cmp(&a.count));
+    statuses.sort_by_key(|s| std::cmp::Reverse(s.count));
 
     Changes {
         statuses,

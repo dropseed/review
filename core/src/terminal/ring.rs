@@ -26,8 +26,8 @@ struct RingInner {
 
 /// A fixed-capacity FIFO byte buffer that keeps the most recent bytes.
 ///
-/// Internally synchronized, so `append`/`snapshot` take `&self` and can be
-/// called from the reader thread and API callers concurrently.
+/// Internally synchronized, so `append` and the snapshot methods take `&self`
+/// and can be called from the reader thread and API callers concurrently.
 pub struct Ring {
     inner: Mutex<RingInner>,
     capacity: usize,
@@ -70,11 +70,6 @@ impl Ring {
             inner.buf.drain(..overflow);
         }
         inner.total
-    }
-
-    /// Copy the current contents out as a contiguous byte vector.
-    pub fn snapshot(&self) -> Vec<u8> {
-        self.snapshot_with_offset().0
     }
 
     /// Copy the current contents out, paired with the byte cursor they end at.
@@ -138,7 +133,7 @@ mod tests {
         let ring = Ring::with_capacity(64);
         ring.append(b"hello ");
         ring.append(b"world");
-        assert_eq!(ring.snapshot(), b"hello world");
+        assert_eq!(ring.snapshot_with_offset().0, b"hello world");
     }
 
     #[test]
@@ -147,7 +142,7 @@ mod tests {
         // Append well past capacity across multiple writes.
         ring.append(b"abcde");
         ring.append(b"fghij");
-        let snap = ring.snapshot();
+        let snap = ring.snapshot_with_offset().0;
         assert!(snap.len() <= 8, "snapshot {} exceeded capacity", snap.len());
         // Only the most recent 8 bytes survive.
         assert_eq!(snap, b"cdefghij");
@@ -157,7 +152,7 @@ mod tests {
     fn single_write_larger_than_capacity_keeps_tail() {
         let ring = Ring::with_capacity(4);
         ring.append(b"0123456789");
-        assert_eq!(ring.snapshot(), b"6789");
+        assert_eq!(ring.snapshot_with_offset().0, b"6789");
     }
 
     #[test]
