@@ -124,7 +124,14 @@ export function TerminalPanel(): ReactNode {
   return (
     // The card *is* the terminal surface — panes don't re-declare a background
     // or a rounding of their own, so there's one edge between diff and shell.
-    <div className="panel-card flex h-full w-full flex-col overflow-hidden bg-surface-inset">
+    <div
+      // The whole panel, chrome included, is what ⌘W asks about when no pane
+      // holds the keyboard (see Terminal/close.ts). Clicking a tab or the "+"
+      // is not leaving the terminal, and only this boundary can say so — a
+      // pane's own `data-terminal-id` stops at the pane.
+      data-terminal-panel=""
+      className="panel-card flex h-full w-full flex-col overflow-hidden bg-surface-inset"
+    >
       {/* Tab strip */}
       {/* One row, so the controls simply sit on it. */}
       {/* select-none: the strip is drag-and-click chrome, and a tab title left

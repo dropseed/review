@@ -12,9 +12,12 @@ interface State {
   error: Error | null;
   errorInfo: ErrorInfo | null;
   copied: boolean;
+  copyFailed: boolean;
 }
 
 export class ErrorBoundary extends Component<Props, State> {
+  private flashTimer: ReturnType<typeof setTimeout> | null = null;
+
   constructor(props: Props) {
     super(props);
     this.state = {
@@ -22,6 +25,7 @@ export class ErrorBoundary extends Component<Props, State> {
       error: null,
       errorInfo: null,
       copied: false,
+      copyFailed: false,
     };
   }
 
@@ -52,12 +56,47 @@ export class ErrorBoundary extends Component<Props, State> {
     return text;
   }
 
+  /**
+   * Through the platform service, not `navigator.clipboard`.
+   *
+   * The desktop app is served from `tauri://localhost`, which WKWebView does
+   * not treat as a secure context — so `navigator.clipboard` is `undefined`
+   * there and this threw on the property access, inside a click handler with
+   * nowhere to report it. The button did nothing, silently, on the one screen
+   * whose entire job is handing the error to someone who can act on it.
+   * `getPlatformServices()` picks the Tauri clipboard plugin (or the web
+   * fallback), which is what every other copy in the app already uses.
+   *
+   * A failure says so on the button rather than resolving to "Copied!": the
+   * text is on screen to select by hand, and a lie about it being on the
+   * clipboard is what loses a stack trace.
+   */
   handleCopy = () => {
-    navigator.clipboard.writeText(this.getErrorText()).then(() => {
-      this.setState({ copied: true });
-      setTimeout(() => this.setState({ copied: false }), 2000);
-    });
+    getPlatformServices()
+      .clipboard.writeText(this.getErrorText())
+      .then(() => this.flash("copied"))
+      .catch((err: unknown) => {
+        console.error("[ErrorBoundary] Failed to copy error text:", err);
+        this.flash("copyFailed");
+      });
   };
+
+  /** Show a transient result on the copy button, then go back to "Copy". */
+  private flash(result: "copied" | "copyFailed") {
+    this.setState({
+      copied: result === "copied",
+      copyFailed: result === "copyFailed",
+    });
+    if (this.flashTimer !== null) clearTimeout(this.flashTimer);
+    this.flashTimer = setTimeout(() => {
+      this.flashTimer = null;
+      this.setState({ copied: false, copyFailed: false });
+    }, 2000);
+  }
+
+  componentWillUnmount() {
+    if (this.flashTimer !== null) clearTimeout(this.flashTimer);
+  }
 
   handleReportIssue = () => {
     const errorText = this.getErrorText();
@@ -92,7 +131,11 @@ export class ErrorBoundary extends Component<Props, State> {
                   onClick={this.handleCopy}
                   className="absolute right-2 top-2 rounded bg-surface-hover px-2 py-1 text-xs text-fg-muted hover:text-fg-secondary transition-colors"
                 >
-                  {this.state.copied ? "Copied!" : "Copy"}
+                  {this.state.copied
+                    ? "Copied!"
+                    : this.state.copyFailed
+                      ? "Copy failed"
+                      : "Copy"}
                 </button>
                 <pre className="max-h-64 overflow-auto rounded-md bg-surface-panel p-3 text-xs text-status-rejected">
                   {this.getErrorText()}

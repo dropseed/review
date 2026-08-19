@@ -22,7 +22,7 @@ describe("phaseDotClass", () => {
     const cases: Array<[TerminalPhase, string]> = [
       ["needs_attention", "bg-status-rejected"],
       ["waiting_for_input", "bg-blue"],
-      ["working", "bg-status-warning"],
+      ["working", "bg-phase-working"],
       ["idle", "bg-fg-faint"],
     ];
     for (const [phase, expected] of cases) {
@@ -36,7 +36,7 @@ describe("phaseTextClass", () => {
     const cases: Array<[TerminalPhase, string]> = [
       ["needs_attention", "text-status-rejected"],
       ["waiting_for_input", "text-blue"],
-      ["working", "text-status-warning"],
+      ["working", "text-phase-working"],
       ["idle", "text-fg-faint"],
     ];
     for (const [phase, expected] of cases) {

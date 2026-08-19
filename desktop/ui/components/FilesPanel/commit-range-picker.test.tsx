@@ -130,6 +130,44 @@ describe("the range picker's trigger", () => {
       "Unpushed · 2 commits",
     );
   });
+
+  /**
+   * A PR is reviewed at its fetched head against the base branch GitHub says
+   * it targets, and the backend says so with `pullRequest`. The UI's table of
+   * slice names didn't have that arm, so the lookup produced `undefined` and
+   * reading its label took the whole window down the moment a PR was opened
+   * from the sidebar.
+   */
+  it("names a pull request's own comparison", () => {
+    seed([branch("feature", { isCurrent: true })]);
+    useReviewStore.setState({
+      baseReason: "pullRequest",
+      reviewComparison: makeComparison("main", "refs/review/pr/7"),
+      currentBranch: "something-else",
+    });
+    render(<CommitRangePicker />);
+
+    expect(screen.getByRole("button").textContent).toContain(
+      "Whole PR · vs main",
+    );
+  });
+
+  /**
+   * The other direction of the same failure: a released app meeting a daemon
+   * that has grown an arm it has never heard of. Mislabelling one line is a
+   * bug; crashing on it is a category error.
+   */
+  it("falls back to a derived name rather than crashing on an unknown arm", () => {
+    seed([branch("feature", { isCurrent: true })]);
+    useReviewStore.setState({
+      baseReason: "somethingNewerThanThisApp" as never,
+    });
+    render(<CommitRangePicker />);
+
+    expect(screen.getByRole("button").textContent).toContain(
+      "Whole branch · vs main",
+    );
+  });
 });
 
 describe("the unpushed slice", () => {
