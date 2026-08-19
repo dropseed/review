@@ -49,7 +49,9 @@ pub fn git_commit_streaming(
         .context("Failed to spawn git commit")?;
 
     let seq = Arc::new(AtomicU64::new(0));
-    let on_line = Arc::new(on_line);
+    // Typed as the trait object the reader takes, so the two `Arc::clone`s
+    // below are plain refcount bumps rather than unsizing coercions.
+    let on_line: Arc<dyn Fn(CommitOutputLine) + Send + Sync> = Arc::new(on_line);
 
     let stdout_thread = spawn_stream_reader(
         child.stdout.take(),
