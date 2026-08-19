@@ -16,6 +16,7 @@ import {
   setLeafCollapsed,
   expandedLeafIds,
   showsTerminal,
+  sanitizeTabs,
 } from "./pane-tree";
 
 describe("makeTab / leaf", () => {
@@ -392,5 +393,117 @@ describe("collapsing panes", () => {
       terminalId: "c",
       collapsed: true,
     });
+  });
+});
+
+describe("sanitizeTabs", () => {
+  it("restores a split tab with the sizes it was dragged to", () => {
+    expect(
+      sanitizeTabs([
+        {
+          id: "tab1",
+          focused: "b",
+          root: {
+            type: "split",
+            direction: "column",
+            children: [leaf("a"), leaf("b")],
+            sizes: [0.7, 0.3],
+          },
+        },
+      ]),
+    ).toEqual([
+      {
+        id: "tab1",
+        focused: "b",
+        root: {
+          type: "split",
+          direction: "column",
+          children: [leaf("a"), leaf("b")],
+          sizes: [0.7, 0.3],
+        },
+      },
+    ]);
+  });
+
+  it("takes nothing from a value that isn't a stored layout", () => {
+    expect(sanitizeTabs(null)).toEqual([]);
+    expect(sanitizeTabs({ tabs: [] })).toEqual([]);
+    expect(sanitizeTabs(["tab1", 3, null])).toEqual([]);
+    // A tab needs an id and a tree; neither is invented for it.
+    expect(sanitizeTabs([{ root: leaf("a") }])).toEqual([]);
+    expect(sanitizeTabs([{ id: "tab1", root: { type: "pane" } }])).toEqual([]);
+  });
+
+  it("gives a split with unusable sizes even ones", () => {
+    const [tab] = sanitizeTabs([
+      {
+        id: "tab1",
+        focused: "a",
+        // One fraction short, and one of them nonsense: the row is redrawn
+        // even rather than half-honored.
+        root: { type: "split", children: [leaf("a"), leaf("b")], sizes: ["x"] },
+      },
+    ]);
+    if (tab.root.type !== "split") throw new Error("expected split");
+    expect(tab.root.sizes).toEqual(evenSizes(2));
+    expect(tab.root.direction).toBe("row");
+  });
+
+  it("drops panes it can't draw, collapsing what they leave behind", () => {
+    const [tab] = sanitizeTabs([
+      {
+        id: "tab1",
+        focused: "b",
+        root: {
+          type: "split",
+          direction: "row",
+          children: [leaf("a"), { type: "leaf" }, 7],
+          sizes: [0.5, 0.25, 0.25],
+        },
+      },
+    ]);
+    // A split down to one child is that child, and focus lands on what's left.
+    expect(tab.root).toEqual(leaf("a"));
+    expect(tab.focused).toBe("a");
+  });
+
+  it("lets no terminal be claimed twice, in one tab or across two", () => {
+    const tabs = sanitizeTabs([
+      {
+        id: "tab1",
+        focused: "a",
+        root: {
+          type: "split",
+          direction: "row",
+          children: [leaf("a"), leaf("a")],
+          sizes: [0.5, 0.5],
+        },
+      },
+      { id: "tab2", focused: "a", root: leaf("a") },
+      // Same tab id twice: the second is a tab the strip could not address.
+      { id: "tab1", focused: "b", root: leaf("b") },
+    ]);
+    expect(tabs).toEqual([{ id: "tab1", root: leaf("a"), focused: "a" }]);
+  });
+
+  it("unfolds a tab stored as nothing but title bars", () => {
+    const [tab] = sanitizeTabs([
+      {
+        id: "tab1",
+        focused: "a",
+        root: {
+          type: "split",
+          direction: "row",
+          children: [
+            { type: "leaf", terminalId: "a", collapsed: true },
+            { type: "leaf", terminalId: "b", collapsed: true },
+          ],
+          sizes: [0.5, 0.5],
+        },
+      },
+    ]);
+    expect(showsTerminal(tab.root)).toBe(true);
+    expect(expandedLeafIds(tab.root)).toEqual(["a"]);
+    expect(tab.focused).toBe("a");
   });
 });

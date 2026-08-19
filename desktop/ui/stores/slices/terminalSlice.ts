@@ -30,6 +30,7 @@ import {
   setLeafCollapsed,
   setSizesAtPath,
   reorderTabs,
+  sanitizeTabs,
 } from "../../components/Terminal/pane-tree";
 
 export type { TerminalTab } from "../../components/Terminal/pane-tree";
@@ -914,6 +915,49 @@ export function ingestTabs(
   };
 }
 
+/** Storage key for this window's tab/pane layout. */
+export const TAB_LAYOUT_KEY = "terminalTabLayout";
+
+/**
+ * The tab layout as it is written to (and read back from) storage.
+ *
+ * Sessions are deliberately not in it: the daemon owns those, and a layout
+ * that carried its own copy of them would be a second answer to "what is
+ * running" that could disagree with the first. This says only how the sessions
+ * the daemon reports are *grouped* — which is the part that is this window's
+ * alone, and the part that used to be lost on every relaunch.
+ */
+export interface PersistedTabLayout {
+  /** Tab list as stored — shape unverified until `sanitizeTabs` sees it. */
+  tabs: unknown;
+  activeTabId: string | null;
+  /** Tab recency, so "the workspace's latest tab" survives a relaunch. */
+  usedAt: Record<string, number>;
+}
+
+/**
+ * Lay a persisted layout over the sessions this window knows about.
+ *
+ * The layout is only ever half the answer — it says which panes shared a tab,
+ * and the daemon says which of those sessions are still alive — so it is
+ * reconciled through `ingestTabs` rather than restored as-is: panes whose
+ * session died while the app was closed are pruned (folding splits back up),
+ * and any session the layout has never heard of, one started by the CLI or by
+ * another window meanwhile, still lands in a tab of its own.
+ */
+export function restoreTabs(
+  state: TabState & Pick<TerminalSlice, "terminalSessions">,
+  layout: PersistedTabLayout,
+): Partial<TabState> {
+  return ingestTabs(
+    {
+      terminalTabs: sanitizeTabs(layout.tabs),
+      activeTabId: layout.activeTabId ?? state.activeTabId,
+    },
+    Object.values(state.terminalSessions),
+  );
+}
+
 /**
  * The checkout a session belongs to: the longest known checkout root
  * containing its cwd, or null if it started outside all of them.
@@ -998,13 +1042,103 @@ export function mostRecentTabId(
 
 export const createTerminalSlice: SliceCreatorWithClientAndStorage<
   TerminalSlice
-> = (client, storage) => (set, get) => {
+> = (client, storage) => (write, get) => {
   // Per-session unsubscribe fns (status + exit). Module-of-closure state, not
   // store state — these are non-serializable and window-local.
   const sessionUnsubs = new Map<string, () => void>();
 
   /** Monotonic stamp for tab recency — see `terminalTabUsedAt`. */
   let useCounter = 0;
+
+  // ----- Layout persistence -----
+  //
+  // The daemon owns the sessions; how they are grouped into tabs and split
+  // into panes is this window's own answer, and it used to live only in
+  // memory — so every relaunch met the daemon's flat session list and laid
+  // each one out as a tab of its own, panes and all.
+
+  /** The layout read back from storage, until it has been laid over sessions. */
+  let savedLayout: PersistedTabLayout | null = null;
+  /** Whether storage has answered — with a layout, or with there being none. */
+  let layoutLoaded = false;
+  /** Whether the daemon's session list has landed — the other half. */
+  let sessionsIngested = false;
+  /** Whether the restore has run (or been settled as having nothing to do). */
+  let layoutRestored = false;
+
+  /**
+   * Write the layout, but never before the restore has run.
+   *
+   * Startup writes tabs before it can read them back — `ingestTerminalList`
+   * wraps every session in a tab of its own on the way to being regrouped —
+   * and saving those would overwrite the very layout being restored with the
+   * flat one it is there to replace.
+   */
+  function saveLayout(): void {
+    if (!layoutRestored) return;
+    const g = get();
+    const layout: PersistedTabLayout = {
+      tabs: g.terminalTabs,
+      activeTabId: g.activeTabId,
+      usedAt: g.terminalTabUsedAt,
+    };
+    storage.set(TAB_LAYOUT_KEY, layout);
+  }
+
+  /**
+   * `set`, plus a save whenever the write touched the layout.
+   *
+   * Wrapped once here rather than called from each of the dozen actions that
+   * move a pane: a tab reducer added later persists by construction instead of
+   * by remembering to.
+   */
+  const set = (partial: Partial<ReviewStore>): void => {
+    write(partial);
+    if (
+      "terminalTabs" in partial ||
+      "activeTabId" in partial ||
+      "terminalTabUsedAt" in partial
+    ) {
+      saveLayout();
+    }
+  };
+
+  /**
+   * Lay the saved layout over the reported sessions, once both are in hand.
+   *
+   * The read is async and the session list is a round trip, so either can land
+   * first; this runs on whichever arrives second and exactly once. Restoring
+   * against sessions we haven't heard about yet would prune every pane in the
+   * layout as dead.
+   */
+  function restoreLayout(): void {
+    if (layoutRestored || !layoutLoaded || !sessionsIngested) return;
+    layoutRestored = true;
+    if (savedLayout) {
+      write(restoreTabs(get(), savedLayout));
+      restoreTabRecency(savedLayout.usedAt);
+    }
+    // Save what the reconcile settled on, so panes whose session died while
+    // the app was closed don't sit in the file until the next real change.
+    saveLayout();
+  }
+
+  /** Re-seat tab recency on the restored tabs, and the counter above it. */
+  function restoreTabRecency(usedAt: unknown): void {
+    if (typeof usedAt !== "object" || usedAt === null) return;
+    const stored = usedAt as Record<string, unknown>;
+    const restored: Record<string, number> = {};
+    for (const tab of get().terminalTabs) {
+      const at = stored[tab.id];
+      if (typeof at !== "number" || !Number.isFinite(at)) continue;
+      restored[tab.id] = at;
+      // The counter has to outrun every stamp it inherited, or the first tab
+      // activated after a relaunch would read as older than one last touched
+      // days ago.
+      useCounter = Math.max(useCounter, at);
+    }
+    write({ terminalTabUsedAt: restored });
+  }
 
   function subscribeSession(id: string): void {
     if (sessionUnsubs.has(id)) return;
@@ -1116,7 +1250,7 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
     terminalsSupported: false,
 
     hydrateTerminalPrefs: async () => {
-      const [focus, legacyMode, legacyOpen, width] = await Promise.all([
+      const [focus, legacyMode, legacyOpen, width, layout] = await Promise.all([
         storage.get<ContentFocus>("contentFocus"),
         // Pre-focus installs persisted the same three states under the
         // panel's own names; map them once so the layout survives upgrade.
@@ -1124,7 +1258,16 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
         // And pre-mode installs persisted an open/closed boolean.
         storage.get<boolean>("terminalPanelOpen"),
         storage.get<number>("terminalPanelWidth"),
+        storage.get<PersistedTabLayout>(TAB_LAYOUT_KEY),
       ]);
+      // Held rather than applied: the tabs it describes mean nothing until the
+      // daemon has said which of their sessions are still running. Storage
+      // answering "nothing stored" settles the restore just the same — a first
+      // run has to start saving too.
+      if (!layoutRestored) {
+        savedLayout = layout ?? null;
+        layoutLoaded = true;
+      }
       const migrated: ContentFocus | null =
         legacyMode === "closed"
           ? "code"
@@ -1137,6 +1280,7 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
         contentFocus: focus ?? migrated ?? (legacyOpen ? "split" : "code"),
         terminalPanelWidth: width ?? TERMINAL_PANEL_WIDTH_DEFAULT,
       });
+      restoreLayout();
     },
 
     setTerminalsSupported: (supported) =>
@@ -1386,6 +1530,10 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
           Object.values(merged.terminalSessions ?? g.terminalSessions),
         ),
       });
+      // The daemon has now answered which sessions exist, which is the half of
+      // the restore this window can't supply for itself.
+      sessionsIngested = true;
+      restoreLayout();
     },
   };
 };

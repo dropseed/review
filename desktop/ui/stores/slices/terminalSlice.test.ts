@@ -29,13 +29,17 @@ import {
   withWorkspace,
   tabSessionIds,
   terminalDockPresent,
+  restoreTabs,
+  TAB_LAYOUT_KEY,
 } from "./terminalSlice";
+import type { PersistedTabLayout } from "./terminalSlice";
 import {
   collectLeafIds,
   expandedLeafIds,
   leaf,
   makeTab,
   splitLeaf,
+  sanitizeTabs,
 } from "../../components/Terminal/pane-tree";
 import type { TerminalTab } from "../../components/Terminal/pane-tree";
 import type {
@@ -591,35 +595,36 @@ describe("tab reducers", () => {
   });
 });
 
-describe("slice actions", () => {
-  // Minimal harness: drive the real slice actions with an in-memory store and a
-  // stub storage that records writes, so we can assert persistence.
+// Minimal harness: drive the real slice actions with an in-memory store and a
+// stub storage that records writes and answers reads, so we can assert both
+// halves of persistence.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function makeSlice(client: any = {}) {
+  const writes: Record<string, unknown> = {};
+  const reads: Record<string, unknown> = {};
+  const storage = {
+    get: async (key: string) => reads[key],
+    set: (key: string, value: unknown) => {
+      writes[key] = value;
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function makeSlice(client: any = {}) {
-    const writes: Record<string, unknown> = {};
-    const reads: Record<string, unknown> = {};
-    const storage = {
-      get: async (key: string) => reads[key],
-      set: (key: string, value: unknown) => {
-        writes[key] = value;
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let state: any = {};
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const set = (partial: any) => {
-      state = {
-        ...state,
-        ...(typeof partial === "function" ? partial(state) : partial),
-      };
+  let state: any = {};
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const set = (partial: any) => {
+    state = {
+      ...state,
+      ...(typeof partial === "function" ? partial(state) : partial),
     };
-    const get = () => state;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    state = createTerminalSlice(client, storage)(set, get, {} as any);
-    return { get, set, writes, reads };
-  }
+  };
+  const get = () => state;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  state = createTerminalSlice(client, storage)(set, get, {} as any);
+  return { get, set, writes, reads };
+}
 
+describe("slice actions", () => {
   /**
    * A client whose `terminalStart` answers with `started` and the landing the
    * backend routed it to — the shape the real one returns.
@@ -1197,5 +1202,160 @@ describe("terminalDockPresent", () => {
         repoPath: "/r",
       }),
     ).toBe(false);
+  });
+});
+
+describe("tab layout across relaunches", () => {
+  /** The layout a window with one split tab and one plain tab would save. */
+  const savedLayout = {
+    tabs: [
+      {
+        id: "tab1",
+        focused: "b",
+        root: {
+          type: "split",
+          direction: "row",
+          children: [leaf("a"), leaf("b")],
+          sizes: [0.6, 0.4],
+        },
+      },
+      { id: "tab2", focused: "c", root: leaf("c") },
+    ],
+    activeTabId: "tab2",
+    usedAt: { tab1: 4, tab2: 9 },
+  };
+
+  /** The layout last written to storage. */
+  const written = (writes: Record<string, unknown>) =>
+    writes[TAB_LAYOUT_KEY] as PersistedTabLayout | undefined;
+
+  /** Its tabs, read back the way the next launch reads them. */
+  const savedTabs = (writes: Record<string, unknown>): TerminalTab[] =>
+    sanitizeTabs(written(writes)?.tabs);
+
+  /** The slice harness, primed with `savedLayout` on disk. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function relaunched(): any {
+    const slice = makeSlice();
+    slice.reads[TAB_LAYOUT_KEY] = savedLayout;
+    return slice;
+  }
+
+  it("regroups the daemon's sessions into the panes they were in", async () => {
+    const { get } = relaunched();
+
+    await get().hydrateTerminalPrefs();
+    get().ingestTerminalList([
+      session("a", "/r"),
+      session("b", "/r"),
+      session("c", "/r"),
+    ]);
+
+    // Without the restore this is three tabs: the daemon lists sessions, and
+    // which of them shared a pane tree is only ever this window's answer.
+    expect(get().terminalTabs.map((t: TerminalTab) => t.id)).toEqual([
+      "tab1",
+      "tab2",
+    ]);
+    expect(collectLeafIds(get().terminalTabs[0].root)).toEqual(["a", "b"]);
+    expect(get().terminalTabs[0].focused).toBe("b");
+    expect(get().activeTabId).toBe("tab2");
+  });
+
+  it("restores whichever of the two halves lands second", async () => {
+    // The list is a round trip and the layout is an async read, so the order
+    // is not ours to pick.
+    const { get } = relaunched();
+
+    get().ingestTerminalList([session("a", "/r"), session("b", "/r")]);
+    expect(get().terminalTabs).toHaveLength(2);
+
+    await get().hydrateTerminalPrefs();
+
+    expect(get().terminalTabs).toHaveLength(1);
+    expect(collectLeafIds(get().terminalTabs[0].root)).toEqual(["a", "b"]);
+  });
+
+  it("drops panes whose session died and adopts ones it never saw", async () => {
+    const { get } = relaunched();
+
+    await get().hydrateTerminalPrefs();
+    // "b" is gone (the shell exited while the app was closed) and "d" is new
+    // (the CLI started it meanwhile).
+    get().ingestTerminalList([session("a", "/r"), session("d", "/r")]);
+
+    expect(get().terminalTabs.map((t: TerminalTab) => t.id)).toEqual([
+      "tab1",
+      "d",
+    ]);
+    // The split folds back up around the pane that survived.
+    expect(get().terminalTabs[0].root).toEqual(leaf("a"));
+  });
+
+  it("keeps tab recency, and stays ahead of it", async () => {
+    const { get } = relaunched();
+
+    await get().hydrateTerminalPrefs();
+    get().ingestTerminalList([session("a", "/r"), session("c", "/r")]);
+    expect(get().terminalTabUsedAt).toEqual({ tab1: 4, tab2: 9 });
+
+    get().setActiveTab("tab1");
+
+    // A tab activated now is the latest, not older than one last touched in a
+    // previous run.
+    expect(get().terminalTabUsedAt.tab1).toBeGreaterThan(9);
+  });
+
+  it("saves nothing until the restore has happened", async () => {
+    const { get, writes } = relaunched();
+
+    get().ingestTerminalList([session("a", "/r"), session("b", "/r")]);
+
+    // Startup lays every session out as its own tab on the way to being
+    // regrouped; saving that would overwrite the layout still being restored.
+    expect(writes[TAB_LAYOUT_KEY]).toBeUndefined();
+
+    await get().hydrateTerminalPrefs();
+
+    expect(savedTabs(writes)).toHaveLength(1);
+  });
+
+  it("saves every later move of a pane", async () => {
+    const { get, writes } = relaunched();
+
+    await get().hydrateTerminalPrefs();
+    get().ingestTerminalList([session("a", "/r"), session("b", "/r")]);
+    get().movePaneToNewTab("b");
+
+    const tabs = savedTabs(writes);
+    expect(tabs).toHaveLength(2);
+    expect(written(writes)?.activeTabId).toBe(tabs[1].id);
+  });
+
+  it("saves the plain layout of a window that had none stored", async () => {
+    const { get, writes } = makeSlice();
+
+    // Storage answering "nothing stored" settles the restore just as a layout
+    // does — otherwise a first run would never save one.
+    await get().hydrateTerminalPrefs();
+    get().ingestTerminalList([session("a", "/r")]);
+
+    expect(savedTabs(writes)).toHaveLength(1);
+  });
+
+  it("restoreTabs ignores a layout that isn't one", () => {
+    const state = {
+      terminalTabs: [],
+      activeTabId: null,
+      terminalSessions: { a: session("a", "/r") },
+    };
+    // A settings file edited by hand, or written by a version that stored
+    // something else under this key: the sessions still get their tabs.
+    const restored = restoreTabs(state, {
+      tabs: "sideways",
+      activeTabId: null,
+      usedAt: {},
+    });
+    expect(restored.terminalTabs).toEqual([makeTab("a", "a")]);
   });
 });

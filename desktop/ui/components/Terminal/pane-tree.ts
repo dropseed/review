@@ -355,3 +355,96 @@ export function setSizesAtPath(
   const children = node.children.map((c, i) => (i === head ? nextChild : c));
   return { ...node, children };
 }
+
+// ----- Persisted layout -----
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+/**
+ * Rebuild one pane tree from unverified JSON, dropping anything that doesn't
+ * describe a tree the panel can draw. `seen` carries the terminal ids already
+ * claimed, so no session ends up in two panes.
+ */
+function sanitizeNode(value: unknown, seen: Set<string>): PaneNode | null {
+  if (!isRecord(value)) return null;
+
+  if (value.type === "leaf") {
+    const terminalId = value.terminalId;
+    if (typeof terminalId !== "string" || !terminalId) return null;
+    if (seen.has(terminalId)) return null;
+    seen.add(terminalId);
+    return value.collapsed === true
+      ? { type: "leaf", terminalId, collapsed: true }
+      : leaf(terminalId);
+  }
+
+  if (value.type !== "split" || !Array.isArray(value.children)) return null;
+
+  const rawSizes = Array.isArray(value.sizes) ? value.sizes : [];
+  const children: PaneNode[] = [];
+  const sizes: number[] = [];
+  value.children.forEach((child, i) => {
+    const node = sanitizeNode(child, seen);
+    if (!node) return;
+    children.push(node);
+    const size = rawSizes[i];
+    sizes.push(
+      typeof size === "number" && Number.isFinite(size) && size > 0 ? size : 0,
+    );
+  });
+
+  // Same collapse rules as a removal: a split down to one child *is* that
+  // child, and an emptied one is nothing at all.
+  if (children.length === 0) return null;
+  if (children.length === 1) return children[0];
+
+  return {
+    type: "split",
+    direction: value.direction === "column" ? "column" : "row",
+    children,
+    // One unusable fraction discards the whole row rather than mixing a stored
+    // size with an invented one, which would draw a layout nobody dragged.
+    sizes: sizes.every((s) => s > 0)
+      ? normalize(sizes)
+      : evenSizes(children.length),
+  };
+}
+
+/**
+ * Rebuild a tab list from the persisted layout — unverified JSON, since it is
+ * a file on disk written by an older version of this app or edited by hand.
+ *
+ * Nothing here trusts its input: a malformed pane, a size array that doesn't
+ * line up with its children, the same terminal claimed twice, a tab of nothing
+ * but folded panes — each is repaired or dropped rather than restored into a
+ * tree the renderer would trip over. Sessions are *not* checked here; that is
+ * the daemon's answer, and the caller reconciles against it.
+ */
+export function sanitizeTabs(value: unknown): TerminalTab[] {
+  if (!Array.isArray(value)) return [];
+  const seenTabs = new Set<string>();
+  const seenTerminals = new Set<string>();
+  const tabs: TerminalTab[] = [];
+
+  for (const raw of value) {
+    if (!isRecord(raw)) continue;
+    const id = raw.id;
+    if (typeof id !== "string" || !id || seenTabs.has(id)) continue;
+    const root = ensureSomethingShows(sanitizeNode(raw.root, seenTerminals));
+    if (!root) continue;
+    const showing = expandedLeafIds(root);
+    seenTabs.add(id);
+    tabs.push({
+      id,
+      root,
+      focused:
+        typeof raw.focused === "string" && showing.includes(raw.focused)
+          ? raw.focused
+          : (showing[0] ?? firstLeafId(root)),
+    });
+  }
+
+  return tabs;
+}
