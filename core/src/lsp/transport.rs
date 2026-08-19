@@ -92,7 +92,7 @@ impl LspTransport {
         // Drain stderr into a rolling buffer so a server that dies on startup
         // can explain why (see `recent_stderr`).
         let stderr_buf: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-        let stderr_buf_clone = stderr_buf.clone();
+        let stderr_buf_clone = Arc::clone(&stderr_buf);
         tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = lines.next_line().await {
@@ -105,9 +105,9 @@ impl LspTransport {
             }
         });
 
-        let pending_clone = pending.clone();
+        let pending_clone = Arc::clone(&pending);
         let notification_tx_clone = notification_tx.clone();
-        let stdin_for_read = stdin.clone();
+        let stdin_for_read = Arc::clone(&stdin);
 
         let read_task = tokio::spawn(async move {
             let mut reader = jsonrpc::MessageReader::new(stdout);
@@ -140,7 +140,7 @@ impl LspTransport {
                                 error: None,
                             };
                             let bytes = jsonrpc::serialize_message(&response);
-                            let stdin_clone = stdin_for_read.clone();
+                            let stdin_clone = Arc::clone(&stdin_for_read);
                             tokio::spawn(async move {
                                 let mut w = stdin_clone.lock().await;
                                 let _ = w.write_all(&bytes).await;

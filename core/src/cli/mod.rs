@@ -406,7 +406,10 @@ enum StartTarget {
 impl StartTarget {
     /// Pick the target from the parsed flags. clap's `conflicts_with` guarantees
     /// at most one selector is set; the order here is just a defensive tiebreak.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one parameter per mutually-exclusive clap selector flag"
+    )]
     fn from_args(
         spec: Option<String>,
         old: Option<String>,

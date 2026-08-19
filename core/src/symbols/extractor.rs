@@ -82,7 +82,7 @@ fn collect_matching_definitions(
     for symbol in symbols {
         if symbol.name == target_name {
             results.push(SymbolDefinition {
-                file_path: file_path.to_string(),
+                file_path: file_path.to_owned(),
                 name: symbol.name.clone(),
                 kind: symbol.kind.clone(),
                 start_line: symbol.start_line,
@@ -1947,17 +1947,11 @@ pub fn identifier_positions_for_name(
     let language = get_language_for_file(file_path)?;
     let mut parser = Parser::new();
     if parser.set_language(&language).is_err() {
-        log::warn!(
-            "[identifier_positions_for_name] set_language failed for {}",
-            file_path
-        );
+        log::warn!("[identifier_positions_for_name] set_language failed for {file_path}");
         return None;
     }
     let tree = parser.parse(content, None).or_else(|| {
-        log::warn!(
-            "[identifier_positions_for_name] parse returned None for {}",
-            file_path
-        );
+        log::warn!("[identifier_positions_for_name] parse returned None for {file_path}");
         None
     })?;
 

@@ -72,8 +72,6 @@ pub fn get_file_symbol_diffs(
                 let source = &source;
                 let all_hunks = &all_hunks;
                 let old_ref = old_ref.as_str();
-                let comparison = comparison;
-                let repo_path = repo_path;
                 let rename_map = &rename_map;
                 s.spawn(move || {
                     // Get old content (use old path for renamed files)
@@ -363,9 +361,9 @@ pub fn find_symbol_definitions(
             .map(|l| {
                 // When searching a ref, git grep outputs "ref:path" — strip the ref prefix
                 if git_ref.is_some() {
-                    l.splitn(2, ':').nth(1).unwrap_or(l).to_string()
+                    l.splitn(2, ':').nth(1).unwrap_or(l).to_owned()
                 } else {
-                    l.to_string()
+                    l.to_owned()
                 }
             })
             .collect()

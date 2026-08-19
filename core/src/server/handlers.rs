@@ -635,9 +635,7 @@ async fn git_hunk_attribution(
 ) -> ApiResult<crate::sources::local_git::HunkAttribution> {
     blocking(move || {
         let source = LocalGitSource::new(PathBuf::from(&req.repo_path))?;
-        source
-            .attribute_hunks_to_commits(&req.comparison)
-            .map_err(Into::into)
+        source.attribute_hunks_to_commits(&req.comparison)
     })
     .await
 }

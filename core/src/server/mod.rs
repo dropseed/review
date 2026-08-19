@@ -103,7 +103,7 @@ fn build_router_with(assets: Option<AssetSource>) -> Router {
         log::info!("[server] serving the web bundle embedded in this binary");
         return api_404(api)
             .fallback(move |uri: axum::http::Uri| {
-                let assets = assets.clone();
+                let assets = std::sync::Arc::clone(&assets);
                 async move { embedded_asset(&assets, uri.path()) }
             })
             .layer(cors);

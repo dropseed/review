@@ -532,7 +532,10 @@ pub fn run() {
                 .fullscreen()
                 .build()?;
 
-            #[allow(unused_mut)]
+            #[allow(
+                unused_mut,
+                reason = "only the release build adds items to this submenu"
+            )]
             let mut help_menu_builder = SubmenuBuilder::new(app, "Help");
 
             #[cfg(not(debug_assertions))]

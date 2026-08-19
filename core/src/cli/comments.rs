@@ -697,7 +697,10 @@ struct CommentNoopJson<'a> {
     version: u64,
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the wording of one mutation's output, threaded from its caller"
+)]
 fn finish_mutation(
     id: &str,
     comparison: &str,

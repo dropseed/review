@@ -54,8 +54,8 @@ pub fn git_commit_streaming(
     let stdout_thread = spawn_stream_reader(
         child.stdout.take(),
         CommitStream::Stdout,
-        on_line.clone(),
-        seq.clone(),
+        Arc::clone(&on_line),
+        Arc::clone(&seq),
     );
     let stderr_thread =
         spawn_stream_reader(child.stderr.take(), CommitStream::Stderr, on_line, seq);

@@ -961,7 +961,10 @@ mod daemon_tests {
 
     /// A throwaway review home, so routing writes its `work.json` into a
     /// tempdir rather than the machine's real queue.
-    struct HomeGuard(#[allow(dead_code)] tempfile::TempDir);
+    struct HomeGuard(
+        #[allow(dead_code, reason = "held only so the tempdir outlives the test")]
+        tempfile::TempDir,
+    );
 
     impl Drop for HomeGuard {
         fn drop(&mut self) {
