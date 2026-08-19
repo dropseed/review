@@ -308,6 +308,7 @@ export interface Comparison {
 // Mirrors core's `service::targets::BaseReason`.
 export type BaseReason =
   | "override" // an explicit base override is pinned
+  | "pullRequest" // a fetched PR head vs the PR's base branch
   | "trunkWorkingTree" // the default branch vs itself (its uncommitted work)
   | "branchVsDefault" // a non-default branch vs the default branch
   | "singleCommit"; // any other rev reviewed as one commit

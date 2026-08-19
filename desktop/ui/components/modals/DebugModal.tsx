@@ -1,5 +1,6 @@
 import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { useReviewStore } from "../../stores";
+import { getPlatformServices } from "../../platform";
 import { useAllHunks } from "../../stores/selectors/hunks";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 
@@ -88,9 +89,12 @@ export function DebugModal({ isOpen, onClose }: DebugModalProps): ReactNode {
       ...JSON.parse(persistedJsonString || "{}"),
       ...JSON.parse(inMemoryJsonString || "{}"),
     };
-    navigator.clipboard
-      .writeText(JSON.stringify(combined, null, 2))
-      .catch((err) => {
+    // Through the platform service: `navigator.clipboard` is `undefined` in the
+    // desktop app, whose `tauri://localhost` origin WKWebView doesn't treat as
+    // a secure context. See `ErrorBoundary.handleCopy`.
+    getPlatformServices()
+      .clipboard.writeText(JSON.stringify(combined, null, 2))
+      .catch((err: unknown) => {
         console.error("Failed to copy:", err);
       });
   }, [persistedJsonString, inMemoryJsonString]);
