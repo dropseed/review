@@ -1,12 +1,6 @@
 import { useState } from "react";
 import type { DiffHunk, HunkState } from "../../../types";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogClose,
-} from "../../ui/dialog";
+import { Dialog, PanelDialog } from "../../ui/dialog";
 import { SimpleTooltip } from "../../ui/tooltip";
 import { HunkPreview } from "./HunkPreview";
 
@@ -114,19 +108,7 @@ export function MovePairModal({
         </SimpleTooltip>
       </div>
 
-      <DialogContent
-        className="w-[600px] max-w-[90vw] max-h-[80vh] flex flex-col rounded-lg"
-        onEscapeKeyDown={(e) => e.stopPropagation()}
-      >
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-3">
-            <span>Move Pair</span>
-          </DialogTitle>
-          <DialogClose className="rounded p-1 text-fg-muted hover:bg-surface-hover hover:text-fg-secondary transition-colors">
-            <XIcon className="h-4 w-4" />
-          </DialogClose>
-        </DialogHeader>
-
+      <PanelDialog title="Move Pair">
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-thin">
           {/* Source (removed) side */}
@@ -251,7 +233,7 @@ export function MovePairModal({
             </button>
           </div>
         </div>
-      </DialogContent>
+      </PanelDialog>
     </Dialog>
   );
 }

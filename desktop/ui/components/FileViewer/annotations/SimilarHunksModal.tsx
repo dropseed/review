@@ -1,12 +1,6 @@
 import { useState } from "react";
 import type { DiffHunk, HunkState } from "../../../types";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogClose,
-} from "../../ui/dialog";
+import { Dialog, PanelDialog } from "../../ui/dialog";
 import { SimpleTooltip } from "../../ui/tooltip";
 import { HunkPreview } from "./HunkPreview";
 
@@ -108,22 +102,7 @@ export function SimilarHunksModal({
         </button>
       </SimpleTooltip>
 
-      <DialogContent
-        className="w-[600px] max-w-[90vw] max-h-[80vh] flex flex-col rounded-lg"
-        onEscapeKeyDown={(e) => e.stopPropagation()}
-      >
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-3">
-            <span>Identical Changes</span>
-            <span className="rounded-full bg-surface-hover/50 px-2 py-0.5 text-xs font-normal text-fg-muted tabular-nums">
-              {totalCount} hunks
-            </span>
-          </DialogTitle>
-          <DialogClose className="rounded p-1 text-fg-muted hover:bg-surface-hover hover:text-fg-secondary transition-colors">
-            <XIcon className="h-4 w-4" />
-          </DialogClose>
-        </DialogHeader>
-
+      <PanelDialog title="Identical Changes" count={`${totalCount} hunks`}>
         {/* Status summary */}
         <div className="flex items-center gap-4 border-b border-edge px-4 py-2 text-xs">
           <StatusIndicator
@@ -226,7 +205,7 @@ export function SimilarHunksModal({
             </button>
           </div>
         </div>
-      </DialogContent>
+      </PanelDialog>
     </Dialog>
   );
 }

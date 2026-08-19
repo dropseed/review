@@ -2,13 +2,7 @@ import { useState, useMemo, useRef } from "react";
 import type { DiffHunk, HunkState } from "../../types";
 import { isHunkTrusted } from "../../types";
 import { getFilesByGlob } from "../../utils/glob";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogClose,
-} from "../ui/dialog";
+import { Dialog, PanelDialog } from "../ui/dialog";
 import {
   getFileProgress,
   StatusIndicator,
@@ -135,9 +129,8 @@ export function FilenameModal({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent
-        className="w-[600px] max-w-[90vw] max-h-[80vh] flex flex-col rounded-lg"
-        onEscapeKeyDown={(e) => e.stopPropagation()}
+      <PanelDialog
+        title={title}
         // Radix focuses the first tabbable element on open, which is the header's
         // close button; the glob input is the only thing worth typing into.
         onOpenAutoFocus={(e) => {
@@ -145,13 +138,6 @@ export function FilenameModal({
           inputRef.current?.focus();
         }}
       >
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogClose className="rounded p-1 text-fg-muted hover:bg-surface-hover hover:text-fg-secondary transition-colors">
-            <XIcon className="h-4 w-4" />
-          </DialogClose>
-        </DialogHeader>
-
         {/* Glob input */}
         <div className="border-b border-edge px-4 py-2 space-y-1">
           <input
@@ -304,7 +290,7 @@ export function FilenameModal({
             </div>
           </div>
         )}
-      </DialogContent>
+      </PanelDialog>
     </Dialog>
   );
 }
