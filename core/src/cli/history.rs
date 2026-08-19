@@ -392,7 +392,7 @@ mod tests {
     use super::*;
     use crate::review::central::tests::{setup_test, EnvGuard, ENV_LOCK};
     use crate::review::state::{Attributed, HunkState, LineAnnotation, Source};
-    use std::process::Command;
+    use crate::test_git::{git, git_out};
     use tempfile::TempDir;
 
     fn state_with(statuses: &[(&str, HunkStatus, Source)]) -> ReviewState {
@@ -473,25 +473,6 @@ mod tests {
 
     // --- end-to-end against a real repo and review ---
 
-    fn git(dir: &Path, args: &[&str]) {
-        let out = Command::new("git")
-            .args(args)
-            .current_dir(dir)
-            .env("GIT_AUTHOR_NAME", "t")
-            .env("GIT_AUTHOR_EMAIL", "t@t")
-            .env("GIT_COMMITTER_NAME", "t")
-            .env("GIT_COMMITTER_EMAIL", "t@t")
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_CONFIG_SYSTEM", "/dev/null")
-            .output()
-            .unwrap();
-        assert!(
-            out.status.success(),
-            "git {args:?} failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-    }
-
     /// A repo whose `feature` branch adds a line, plus an isolated REVIEW_HOME.
     /// Returns (guard, review_home, repo, spec).
     fn repo_with_feature() -> (EnvGuard, TempDir, TempDir, String) {
@@ -501,17 +482,7 @@ mod tests {
         std::fs::write(p.join("a.txt"), "one\n").unwrap();
         git(p, &["add", "."]);
         git(p, &["commit", "-qm", "first"]);
-        let base = String::from_utf8(
-            Command::new("git")
-                .args(["rev-parse", "--abbrev-ref", "HEAD"])
-                .current_dir(p)
-                .output()
-                .unwrap()
-                .stdout,
-        )
-        .unwrap()
-        .trim()
-        .to_owned();
+        let base = git_out(p, &["rev-parse", "--abbrev-ref", "HEAD"]);
         git(p, &["checkout", "-q", "-b", "feature"]);
         std::fs::write(p.join("a.txt"), "one\ntwo\nthree\n").unwrap();
         git(p, &["commit", "-aqm", "second"]);

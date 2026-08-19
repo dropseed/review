@@ -24,11 +24,6 @@ pub enum ClaudeError {
     Io(#[from] std::io::Error),
 }
 
-/// Check if the claude CLI is available
-pub fn check_claude_available() -> bool {
-    find_claude_executable().is_some()
-}
-
 /// Verify Claude CLI is available, returning `ClaudeNotFound` if not.
 pub(crate) fn ensure_claude_available() -> Result<(), ClaudeError> {
     find_claude_executable().ok_or(ClaudeError::ClaudeNotFound)?;

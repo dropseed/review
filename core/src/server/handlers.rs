@@ -1328,15 +1328,7 @@ async fn activity_unregister(Json(req): Json<RepoPathRequest>) -> ApiResult<()> 
 // ============================================================
 
 async fn misc_is_git_repo(Json(req): Json<FilePathRequest>) -> Json<bool> {
-    let result = std::process::Command::new("git")
-        .args(["rev-parse", "--git-dir"])
-        .current_dir(&req.path)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false);
-    Json(result)
+    Json(crate::service::util::is_git_repo(&PathBuf::from(&req.path)))
 }
 
 async fn misc_path_is_file(Json(req): Json<FilePathRequest>) -> Json<bool> {

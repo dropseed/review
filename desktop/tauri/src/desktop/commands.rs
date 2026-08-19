@@ -26,11 +26,11 @@ use review::service::{
 };
 use review::sources::github::{GhCliProvider, GitHubPrRef, GitHubProvider, PullRequest};
 use review::sources::local_git::{
-    CommitComparison, DiffShortStat, HunkAttribution, LocalBranchInfo, LocalGitSource,
-    RefDescription, RefEntry, RemoteInfo, SearchMatch, WorktreeCheckout, WorktreeInfo,
+    CommitComparison, DiffShortStat, HunkAttribution, LocalGitSource, RefDescription, RefEntry,
+    RemoteInfo, SearchMatch, WorktreeCheckout, WorktreeInfo,
 };
 use review::sources::traits::{
-    BranchList, CommitDetail, CommitEntry, Comparison, DiffSource, FileEntry, GitStatusSummary,
+    BranchList, CommitDetail, CommitEntry, Comparison, FileEntry, GitStatusSummary,
 };
 use review::symbols::{self, FileSymbolDiff, Symbol};
 use review::trust::patterns::TrustCategory;
@@ -310,15 +310,6 @@ pub async fn get_comparison_move_pairs(
     })
     .await
     .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-pub fn get_diff(repo_path: String, comparison: Comparison) -> Result<String, String> {
-    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
-
-    source
-        .get_diff(&comparison, None)
-        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -666,30 +657,6 @@ pub fn fetch_origin(repo_path: String) -> Result<(), String> {
 pub fn get_default_branch(repo_path: String) -> Result<String, String> {
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
     source.get_default_branch().map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn list_local_branches(
-    repo_path: String,
-    default_branch: String,
-) -> Result<Vec<LocalBranchInfo>, String> {
-    let t0 = Instant::now();
-    let source = LocalGitSource::new(repo_path.into()).map_err(|e| e.to_string())?;
-    let branches = source
-        .list_branches_ahead(&default_branch)
-        .map_err(|e| e.to_string())?;
-    info!(
-        "[list_local_branches] {} branches ahead in {:?}",
-        branches.len(),
-        t0.elapsed()
-    );
-    Ok(branches)
-}
-
-#[tauri::command]
-pub fn list_worktrees(repo_path: String) -> Result<Vec<WorktreeInfo>, String> {
-    let source = LocalGitSource::new(repo_path.into()).map_err(|e| e.to_string())?;
-    source.list_worktrees().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1120,11 +1087,6 @@ pub async fn get_hunk_attribution(
 }
 
 #[tauri::command]
-pub fn check_claude_available() -> bool {
-    review::ai::check_claude_available()
-}
-
-#[tauri::command]
 pub fn classify_hunks_static(hunks: Vec<DiffHunk>) -> ClassifyResponse {
     let t0 = Instant::now();
     debug!(
@@ -1264,16 +1226,6 @@ pub async fn get_file_symbol_diffs(
 }
 
 #[tauri::command]
-pub async fn get_dependency_graph(
-    repo_path: String,
-    file_paths: Vec<String>,
-    comparison: Comparison,
-) -> Result<symbols::graph::DependencyGraph, String> {
-    let symbol_diffs = get_file_symbol_diffs(repo_path, file_paths, comparison).await?;
-    Ok(symbols::graph::build_dependency_graph(&symbol_diffs))
-}
-
-#[tauri::command]
 pub async fn get_repo_symbols(repo_path: String) -> Result<Vec<RepoFileSymbols>, String> {
     tokio::task::spawn_blocking(move || {
         review::service::symbols::get_repo_symbols(&PathBuf::from(&repo_path))
@@ -1353,17 +1305,7 @@ pub fn is_dev_mode() -> bool {
 
 #[tauri::command]
 pub fn is_git_repo(path: String) -> bool {
-    // Use git itself to check if this is a valid repository.
-    // This handles all edge cases: regular repos, worktrees, submodules,
-    // bare repos, and repos with external git directories.
-    std::process::Command::new("git")
-        .args(["rev-parse", "--git-dir"])
-        .current_dir(&path)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    review::service::util::is_git_repo(&PathBuf::from(&path))
 }
 
 // --- Standalone file support ---
