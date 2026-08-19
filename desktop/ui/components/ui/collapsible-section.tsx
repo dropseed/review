@@ -104,48 +104,6 @@ export function CollapsibleSection({
   );
 }
 
-export function DisplayModeToggle({
-  mode,
-  onChange,
-}: {
-  mode: "tree" | "flat";
-  onChange: (mode: "tree" | "flat") => void;
-}): ReactNode {
-  const nextMode = mode === "tree" ? "flat" : "tree";
-  return (
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        onChange(nextMode);
-      }}
-      className="flex items-center justify-center w-6 h-6 rounded text-fg-muted hover:text-fg-secondary hover:bg-surface-raised transition-colors"
-      title={`Switch to ${nextMode} view`}
-    >
-      {mode === "tree" ? (
-        <svg
-          className="h-3 w-3"
-          fill="none"
-          viewBox="0 0 16 16"
-          stroke="currentColor"
-          strokeWidth={1.5}
-        >
-          <path d="M3 3h10M3 6h10M3 9h10M3 12h10" />
-        </svg>
-      ) : (
-        <svg
-          className="h-3 w-3"
-          fill="none"
-          viewBox="0 0 16 16"
-          stroke="currentColor"
-          strokeWidth={1.5}
-        >
-          <path d="M3 3h10M5 6h8M7 9h6M5 12h8" />
-        </svg>
-      )}
-    </button>
-  );
-}
-
 /** Simple menu item helper for CollapsibleSection menuContent */
 export { DropdownMenuItem as CollapsibleSectionMenuItem };
 export { DropdownMenuSeparator as CollapsibleSectionMenuSeparator };

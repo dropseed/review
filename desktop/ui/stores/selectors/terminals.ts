@@ -380,17 +380,6 @@ function sameGlance(a: TabRowGlance, b: TabRowGlance): boolean {
 }
 
 /**
- * The tab the user is in right now — the one the open panel is showing. Null
- * while the code has focus: there is no "terminal you're in" without one on
- * screen.
- */
-export function useCurrentTabId(): string | null {
-  return useReviewStore((s) =>
-    s.contentFocus === "code" ? null : s.activeTabId,
-  );
-}
-
-/**
  * Whether the stage is actually split between two halves right now.
  *
  * `TerminalDock` decides this, and the code half's own bar has to reach the

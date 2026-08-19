@@ -18,9 +18,3 @@ export function formatAge(dateStr: string): string {
   const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
   return formatSeconds(seconds);
 }
-
-/** Format a number compactly: 1234 → "1.2k" */
-export function compactNum(n: number): string {
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-  return String(n);
-}

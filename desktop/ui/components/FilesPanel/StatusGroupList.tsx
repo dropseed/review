@@ -23,7 +23,7 @@ import { TrustSection } from "../GuideView/TrustSection";
 import { FileListSection, CHECK_ICON } from "./FileListSection";
 import { FileSelectionProvider } from "./FilesPanelContext";
 import { FilenameModal } from "./FilenameModal";
-import { SORT_LABELS, SELECTED_CHECK } from "./PanelToolbar";
+import { SortMenuItems, SELECTED_CHECK } from "./PanelToolbar";
 import type { ProcessedFileEntry } from "./types";
 import { collectDirPaths } from "./FileTree.utils";
 
@@ -213,8 +213,6 @@ export function StatusGroupList({
   const files = useReviewStore((s) => s.files);
   const changesDisplayMode = useReviewStore((s) => s.changesDisplayMode);
   const setChangesDisplayMode = useReviewStore((s) => s.setChangesDisplayMode);
-  const fileSortOrder = useReviewStore((s) => s.fileSortOrder);
-  const setFileSortOrder = useReviewStore((s) => s.setFileSortOrder);
 
   // Load symbols when switching to flat mode (flat view annotates rows with
   // changed-symbol counts pulled from the symbol diff cache).
@@ -500,23 +498,10 @@ export function StatusGroupList({
     reviewState?.trustList,
   ]);
 
-  const sortMenuItems = useMemo(
-    () =>
-      (["name", "size", "modified"] as const).map((order) => (
-        <DropdownMenuItem key={order} onClick={() => setFileSortOrder(order)}>
-          <span className="flex-1">{SORT_LABELS[order]}</span>
-          {fileSortOrder === order && SELECTED_CHECK}
-        </DropdownMenuItem>
-      )),
-    // setFileSortOrder is a stable Zustand action — not in deps to avoid memo churn
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [fileSortOrder],
-  );
-
   const viewOptionsMenuContent = useMemo(
     () => (
       <>
-        {sortMenuItems}
+        <SortMenuItems />
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => setChangesDisplayMode("tree")}>
           <span className="flex-1">Tree view</span>
@@ -528,7 +513,7 @@ export function StatusGroupList({
         </DropdownMenuItem>
       </>
     ),
-    [sortMenuItems, changesDisplayMode, setChangesDisplayMode],
+    [changesDisplayMode, setChangesDisplayMode],
   );
 
   // Per-section dir paths for expand/collapse (only needed in tree mode)

@@ -60,24 +60,6 @@ export function FileIcon({ className = "w-4 h-4" }: IconProps) {
   );
 }
 
-export function TerminalIcon({ className = "w-4 h-4" }: IconProps) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <polyline points="4 17 10 11 4 5" />
-      <line x1="12" y1="19" x2="20" y2="19" />
-    </svg>
-  );
-}
-
 /**
  * Terminal glyph sized for a status marker rather than a button.
  *
@@ -153,66 +135,6 @@ export function BranchIcon({ className = "w-4 h-4" }: IconProps) {
       aria-hidden="true"
     >
       <path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Zm-6 0a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Zm8.25-.75a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z" />
-    </svg>
-  );
-}
-
-/** Monitor icon for working tree / current branch. */
-export function MonitorIcon({ className = "w-4 h-4" }: IconProps) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-      <line x1="8" y1="21" x2="16" y2="21" />
-      <line x1="12" y1="17" x2="12" y2="21" />
-    </svg>
-  );
-}
-
-/** Folder icon for review worktrees. */
-export function WorktreeIcon({ className = "w-4 h-4" }: IconProps) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 16 16"
-      fill="currentColor"
-      aria-hidden="true"
-    >
-      <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2C6.07 1.26 5.55 1 5 1H1.75Z" />
-    </svg>
-  );
-}
-
-/** A tree whose limbs are git-graph lines ending in commit circles. */
-export function GitTreeIcon({ className = "w-4 h-4" }: IconProps) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      aria-hidden="true"
-    >
-      <path d="M8 15V10.8" />
-      <path d="M8 10.8C8 9.6 5.6 9.6 5 8" />
-      <path d="M8 10.8C8 9.6 10.4 9.6 11 8" />
-      <g fill="currentColor" stroke="none">
-        <circle cx="8" cy="3.2" r="1.7" />
-        <circle cx="4.6" cy="4.6" r="1.6" />
-        <circle cx="11.4" cy="4.6" r="1.6" />
-        <circle cx="2.8" cy="7.2" r="1.5" />
-        <circle cx="13.2" cy="7.2" r="1.5" />
-      </g>
     </svg>
   );
 }

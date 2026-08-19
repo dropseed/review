@@ -29,7 +29,7 @@ import { CommitRangePicker } from "./CommitRangePicker";
 import { CommitRangeHeader } from "./CommitRangeHeader";
 import { AnnotationDock } from "./AnnotationDock";
 import { ReviewActionBar } from "./ReviewActionBar";
-import { SORT_LABELS, SELECTED_CHECK } from "./PanelToolbar";
+import { SortMenuItems } from "./PanelToolbar";
 import { visibleFilesPanelTabs } from "./tabs";
 import { BrowseRefBar } from "./BrowseRefBar";
 import { CommitLog } from "./CommitLog";
@@ -124,7 +124,6 @@ export function FilesPanel() {
 
   // File sort order (shared across Review + Browse tabs)
   const fileSortOrder = useReviewStore((s) => s.fileSortOrder);
-  const setFileSortOrder = useReviewStore((s) => s.setFileSortOrder);
 
   // Navigate to a specific hunk (used by FlatFileNode symbol rows)
   const handleNavigateToHunk = useCallback(
@@ -215,20 +214,6 @@ export function FilesPanel() {
     [pinnedFilesTree],
   );
   const browseDirPaths = pinnedRef ? pinnedDirPaths : allDirPaths;
-
-  // Sort menu items shared across tabs
-  const sortMenuItems = useMemo(
-    () =>
-      (["name", "size", "modified"] as const).map((order) => (
-        <DropdownMenuItem key={order} onClick={() => setFileSortOrder(order)}>
-          <span className="flex-1">{SORT_LABELS[order]}</span>
-          {fileSortOrder === order && SELECTED_CHECK}
-        </DropdownMenuItem>
-      )),
-    // setFileSortOrder is a stable Zustand action — not in deps to avoid memo churn
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [fileSortOrder],
-  );
 
   // Context menu support
   const openInSplit = useReviewStore((s) => s.openInSplit);
@@ -446,7 +431,7 @@ export function FilesPanel() {
                   menuContent={
                     browseDirPaths.size > 0 ? (
                       <>
-                        {sortMenuItems}
+                        <SortMenuItems />
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
                           onClick={() =>
