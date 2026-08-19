@@ -83,10 +83,6 @@ function FooterVersionInfo({
  * The columns button beside it is the queue read the other way round: instead
  * of one workspace at a time, every terminal in every one of them at once. It
  * belongs here because the row it opens spans the whole list this header names.
- *
- * The gear is settings, and it is here because the sidebar is the one piece of
- * chrome a thumb can reach: ⌘, was the whole of the app's answer, and the
- * drawer this component becomes at compact width had no way in at all.
  */
 function SidebarHeader({
   onToggle,
@@ -95,7 +91,6 @@ function SidebarHeader({
   onToggle: () => void;
   drawer?: boolean;
 }): ReactNode {
-  const openOverlay = useReviewStore((s) => s.openOverlay);
   const terminalOverview = useReviewStore((s) => s.terminalOverview);
   const toggleTerminalOverview = useReviewStore(
     (s) => s.toggleTerminalOverview,
@@ -164,29 +159,6 @@ function SidebarHeader({
           >
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          onClick={() => openOverlay("settings")}
-          className="flex items-center justify-center w-6 h-6 rounded
-                   text-fg-muted hover:text-fg-secondary hover:bg-surface-raised
-                   transition-colors"
-          aria-label="Settings"
-          title="Settings"
-        >
-          <svg
-            className="h-3 w-3"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
         </button>
         <button
