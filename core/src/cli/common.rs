@@ -121,7 +121,7 @@ pub fn resolve_review_arg(repo: &Path, spec: Option<&str>) -> Result<ResolvedRev
 
 /// Resolve an optional directory argument: the given path made absolute, or the
 /// current directory when it's absent. The shared spelling of "[DIR], defaulting
-/// to here" — `review [path]`, `review work resolve`, `review terminal start`.
+/// to here" — `review [path]`, `review workspace resolve`, `review terminal start`.
 pub fn resolve_cwd_arg(dir: Option<String>) -> Result<std::path::PathBuf, String> {
     match dir {
         Some(dir) => super::resolve_absolute(Path::new(&dir)),

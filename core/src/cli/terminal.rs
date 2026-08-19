@@ -487,7 +487,7 @@ async fn run_whoami(client: &DaemonClient, args: WhoamiArgs) -> Result<(), Strin
     );
     match &workspace {
         Some((id, Some(title))) => println!("Workspace \"{title}\" ({id})."),
-        Some((id, None)) => println!("Workspace {id} (no longer in the work queue)."),
+        Some((id, None)) => println!("Workspace {id} (no longer in the queue)."),
         None => println!("No workspace: this session is unattributed."),
     }
     Ok(())

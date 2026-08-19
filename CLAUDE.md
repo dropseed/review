@@ -189,18 +189,18 @@ The `review` binary (built with `--features cli`, source in `core/src/cli/`) is 
 
 The **guide** is an agent-authored grouping of a comparison's hunks into a themed walkthrough. The desktop app renders it but no longer generates it — agents compose it via `review guide add` (each add lands live through the file watcher); `guide show` reconciles the stored groups against the current diff and reports any unplaced hunks as `ungrouped`.
 
-**Work queue** — the sidebar's user-ordered "Working on" list, a priority queue of **workspaces**. Global (cross-repo), stored at `~/.review/work.json`; array order is the priority order. A workspace stores an optional title and its attachments; everything live (terminals, PRs, review state) is derived. Agents may read priorities and add/attach workspaces, but the ordering belongs to the user; only the user removes them in the UI (removal is their acknowledgment moment).
+**Workspaces** — the sidebar's user-ordered "Working on" list, a priority queue of **workspaces**. The CLI says `workspace` throughout (`review work` stays as an alias): the queue is the list, the workspace is the thing in it, and only the storage behind it is still named for the queue. Global (cross-repo), stored at `~/.review/work.json`; array order is the priority order. A workspace stores an optional title and its attachments; everything live (terminals, PRs, review state) is derived. Agents may read priorities and add/attach workspaces, but the ordering belongs to the user; only the user removes them in the UI (removal is their acknowledgment moment).
 
-- `review work [list] [--json]` — numbered list; `--json` is global to the subcommand
-- `review work add ["title"]` — the title is optional; adds always append
-- `review work reorder <id> <position>` (1-based) · `review work rename <id> ["title"]` (no title clears it) · `review work remove <id>`
-- `review work attach <id> [PATH] [--ref REF]` · `review work detach <id> [PATH]` — PATH defaults to the current directory
-- `review work resolve [DIR]` — preview a route without writing
+- `review workspace [list] [--json]` — numbered list; `--json` is global to the subcommand
+- `review workspace add ["title"]` — the title is optional; adds always append
+- `review workspace reorder <id> <position>` (1-based) · `review workspace rename <id> ["title"]` (no title clears it) · `review workspace remove <id>`
+- `review workspace attach <id> [PATH] [--ref REF]` · `review workspace detach <id> [PATH]` — PATH defaults to the current directory
+- `review workspace resolve [DIR]` — preview a route without writing
 - `<id>` accepts unique prefixes
 
 `core/src/work/router.rs` resolves any cwd to a workspace: the first one in queue order attached to that repo root (or plain directory when outside a repo), else a fresh one it mints (`autoCreated: true`) attached to it — so nothing the app shows is ever unattached. Because attachments are not exclusive, that tie-break is a heuristic: a wrong guess costs one drag of a terminal onto the right card. Naming a workspace explicitly (⌘T, `review terminal start --workspace`, ⌘K) lands there and **writes nothing** — what a workspace is about is answered by `attach`, not by where a shell happened to open.
 
-A workspace's terminals are the daemon's record, not the queue's: each session carries a `workspaceId`, set by whoever started it (`review terminal start`, the app's `terminal_start` — both route first). That is what every surface groups by, what `DaemonClient::reassign_sessions` moves when a terminal is dragged to another card, and what keeps a router-made workspace alive. `work::cleanup` is lazy — it runs on the two reads that hold both the queue and the daemon's liveness answer, `review work list` and the app's `work_list` — so the daemon never writes `work.json`. **With no daemon reachable, neither read cleans anything up**: an empty liveness set means "nothing is running", never "I don't know".
+A workspace's terminals are the daemon's record, not the queue's: each session carries a `workspaceId`, set by whoever started it (`review terminal start`, the app's `terminal_start` — both route first). That is what every surface groups by, what `DaemonClient::reassign_sessions` moves when a terminal is dragged to another card, and what keeps a router-made workspace alive. `work::cleanup` is lazy — it runs on the two reads that hold both the queue and the daemon's liveness answer, `review workspace list` and the app's `work_list` — so the daemon never writes `work.json`. **With no daemon reachable, neither read cleans anything up**: an empty liveness set means "nothing is running", never "I don't know".
 
 **Git index** — stage individual hunks (the thing `git add` can't do non-interactively):
 
@@ -220,7 +220,7 @@ A workspace's terminals are the daemon's record, not the queue's: each session c
 
 **Skills**: one bundled skill, `review-app`, covering all three surfaces an agent touches — reviewing a diff (hunks, trust, guide, comments), driving the app's terminals, and reading/feeding the work queue. The canonical source is `core/resources/skills/review-app/SKILL.md`, `include_str!`-embedded into the binary so the shipped CLI carries it. `review skill install` writes it into `~/.claude/skills/` and `$CODEX_HOME/skills/` (defaulting to `~/.codex/skills/`), and deletes the superseded `review-guide` / `review-terminals` skills it previously installed.
 
-Source layout: `mod.rs` (Cli, Commands enum, dispatch, comparison resolution shared with `review start`, `review use`); `common.rs` (`EffectiveStatus`, `mutate_review` retry, hunk-target parsing, spec-resolution precedence, `sync_classification`); `staging.rs`; `review_state.rs`; `comments.rs` (line-level comments / annotations + batch `comments submit`); `guide.rs` (guide grouping); `history.rs` (version history + undo); `skill.rs`; `terminal.rs` (daemon-backed terminal control). Mutations use optimistic version-conflict retry against `~/.review/.../*.json`.
+Source layout: `mod.rs` (Cli, Commands enum, dispatch, comparison resolution shared with `review start`, `review use`); `common.rs` (`EffectiveStatus`, `mutate_review` retry, hunk-target parsing, spec-resolution precedence, `sync_classification`); `staging.rs`; `review_state.rs`; `comments.rs` (line-level comments / annotations + batch `comments submit`); `guide.rs` (guide grouping); `history.rs` (version history + undo); `skill.rs`; `terminal.rs` (daemon-backed terminal control); `workspace.rs` (the `review workspace` queue commands). Mutations use optimistic version-conflict retry against `~/.review/.../*.json`.
 
 ## Debugging / Traces
 

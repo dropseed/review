@@ -563,7 +563,7 @@ pub fn cleanup(state: &mut WorkState, live: &HashSet<String>, grace: Duration) -
 /// `None` means "nobody can say", not "nothing is running" — see [`cleanup`] for
 /// why that difference is every auto-created workspace in the queue. Both readers
 /// that hold the queue and the daemon's answer at once (the app's `work_list` and
-/// `review work list`) go through here, so the distinction is decided once
+/// `review workspace list`) go through here, so the distinction is decided once
 /// instead of being restated at each of them.
 pub fn list_with_liveness(live: Option<&HashSet<String>>) -> Result<WorkState, WorkError> {
     match live {

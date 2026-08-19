@@ -504,7 +504,7 @@ pub async fn work_list(
     focused: Option<String>,
 ) -> Result<Vec<WorkspaceView>, String> {
     let t0 = Instant::now();
-    // The read that cleans up: this and `review work list` are the two places
+    // The read that cleans up: this and `review workspace list` are the two places
     // that hold the queue and the liveness answer at once.
     let live = live_workspaces(&terminals).await;
     let in_use = in_use(live, focused);
@@ -549,7 +549,7 @@ pub fn work_rename(id: String, title: Option<String>) -> Result<Vec<WorkspaceVie
 }
 
 /// Reorder an item. `position` is 0-based, matching the array the frontend
-/// dragged (the CLI's `review work reorder` is the 1-based surface).
+/// dragged (the CLI's `review workspace reorder` is the 1-based surface).
 #[tauri::command]
 pub fn work_move(id: String, position: usize) -> Result<Vec<WorkspaceView>, String> {
     let t0 = Instant::now();
