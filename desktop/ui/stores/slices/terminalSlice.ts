@@ -14,9 +14,9 @@ import {
 } from "../../utils/terminal-notifications";
 import { signalAttention } from "../../utils/attention";
 import type { ReviewStore, SliceCreatorWithClientAndStorage } from "../types";
+import { createDebouncedFn } from "../types";
 import {
   type TerminalTab,
-  type PaneNode,
   type SplitDirection,
   type DropEdge,
   makeTab,
@@ -26,11 +26,11 @@ import {
   pruneLeaves,
   collectLeafIds,
   expandedLeafIds,
-  firstLeafId,
   setLeafCollapsed,
   setSizesAtPath,
   reorderTabs,
   sanitizeTabs,
+  withRepairedFocus,
 } from "../../components/Terminal/pane-tree";
 
 export type { TerminalTab } from "../../components/Terminal/pane-tree";
@@ -55,15 +55,20 @@ export interface TerminalSlice {
   /**
    * Every tab, in strip order. Each holds a pane tree (iTerm/tmux style); this
    * is the structure the panel renders and the sidebar counts.
+   *
+   * Persisted, with the two below it — see `TAB_LAYOUT_KEY`. The sessions are
+   * the daemon's; how they are grouped and split is this window's, and a
+   * relaunch that couldn't remember it laid every session out as its own tab.
    */
   terminalTabs: TerminalTab[];
-  /** The tab the panel is showing. */
+  /** The tab the panel is showing (persisted). */
   activeTabId: string | null;
   /**
    * When each tab was last brought to the front, as a counter rather than a
    * clock — the only question asked of it is "which of these is most recent",
    * and two tabs activated in the same millisecond still have an order.
-   * Window-local: a tab id is too.
+   * Window-local, like the tab ids it is keyed by, and persisted with them so
+   * "the workspace's latest tab" survives a relaunch.
    */
   terminalTabUsedAt: Record<string, number>;
   /**
@@ -86,7 +91,7 @@ export interface TerminalSlice {
    * Whether the stage is showing every terminal in the app side by side
    * instead of one workspace's.
    *
-   * Deliberately not persisted, unlike every other flag here: this is a look
+   * Deliberately not persisted, unlike the layout above: this is a look
    * taken across the work and then put down, not a layout the window should
    * come back wearing. Launching into it would hide the code half of a
    * workspace nobody asked to leave.
@@ -105,7 +110,8 @@ export interface TerminalSlice {
 
   // ----- Actions -----
 
-  /** Load persisted panel preferences (open/width). */
+  /** Load persisted panel preferences (focus/width) and the saved tab layout,
+   *  which is applied once the daemon's session list has landed too. */
   hydrateTerminalPrefs: () => Promise<void>;
   setTerminalsSupported: (supported: boolean) => void;
 
@@ -684,36 +690,14 @@ export function movePaneInTab(
  * The tab as it looks once `sourceId` has left it, or null when the pane it
  * lost was its last one — a tab with no panes is not a tab.
  *
- * The one place the "collapse the tree and repair the focus" rule is written:
- * closing a pane, moving one to another tab, and reconciling against the
- * daemon's session list all end up here, so a tab can't pick its next focused
- * pane three different ways.
+ * Pairs the tree collapse with `withRepairedFocus`, which is where the "focus
+ * lands on a pane that is actually drawn" rule lives.
  */
 export function tabWithoutPane(
   tab: TerminalTab,
   sourceId: string,
 ): TerminalTab | null {
   return withRepairedFocus(tab, removeLeaf(tab.root, sourceId));
-}
-
-/** `tab` re-rooted at `root`, keeping its focus if that pane survived. Null
- *  when nothing survived. */
-function withRepairedFocus(
-  tab: TerminalTab,
-  root: PaneNode | null,
-): TerminalTab | null {
-  if (!root) return null;
-  // Repaired against the panes still *drawn*, not merely still present: a
-  // folded pane holds no keyboard focus and shows no cursor, so landing focus
-  // there leaves the tab with a dimmed terminal and nothing typing into it.
-  const showing = expandedLeafIds(root);
-  return {
-    ...tab,
-    root,
-    focused: showing.includes(tab.focused)
-      ? tab.focused
-      : (showing[0] ?? firstLeafId(root)),
-  };
 }
 
 /**
@@ -918,6 +902,16 @@ export function ingestTabs(
 /** Storage key for this window's tab/pane layout. */
 export const TAB_LAYOUT_KEY = "terminalTabLayout";
 
+/** The state the layout is made of — a write touching any of it is saved. */
+const LAYOUT_KEYS = [
+  "terminalTabs",
+  "activeTabId",
+  "terminalTabUsedAt",
+] as const;
+
+/** A divider drag writes the tree per frame; the file only needs the last. */
+const layoutSaveDebounce = 500;
+
 /**
  * The tab layout as it is written to (and read back from) storage.
  *
@@ -928,11 +922,13 @@ export const TAB_LAYOUT_KEY = "terminalTabLayout";
  * alone, and the part that used to be lost on every relaunch.
  */
 export interface PersistedTabLayout {
-  /** Tab list as stored — shape unverified until `sanitizeTabs` sees it. */
+  /** Tabs, active tab, and tab recency (so "the workspace's latest tab"
+   *  survives a relaunch) — every field as stored, and so unverified: this is
+   *  a file a person can edit and a format that outlives this version. Each is
+   *  checked where it is used. */
   tabs: unknown;
-  activeTabId: string | null;
-  /** Tab recency, so "the workspace's latest tab" survives a relaunch. */
-  usedAt: Record<string, number>;
+  activeTabId: unknown;
+  usedAt: unknown;
 }
 
 /**
@@ -952,10 +948,33 @@ export function restoreTabs(
   return ingestTabs(
     {
       terminalTabs: sanitizeTabs(layout.tabs),
-      activeTabId: layout.activeTabId ?? state.activeTabId,
+      activeTabId:
+        typeof layout.activeTabId === "string"
+          ? layout.activeTabId
+          : state.activeTabId,
     },
     Object.values(state.terminalSessions),
   );
+}
+
+/**
+ * The stamps in `stored` that still name a restored tab, and nothing else.
+ *
+ * Recency is only meaningful about tabs that came back, so a layout's stamps
+ * are filtered through them rather than restored wholesale.
+ */
+export function restoredRecency(
+  tabs: TerminalTab[],
+  stored: unknown,
+): Record<string, number> {
+  if (typeof stored !== "object" || stored === null) return {};
+  const stamps = stored as Record<string, unknown>;
+  const restored: Record<string, number> = {};
+  for (const tab of tabs) {
+    const at = stamps[tab.id];
+    if (typeof at === "number" && Number.isFinite(at)) restored[tab.id] = at;
+  }
+  return restored;
 }
 
 /**
@@ -1050,6 +1069,8 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
   /** Monotonic stamp for tab recency — see `terminalTabUsedAt`. */
   let useCounter = 0;
 
+  const debouncedLayoutSave = createDebouncedFn(layoutSaveDebounce);
+
   // ----- Layout persistence -----
   //
   // The daemon owns the sessions; how they are grouped into tabs and split
@@ -1057,13 +1078,14 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
   // memory — so every relaunch met the daemon's flat session list and laid
   // each one out as a tab of its own, panes and all.
 
-  /** The layout read back from storage, until it has been laid over sessions. */
-  let savedLayout: PersistedTabLayout | null = null;
-  /** Whether storage has answered — with a layout, or with there being none. */
-  let layoutLoaded = false;
+  /**
+   * What storage answered with: `undefined` until it has, then the stored
+   * layout or `null` for a window that has never saved one.
+   */
+  let savedLayout: PersistedTabLayout | null | undefined;
   /** Whether the daemon's session list has landed — the other half. */
   let sessionsIngested = false;
-  /** Whether the restore has run (or been settled as having nothing to do). */
+  /** Whether the restore has run (or settled as having nothing to restore). */
   let layoutRestored = false;
 
   /**
@@ -1073,16 +1095,19 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
    * wraps every session in a tab of its own on the way to being regrouped —
    * and saving those would overwrite the very layout being restored with the
    * flat one it is there to replace.
+   *
+   * Debounced, because a divider drag writes the tree on every frame it moves.
    */
   function saveLayout(): void {
     if (!layoutRestored) return;
-    const g = get();
-    const layout: PersistedTabLayout = {
-      tabs: g.terminalTabs,
-      activeTabId: g.activeTabId,
-      usedAt: g.terminalTabUsedAt,
-    };
-    storage.set(TAB_LAYOUT_KEY, layout);
+    debouncedLayoutSave(() => {
+      const g = get();
+      storage.set(TAB_LAYOUT_KEY, {
+        tabs: g.terminalTabs,
+        activeTabId: g.activeTabId,
+        usedAt: g.terminalTabUsedAt,
+      });
+    });
   }
 
   /**
@@ -1094,13 +1119,7 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
    */
   const set = (partial: Partial<ReviewStore>): void => {
     write(partial);
-    if (
-      "terminalTabs" in partial ||
-      "activeTabId" in partial ||
-      "terminalTabUsedAt" in partial
-    ) {
-      saveLayout();
-    }
+    if (LAYOUT_KEYS.some((key) => key in partial)) saveLayout();
   };
 
   /**
@@ -1109,35 +1128,32 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
    * The read is async and the session list is a round trip, so either can land
    * first; this runs on whichever arrives second and exactly once. Restoring
    * against sessions we haven't heard about yet would prune every pane in the
-   * layout as dead.
+   * layout as dead — which is also why a `terminalList` that never answers
+   * leaves the stored layout alone rather than replacing it with a degraded
+   * one: the next successful list settles it.
    */
   function restoreLayout(): void {
-    if (layoutRestored || !layoutLoaded || !sessionsIngested) return;
+    if (layoutRestored || savedLayout === undefined || !sessionsIngested) {
+      return;
+    }
     layoutRestored = true;
-    if (savedLayout) {
-      write(restoreTabs(get(), savedLayout));
-      restoreTabRecency(savedLayout.usedAt);
+    if (!savedLayout) {
+      // Nothing stored — start saving what this window has instead.
+      saveLayout();
+      return;
     }
-    // Save what the reconcile settled on, so panes whose session died while
-    // the app was closed don't sit in the file until the next real change.
-    saveLayout();
-  }
-
-  /** Re-seat tab recency on the restored tabs, and the counter above it. */
-  function restoreTabRecency(usedAt: unknown): void {
-    if (typeof usedAt !== "object" || usedAt === null) return;
-    const stored = usedAt as Record<string, unknown>;
-    const restored: Record<string, number> = {};
-    for (const tab of get().terminalTabs) {
-      const at = stored[tab.id];
-      if (typeof at !== "number" || !Number.isFinite(at)) continue;
-      restored[tab.id] = at;
-      // The counter has to outrun every stamp it inherited, or the first tab
-      // activated after a relaunch would read as older than one last touched
-      // days ago.
-      useCounter = Math.max(useCounter, at);
-    }
-    write({ terminalTabUsedAt: restored });
+    const restored = restoreTabs(get(), savedLayout);
+    const usedAt = restoredRecency(
+      restored.terminalTabs ?? [],
+      savedLayout.usedAt,
+    );
+    // The counter has to outrun every stamp it inherited, or the first tab
+    // activated after a relaunch would read as older than one last touched
+    // days ago.
+    useCounter = Math.max(useCounter, ...Object.values(usedAt));
+    // Saves on the way through, which is what settles panes whose session died
+    // while the app was closed.
+    set({ ...restored, terminalTabUsedAt: usedAt });
   }
 
   function subscribeSession(id: string): void {
@@ -1264,10 +1280,7 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
       // daemon has said which of their sessions are still running. Storage
       // answering "nothing stored" settles the restore just the same — a first
       // run has to start saving too.
-      if (!layoutRestored) {
-        savedLayout = layout ?? null;
-        layoutLoaded = true;
-      }
+      savedLayout = layout ?? null;
       const migrated: ContentFocus | null =
         legacyMode === "closed"
           ? "code"

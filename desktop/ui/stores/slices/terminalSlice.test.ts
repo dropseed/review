@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   applyTerminalStatus,
   sameTerminalStatus,
@@ -39,7 +39,6 @@ import {
   leaf,
   makeTab,
   splitLeaf,
-  sanitizeTabs,
 } from "../../components/Terminal/pane-tree";
 import type { TerminalTab } from "../../components/Terminal/pane-tree";
 import type {
@@ -1225,17 +1224,23 @@ describe("tab layout across relaunches", () => {
     usedAt: { tab1: 4, tab2: 9 },
   };
 
+  afterEach(() => vi.useRealTimers());
+
   /** The layout last written to storage. */
   const written = (writes: Record<string, unknown>) =>
     writes[TAB_LAYOUT_KEY] as PersistedTabLayout | undefined;
 
-  /** Its tabs, read back the way the next launch reads them. */
+  /** Its tabs, as stored. */
   const savedTabs = (writes: Record<string, unknown>): TerminalTab[] =>
-    sanitizeTabs(written(writes)?.tabs);
+    (written(writes)?.tabs as TerminalTab[] | undefined) ?? [];
 
-  /** The slice harness, primed with `savedLayout` on disk. */
+  /** Let the debounced save land. */
+  const settle = () => vi.advanceTimersByTime(1_000);
+
+  /** The slice harness on fake timers, primed with `savedLayout` on disk. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function relaunched(): any {
+    vi.useFakeTimers();
     const slice = makeSlice();
     slice.reads[TAB_LAYOUT_KEY] = savedLayout;
     return slice;
@@ -1313,9 +1318,11 @@ describe("tab layout across relaunches", () => {
 
     // Startup lays every session out as its own tab on the way to being
     // regrouped; saving that would overwrite the layout still being restored.
+    settle();
     expect(writes[TAB_LAYOUT_KEY]).toBeUndefined();
 
     await get().hydrateTerminalPrefs();
+    settle();
 
     expect(savedTabs(writes)).toHaveLength(1);
   });
@@ -1326,6 +1333,7 @@ describe("tab layout across relaunches", () => {
     await get().hydrateTerminalPrefs();
     get().ingestTerminalList([session("a", "/r"), session("b", "/r")]);
     get().movePaneToNewTab("b");
+    settle();
 
     const tabs = savedTabs(writes);
     expect(tabs).toHaveLength(2);
@@ -1333,14 +1341,33 @@ describe("tab layout across relaunches", () => {
   });
 
   it("saves the plain layout of a window that had none stored", async () => {
+    vi.useFakeTimers();
     const { get, writes } = makeSlice();
 
     // Storage answering "nothing stored" settles the restore just as a layout
     // does — otherwise a first run would never save one.
     await get().hydrateTerminalPrefs();
     get().ingestTerminalList([session("a", "/r")]);
+    settle();
 
     expect(savedTabs(writes)).toHaveLength(1);
+  });
+
+  it("writes a divider drag once, at where it was let go", async () => {
+    const { get, writes } = relaunched();
+
+    await get().hydrateTerminalPrefs();
+    get().ingestTerminalList([session("a", "/r"), session("b", "/r")]);
+    settle();
+
+    // A drag calls this per frame; the file only wants the last one.
+    get().resizeSplit("tab1", [], [0.5, 0.5]);
+    get().resizeSplit("tab1", [], [0.8, 0.2]);
+    const midDrag = savedTabs(writes)[0].root;
+    settle();
+
+    expect(midDrag).toMatchObject({ sizes: [0.6, 0.4] });
+    expect(savedTabs(writes)[0].root).toMatchObject({ sizes: [0.8, 0.2] });
   });
 
   it("restoreTabs ignores a layout that isn't one", () => {

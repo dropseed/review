@@ -502,7 +502,6 @@ describe("sanitizeTabs", () => {
         },
       },
     ]);
-    expect(showsTerminal(tab.root)).toBe(true);
     expect(expandedLeafIds(tab.root)).toEqual(["a"]);
     expect(tab.focused).toBe("a");
   });

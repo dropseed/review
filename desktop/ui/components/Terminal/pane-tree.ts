@@ -47,9 +47,53 @@ export function makeTab(id: string, terminalId: string): TerminalTab {
   return { id, root: leaf(terminalId), focused: terminalId };
 }
 
+/**
+ * `tab` re-rooted at `root`, keeping its focus if that pane survived. Null when
+ * nothing survived.
+ *
+ * The one place the "repair the focus" rule is written: closing a pane, moving
+ * one to another tab, reconciling against the daemon's session list and
+ * rebuilding a stored layout all end up here, so a tab can't pick its next
+ * focused pane four different ways.
+ */
+export function withRepairedFocus(
+  tab: Pick<TerminalTab, "id" | "focused">,
+  root: PaneNode | null,
+): TerminalTab | null {
+  if (!root) return null;
+  // Repaired against the panes still *drawn*, not merely still present: a
+  // folded pane holds no keyboard focus and shows no cursor, so landing focus
+  // there leaves the tab with a dimmed terminal and nothing typing into it.
+  const showing = expandedLeafIds(root);
+  return {
+    ...tab,
+    root,
+    focused: showing.includes(tab.focused)
+      ? tab.focused
+      : (showing[0] ?? firstLeafId(root)),
+  };
+}
+
 /** Even fractions for `n` children (sums to 1). */
 export function evenSizes(n: number): number[] {
   return Array.from({ length: n }, () => 1 / n);
+}
+
+/**
+ * A split rebuilt around the children that survived, with their sizes.
+ *
+ * The "a split of one *is* that child, and a split of none is nothing" rule,
+ * written once: removals, prunes and the rebuild from storage all fold their
+ * trees back up through here.
+ */
+function rebuildSplit(
+  direction: SplitDirection,
+  children: PaneNode[],
+  sizes: number[],
+): PaneNode | null {
+  if (children.length === 0) return null;
+  if (children.length === 1) return children[0];
+  return { type: "split", direction, children, sizes: normalize(sizes) };
 }
 
 /** Renormalize sizes to sum to 1 (guards against drift after removals). */
@@ -265,9 +309,7 @@ function removeLeafFrom(node: PaneNode, targetId: string): PaneNode | null {
     }
   });
 
-  if (children.length === 0) return null;
-  if (children.length === 1) return children[0];
-  return { ...node, children, sizes: normalize(sizes) };
+  return rebuildSplit(node.direction, children, sizes);
 }
 
 /**
@@ -297,9 +339,7 @@ function pruneLeavesOf(
       sizes.push(node.sizes[i]);
     }
   });
-  if (children.length === 0) return null;
-  if (children.length === 1) return children[0];
-  return { ...node, children, sizes: normalize(sizes) };
+  return rebuildSplit(node.direction, children, sizes);
 }
 
 /**
@@ -390,26 +430,16 @@ function sanitizeNode(value: unknown, seen: Set<string>): PaneNode | null {
     if (!node) return;
     children.push(node);
     const size = rawSizes[i];
-    sizes.push(
-      typeof size === "number" && Number.isFinite(size) && size > 0 ? size : 0,
-    );
+    sizes.push(Number.isFinite(size) && size > 0 ? size : 0);
   });
 
-  // Same collapse rules as a removal: a split down to one child *is* that
-  // child, and an emptied one is nothing at all.
-  if (children.length === 0) return null;
-  if (children.length === 1) return children[0];
-
-  return {
-    type: "split",
-    direction: value.direction === "column" ? "column" : "row",
+  return rebuildSplit(
+    value.direction === "column" ? "column" : "row",
     children,
     // One unusable fraction discards the whole row rather than mixing a stored
     // size with an invented one, which would draw a layout nobody dragged.
-    sizes: sizes.every((s) => s > 0)
-      ? normalize(sizes)
-      : evenSizes(children.length),
-  };
+    sizes.every((s) => s > 0) ? sizes : evenSizes(children.length),
+  );
 }
 
 /**
@@ -432,18 +462,13 @@ export function sanitizeTabs(value: unknown): TerminalTab[] {
     if (!isRecord(raw)) continue;
     const id = raw.id;
     if (typeof id !== "string" || !id || seenTabs.has(id)) continue;
-    const root = ensureSomethingShows(sanitizeNode(raw.root, seenTerminals));
-    if (!root) continue;
-    const showing = expandedLeafIds(root);
+    const tab = withRepairedFocus(
+      { id, focused: typeof raw.focused === "string" ? raw.focused : "" },
+      ensureSomethingShows(sanitizeNode(raw.root, seenTerminals)),
+    );
+    if (!tab) continue;
     seenTabs.add(id);
-    tabs.push({
-      id,
-      root,
-      focused:
-        typeof raw.focused === "string" && showing.includes(raw.focused)
-          ? raw.focused
-          : (showing[0] ?? firstLeafId(root)),
-    });
+    tabs.push(tab);
   }
 
   return tabs;
