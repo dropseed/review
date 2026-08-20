@@ -49,7 +49,6 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
                         is_active: false,
                         old_sha: None,
                         new_sha: Some(status.head_ref_oid),
-                        diff_stats: None,
                         missing_refs: vec![],
                     };
                 }
@@ -64,7 +63,6 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
                         is_active: true,
                         old_sha: input.cached_old_sha,
                         new_sha: Some(status.head_ref_oid),
-                        diff_stats: None,
                         missing_refs: vec![],
                     };
                 }
@@ -77,7 +75,6 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
                             is_active: true,
                             old_sha: None,
                             new_sha: Some(status.head_ref_oid),
-                            diff_stats: None,
                             missing_refs: vec![],
                         };
                     }
@@ -95,7 +92,6 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
                     is_active: is_diff_active(&stats),
                     old_sha: None,
                     new_sha: Some(status.head_ref_oid),
-                    diff_stats: stats,
                     missing_refs: vec![],
                 };
             }
@@ -105,7 +101,6 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
                     is_active: false,
                     old_sha: None,
                     new_sha: None,
-                    diff_stats: None,
                     missing_refs: vec![],
                 };
             }
@@ -121,7 +116,6 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
                 is_active: false,
                 old_sha: None,
                 new_sha: None,
-                diff_stats: None,
                 missing_refs: vec![],
             };
         }
@@ -142,7 +136,6 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
                 is_active: false,
                 old_sha: None,
                 new_sha: None,
-                diff_stats: None,
                 missing_refs: vec![input.ref_name.clone()],
             };
         }
@@ -156,7 +149,6 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
             is_active: is_diff_active(&stats),
             old_sha: None,
             new_sha: None,
-            diff_stats: stats,
             missing_refs: vec![],
         };
     }
@@ -172,7 +164,6 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
             is_active: false,
             old_sha: None,
             new_sha: None,
-            diff_stats: None,
             missing_refs,
         };
     }
@@ -192,7 +183,6 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
             is_active: resolved_old != resolved_new,
             old_sha: Some(resolved_old),
             new_sha: Some(resolved_new),
-            diff_stats: None,
             missing_refs: vec![],
         };
     }
@@ -204,7 +194,6 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
         is_active: is_diff_active(&stats),
         old_sha: Some(resolved_old),
         new_sha: Some(resolved_new),
-        diff_stats: stats,
         missing_refs: vec![],
     }
 }

@@ -147,7 +147,6 @@ pub struct ReviewFreshnessResult {
     pub is_active: bool,
     pub old_sha: Option<String>,
     pub new_sha: Option<String>,
-    pub diff_stats: Option<crate::sources::local_git::DiffShortStat>,
     /// Refs from the comparison that no longer exist (e.g. deleted branch).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub missing_refs: Vec<String>,

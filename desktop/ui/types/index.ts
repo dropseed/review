@@ -726,7 +726,6 @@ export interface ReviewLoadResult {
 export interface GlobalReviewSummary extends ReviewSummary {
   repoPath: string;
   repoName: string;
-  diffStats?: DiffShortStat;
   /** How much of this review is present locally, derived by the backend. */
   tier: ReviewTier;
 }
@@ -988,7 +987,6 @@ export interface ReviewFreshnessResult {
   isActive: boolean;
   oldSha: string | null;
   newSha: string | null;
-  diffStats: DiffShortStat | null;
   /** Refs from the comparison that no longer exist (e.g. deleted branch). */
   missingRefs?: string[];
 }
