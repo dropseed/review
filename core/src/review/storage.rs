@@ -2,7 +2,6 @@ use super::central;
 use super::migrate;
 use super::state::{ReviewState, ReviewSummary};
 use crate::sources::github::GitHubPrRef;
-use crate::sources::local_git::DiffShortStat;
 use serde::Serialize;
 use std::fs;
 use std::io;
@@ -89,8 +88,6 @@ pub struct GlobalReviewSummary {
     pub repo_path: String,
     #[serde(rename = "repoName")]
     pub repo_name: String,
-    #[serde(rename = "diffStats")]
-    pub diff_stats: Option<DiffShortStat>,
     /// How much of this review is present locally. Derived here rather than in
     /// the UI so the cheap listing and the authoritative probe in
     /// [`crate::service::pr::tier`] can never give different answers for the
@@ -110,12 +107,6 @@ pub fn list_all_reviews_global() -> Result<Vec<GlobalReviewSummary>, StorageErro
             continue;
         }
 
-        // Diff stats are intentionally NOT computed here: each shortstat fans
-        // out to ~5 git subprocesses, and this fn iterates *every* saved review
-        // across *every* registered repo, so populating stats inline scaled to
-        // dozens of git spawns per call. Stats are filled in by the freshness
-        // flow (`service::freshness::check_reviews_freshness`), which has
-        // SHA-cache short-circuiting and runs reviews in parallel.
         match list_saved_reviews(&repo_path) {
             Ok(summaries) => {
                 // Two git calls for the whole repo at most, and only when it has
@@ -154,7 +145,6 @@ pub fn list_all_reviews_global() -> Result<Vec<GlobalReviewSummary>, StorageErro
                         summary,
                         repo_path: entry.path.clone(),
                         repo_name: entry.name.clone(),
-                        diff_stats: None,
                         tier,
                     });
                 }

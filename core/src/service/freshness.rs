@@ -11,10 +11,8 @@ use crate::sources::traits::Comparison;
 use super::{ReviewFreshnessInput, ReviewFreshnessResult};
 
 /// A diff is considered active when it has any changed files, additions, or deletions.
-pub fn is_diff_active(stats: &Option<DiffShortStat>) -> bool {
-    stats
-        .as_ref()
-        .is_some_and(|s| s.file_count > 0 || s.additions > 0 || s.deletions > 0)
+pub fn is_diff_active(stats: Option<DiffShortStat>) -> bool {
+    stats.is_some_and(|s| s.file_count > 0 || s.additions > 0 || s.deletions > 0)
 }
 
 /// Detect missing refs by checking if a non-empty ref resolved to the empty tree.
@@ -49,7 +47,6 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
                         is_active: false,
                         old_sha: None,
                         new_sha: Some(status.head_ref_oid),
-                        diff_stats: None,
                         missing_refs: vec![],
                     };
                 }
@@ -64,7 +61,6 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
                         is_active: true,
                         old_sha: input.cached_old_sha,
                         new_sha: Some(status.head_ref_oid),
-                        diff_stats: None,
                         missing_refs: vec![],
                     };
                 }
@@ -77,7 +73,6 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
                             is_active: true,
                             old_sha: None,
                             new_sha: Some(status.head_ref_oid),
-                            diff_stats: None,
                             missing_refs: vec![],
                         };
                     }
@@ -92,10 +87,9 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
                 .and_then(|(comparison, _)| source.get_diff_shortstat(&comparison).ok());
                 return ReviewFreshnessResult {
                     key,
-                    is_active: is_diff_active(&stats),
+                    is_active: is_diff_active(stats),
                     old_sha: None,
                     new_sha: Some(status.head_ref_oid),
-                    diff_stats: stats,
                     missing_refs: vec![],
                 };
             }
@@ -105,7 +99,6 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
                     is_active: false,
                     old_sha: None,
                     new_sha: None,
-                    diff_stats: None,
                     missing_refs: vec![],
                 };
             }
@@ -121,7 +114,6 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
                 is_active: false,
                 old_sha: None,
                 new_sha: None,
-                diff_stats: None,
                 missing_refs: vec![],
             };
         }
@@ -142,7 +134,6 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
                 is_active: false,
                 old_sha: None,
                 new_sha: None,
-                diff_stats: None,
                 missing_refs: vec![input.ref_name.clone()],
             };
         }
@@ -150,13 +141,11 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
 
     // Working tree comparisons always need re-check
     if source.include_working_tree(&comparison) {
-        let stats = source.get_diff_shortstat(&comparison).ok();
         return ReviewFreshnessResult {
             key,
-            is_active: is_diff_active(&stats),
+            is_active: is_diff_active(source.get_diff_shortstat(&comparison).ok()),
             old_sha: None,
             new_sha: None,
-            diff_stats: stats,
             missing_refs: vec![],
         };
     }
@@ -172,7 +161,6 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
             is_active: false,
             old_sha: None,
             new_sha: None,
-            diff_stats: None,
             missing_refs,
         };
     }
@@ -192,19 +180,16 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
             is_active: resolved_old != resolved_new,
             old_sha: Some(resolved_old),
             new_sha: Some(resolved_new),
-            diff_stats: None,
             missing_refs: vec![],
         };
     }
 
     // SHAs changed — re-check diff stats
-    let stats = source.get_diff_shortstat(&comparison).ok();
     ReviewFreshnessResult {
         key,
-        is_active: is_diff_active(&stats),
+        is_active: is_diff_active(source.get_diff_shortstat(&comparison).ok()),
         old_sha: Some(resolved_old),
         new_sha: Some(resolved_new),
-        diff_stats: stats,
         missing_refs: vec![],
     }
 }
@@ -250,27 +235,27 @@ mod tests {
 
     #[test]
     fn is_diff_active_false_when_no_stats() {
-        assert!(!is_diff_active(&None));
+        assert!(!is_diff_active(None));
     }
 
     #[test]
     fn is_diff_active_false_when_all_zero() {
-        assert!(!is_diff_active(&Some(stats(0, 0, 0))));
+        assert!(!is_diff_active(Some(stats(0, 0, 0))));
     }
 
     #[test]
     fn is_diff_active_true_when_files_changed() {
-        assert!(is_diff_active(&Some(stats(1, 0, 0))));
+        assert!(is_diff_active(Some(stats(1, 0, 0))));
     }
 
     #[test]
     fn is_diff_active_true_when_only_additions() {
-        assert!(is_diff_active(&Some(stats(0, 3, 0))));
+        assert!(is_diff_active(Some(stats(0, 3, 0))));
     }
 
     #[test]
     fn is_diff_active_true_when_only_deletions() {
-        assert!(is_diff_active(&Some(stats(0, 0, 2))));
+        assert!(is_diff_active(Some(stats(0, 0, 2))));
     }
 
     #[test]
