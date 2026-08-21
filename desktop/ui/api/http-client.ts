@@ -762,12 +762,23 @@ export class HttpClient implements ApiClient {
     return this.post("/api/work/add", { title, attachments });
   }
 
-  async removeWorkspace(id: string): Promise<Workspace[]> {
-    return this.post("/api/work/remove", { id });
+  async removeWorkspace(id: string, recursive = false): Promise<Workspace[]> {
+    return this.post("/api/work/remove", { id, recursive });
   }
 
-  async moveWorkspace(id: string, position: number): Promise<Workspace[]> {
-    return this.post("/api/work/move", { id, position });
+  async nestWorkspace(
+    id: string,
+    parentId: string | null,
+  ): Promise<Workspace[]> {
+    return this.post("/api/work/nest", { id, parentId });
+  }
+
+  async moveWorkspace(
+    id: string,
+    position: number,
+    keepParent = false,
+  ): Promise<Workspace[]> {
+    return this.post("/api/work/move", { id, position, keepParent });
   }
 
   async attachWorkspace(

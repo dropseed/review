@@ -1,5 +1,5 @@
 //! Workspace subcommands: `workspace [list] | add | remove | rename | reorder |
-//! attach | detach | resolve` (aliased as `work`).
+//! nest | unnest | attach | detach | resolve` (aliased as `work`).
 //!
 //! The queue is the global, user-ordered list of the workspaces you intend to
 //! work on next (see [`crate::work`]). It is cross-repo, so nothing here
@@ -17,7 +17,7 @@ use serde_json::json;
 
 use crate::daemon::{socket_path, DaemonClient};
 use crate::work::router::{self, RouteResult};
-use crate::work::{self, Attachment, Workspace};
+use crate::work::{self, Attachment, Removal, WorkState, Workspace};
 
 use super::common::{print_json, resolve_cwd_arg};
 
@@ -40,11 +40,15 @@ pub enum WorkspaceAction {
     /// Add a workspace to the end of the queue
     Add(AddArgs),
     /// Remove a workspace
-    Remove(IdArgs),
+    Remove(RemoveArgs),
     /// Retitle a workspace (omit the title to go back to a derived one)
     Rename(RenameArgs),
     /// Move a workspace to a new position in the queue (1-based)
     Reorder(ReorderArgs),
+    /// Put a workspace under another one
+    Nest(NestArgs),
+    /// Take a workspace back out to the top level
+    Unnest(IdArgs),
     /// Show a repository in a workspace
     Attach(AttachArgs),
     /// Stop showing a repository in a workspace
@@ -66,6 +70,19 @@ pub struct IdArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct RemoveArgs {
+    /// Workspace id (a unique prefix is accepted)
+    pub id: String,
+    /// Remove everything nested under it too
+    ///
+    /// Without this, anything nested under the workspace comes up to its level
+    /// and stays in the queue — the safe default for a surface with nobody to
+    /// ask. The app asks, and passes the answer through here.
+    #[arg(long, short = 'r')]
+    pub recursive: bool,
+}
+
+#[derive(Debug, Args)]
 pub struct RenameArgs {
     /// Workspace id (a unique prefix is accepted)
     pub id: String,
@@ -79,6 +96,21 @@ pub struct ReorderArgs {
     pub id: String,
     /// New position, 1-based (1 is the top of the queue)
     pub position: usize,
+    /// Stay under whatever it is nested under
+    ///
+    /// Without this the workspace lands at the depth of the row it displaces,
+    /// which is how a `reorder` also takes one out of (or into) a group.
+    #[arg(long = "keep-parent")]
+    pub keep_parent: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct NestArgs {
+    /// Workspace id to nest (a unique prefix is accepted)
+    pub id: String,
+    /// The workspace it goes under (a unique prefix is accepted)
+    #[arg(long = "under", value_name = "WORKSPACE")]
+    pub under: String,
 }
 
 #[derive(Debug, Args)]
@@ -115,6 +147,8 @@ pub fn run_workspace(args: WorkspaceArgs) -> Result<(), String> {
         Some(WorkspaceAction::Remove(a)) => run_remove(a, json),
         Some(WorkspaceAction::Rename(a)) => run_rename(a, json),
         Some(WorkspaceAction::Reorder(a)) => run_reorder(a, json),
+        Some(WorkspaceAction::Nest(a)) => run_nest(a, json),
+        Some(WorkspaceAction::Unnest(a)) => run_unnest(a, json),
         Some(WorkspaceAction::Attach(a)) => run_attach(a, json),
         Some(WorkspaceAction::Detach(a)) => run_detach(a, json),
         Some(WorkspaceAction::Resolve(a)) => run_resolve(a, json),
@@ -173,10 +207,18 @@ fn run_list(json: bool) -> Result<(), String> {
         println!("No workspaces. Add one with `review workspace add \"...\"`.");
         return Ok(());
     }
+    // Numbered straight down the list — the numbers are queue positions, which
+    // `reorder` takes — with the indent saying which workspace sits under which.
     for (i, view) in views.iter().enumerate() {
-        println!("{}. {}  {}", i + 1, view.display_title, view.workspace.id);
+        let indent = "  ".repeat(view.depth);
+        println!(
+            "{}. {indent}{}  {}",
+            i + 1,
+            view.display_title,
+            view.workspace.id
+        );
         for attachment in &view.workspace.attachments {
-            println!("     {}", attachment.label());
+            println!("     {indent}{}", attachment.label());
         }
     }
     Ok(())
@@ -184,11 +226,28 @@ fn run_list(json: bool) -> Result<(), String> {
 
 /// Print a workspace after a mutation: the JSON workspace, or a one-line
 /// confirmation.
-fn report(json: bool, workspace: Workspace, message: &str) {
+///
+/// The whole queue comes along because a view carries where the workspace sits
+/// in it — `depth` and the named chain above it — which cannot be read off the
+/// workspace alone.
+fn report(json: bool, state: &WorkState, workspace: Workspace, message: &str) {
     if json {
-        print_json(&work::WorkspaceView::from(workspace));
+        print_json(&work::view_of(&state.workspaces, workspace));
     } else {
         println!("{message}");
+    }
+}
+
+/// "the api half" under "ship it", for a message that has to say where
+/// something landed. Just the title when it is at the top level.
+fn placement(state: &WorkState, workspace: &Workspace) -> String {
+    let view = work::view_of(&state.workspaces, workspace.clone());
+    match view.ancestors.last() {
+        Some(parent) => format!(
+            "\"{}\" under \"{}\"",
+            view.display_title, parent.display_title
+        ),
+        None => format!("\"{}\"", view.display_title),
     }
 }
 
@@ -200,19 +259,50 @@ fn run_add(args: AddArgs, json: bool) -> Result<(), String> {
         state.workspaces.len(),
         ws.id
     );
-    report(json, ws, &message);
+    report(json, &state, ws, &message);
     Ok(())
 }
 
-fn run_remove(args: IdArgs, json: bool) -> Result<(), String> {
-    let (_state, ws) = work::remove(&args.id).map_err(|e| e.to_string())?;
-    let message = format!("Removed \"{}\" ({}).", ws.display_title(), ws.id);
-    report(json, ws, &message);
+fn run_remove(args: RemoveArgs, json: bool) -> Result<(), String> {
+    let mode = if args.recursive {
+        Removal::Subtree
+    } else {
+        Removal::PromoteChildren
+    };
+    let (state, removed) = work::remove(&args.id, mode).map_err(|e| e.to_string())?;
+    let message = match removed.descendants.len() {
+        0 => format!(
+            "Removed \"{}\" ({}).",
+            removed.workspace.display_title(),
+            removed.workspace.id
+        ),
+        n => format!(
+            "Removed \"{}\" ({}) and {n} nested {}.",
+            removed.workspace.display_title(),
+            removed.workspace.id,
+            if n == 1 { "workspace" } else { "workspaces" }
+        ),
+    };
+    report(json, &state, removed.workspace, &message);
+    Ok(())
+}
+
+fn run_nest(args: NestArgs, json: bool) -> Result<(), String> {
+    let (state, ws) = work::set_parent(&args.id, Some(&args.under)).map_err(|e| e.to_string())?;
+    let message = format!("Nested {}.", placement(&state, &ws));
+    report(json, &state, ws, &message);
+    Ok(())
+}
+
+fn run_unnest(args: IdArgs, json: bool) -> Result<(), String> {
+    let (state, ws) = work::set_parent(&args.id, None).map_err(|e| e.to_string())?;
+    let message = format!("\"{}\" is at the top level.", ws.display_title());
+    report(json, &state, ws, &message);
     Ok(())
 }
 
 fn run_rename(args: RenameArgs, json: bool) -> Result<(), String> {
-    let (_state, ws) = work::rename(&args.id, args.title.as_deref()).map_err(|e| e.to_string())?;
+    let (state, ws) = work::rename(&args.id, args.title.as_deref()).map_err(|e| e.to_string())?;
     let message = match ws.title {
         Some(_) => format!("Renamed {} to \"{}\".", ws.id, ws.display_title()),
         // Cleared: what it is called now is whatever it is showing.
@@ -222,7 +312,7 @@ fn run_rename(args: RenameArgs, json: bool) -> Result<(), String> {
             ws.display_title()
         ),
     };
-    report(json, ws, &message);
+    report(json, &state, ws, &message);
     Ok(())
 }
 
@@ -230,33 +320,40 @@ fn run_reorder(args: ReorderArgs, json: bool) -> Result<(), String> {
     // 1-based on the way in, to match the printed list; 0 and 1 both mean "top"
     // rather than erroring on an off-by-one.
     let to_index = args.position.saturating_sub(1);
-    let (state, ws) = work::move_workspace(&args.id, to_index).map_err(|e| e.to_string())?;
-    // Report where it actually landed, which differs from what was asked for
-    // when the position was past the end.
-    let position = to_index.min(state.workspaces.len().saturating_sub(1)) + 1;
-    let message = format!("Moved \"{}\" to position {position}.", ws.display_title());
-    report(json, ws, &message);
+    let (state, ws) =
+        work::move_workspace(&args.id, to_index, args.keep_parent).map_err(|e| e.to_string())?;
+    // Read the landing back out of the queue rather than repeating the clamp:
+    // a position past the end clamps, and a workspace carrying a subtree with
+    // it lands somewhere neither the request nor the clamp names.
+    let position = state
+        .workspaces
+        .iter()
+        .position(|other| other.id == ws.id)
+        .map_or(to_index, |index| index)
+        + 1;
+    let message = format!("Moved {} to position {position}.", placement(&state, &ws));
+    report(json, &state, ws, &message);
     Ok(())
 }
 
 fn run_attach(args: AttachArgs, json: bool) -> Result<(), String> {
     let attachment = Attachment::new(target_path(args.path)?, args.ref_name);
     let label = attachment.label();
-    let (_state, ws) = work::attach(&args.id, attachment).map_err(|e| e.to_string())?;
+    let (state, ws) = work::attach(&args.id, attachment).map_err(|e| e.to_string())?;
     let message = format!("Attached {label} to \"{}\".", ws.display_title());
-    report(json, ws, &message);
+    report(json, &state, ws, &message);
     Ok(())
 }
 
 fn run_detach(args: DetachArgs, json: bool) -> Result<(), String> {
     let path = target_path(args.path)?;
-    let (_state, ws) = work::detach(&args.id, &path).map_err(|e| e.to_string())?;
+    let (state, ws) = work::detach(&args.id, &path).map_err(|e| e.to_string())?;
     let message = format!(
         "Detached {} from \"{}\".",
         path.display(),
         ws.display_title()
     );
-    report(json, ws, &message);
+    report(json, &state, ws, &message);
     Ok(())
 }
 
@@ -266,7 +363,10 @@ fn run_resolve(args: ResolveArgs, json: bool) -> Result<(), String> {
         RouteResult::Existing(ws) => {
             let line = format!("Joins \"{}\" ({}).", ws.display_title(), ws.id);
             (
-                json!({ "action": "join", "workspace": work::WorkspaceView::from(ws) }),
+                json!({
+                    "action": "join",
+                    "workspace": work::view_of(&work::list().map_err(|e| e.to_string())?.workspaces, ws),
+                }),
                 line,
             )
         }

@@ -34,8 +34,20 @@ export interface DialogService {
   /** Open a directory picker dialog */
   openDirectory(options?: { title?: string }): Promise<string | null>;
 
-  /** Show a confirmation dialog (returns true if confirmed) */
-  confirm(message: string, title?: string): Promise<boolean>;
+  /**
+   * Show a confirmation dialog (returns true if confirmed).
+   *
+   * `labels` renames the two buttons, for a question whose answers are not
+   * "OK" and "Cancel" — a choice between two ways of doing the same thing
+   * needs its buttons to say which is which. Native dialogs honor it; the web
+   * fallback is `window.confirm`, which cannot, so the message still has to
+   * read correctly without them.
+   */
+  confirm(
+    message: string,
+    title?: string,
+    labels?: { ok?: string; cancel?: string },
+  ): Promise<boolean>;
 
   /** Show an alert dialog */
   alert(message: string, title?: string): Promise<void>;

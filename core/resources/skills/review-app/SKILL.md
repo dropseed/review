@@ -391,13 +391,34 @@ review workspace add ["title"]                     # title optional
 review workspace attach <id> [PATH] [--ref REF]    # show a repo in a workspace
 review workspace detach <id> [PATH]
 review workspace rename <id> ["title"]             # no title = derive one
+review workspace nest <id> --under <id>            # make it a sub-workspace
+review workspace unnest <id>                       # back to the top level
 review workspace resolve [DIR] [--json]            # what DIR routes to
 ```
 
 `--json` is global to the subcommand (either side of it) and gives you
-`{id, title, displayTitle, attachments: [{path, refName}], createdAt}` per
-workspace. Ids accept unique prefixes. `PATH` defaults to the directory you're
-running in.
+`{id, title, displayTitle, attachments: [{path, refName}], parentId, depth,
+ancestors: [{id, displayTitle}], createdAt}` per workspace. Ids accept unique
+prefixes. `PATH` defaults to the directory you're running in.
+
+**Workspaces nest.** One that is really a subtask of a larger one says so with
+`nest`, to any depth. The list stays flat and stays in priority order — a
+workspace is always followed by everything under it, and the plain listing
+indents to show it:
+
+```
+1. Ship the terminal rewrite  a1b2c3d4
+2.   The VT engine half       e5f6a7b8
+3.     Bump the submodule     c9d0e1f2
+4. Unrelated bug              33445566
+```
+
+`depth` and `ancestors` are derived on every read, so `ancestors` is the named
+chain above a workspace ("Ship the terminal rewrite › The VT engine half") —
+use it whenever you name a nested workspace outside a listing, because its own
+title usually doesn't say what it belongs to. Nothing else changes: terminals,
+PRs and review state still join onto attachments, and a sub-workspace has its
+own attachments rather than inheriting its parent's.
 
 **Titles are derived unless someone typed one.** `title` is null until a rename
 sets it; `displayTitle` is what to show — the first attachment ("review ·
@@ -408,6 +429,10 @@ what the workspace is about, not what happens to be running in it. Use
 **Attachments are not exclusive.** Two workspaces may show the same repo, so
 `attach` never conflicts and never takes anything from anyone. Within one
 workspace a path appears once; re-attaching it just updates the ref hint.
+
+Nesting takes the whole subtree with it, and a workspace can never be nested
+under itself or under anything already beneath it — that's the one nesting the
+backend refuses.
 
 Some workspaces are the app's own: it makes one so a terminal opened in an
 unattached directory has somewhere to live. Those are disposable — one with no
@@ -445,6 +470,14 @@ review workspace add "Fix the flaky terminal wait test"
 review workspace attach 3f9a ~/code/other-repo --ref fix/flaky-wait
 ```
 
+If what you're adding is one piece of something already on the queue, nest it
+under that instead of leaving it as a peer — it keeps the human's list readable
+and says what the work belongs to:
+
+```
+review workspace nest 3f9a --under a1b2
+```
+
 `add` **always appends to the end** — the newest thing is the least prioritized
 until the human moves it. That's deliberate; don't work around it.
 
@@ -460,8 +493,13 @@ it.
   own item steals that decision.
 - **Never remove.** `review workspace remove` is the human's acknowledgment moment —
   taking something off the queue is how they register that it's done or
-  abandoned. An agent deleting it means they never see it land.
+  abandoned. An agent deleting it means they never see it land. (It takes
+  `--recursive` for the sub-workspaces; without it they come up a level and
+  stay. Either way it isn't yours to run.)
 - **Rename only what you added**, to sharpen a title you wrote yourself.
+- **Nest only what you added.** Putting the human's workspace under another is
+  a claim about how their work is organized. Say what you think and let them
+  drag it.
 
 If you believe something should move up or come off the queue, say so and let
 them do it.

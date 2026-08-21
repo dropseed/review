@@ -8,6 +8,9 @@ function workspace(id: string, paths: string[] = []): Workspace {
     title: null,
     displayTitle: id,
     attachments: paths.map((path) => ({ path, refName: "main" })),
+    parentId: null,
+    depth: 0,
+    ancestors: [],
     autoCreated: false,
     createdAt: "2026-01-01T00:00:00Z",
   };

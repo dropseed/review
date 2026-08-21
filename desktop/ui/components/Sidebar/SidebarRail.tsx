@@ -82,9 +82,16 @@ function WorkspaceRailTab({
   state: ReturnType<typeof workspaceState>;
   active: boolean;
 }): ReactNode {
-  // Just the name: the rail has room for a number and a dot, so joining the
-  // whole status against the sidebar tree would be work nothing reads.
-  const label = `${index + 1}. ${workspace.displayTitle} — ${STATE_LABEL[state]}`;
+  // Just the name, and what it sits under: the rail has room for a number and a
+  // dot, so joining the whole status against the sidebar tree would be work
+  // nothing reads — but a nested workspace collapsed to a digit has lost the
+  // indent that said what it belongs to, and this tooltip is where it gets it
+  // back.
+  const path = [
+    ...workspace.ancestors.map((a) => a.displayTitle),
+    workspace.displayTitle,
+  ].join(" › ");
+  const label = `${index + 1}. ${path} — ${STATE_LABEL[state]}`;
 
   return (
     <SimpleTooltip content={label} side={railTooltipSide("left")}>

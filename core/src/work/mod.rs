@@ -19,6 +19,15 @@
 //!   same path; a workspace shows a path at most once. Nothing here can
 //!   conflict, so nothing here has to ask.
 //!
+//! A workspace may sit **under** another ([`Workspace::parent_id`]), which is
+//! how one that is really a subtask of a larger one says so. The queue stays a
+//! flat array: [`reflow`] keeps it in tree order — each workspace immediately
+//! followed by its own subtree — so the array is literally the order surfaces
+//! render, and everything that counts rows (the ⌘-digit shortcuts, the rail,
+//! the palette, the sidebar's drop gaps) keeps working without knowing there is
+//! a tree. Nesting moves a whole subtree; only the shape of the indentation is
+//! new.
+//!
 //! A title is optional because most workspaces need no naming: with none stored,
 //! [`Workspace::display_title`] derives one at read time from the first
 //! attachment, else "Untitled". A terminal's title never stands in — what a
@@ -69,6 +78,8 @@ pub enum WorkError {
     SchemaTooNew { found: u32, supported: u32 },
     #[error("No workspace matches '{0}'.")]
     NotFound(String),
+    #[error("'{child}' cannot sit under '{parent}' — that would nest it inside itself.")]
+    Cycle { child: String, parent: String },
     #[error("'{query}' is ambiguous; it matches: {}", .matches.join(", "))]
     Ambiguous { query: String, matches: Vec<String> },
     #[error("Failed to save the work queue after repeated version conflicts.")]
@@ -142,6 +153,22 @@ pub struct Workspace {
     /// What this workspace is looking at, in tab order.
     #[serde(default)]
     pub attachments: Vec<Attachment>,
+    /// The workspace this one sits under, or `None` for one at the top level.
+    ///
+    /// The whole of the hierarchy: the queue stays a flat array, and nesting is
+    /// this one back-reference. [`reflow`] keeps the array in tree order — every
+    /// workspace immediately followed by its own subtree — so the array *is* the
+    /// order every surface renders, and the digit shortcuts, the rail, the
+    /// palette and the drop gaps all keep counting rows without knowing there is
+    /// a tree at all.
+    ///
+    /// Additive on purpose: adding it does not bump [`WORK_SCHEMA_VERSION`],
+    /// because an older document loads as an *empty queue* (see
+    /// [`storage::load`]) and nesting is not worth anyone's queue. A document
+    /// written here and read by an older build loses the nesting and keeps the
+    /// workspaces.
+    #[serde(default)]
+    pub parent_id: Option<String>,
     /// Whether the router invented this and nothing has touched it since. Every
     /// mutation below clears it (see [`adopt_at`]), which is what makes
     /// [`cleanup`] safe. Internal plumbing: no surface shows it.
@@ -192,21 +219,71 @@ pub struct WorkspaceView {
     #[serde(flatten)]
     pub workspace: Workspace,
     pub display_title: String,
+    /// How many workspaces this one sits under — what a card indents by, and
+    /// what makes the flat array readable as a tree without walking it again.
+    pub depth: usize,
+    /// Every workspace above this one, outermost first. Empty at the top level.
+    pub ancestors: Vec<Ancestor>,
 }
 
-impl From<Workspace> for WorkspaceView {
-    fn from(workspace: Workspace) -> Self {
-        let display_title = workspace.display_title();
-        WorkspaceView {
-            workspace,
-            display_title,
-        }
+/// One workspace above another, named — a rung of the breadcrumb a surface
+/// draws when it shows a nested workspace out of the queue's context.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Ancestor {
+    pub id: String,
+    pub display_title: String,
+}
+
+/// One workspace as a surface renders it, ancestry resolved against `queue`.
+///
+/// Ancestry is derived here rather than stored for the same reason
+/// `display_title` is: the rungs move underneath it — renaming a parent changes
+/// what its children's breadcrumbs say, with no write to the children.
+pub fn view_of(queue: &[Workspace], workspace: Workspace) -> WorkspaceView {
+    let ancestors = ancestors_of(queue, &workspace);
+    let display_title = workspace.display_title();
+    WorkspaceView {
+        workspace,
+        display_title,
+        depth: ancestors.len(),
+        ancestors,
     }
+}
+
+/// The chain above `workspace`, outermost first, so a surface can print
+/// "Ship it › API › migration" straight through.
+///
+/// Tolerant of a document the invariants do not hold for — a parent that is not
+/// in `queue` ends the chain, and a cycle breaks it — because this also runs on
+/// a single workspace read out of a list that no longer holds its parent.
+fn ancestors_of(queue: &[Workspace], workspace: &Workspace) -> Vec<Ancestor> {
+    let mut chain = Vec::new();
+    let mut seen: HashSet<&str> = HashSet::from([workspace.id.as_str()]);
+    let mut next = workspace.parent_id.as_deref();
+    while let Some(id) = next {
+        if !seen.insert(id) {
+            break;
+        }
+        let Some(parent) = queue.iter().find(|ws| ws.id == id) else {
+            break;
+        };
+        chain.push(Ancestor {
+            id: parent.id.clone(),
+            display_title: parent.display_title(),
+        });
+        next = parent.parent_id.as_deref();
+    }
+    chain.reverse();
+    chain
 }
 
 /// Every workspace as a surface renders it.
 pub fn views(workspaces: Vec<Workspace>) -> Vec<WorkspaceView> {
-    workspaces.into_iter().map(Into::into).collect()
+    workspaces
+        .iter()
+        .map(|ws| view_of(&workspaces, ws.clone()))
+        .collect()
 }
 
 /// Display titles for every workspace in the queue, keyed by id — the index a
@@ -326,6 +403,145 @@ fn resolve_index(state: &WorkState, query: &str) -> Result<usize, WorkError> {
     }
 }
 
+/// Whether `candidate` is `root` itself or sits anywhere beneath it.
+///
+/// Walks *up* from the candidate rather than down from the root, which is the
+/// cheap direction in a flat array — and the one that terminates on a document
+/// whose invariants have not been restored yet, because the step count is
+/// bounded by the queue's length.
+fn is_within(workspaces: &[Workspace], candidate: &str, root: &str) -> bool {
+    let mut next = Some(candidate);
+    for _ in 0..=workspaces.len() {
+        match next {
+            Some(id) if id == root => return true,
+            Some(id) => {
+                next = workspaces
+                    .iter()
+                    .find(|ws| ws.id == id)
+                    .and_then(|ws| ws.parent_id.as_deref());
+            }
+            None => return false,
+        }
+    }
+    false
+}
+
+/// How many rows the workspace at `index` occupies — itself plus everything
+/// nested under it.
+///
+/// Rests on the contiguity [`reflow`] maintains: a subtree is a run, so this
+/// counts forward while the rows still belong to it and stops at the first one
+/// that doesn't. Every operation that moves a workspace moves this many rows,
+/// which is what makes "drag the parent" mean "drag the lot".
+fn subtree_len(workspaces: &[Workspace], index: usize) -> usize {
+    let Some(root) = workspaces.get(index) else {
+        return 0;
+    };
+    let root = root.id.clone();
+    let mut len = 1;
+    while let Some(next) = workspaces.get(index + len) {
+        if !is_within(workspaces, &next.id, &root) {
+            break;
+        }
+        len += 1;
+    }
+    len
+}
+
+/// Lift the subtree rooted at `from` out of the queue and put it back so its
+/// root sits at row `dest`.
+///
+/// `dest` is in the coordinates of the list **with the subtree already out** —
+/// which is also the row the root ends up on, so a caller that knows where it
+/// wants the card can say so without compensating for the hole it left.
+fn place_subtree(state: &mut WorkState, from: usize, dest: usize) {
+    let size = subtree_len(&state.workspaces, from);
+    let subtree: Vec<Workspace> = state.workspaces.drain(from..from + size).collect();
+    let dest = dest.min(state.workspaces.len());
+    let tail = state.workspaces.split_off(dest);
+    state.workspaces.extend(subtree);
+    state.workspaces.extend(tail);
+}
+
+/// The row just past the end of the subtree rooted at `index` — where a new
+/// last child of that workspace goes.
+fn subtree_end(workspaces: &[Workspace], index: usize) -> usize {
+    index + subtree_len(workspaces, index)
+}
+
+/// Restore the queue's two structural invariants, reporting whether anything
+/// had to move: every `parent_id` names a workspace that is really above it,
+/// and the array is in tree order.
+///
+/// Run after every mutation and on every read, because both are places a
+/// crooked document can arrive: a mutation that re-parents leaves the array in
+/// the old order, and `work.json` can be hand-edited or written by a build that
+/// spelled the tree differently.
+///
+/// Nothing is ever dropped here. A parent that isn't in the queue (removed
+/// behind the child's back, reaped by [`cleanup`]) is cleared, so the child
+/// comes up to the top level rather than disappearing with it — the same
+/// promotion [`Removal::PromoteChildren`] does deliberately, applied to the
+/// cases nobody chose.
+pub(crate) fn reflow(state: &mut WorkState) -> bool {
+    let before: Vec<String> = state.workspaces.iter().map(|ws| ws.id.clone()).collect();
+    let ids: HashSet<String> = before.iter().cloned().collect();
+    let mut changed = false;
+
+    for ws in &mut state.workspaces {
+        let dangling = ws
+            .parent_id
+            .as_deref()
+            .is_some_and(|parent| parent == ws.id || !ids.contains(parent));
+        if dangling {
+            ws.parent_id = None;
+            changed = true;
+        }
+    }
+
+    // Break any cycle at its first member in array order: after that link is
+    // cut the rest of the ring is a plain chain, so one pass settles it. A
+    // cycle is unreachable from the top level, so leaving one in would hide
+    // every workspace it holds.
+    for index in 0..state.workspaces.len() {
+        let id = state.workspaces[index].id.clone();
+        let Some(parent) = state.workspaces[index].parent_id.clone() else {
+            continue;
+        };
+        if is_within(&state.workspaces, &parent, &id) {
+            state.workspaces[index].parent_id = None;
+            changed = true;
+        }
+    }
+
+    let mut ordered: Vec<Workspace> = Vec::with_capacity(state.workspaces.len());
+    push_subtrees(&state.workspaces, None, &mut ordered);
+    debug_assert_eq!(ordered.len(), state.workspaces.len());
+    if ordered.len() != state.workspaces.len() {
+        // Unreachable once the fixes above have run, but a *reordering* must
+        // never be the thing that loses a workspace.
+        for ws in &state.workspaces {
+            if !ordered.iter().any(|kept| kept.id == ws.id) {
+                ordered.push(ws.clone());
+            }
+        }
+    }
+    if ordered.iter().map(|ws| &ws.id).ne(before.iter()) {
+        changed = true;
+    }
+    state.workspaces = ordered;
+    changed
+}
+
+/// Append every child of `parent` in array order, each followed by its own
+/// subtree — the walk that turns the back-references into the rendered list.
+fn push_subtrees(src: &[Workspace], parent: Option<&str>, out: &mut Vec<Workspace>) {
+    for ws in src.iter().filter(|ws| ws.parent_id.as_deref() == parent) {
+        out.push(ws.clone());
+        push_subtrees(src, Some(&ws.id), out);
+    }
+}
+
 const MAX_SAVE_RETRIES: usize = 5;
 
 /// Load the queue, apply a mutation, and save — retrying on version conflicts
@@ -343,7 +559,11 @@ where
     for _ in 0..MAX_SAVE_RETRIES {
         let mut state = storage::load()?;
         let (value, changed) = apply(&mut state)?;
-        if !changed {
+        // Every write leaves the array in tree order, so no mutation has to
+        // think about where a subtree ended up — and a hand-edited queue is
+        // healed by the next write rather than staying crooked.
+        let reflowed = reflow(&mut state);
+        if !changed && !reflowed {
             return Ok((state, value));
         }
         state.version += 1;
@@ -396,6 +616,9 @@ fn push_new(
         id,
         title: title.filter(|t| !t.trim().is_empty()),
         attachments,
+        // Always at the top level. Nesting is a second gesture, never a side
+        // effect of creating something — see [`set_parent`].
+        parent_id: None,
         auto_created,
         created_at: now_iso8601(),
     };
@@ -438,11 +661,132 @@ fn push_unique(attachments: &mut Vec<Attachment>, attachment: Attachment) {
     }
 }
 
-/// Remove a workspace, returning the one that was removed.
-pub fn remove(id: &str) -> Result<(WorkState, Workspace), WorkError> {
-    mutate(|state| {
+/// What a removal does with the workspaces nested under the one going away.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Removal {
+    /// The children come up to the removed workspace's own level and stay in
+    /// the queue. The default, and what every non-interactive surface does:
+    /// removal is one card acknowledged, and a sweep that also took work
+    /// nobody looked at would make the gesture unsafe to use.
+    #[default]
+    PromoteChildren,
+    /// The whole subtree goes. Only ever from a surface that named what it was
+    /// about to take and was told yes.
+    Subtree,
+}
+
+/// What a removal took.
+#[derive(Debug, Clone)]
+pub struct Removed {
+    /// The workspace named.
+    pub workspace: Workspace,
+    /// Everything that went with it, in queue order. Empty unless the removal
+    /// was [`Removal::Subtree`] and there was something under it.
+    pub descendants: Vec<Workspace>,
+}
+
+/// Remove a workspace, and — depending on `mode` — the workspaces under it.
+pub fn remove(id: &str, mode: Removal) -> Result<(WorkState, Removed), WorkError> {
+    mutate(move |state| {
         let index = resolve_index(state, id)?;
-        Ok((state.workspaces.remove(index), true))
+        let mut gone: Vec<Workspace> = match mode {
+            Removal::Subtree => {
+                let size = subtree_len(&state.workspaces, index);
+                state.workspaces.drain(index..index + size).collect()
+            }
+            Removal::PromoteChildren => {
+                let removed = state.workspaces.remove(index);
+                // Straight to wherever their parent sat, not to the top: a
+                // grandchild whose parent is removed belongs where the parent
+                // was, and the rest of the chain below it is untouched.
+                for ws in &mut state.workspaces {
+                    if ws.parent_id.as_deref() == Some(removed.id.as_str()) {
+                        ws.parent_id.clone_from(&removed.parent_id);
+                    }
+                }
+                vec![removed]
+            }
+        };
+        let workspace = gone.remove(0);
+        Ok((
+            Removed {
+                workspace,
+                descendants: gone,
+            },
+            true,
+        ))
+    })
+}
+
+/// Put a workspace under another, or (with `parent` as `None`) back at the top
+/// level. The whole subtree travels with it.
+///
+/// Nesting is where the queue can be asked for something impossible, and the
+/// two impossible things are the same thing: a workspace cannot sit under
+/// itself, directly or through any chain, because the result would be a ring
+/// nothing could reach. Everything else is allowed — depth is not capped, and
+/// a workspace with terminals nests exactly like an empty one.
+///
+/// It lands as the **last** child of its new parent, and unnesting leaves it
+/// immediately after the subtree it just left, so a re-parent moves a card by
+/// one indent rather than teleporting it across the queue.
+///
+/// Both workspaces are adopted (see [`adopt_at`]): building structure here is
+/// as much a human touching them as naming one is.
+pub fn set_parent(id: &str, parent: Option<&str>) -> Result<(WorkState, Workspace), WorkError> {
+    let parent = parent.map(ToOwned::to_owned);
+    mutate(move |state| {
+        let index = resolve_index(state, id)?;
+        let child_id = state.workspaces[index].id.clone();
+
+        let (new_parent, dest_before_lift) = match parent.as_deref() {
+            Some(query) => {
+                let parent_index = resolve_index(state, query)?;
+                let parent_id = state.workspaces[parent_index].id.clone();
+                if is_within(&state.workspaces, &parent_id, &child_id) {
+                    return Err(WorkError::Cycle {
+                        child: state.workspaces[index].display_title(),
+                        parent: state.workspaces[parent_index].display_title(),
+                    });
+                }
+                adopt_at(state, parent_index);
+                (
+                    Some(parent_id),
+                    subtree_end(&state.workspaces, parent_index),
+                )
+            }
+            // Out to the top level, but staying put: the row after everything
+            // the old parent still holds.
+            None => {
+                let after = state.workspaces[index]
+                    .parent_id
+                    .clone()
+                    .and_then(|old| resolve_index(state, &old).ok())
+                    .map_or(index + 1, |old_index| {
+                        subtree_end(&state.workspaces, old_index)
+                    });
+                (None, after)
+            }
+        };
+
+        let changed = state.workspaces[index].parent_id != new_parent;
+        state.workspaces[index].parent_id = new_parent;
+        let adopted = adopt_at(state, index);
+        if changed {
+            let size = subtree_len(&state.workspaces, index);
+            // `dest_before_lift` counts the subtree that is about to come out
+            // whenever it sits above it.
+            let dest =
+                dest_before_lift.saturating_sub(if dest_before_lift > index { size } else { 0 });
+            place_subtree(state, index, dest);
+        }
+        let moved = state
+            .workspaces
+            .iter()
+            .find(|ws| ws.id == child_id)
+            .expect("the workspace was only moved")
+            .clone();
+        Ok((moved, changed || adopted))
     })
 }
 
@@ -462,25 +806,59 @@ pub fn rename(id: &str, title: Option<&str>) -> Result<(WorkState, Workspace), W
     })
 }
 
-/// Move a workspace to `to_index` (0-based). An index past the end clamps to
-/// last.
+/// Move a workspace to row `to_index` (0-based), taking everything nested
+/// under it. An index past the end clamps to last.
+///
+/// `to_index` is the row the card ends up on, so a caller does not have to
+/// compensate for the hole its own subtree leaves behind.
+///
+/// **The destination decides the depth**, unless `keep_parent` says otherwise:
+/// the workspace lands as a sibling of the row it displaces — the one the
+/// insertion line sits above — and at the end of the list, where there is no
+/// such row, at the top level. That is what makes the sidebar's indented
+/// insertion line honest, and it is the only way out of a subtree by drag: drop
+/// above any top-level card, or below the last one. Nesting *in* has its own
+/// gesture ([`set_parent`], the app's card-onto-card drop) precisely because a
+/// vertical position cannot express "one level deeper" on its own.
+///
+/// `keep_parent` is the other question a caller can be asking: **move this
+/// among its siblings**, which is what the card menu's "Move up" / "Move down"
+/// / "Move to top" mean — a verb aimed at position must not silently change
+/// what a workspace is nested under. The parent is left alone and [`reflow`]
+/// settles the row back inside its parent's subtree, which is how "down past
+/// the last sibling" becomes "last child" rather than a card falling out of the
+/// group it was in.
 ///
 /// `reorderWorkspaces` in `desktop/ui/stores/slices/workspaceSlice.ts` is the
-/// mirror of this, applied optimistically before the round trip. The two clamps
-/// have to agree or the list visibly jumps when the authoritative answer
-/// arrives.
-pub fn move_workspace(id: &str, to_index: usize) -> Result<(WorkState, Workspace), WorkError> {
+/// mirror of this, applied optimistically before the round trip. The two have
+/// to agree — on the clamp and now on the depth — or the list visibly jumps
+/// when the authoritative answer arrives.
+pub fn move_workspace(
+    id: &str,
+    to_index: usize,
+    keep_parent: bool,
+) -> Result<(WorkState, Workspace), WorkError> {
     mutate(move |state| {
         let from = resolve_index(state, id)?;
-        let to = to_index.min(state.workspaces.len().saturating_sub(1));
-        if from == to {
+        let size = subtree_len(&state.workspaces, from);
+        let dest = to_index.min(state.workspaces.len() - size);
+        // Where it already is. Checked before anything moves, because "the row
+        // it displaces" is a different row once the subtree is out — a no-op
+        // move must not quietly re-parent the card.
+        if from == dest {
             let adopted = adopt_at(state, from);
             return Ok((state.workspaces[from].clone(), adopted));
         }
-        let workspace = state.workspaces.remove(from);
-        state.workspaces.insert(to, workspace);
-        adopt_at(state, to);
-        Ok((state.workspaces[to].clone(), true))
+        place_subtree(state, from, dest);
+        if !keep_parent {
+            let sibling_of = state
+                .workspaces
+                .get(dest + size)
+                .and_then(|below| below.parent_id.clone());
+            state.workspaces[dest].parent_id = sibling_of;
+        }
+        adopt_at(state, dest);
+        Ok((state.workspaces[dest].clone(), true))
     })
 }
 
@@ -537,6 +915,12 @@ pub const CLEANUP_GRACE: Duration = Duration::from_secs(60);
 /// Three things save a workspace, and each is a different kind of "someone wants
 /// this": a human touched it (see [`adopt_at`]), it has a live terminal, or it is
 /// younger than `grace` (see [`CLEANUP_GRACE`]).
+///
+/// Nothing nested under a reaped workspace is reaped with it: [`reflow`] runs
+/// on the same write and brings the orphans up to the top level. In practice
+/// the case is unreachable — nesting anything under a workspace adopts it (see
+/// [`set_parent`]) — but the reaping rule stays "this one workspace", never
+/// "this one and whatever was under it".
 ///
 /// Timestamps are compared as strings, which works because
 /// [`iso8601_from_system_time`] is fixed-width UTC and therefore sorts
@@ -658,7 +1042,7 @@ mod tests {
         assert_eq!(shown(&list().unwrap()), ["first", "second", "urgent"]);
 
         // Getting it to the top is a separate step, on every surface.
-        let (state, _) = move_workspace(&urgent.id, 0).unwrap();
+        let (state, _) = move_workspace(&urgent.id, 0, false).unwrap();
         assert_eq!(shown(&state), ["urgent", "first", "second"]);
 
         // Every write bumps the version.
@@ -778,9 +1162,10 @@ mod tests {
         type Mutation = dyn Fn(&str) -> Result<(WorkState, Workspace), WorkError>;
         for (n, mutate_it) in [
             (0, &(|id: &str| rename(id, Some("named"))) as &Mutation),
-            (1, &(|id: &str| move_workspace(id, 0))),
+            (1, &(|id: &str| move_workspace(id, 0, false))),
             (2, &(|id: &str| attach(id, at("/r", Some("extra"))))),
             (3, &(|id: &str| detach(id, std::path::Path::new("/r")))),
+            (4, &(|id: &str| set_parent(id, None))),
         ] {
             let ghost = auto(vec![at("/r", Some(&format!("b{n}")))]);
             let (_state, touched) = mutate_it(&ghost.id).unwrap();
@@ -807,6 +1192,7 @@ mod tests {
                 at("/repos/review", Some("feature/x")),
                 at("/repos/django", None),
             ],
+            parent_id: None,
             auto_created: false,
             created_at: "2026-08-12T00:00:00.000Z".to_owned(),
         };
@@ -828,6 +1214,7 @@ mod tests {
                         { "path": "/repos/review", "refName": "feature/x" },
                         { "path": "/repos/django", "refName": null },
                     ],
+                    "parentId": null,
                     "autoCreated": false,
                     "createdAt": "2026-08-12T00:00:00.000Z",
                 }],
@@ -835,11 +1222,16 @@ mod tests {
         );
 
         // The wire adds the derived title beside the stored one, so a rename
-        // field can prefill with what the human typed.
-        let view = serde_json::to_value(WorkspaceView::from(workspace)).unwrap();
+        // field can prefill with what the human typed — and the workspace's
+        // place in the tree, so a surface can indent it without walking the
+        // list.
+        let view = serde_json::to_value(view_of(&[], workspace)).unwrap();
         assert_eq!(view["title"], "Ship it");
         assert_eq!(view["displayTitle"], "Ship it");
         assert_eq!(view["id"], "0a1b2c3d");
+        assert_eq!(view["parentId"], serde_json::Value::Null);
+        assert_eq!(view["depth"], 0);
+        assert_eq!(view["ancestors"], serde_json::json!([]));
     }
 
     #[test]
@@ -851,9 +1243,256 @@ mod tests {
         let b = add_ws("b", vec![]);
         add_ws("c", vec![]);
 
-        let (state, removed) = remove(&b.id).unwrap();
-        assert_eq!(removed.id, b.id);
+        let (state, removed) = remove(&b.id, Removal::PromoteChildren).unwrap();
+        assert_eq!(removed.workspace.id, b.id);
+        assert!(removed.descendants.is_empty());
         assert_eq!(shown(&state), ["a", "c"]);
+    }
+
+    /// The rendered shape of the queue: every workspace, indented by depth.
+    fn tree(state: &WorkState) -> Vec<String> {
+        let views = views(state.workspaces.clone());
+        views
+            .iter()
+            .map(|view| format!("{}{}", "  ".repeat(view.depth), view.display_title))
+            .collect()
+    }
+
+    #[test]
+    fn nesting_puts_a_workspace_under_another_and_the_array_follows() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _home, _repo) = setup_test();
+
+        let parent = add_ws("ship it", vec![]);
+        let child = add_ws("the api half", vec![]);
+        add_ws("unrelated", vec![]);
+
+        let (state, nested) = set_parent(&child.id, Some(&parent.id)).unwrap();
+        assert_eq!(nested.parent_id.as_deref(), Some(parent.id.as_str()));
+        // The array *is* the rendered order: the child moved up next to its
+        // parent, and nothing else had to know.
+        assert_eq!(tree(&state), ["ship it", "  the api half", "unrelated"]);
+
+        // And the breadcrumb a surface reads out of the queue's context.
+        let view = view_of(&state.workspaces, nested);
+        assert_eq!(view.depth, 1);
+        assert_eq!(
+            view.ancestors
+                .iter()
+                .map(|a| &a.display_title)
+                .collect::<Vec<_>>(),
+            ["ship it"]
+        );
+    }
+
+    #[test]
+    fn nesting_is_arbitrarily_deep_and_a_new_child_goes_last() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _home, _repo) = setup_test();
+
+        let a = add_ws("a", vec![]);
+        let b = add_ws("b", vec![]);
+        let c = add_ws("c", vec![]);
+        let d = add_ws("d", vec![]);
+
+        set_parent(&b.id, Some(&a.id)).unwrap();
+        set_parent(&c.id, Some(&b.id)).unwrap();
+        // A second child of `a` lands after everything `a` already holds,
+        // rather than jumping in front of its own nephews.
+        let (state, _) = set_parent(&d.id, Some(&a.id)).unwrap();
+        assert_eq!(tree(&state), ["a", "  b", "    c", "  d"]);
+    }
+
+    #[test]
+    fn a_workspace_cannot_sit_under_itself() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _home, _repo) = setup_test();
+
+        let parent = add_ws("parent", vec![]);
+        let child = add_ws("child", vec![]);
+        set_parent(&child.id, Some(&parent.id)).unwrap();
+
+        assert!(matches!(
+            set_parent(&parent.id, Some(&parent.id)),
+            Err(WorkError::Cycle { .. })
+        ));
+        // Nor under anything already beneath it — the same ring, one hop out.
+        assert!(matches!(
+            set_parent(&parent.id, Some(&child.id)),
+            Err(WorkError::Cycle { .. })
+        ));
+        assert_eq!(tree(&list().unwrap()), ["parent", "  child"]);
+    }
+
+    #[test]
+    fn unnesting_leaves_it_where_it_was_standing() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _home, _repo) = setup_test();
+
+        let parent = add_ws("parent", vec![]);
+        let first = add_ws("first", vec![]);
+        let second = add_ws("second", vec![]);
+        add_ws("after", vec![]);
+        set_parent(&first.id, Some(&parent.id)).unwrap();
+        set_parent(&second.id, Some(&parent.id)).unwrap();
+
+        // Out one indent, not across the queue: it comes to rest after the
+        // siblings it left behind, above everything that was already below.
+        let (state, _) = set_parent(&first.id, None).unwrap();
+        assert_eq!(tree(&state), ["parent", "  second", "first", "after"]);
+    }
+
+    #[test]
+    fn moving_a_parent_takes_its_subtree() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _home, _repo) = setup_test();
+
+        let a = add_ws("a", vec![]);
+        let child = add_ws("a's child", vec![]);
+        add_ws("b", vec![]);
+        add_ws("c", vec![]);
+        set_parent(&child.id, Some(&a.id)).unwrap();
+        assert_eq!(tree(&list().unwrap()), ["a", "  a's child", "b", "c"]);
+
+        // Dragging the parent down past `b` moves both rows, and `a` stays a
+        // top-level card because the row it displaced is one.
+        let (state, _) = move_workspace(&a.id, 1, false).unwrap();
+        assert_eq!(tree(&state), ["b", "a", "  a's child", "c"]);
+
+        // Past the end clamps to the last row the subtree can occupy.
+        let (state, _) = move_workspace(&a.id, 99, false).unwrap();
+        assert_eq!(tree(&state), ["b", "c", "a", "  a's child"]);
+    }
+
+    /// The rule the sidebar's indented insertion line draws: you land as a
+    /// sibling of the row you displaced.
+    #[test]
+    fn a_move_lands_at_the_depth_of_the_row_it_displaces() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _home, _repo) = setup_test();
+
+        let parent = add_ws("parent", vec![]);
+        let child = add_ws("child", vec![]);
+        let loose = add_ws("loose", vec![]);
+        set_parent(&child.id, Some(&parent.id)).unwrap();
+        assert_eq!(tree(&list().unwrap()), ["parent", "  child", "loose"]);
+
+        // Dropped onto the row `child` occupies: it becomes `parent`'s child
+        // too, above the one it pushed down.
+        let (state, moved) = move_workspace(&loose.id, 1, false).unwrap();
+        assert_eq!(moved.parent_id.as_deref(), Some(parent.id.as_str()));
+        assert_eq!(tree(&state), ["parent", "  loose", "  child"]);
+
+        // …and dropping it at the end is how it gets back out: there is no row
+        // below to be a sibling of, so it lands at the top level.
+        let (state, moved) = move_workspace(&loose.id, 2, false).unwrap();
+        assert_eq!(moved.parent_id, None);
+        assert_eq!(tree(&state), ["parent", "  child", "loose"]);
+    }
+
+    /// The card menu's move verbs, which are asking a different question from
+    /// a drag: reorder within this group, never out of it.
+    #[test]
+    fn keeping_the_parent_reorders_within_the_group() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _home, _repo) = setup_test();
+
+        let parent = add_ws("parent", vec![]);
+        let first = add_ws("first", vec![]);
+        let second = add_ws("second", vec![]);
+        add_ws("after", vec![]);
+        set_parent(&first.id, Some(&parent.id)).unwrap();
+        set_parent(&second.id, Some(&parent.id)).unwrap();
+        assert_eq!(
+            tree(&list().unwrap()),
+            ["parent", "  first", "  second", "after"]
+        );
+
+        // Row 3 is past the last sibling — where the drag rule would drop it
+        // out of the group. Keeping the parent, `reflow` settles it back in as
+        // the last child, which is what "move down" meant.
+        let (state, moved) = move_workspace(&first.id, 3, true).unwrap();
+        assert_eq!(moved.parent_id.as_deref(), Some(parent.id.as_str()));
+        assert_eq!(tree(&state), ["parent", "  second", "  first", "after"]);
+
+        // The same row without it takes the card out, at the depth of the row
+        // it displaced.
+        let (state, moved) = move_workspace(&second.id, 3, false).unwrap();
+        assert_eq!(moved.parent_id, None);
+        assert_eq!(tree(&state), ["parent", "  first", "after", "second"]);
+    }
+
+    #[test]
+    fn removing_a_parent_promotes_or_takes_the_subtree() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _home, _repo) = setup_test();
+
+        let build = |suffix: &str| {
+            let parent = add_ws(&format!("parent{suffix}"), vec![]);
+            let child = add_ws(&format!("child{suffix}"), vec![]);
+            let grandchild = add_ws(&format!("grandchild{suffix}"), vec![]);
+            set_parent(&child.id, Some(&parent.id)).unwrap();
+            set_parent(&grandchild.id, Some(&child.id)).unwrap();
+            parent
+        };
+
+        // Promote: the child comes up to where its parent stood, and its own
+        // child stays under it.
+        let parent = build("-p");
+        let (state, removed) = remove(&parent.id, Removal::PromoteChildren).unwrap();
+        assert!(removed.descendants.is_empty());
+        assert_eq!(tree(&state), ["child-p", "  grandchild-p"]);
+
+        // Subtree: the lot, in queue order, and the caller can say what went.
+        let parent = build("-s");
+        let (state, removed) = remove(&parent.id, Removal::Subtree).unwrap();
+        assert_eq!(removed.workspace.id, parent.id);
+        assert_eq!(
+            removed
+                .descendants
+                .iter()
+                .map(|ws| ws.display_title())
+                .collect::<Vec<_>>(),
+            ["child-s", "grandchild-s"]
+        );
+        assert_eq!(tree(&state), ["child-p", "  grandchild-p"]);
+    }
+
+    /// `work.json` is a file people (and older builds) can write. Every read
+    /// runs it through [`reflow`], which must fix it without losing anything.
+    #[test]
+    fn a_crooked_document_is_straightened_on_read() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _home, _repo) = setup_test();
+
+        let mut state = WorkState::default();
+        for (id, parent) in [
+            ("aaaaaaaa", None),
+            // Out of tree order, and pointing at a parent further down.
+            ("bbbbbbbb", Some("cccccccc")),
+            ("cccccccc", Some("aaaaaaaa")),
+            // A parent nothing in the queue holds: promoted, never dropped.
+            ("dddddddd", Some("99999999")),
+            // A ring, which would otherwise be unreachable from the top.
+            ("eeeeeeee", Some("ffffffff")),
+            ("ffffffff", Some("eeeeeeee")),
+        ] {
+            state.workspaces.push(Workspace {
+                id: id.to_owned(),
+                title: Some(id[..1].to_owned()),
+                attachments: vec![],
+                parent_id: parent.map(ToOwned::to_owned),
+                auto_created: false,
+                created_at: "2026-08-12T00:00:00.000Z".to_owned(),
+            });
+        }
+        storage::save(&state).unwrap();
+
+        let loaded = list().unwrap();
+        assert_eq!(tree(&loaded), ["a", "  c", "    b", "d", "e", "  f"]);
+        assert_eq!(loaded.workspaces.len(), 6, "reflow never drops one");
+        // A read stays a read: the file is only straightened by the next write.
+        assert_eq!(loaded.version, state.version);
     }
 
     #[test]
@@ -867,7 +1506,10 @@ mod tests {
         assert_eq!(shown(&state), ["renamed"]);
         assert_eq!(get(&ws.id[..4]).unwrap().title.unwrap(), "renamed");
 
-        assert!(matches!(remove("zzzz"), Err(WorkError::NotFound(_))));
+        assert!(matches!(
+            remove("zzzz", Removal::PromoteChildren),
+            Err(WorkError::NotFound(_))
+        ));
     }
 
     #[test]
@@ -881,6 +1523,7 @@ mod tests {
                 id: id.to_owned(),
                 title: None,
                 attachments: vec![],
+                parent_id: None,
                 auto_created: false,
                 created_at: String::new(),
             });
@@ -903,16 +1546,16 @@ mod tests {
         let c = add_ws("c", vec![]);
 
         // To the top.
-        let (state, _) = move_workspace(&c.id, 0).unwrap();
+        let (state, _) = move_workspace(&c.id, 0, false).unwrap();
         assert_eq!(shown(&state), ["c", "a", "b"]);
 
         // Past the end clamps to last.
-        let (state, _) = move_workspace(&c.id, 99).unwrap();
+        let (state, _) = move_workspace(&c.id, 99, false).unwrap();
         assert_eq!(shown(&state), ["a", "b", "c"]);
 
         // Moving where it already is writes nothing.
         let before = state.version;
-        let (state, _) = move_workspace(&c.id, 2).unwrap();
+        let (state, _) = move_workspace(&c.id, 2, false).unwrap();
         assert_eq!(state.version, before);
     }
 

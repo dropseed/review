@@ -34,7 +34,7 @@ import { ContextActionItems } from "./ActionMenu";
 import { WorkspaceTitleInput } from "./WorkspaceTitleInput";
 import { workspaceState } from "./StatusDot";
 import { TerminalRow } from "./TerminalRow";
-import { activateOnKey } from "./row-chrome";
+import { activateOnKey, indentFor, INDENT_STEP } from "./row-chrome";
 import { prBadgeClass } from "./pr-format";
 import { prNeedsAttention } from "../../utils/sidebar-tree";
 import { workspaceActions } from "./workspace-actions";
@@ -49,9 +49,12 @@ import {
   type WorkspaceStatus,
 } from "./workspace-status";
 import {
+  draggedWorkspace,
+  gapDepth,
   setDraggedWorkspace,
   startWorkspaceDrag,
   useIsWorkDropTarget,
+  workspaceDragFrom,
   workSectionDropHandlers,
 } from "./workspace-drag";
 
@@ -128,11 +131,10 @@ export function WorkspaceQueue(): ReactNode {
       >
         {workspaces.map((workspace, index) => (
           <Fragment key={workspace.id}>
-            <DropGap index={index} />
+            <DropGap index={index} items={workspaces} />
             <QueueEntry
               workspace={workspace}
               index={index}
-              count={workspaces.length}
               ctx={ctx}
               terminals={workspaceTerminals(terminals, workspace.id)}
               tabIds={tabsByWorkspace[workspace.id] ?? NO_TABS}
@@ -144,7 +146,7 @@ export function WorkspaceQueue(): ReactNode {
             />
           </Fragment>
         ))}
-        <DropGap index={workspaces.length} />
+        <DropGap index={workspaces.length} items={workspaces} />
         {workspaces.length === 0 && (
           <p className="px-2 py-2 text-[11px] leading-snug text-fg-faint/60">
             Nothing here yet. Press + to start a workspace.
@@ -180,17 +182,35 @@ function QueueError(): ReactNode {
  * lit is decided by the list's geometry (`resolveWorkDropTarget`), and the line
  * is drawn over the gap rather than by displacing the entries — displacement
  * mid-drag moves the target out from under the cursor.
+ *
+ * It is drawn **at the depth the drop will land at** (`gapDepth`), which is the
+ * only thing that makes a vertical drag able to say anything about nesting: the
+ * line indented under a parent is a promise that the card lands as its child,
+ * and the flush line at the end of the list is how a nested card gets back out.
+ * The dragged card is read from the module latch rather than subscribed to —
+ * `isOver` is what re-renders this, and it only becomes true mid-drag, by which
+ * time the latch is set.
  */
-function DropGap({ index }: { index: number }): ReactNode {
+function DropGap({
+  index,
+  items,
+}: {
+  index: number;
+  items: Workspace[];
+}): ReactNode {
   const isOver = useIsWorkDropTarget(
     useMemo(() => ({ kind: "gap", index }), [index]),
   );
+  if (!isOver) return <div className="pointer-events-none -my-0.5 h-1" />;
 
   return (
     <div className="pointer-events-none relative -my-0.5 h-1">
-      {isOver && (
-        <span className="absolute inset-x-1 top-1/2 h-px -translate-y-1/2 rounded-full bg-focus-ring" />
-      )}
+      <span
+        style={{
+          marginLeft: indentFor(gapDepth(items, draggedWorkspace(), index)),
+        }}
+        className="absolute inset-x-1 top-1/2 h-px -translate-y-1/2 rounded-full bg-focus-ring transition-[margin] duration-75"
+      />
     </div>
   );
 }
@@ -198,8 +218,6 @@ function DropGap({ index }: { index: number }): ReactNode {
 interface QueueEntryProps {
   workspace: Workspace;
   index: number;
-  /** How many entries there are — what the move verbs are bounded by. */
-  count: number;
   ctx: WorkspaceContext;
   terminals: ReturnType<typeof workspaceTerminals>;
   /**
@@ -223,7 +241,6 @@ interface QueueEntryProps {
 const QueueEntry = memo(function QueueEntry({
   workspace,
   index,
-  count,
   ctx,
   terminals,
   tabIds,
@@ -264,40 +281,78 @@ const QueueEntry = memo(function QueueEntry({
 
   const open = useCallback(() => focusWorkspace(workspace), [workspace]);
 
+  // What a nested card is *under*, spelled out. The indent says there is a
+  // parent and the rail says which run it belongs to, but neither says its
+  // name, and a card scrolled away from its parent — or one under a parent
+  // several rows up — is exactly when the name is what's wanted.
+  const under = workspace.ancestors.map((a) => a.displayTitle).join(" › ");
+
   return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
-        {/* A div rather than a button because `draggable` on a button is where
+    // The indent is the hierarchy: the card itself is unchanged at every
+    // depth, it just starts further in. Capped by `indentFor`, because past a
+    // few levels the titles are what would be paying for the indent.
+    <div
+      // Transparent to assistive tech: the listbox's options have to stay the
+      // listbox's own children, and this element exists only to hold an indent.
+      role="presentation"
+      className="relative"
+      style={{ paddingLeft: indentFor(workspace.depth) }}
+    >
+      {workspace.depth > 0 && (
+        // The rail down the indent, joining a child to the run it belongs to.
+        // Drawn inside the padding rather than as the card's own border: the
+        // card is the same card at every depth, and this is the space between.
+        <span
+          aria-hidden="true"
+          className="absolute inset-y-0 w-px bg-edge-default/60"
+          style={{ left: indentFor(workspace.depth) - INDENT_STEP / 2 }}
+        />
+      )}
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          {/* A div rather than a button because `draggable` on a button is where
             webviews disagree about whether a drag starts at all. */}
-        <div
-          data-workspace-entry
-          data-work-card={workspace.id}
-          role="option"
-          aria-selected={focused}
-          tabIndex={0}
-          draggable={!renaming}
-          onClick={open}
-          onKeyDown={activateOnKey(open)}
-          onDragStart={(e) =>
-            startWorkspaceDrag(e, { id: workspace.id, index })
-          }
-          onDragEnd={() => setDraggedWorkspace(null)}
-          title={status.subtitle || workspace.displayTitle}
-          className={clsx(
-            // A real container, not a hover ghost: entries are individually
-            // clickable and draggable, and with the status phrase gone the
-            // queue needs the card edge to say where one workspace ends.
-            "group relative cursor-default rounded-lg border px-2 py-1.5 outline-none transition-colors duration-100",
-            isOver
-              ? "border-focus-ring bg-fg/[0.06]"
-              : focused
-                ? "border-edge-default bg-fg/[0.06]"
-                : "border-edge bg-fg/[0.03] hover:bg-fg/[0.05]",
-            "focus-visible:ring-1 focus-visible:ring-focus-ring/70",
-          )}
-        >
-          <div className="flex items-center gap-2">
-            {/* The card's position, shown only while ⌘ is down — the number
+          <div
+            data-workspace-entry
+            data-work-card={workspace.id}
+            role="option"
+            aria-selected={focused}
+            tabIndex={0}
+            draggable={!renaming}
+            onClick={open}
+            onKeyDown={activateOnKey(open)}
+            // The drag is described from the queue as it stands at pickup — the
+            // rows nested under this card travel with it, and are the rows it
+            // cannot be dropped onto.
+            onDragStart={(e) => {
+              const drag = workspaceDragFrom(
+                useReviewStore.getState().workspaces,
+                index,
+              );
+              if (drag) startWorkspaceDrag(e, drag);
+            }}
+            onDragEnd={() => setDraggedWorkspace(null)}
+            title={[
+              under && `Under ${under}`,
+              status.subtitle || workspace.displayTitle,
+            ]
+              .filter(Boolean)
+              .join("\n")}
+            className={clsx(
+              // A real container, not a hover ghost: entries are individually
+              // clickable and draggable, and with the status phrase gone the
+              // queue needs the card edge to say where one workspace ends.
+              "group relative cursor-default rounded-lg border px-2 py-1.5 outline-none transition-colors duration-100",
+              isOver
+                ? "border-focus-ring bg-fg/[0.06]"
+                : focused
+                  ? "border-edge-default bg-fg/[0.06]"
+                  : "border-edge bg-fg/[0.03] hover:bg-fg/[0.05]",
+              "focus-visible:ring-1 focus-visible:ring-focus-ring/70",
+            )}
+          >
+            <div className="flex items-center gap-2">
+              {/* The card's position, shown only while ⌘ is down — the number
                 ⌘1–9 would press. It takes the slot rather than reserving one:
                 there is no status mark here any more (a card's terminals carry
                 their own phase dots, which is where that question is actually
@@ -305,84 +360,84 @@ const QueueEntry = memo(function QueueEntry({
                 the sake of a mark that isn't there. The titles shift for as
                 long as the chord is held, which is exactly when the digits,
                 not the titles, are what is being read. */}
-            {showShortcut && (
-              <span
-                aria-hidden="true"
-                data-shortcut-digit
-                className="w-[7px] shrink-0 text-center text-[9px] leading-none text-fg-faint tabular-nums"
-              >
-                {index + 1}
-              </span>
-            )}
-            {renaming ? (
-              <WorkspaceTitleInput
-                workspaceId={workspace.id}
-                title={workspace.title}
-                onDone={() => setRenaming(false)}
-                className="min-w-0 flex-1 rounded-sm bg-fg/[0.06] px-1 text-[11.5px]
+              {showShortcut && (
+                <span
+                  aria-hidden="true"
+                  data-shortcut-digit
+                  className="w-[7px] shrink-0 text-center text-[9px] leading-none text-fg-faint tabular-nums"
+                >
+                  {index + 1}
+                </span>
+              )}
+              {renaming ? (
+                <WorkspaceTitleInput
+                  workspaceId={workspace.id}
+                  title={workspace.title}
+                  onDone={() => setRenaming(false)}
+                  className="min-w-0 flex-1 rounded-sm bg-fg/[0.06] px-1 text-[11.5px]
                            leading-4 text-fg-secondary outline-none"
-              />
-            ) : (
-              <span
-                onDoubleClick={(e) => {
-                  e.stopPropagation();
-                  setRenaming(true);
-                }}
-                className={clsx(
-                  "min-w-0 flex-1 truncate text-[11.5px] leading-4",
-                  // A derived title in italics: same weight and colour as a
-                  // typed one — it is not less true — but visibly implicit,
-                  // and a quiet hint that double-clicking here names it.
-                  derived && "italic",
-                  done
-                    ? "text-fg-faint/60"
-                    : live
-                      ? "text-fg-secondary"
-                      : "text-fg-muted",
-                )}
-              >
-                {workspace.displayTitle}
-              </span>
-            )}
-            <span className="flex shrink-0 items-center gap-1">
-              {done ? (
-                <CheckIcon
-                  className={clsx(
-                    "h-3 w-3",
-                    // A merge earns the full-strength tick; a branch that
-                    // merely vanished gets the faded one. Same glyph, because
-                    // both mean "nothing more to do here".
-                    status.shipped
-                      ? "text-status-approved"
-                      : "text-status-approved/70",
-                  )}
                 />
               ) : (
-                // The absorbed chip's marks, worn by the title that swallowed
-                // it — so a one-line `repo · branch` card still says its PR
-                // and its dirtiness. Cards whose chips are drawn below carry
-                // these on the chips instead.
-                absorbed && <ChipMarks repo={absorbed} />
-              )}
-              {done && (
-                <button
-                  type="button"
-                  aria-label={`Remove ${workspace.displayTitle}`}
-                  onClick={(e) => {
+                <span
+                  onDoubleClick={(e) => {
                     e.stopPropagation();
-                    void removeWorkspaceAndTerminals(workspace.id);
+                    setRenaming(true);
                   }}
-                  className="text-[11px] leading-none text-fg-faint opacity-0
+                  className={clsx(
+                    "min-w-0 flex-1 truncate text-[11.5px] leading-4",
+                    // A derived title in italics: same weight and colour as a
+                    // typed one — it is not less true — but visibly implicit,
+                    // and a quiet hint that double-clicking here names it.
+                    derived && "italic",
+                    done
+                      ? "text-fg-faint/60"
+                      : live
+                        ? "text-fg-secondary"
+                        : "text-fg-muted",
+                  )}
+                >
+                  {workspace.displayTitle}
+                </span>
+              )}
+              <span className="flex shrink-0 items-center gap-1">
+                {done ? (
+                  <CheckIcon
+                    className={clsx(
+                      "h-3 w-3",
+                      // A merge earns the full-strength tick; a branch that
+                      // merely vanished gets the faded one. Same glyph, because
+                      // both mean "nothing more to do here".
+                      status.shipped
+                        ? "text-status-approved"
+                        : "text-status-approved/70",
+                    )}
+                  />
+                ) : (
+                  // The absorbed chip's marks, worn by the title that swallowed
+                  // it — so a one-line `repo · branch` card still says its PR
+                  // and its dirtiness. Cards whose chips are drawn below carry
+                  // these on the chips instead.
+                  absorbed && <ChipMarks repo={absorbed} />
+                )}
+                {done && (
+                  <button
+                    type="button"
+                    aria-label={`Remove ${workspace.displayTitle}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void removeWorkspaceAndTerminals(workspace.id);
+                    }}
+                    className="text-[11px] leading-none text-fg-faint opacity-0
                              transition-opacity duration-100 hover:text-fg-secondary
                              group-hover:opacity-100"
-                >
-                  ✕
-                </button>
-              )}
-            </span>
-          </div>
+                  >
+                    ✕
+                  </button>
+                )}
+              </span>
+            </div>
 
-          {/* Every entry shows its repos, focused or not: the stage says
+            {/* Every entry shows its repos, focused or not: the stage says
               nothing about the workspace any more, so this card is the only
               place its repos and their PRs are read — hiding that on dormant
               entries would make the queue a list of bare names. Each chip
@@ -390,21 +445,21 @@ const QueueEntry = memo(function QueueEntry({
               derived title already is gets absorbed instead (see `absorbed`).
               Red CI is words, not colour — red here means a reviewer asked
               for changes and nothing else. */}
-          {(detailRepos.length > 0 ||
-            (status.openPr && prCiFailing(status.openPr))) && (
-            <div className="mt-1 flex flex-wrap items-center gap-1">
-              {detailRepos.map((repo) => (
-                <RepoChip key={repo.reviewKey} repo={repo} />
-              ))}
-              {status.openPr && prCiFailing(status.openPr) && (
-                <span className="text-[9.5px] leading-4 text-fg-faint">
-                  CI failing
-                </span>
-              )}
-            </div>
-          )}
+            {(detailRepos.length > 0 ||
+              (status.openPr && prCiFailing(status.openPr))) && (
+              <div className="mt-1 flex flex-wrap items-center gap-1">
+                {detailRepos.map((repo) => (
+                  <RepoChip key={repo.reviewKey} repo={repo} />
+                ))}
+                {status.openPr && prCiFailing(status.openPr) && (
+                  <span className="text-[9.5px] leading-4 text-fg-faint">
+                    CI failing
+                  </span>
+                )}
+              </div>
+            )}
 
-          {/* The workspace's terminals, one line each — always, when there are
+            {/* The workspace's terminals, one line each — always, when there are
               any: the title above is what the workspace is about, and these
               rows are what is running in it, each wearing its own phase dot
               and pane count. Nothing is drawn for a workspace running nothing
@@ -412,49 +467,49 @@ const QueueEntry = memo(function QueueEntry({
               something that isn't there. The negative margin lets a row's
               hover ground bleed while its text stays flush with the card's
               own lines. */}
-          {tabIds.length > 0 && (
-            <div className="-mx-1 mt-1">
-              {tabIds.map((tabId) => (
-                <TerminalRow key={tabId} tabId={tabId} />
-              ))}
-            </div>
-          )}
+            {tabIds.length > 0 && (
+              <div className="-mx-1 mt-1">
+                {tabIds.map((tabId) => (
+                  <TerminalRow key={tabId} tabId={tabId} />
+                ))}
+              </div>
+            )}
 
-          {/* The signal line: the one thing here that wants a person, in
+            {/* The signal line: the one thing here that wants a person, in
               words. A stopped agent's own question, or the reviewer's verdict
               — the same kind of fact, so they share the slot — and the good
               ending when the story is over. At most one; a waiting terminal
               that said nothing shows nothing, because that it is waiting is
               what its phase marker is for. */}
-          {status.shipped ? (
-            <p className="mt-1 truncate text-[10px] leading-4 text-status-approved/85">
-              #{status.shipped.number} merged
-            </p>
-          ) : terminals.waitingOn ? (
-            <p className="mt-1 truncate text-[10px] leading-4 text-status-saved/90">
-              {terminals.waitingOn}
-            </p>
-          ) : changesRequested ? (
-            <p className="mt-1 truncate text-[10px] leading-4 text-pr-attention/90">
-              changes requested
-            </p>
-          ) : null}
-        </div>
-      </ContextMenuTrigger>
+            {status.shipped ? (
+              <p className="mt-1 truncate text-[10px] leading-4 text-status-approved/85">
+                #{status.shipped.number} merged
+              </p>
+            ) : terminals.waitingOn ? (
+              <p className="mt-1 truncate text-[10px] leading-4 text-status-saved/90">
+                {terminals.waitingOn}
+              </p>
+            ) : changesRequested ? (
+              <p className="mt-1 truncate text-[10px] leading-4 text-pr-attention/90">
+                changes requested
+              </p>
+            ) : null}
+          </div>
+        </ContextMenuTrigger>
 
-      {/* Built when the menu opens, not on every render of every entry: the
+        {/* Built when the menu opens, not on every render of every entry: the
           verb list walks the repos and closes over the queue's positions, and
           nothing reads it until there is a menu on screen. */}
-      <ContextMenuContent>
-        <EntryMenuItems
-          workspace={workspace}
-          index={index}
-          count={count}
-          status={status}
-          onRename={() => setRenaming(true)}
-        />
-      </ContextMenuContent>
-    </ContextMenu>
+        <ContextMenuContent>
+          <EntryMenuItems
+            workspace={workspace}
+            index={index}
+            status={status}
+            onRename={() => setRenaming(true)}
+          />
+        </ContextMenuContent>
+      </ContextMenu>
+    </div>
   );
 });
 
@@ -519,19 +574,17 @@ function RepoChip({ repo }: { repo: AttachmentStatus }): ReactNode {
 function EntryMenuItems({
   workspace,
   index,
-  count,
   status,
   onRename,
 }: {
   workspace: Workspace;
   index: number;
-  count: number;
   status: WorkspaceStatus;
   onRename: () => void;
 }): ReactNode {
   return (
     <ContextActionItems
-      actions={workspaceActions({ workspace, index, count, status, onRename })}
+      actions={workspaceActions({ workspace, index, status, onRename })}
     />
   );
 }

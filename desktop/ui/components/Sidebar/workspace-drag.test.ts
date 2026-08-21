@@ -12,12 +12,15 @@ vi.mock("../../api", () => ({ getApiClient: () => backend }));
 
 import {
   dragCarrying,
+  gapDepth,
   gapPosition,
   resolveWorkDropTarget,
   terminalsInFlight,
+  workspaceDragFrom,
   WORKSPACE_MIME,
   type WorkTargetRects,
 } from "./workspace-drag";
+import { workspace } from "../../test/fixtures";
 import {
   setDraggedPane,
   setDraggedTab,
@@ -38,6 +41,92 @@ describe("gapPosition", () => {
     // The gaps either side of a card are both no-ops.
     expect(gapPosition(1, 1)).toBe(1);
     expect(gapPosition(1, 2)).toBe(1);
+  });
+
+  it("shifts by the whole subtree a parent carries with it", () => {
+    // A card holding two nested workspaces leaves a three-row hole, so a gap
+    // below it has moved up by three, not by one.
+    expect(gapPosition(0, 4, 3)).toBe(1);
+    // Gaps above the card are unaffected however much it carries.
+    expect(gapPosition(3, 1, 3)).toBe(1);
+  });
+
+  it("treats a gap inside the dragged subtree as no move at all", () => {
+    // Hovering between a parent and one of its own children: the only thing
+    // that gap can mean is "leave it here". Subtracting the subtree there
+    // counts rows that are not above the card, and used to send the whole
+    // group somewhere it was never dragged.
+    expect(gapPosition(3, 4, 3)).toBe(3);
+    expect(gapPosition(3, 5, 3)).toBe(3);
+    // The gap just past the subtree is the last one that changes nothing.
+    expect(gapPosition(3, 6, 3)).toBe(3);
+    // One row further down does move it.
+    expect(gapPosition(3, 7, 3)).toBe(4);
+  });
+});
+
+/** A queue: `parent` holding `child`, then a loose card. */
+const nested = [
+  workspace("parent"),
+  workspace("child", { parentId: "parent", depth: 1 }),
+  workspace("loose"),
+];
+
+describe("workspaceDragFrom", () => {
+  it("carries a card's whole subtree, and rules it out as a target", () => {
+    expect(workspaceDragFrom(nested, 0)).toEqual({
+      id: "parent",
+      index: 0,
+      size: 2,
+      ids: ["parent", "child"],
+    });
+    // A leaf carries only itself.
+    expect(workspaceDragFrom(nested, 1)?.size).toBe(1);
+    expect(workspaceDragFrom(nested, 9)).toBeNull();
+  });
+});
+
+describe("gapDepth", () => {
+  const loose = workspaceDragFrom(nested, 2);
+
+  it("draws the line at the depth the drop will land at", () => {
+    // Above the parent: the top level.
+    expect(gapDepth(nested, loose, 0)).toBe(0);
+    // Between the parent and its child: the drop lands as another child, so
+    // the line is indented to say so.
+    expect(gapDepth(nested, loose, 1)).toBe(1);
+    // Past the last row there is nothing to be a sibling of — which is how a
+    // nested card is dragged back out.
+    expect(gapDepth(nested, loose, 3)).toBe(0);
+  });
+
+  it("measures a terminal drag against the list as it stands", () => {
+    // A terminal lifts nothing out, and the workspace it mints lands as a
+    // sibling of the row it displaces — so the line is drawn there.
+    expect(gapDepth(nested, null, 0)).toBe(0);
+    expect(gapDepth(nested, null, 1)).toBe(1);
+    expect(gapDepth(nested, null, 3)).toBe(0);
+  });
+
+  it("holds the line at the card's own depth where nothing would move", () => {
+    const child = workspaceDragFrom(nested, 1);
+    // The gaps either side of the card it is already in: the line stays at
+    // the indent the card is drawn at rather than jumping to whatever row
+    // follows its subtree.
+    expect(gapDepth(nested, child, 1)).toBe(1);
+    expect(gapDepth(nested, child, 2)).toBe(1);
+
+    // And the gaps inside a parent's own subtree say the same thing.
+    const parent = workspaceDragFrom(nested, 0);
+    expect(gapDepth(nested, parent, 1)).toBe(0);
+    expect(gapDepth(nested, parent, 2)).toBe(0);
+  });
+
+  it("ignores the rows the drag itself is carrying", () => {
+    // Dragging the parent, the gap that was "between parent and child" is
+    // measured against the list with both of them lifted out.
+    const parent = workspaceDragFrom(nested, 0);
+    expect(gapDepth(nested, parent, 3)).toBe(0);
   });
 });
 
@@ -93,8 +182,26 @@ describe("resolveWorkDropTarget", () => {
     });
   });
 
-  it("never offers an entry to a reorder", () => {
+  it("nests a reorder dropped on the middle of an entry", () => {
+    // A card has one thing to say that a vertical position cannot: go one
+    // level deeper. It gets the middle third, and the gaps keep the rest —
+    // the wider band a terminal drop uses made every reorder over a card body
+    // read as "nest under this".
     expect(resolveWorkDropTarget(50, 20, true, rects)).toEqual({
+      kind: "card",
+      itemId: "a",
+    });
+    // Just outside the band, the insertion line is back.
+    expect(resolveWorkDropTarget(50, 16, true, rects)).toEqual({
+      kind: "gap",
+      index: 0,
+    });
+  });
+
+  it("won't offer a card the drag is already carrying", () => {
+    // Nesting a workspace under itself, or under something already beneath
+    // it, is the one impossible nesting — so it is never highlighted.
+    expect(resolveWorkDropTarget(50, 20, true, rects, ["a"])).toEqual({
       kind: "gap",
       index: 1,
     });

@@ -69,7 +69,13 @@ pub fn load() -> Result<WorkState, WorkError> {
             ..WorkState::default()
         });
     }
-    Ok(serde_json::from_str(&raw)?)
+    let mut state: WorkState = serde_json::from_str(&raw)?;
+    // In memory only: a read never writes. What this fixes is a document whose
+    // tree order or parent links do not hold — hand-edited, or written by a
+    // build that spelled the nesting differently — so every reader sees the
+    // same queue, and the next write straightens the file itself.
+    super::reflow(&mut state);
+    Ok(state)
 }
 
 /// Save the work queue with optimistic concurrency control.

@@ -12,6 +12,8 @@
 
 import { useCallback, useSyncExternalStore } from "react";
 import { useReviewStore } from "../../stores";
+import { subtreeLength } from "../../stores/slices/workspaceSlice";
+import type { Workspace } from "../../types";
 import {
   draggedPane,
   draggedTabSource,
@@ -32,6 +34,21 @@ export interface WorkspaceDrag {
   id: string;
   /** Position in the section, so a drop between cards can be a no-op. */
   index: number;
+  /**
+   * How many rows the drag is carrying — the card and everything nested under
+   * it. A drag of a parent moves its whole subtree, so every gap below it has
+   * shifted by this much, not by one.
+   */
+  size: number;
+  /**
+   * The ids in flight, including the card itself.
+   *
+   * What a card cannot be dropped *onto*: nesting a workspace under itself, or
+   * under something already beneath it, is the one impossible nesting. Ruling
+   * the targets out here means the highlight never offers a drop the backend
+   * would refuse.
+   */
+  ids: string[];
 }
 
 /**
@@ -125,6 +142,25 @@ export function sessionsOfTab(tabId: string): string[] {
 }
 
 /**
+ * Describe the card at `index` as the drag that picking it up starts: the rows
+ * it carries, and the ids it therefore cannot be dropped onto.
+ */
+export function workspaceDragFrom(
+  items: Workspace[],
+  index: number,
+): WorkspaceDrag | null {
+  const item = items[index];
+  if (!item) return null;
+  const size = subtreeLength(items, index);
+  return {
+    id: item.id,
+    index,
+    size,
+    ids: items.slice(index, index + size).map((entry) => entry.id),
+  };
+}
+
+/**
  * Attach the payload a queue drag carries: the module latch, the MIME the
  * targets test for, and a text fallback, since some webviews won't start a drag
  * without one and an empty string is the payload that can't be pasted into
@@ -154,9 +190,9 @@ function carriesTerminal(types: readonly string[]): boolean {
 /**
  * What a dragover's MIME types say is being carried, or null for a drag the
  * section doesn't take. `types` is all a dragover can read — the payloads
- * themselves are in the module latches — but the *kind* decides which targets
- * exist at all: a card being reordered can only land in a gap, everything else
- * can land on a card too (see `resolveWorkDropTarget`).
+ * themselves are in the module latches — but the *kind* decides how much of a
+ * card takes a drop, because a card being reordered is competing with its own
+ * gaps for the same pixels (see `resolveWorkDropTarget`).
  */
 export function dragCarrying(
   types: readonly string[],
@@ -246,15 +282,50 @@ export function workSectionDropHandlers(): {
 }
 
 /**
- * The position a card dragged from `from` should end up at, given the gap it
- * was dropped in.
+ * The row a card dragged from `from` should end up on, given the gap it was
+ * dropped in.
  *
  * Gap indices count the list as it looks on screen; the move happens after the
- * card has been lifted out, so every gap below it has shifted up by one. Off by
- * one here is a drag that lands one row from where the insertion line was.
+ * card has been lifted out, so every gap below it has shifted up by the number
+ * of rows the drag carries — `size`, not one, because a card takes everything
+ * nested under it. Off by one here is a drag that lands a row away from where
+ * the insertion line was.
  */
-export function gapPosition(from: number, gapIndex: number): number {
-  return gapIndex > from ? gapIndex - 1 : gapIndex;
+export function gapPosition(from: number, gapIndex: number, size = 1): number {
+  // A gap *inside* the dragged card's own subtree — between it and one of its
+  // own children, or just below the last of them — is a gap into itself. The
+  // only thing it can mean is "leave it where it is"; subtracting `size` there
+  // counts rows that aren't above the card at all and lands the whole group
+  // somewhere it was never dragged.
+  if (gapIndex > from && gapIndex <= from + size) return from;
+  return gapIndex > from ? gapIndex - size : gapIndex;
+}
+
+/**
+ * The depth the insertion line at `gapIndex` should be drawn at — which is the
+ * depth the drop will actually land at, so the line never promises an indent
+ * the move won't give it.
+ *
+ * The rule both this and `move_workspace` follow: a card lands as a sibling of
+ * the row it displaces, and at the end of the list, where there is no such row,
+ * at the top level. A terminal dropped in a gap mints a top-level workspace, so
+ * a drag carrying no card draws flush.
+ */
+export function gapDepth(
+  items: Workspace[],
+  drag: WorkspaceDrag | null,
+  gapIndex: number,
+): number {
+  // A terminal lifts nothing out, so the row it displaces is just the row
+  // that is there — and the workspace it mints lands at that row's depth.
+  if (!drag) return items[gapIndex]?.depth ?? 0;
+  const to = gapPosition(drag.index, gapIndex, drag.size);
+  // A gap the drop wouldn't move it out of: the line says "unchanged" by
+  // sitting at the depth the card is already drawn at, rather than at the
+  // depth of whichever row happens to follow its subtree.
+  if (to === drag.index) return items[drag.index]?.depth ?? 0;
+  const rest = items.filter((item) => !drag.ids.includes(item.id));
+  return rest[to]?.depth ?? 0;
 }
 
 /**
@@ -275,8 +346,16 @@ export async function applyWorkDrop(
   const store = useReviewStore.getState();
 
   if (payload.kind === "item") {
-    if (target.kind === "card") return;
-    const to = gapPosition(payload.drag.index, target.index);
+    // Onto a card: nest under it. A vertical position can say where a card
+    // goes but never that it goes one level deeper, so nesting gets the
+    // gesture that has somewhere unambiguous to land — and a drop onto the
+    // card's own subtree is never offered (see `workspaceDragFrom`).
+    if (target.kind === "card") {
+      if (payload.drag.ids.includes(target.itemId)) return;
+      await store.nestWorkspace(payload.drag.id, target.itemId);
+      return;
+    }
+    const to = gapPosition(payload.drag.index, target.index, payload.drag.size);
     if (to === payload.drag.index) return;
     await store.moveWorkspace(payload.drag.id, to);
     return;
@@ -302,6 +381,10 @@ export async function applyWorkDrop(
     // the tab. Naming any of them names it.
     await store.attachTerminalToWorkspace(first, itemId);
     if (target.kind === "gap") {
+      // The same rule every other drop follows: the new card lands as a
+      // sibling of the row it displaces, which is the depth `gapDepth` drew
+      // the line at. The card was minted at the end of the queue, so the gap
+      // index is already the row it should occupy.
       await store.moveWorkspace(itemId, target.index);
     }
     return;
@@ -346,9 +429,11 @@ export interface WorkTargetRects {
 export function resolveWorkDropTarget(
   x: number,
   y: number,
-  /** A reorder can only land in a gap; anything else can land on an entry. */
+  /** A reorder is competing with its own gaps for a card's pixels. */
   reordering: boolean,
   rects: WorkTargetRects,
+  /** Cards this drag must not land on — a card's own subtree. */
+  offLimits: readonly string[] = [],
 ): WorkDropTarget | null {
   const { section, cards } = rects;
   if (!section) return null;
@@ -363,14 +448,18 @@ export function resolveWorkDropTarget(
   ) {
     return null;
   }
-  if (!reordering) {
-    const hit = cards.find(({ rect }) => y >= rect.top && y <= rect.bottom);
-    if (hit) {
-      const height = Math.max(hit.rect.bottom - hit.rect.top, 1);
-      const t = (y - hit.rect.top) / height;
-      if (t >= 0.15 && t <= 0.85) {
-        return { kind: "card", itemId: hit.itemId };
-      }
+  const hit = cards.find(({ rect }) => y >= rect.top && y <= rect.bottom);
+  if (hit && !offLimits.includes(hit.itemId)) {
+    const height = Math.max(hit.rect.bottom - hit.rect.top, 1);
+    const t = (y - hit.rect.top) / height;
+    // A terminal has nowhere to go on a card but *into* it, so it takes
+    // almost the whole face. A card being reordered is competing with the two
+    // gaps its own drag is aimed at far more often than it is nesting, so
+    // nesting is the middle third and reordering keeps the rest — the wider
+    // band made every reorder over a card body read as "nest under this".
+    const [from, to] = reordering ? NEST_BAND : DROP_ON_CARD_BAND;
+    if (t >= from && t <= to) {
+      return { kind: "card", itemId: hit.itemId };
     }
   }
   // The gap index is how many card midpoints sit above the cursor — above the
@@ -380,6 +469,12 @@ export function resolveWorkDropTarget(
   ).length;
   return { kind: "gap", index };
 }
+
+/** How much of a card's height takes a terminal dropped on it. */
+const DROP_ON_CARD_BAND = [0.15, 0.85] as const;
+
+/** How much of it nests a card dropped on it — see `resolveWorkDropTarget`. */
+const NEST_BAND = [0.35, 0.65] as const;
 
 /**
  * How long measured rects are trusted, matching `useTerminalFileDrop`: the
@@ -419,7 +514,13 @@ export function workDropTargetAt(
   if (measuredAt === null || performance.now() - measuredAt > REMEASURE_MS) {
     measure();
   }
-  return resolveWorkDropTarget(x, y, reordering, measured);
+  return resolveWorkDropTarget(
+    x,
+    y,
+    reordering,
+    measured,
+    draggedItem?.ids ?? [],
+  );
 }
 
 /** Drop the measurement cache — called when a drag ends. */

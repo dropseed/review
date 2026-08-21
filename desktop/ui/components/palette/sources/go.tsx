@@ -136,11 +136,19 @@ export function useGoSource(
       // rather than the attachments' raw absolute paths, which is what a
       // palette row is least able to read.
       const status = describeWorkspace(workspace, ctx);
+      // What a nested workspace sits under. The sidebar carries that in the
+      // indent and this list has no indent to carry it — and the palette is
+      // where a subtask is most likely to be looked for by the name of the
+      // thing it belongs to. In `detail` rather than the title so it is also
+      // *searchable*: typing a parent's name brings its children up with it.
+      const under = workspace.ancestors.map((a) => a.displayTitle).join(" › ");
       return {
         kind: "workspace",
         id: `workspace:${workspace.id}`,
         title: workspace.displayTitle,
-        detail: status.subtitle,
+        detail: [under && `in ${under}`, status.subtitle]
+          .filter(Boolean)
+          .join(" · "),
         workspace,
       };
     });

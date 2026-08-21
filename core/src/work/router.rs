@@ -294,7 +294,7 @@ mod tests {
 
         assert_eq!(route(repo.path()).workspace.id, first.id);
 
-        move_workspace(&second.id, 0).unwrap();
+        move_workspace(&second.id, 0, false).unwrap();
         assert_eq!(route(repo.path()).workspace.id, second.id);
         // Routing joined; it never created.
         assert_eq!(list().unwrap().workspaces.len(), 2);
@@ -374,7 +374,7 @@ mod tests {
         let ghost = route(repo.path()).workspace;
         let mine = add(Some("real work"), vec![]).unwrap().1;
         attach(&mine.id, attachment_of(repo.path(), None)).unwrap();
-        move_workspace(&mine.id, 0).unwrap();
+        move_workspace(&mine.id, 0, false).unwrap();
 
         // Nothing was taken from the router's workspace — it is simply no longer
         // the first answer, and cleanup collects it once nothing runs in it.

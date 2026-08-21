@@ -150,9 +150,42 @@ Only the `terminal` feature needs this, so only `review-daemon` (and `cargo test
 - **Workspace**: One thing the user is working on — an optional title and an ordered list of **attachments**. It is a container that becomes whatever is put in it. Everything live (terminals, PRs, review state) is derived and joined against its attachments, or against the workspace id the daemon stamps on a session.
 - **Attachment**: `{path, refName?}` — a repository (or a plain directory) the workspace shows, plus an optional view hint. **Not exclusive**: any number of workspaces may attach the same path, and a workspace shows a path at most once. Nothing here conflicts.
 
+## Workspaces nest
+
+A workspace may sit under another (`parentId`), to any depth — how one that is
+really a subtask of a larger one says so. `work.json` stays a **flat array in
+priority order**: `work::reflow` keeps each workspace immediately followed by
+its own subtree, so the array is literally the order every surface renders and
+everything that counts rows (⌘1–9, the rail, the palette, the sidebar's drop
+gaps, `reorder`'s 1-based positions) goes on counting rows. `reflow` runs after
+every write and on every read, which is also what heals a hand-edited file: a
+`parentId` naming nothing is cleared (the child comes up a level, never
+disappears) and a cycle is broken at its first member. Nesting cannot bump the
+schema version, because an older `work.json` loads as an _empty queue_ — the
+field is additive, and an older build reading a newer file loses the nesting and
+keeps the workspaces.
+
+Two gestures, because they are asking different things. **Position** is a drag
+onto a gap, `review workspace reorder`, or `work_move`: the card lands as a
+sibling of the row it displaces, and at the end of the list — where there is no
+such row — at the top level, which is the only way _out_ of a group by drag.
+The sidebar draws its insertion line at that depth so the line never promises
+an indent the drop won't give. `keepParent` is the other question — reorder
+among the siblings, leave the nesting alone — and is what the card menu's move
+verbs mean. **Nesting in** is a drag of a card onto another card (or
+`review workspace nest <id> --under <id>`, `work_nest`), because a vertical
+position can say where a card goes but never that it goes one level deeper. The
+one impossible nesting is a workspace under itself or under its own descendant.
+
+Removing a parent asks: the app offers "take the sub-workspaces too" or "keep
+them and move them up a level" before it asks about terminals, since the answer
+decides which shells are at stake. `review workspace remove` promotes by default
+and cascades with `--recursive` — a non-interactive surface has nobody to ask,
+and the safe reading is the one that never takes work nobody looked at.
+
 ## Titles are derived
 
-A workspace's title is `null` until someone types one. `Workspace::display_title` derives it live, in two rungs: the first attachment's label ("review · feature/x"), else "Untitled". A terminal's title never stands in — the title is what the workspace is _about_ (its attachments, or the human's words), and a terminal is something running in it, listed on the card as its own row. The wire carries both `title` (raw, nullable) and `displayTitle` (always set), so a rename field prefills with what the human typed rather than what was derived for them; renaming to an empty string clears the stored title and derivation resumes.
+A workspace's title is `null` until someone types one. `Workspace::display_title` derives it live, in two rungs: the first attachment's label ("review · feature/x"), else "Untitled". A nested workspace's own title rarely says what it belongs to, so the wire also carries `ancestors` — the named chain above it, derived on every read — and every surface that shows a workspace out of the queue's own order uses it: the palette's rows (searchably, so a parent's name brings its children up), the collapsed rail's tooltips, a card's hover. A terminal's title never stands in — the title is what the workspace is _about_ (its attachments, or the human's words), and a terminal is something running in it, listed on the card as its own row. The wire carries both `title` (raw, nullable) and `displayTitle` (always set), so a rename field prefills with what the human typed rather than what was derived for them; renaming to an empty string clears the stored title and derivation resumes.
 
 The **queue card** renders a derived title in italics — same colour and weight, visibly implicit — and absorbs the one chip that would repeat it (`repo · branch` twice on a two-line card said nothing new), moving that chip's PR and dirty marks up beside the title. Everything else on the card is explicit: every other attachment is a chip, and every terminal is a row with its own phase dot and pane count.
 
@@ -197,7 +230,8 @@ The **guide** is an agent-authored grouping of a comparison's hunks into a theme
 
 - `review workspace [list] [--json]` — numbered list; `--json` is global to the subcommand
 - `review workspace add ["title"]` — the title is optional; adds always append
-- `review workspace reorder <id> <position>` (1-based) · `review workspace rename <id> ["title"]` (no title clears it) · `review workspace remove <id>`
+- `review workspace reorder <id> <position>` (1-based, `--keep-parent` to stay in the group) · `review workspace rename <id> ["title"]` (no title clears it) · `review workspace remove <id> [--recursive]`
+- `review workspace nest <id> --under <id>` · `review workspace unnest <id>` — a workspace may sit under another, to any depth; `list` indents to show it and `--json` carries `parentId`, `depth` and `ancestors`
 - `review workspace attach <id> [PATH] [--ref REF]` · `review workspace detach <id> [PATH]` — PATH defaults to the current directory
 - `review workspace resolve [DIR]` — preview a route without writing
 - `<id>` accepts unique prefixes

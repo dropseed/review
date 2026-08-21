@@ -52,6 +52,21 @@ Derivation is why a **relaunch** needs one thing of its own. Everything a worksp
 
 The stage is **two tab strips**, drawn to match: terminals on the left (`TerminalPanel`), repos on the right (`Stage/CodeHalfHeader`), each with its own `+` and its own `Stage/FocusToggle`. The toggle is `split ⇄ this half` against the one `contentFocus` state (`"split" | "terminal" | "code"`, persisted by `terminalSlice`, also driven by the `view.toggleTerminal` and `view.maximizeTerminal` commands); the two bars are never both hidden, so the button that took the stage is always the one on screen to give it back, and neither collapsed rail (`Terminal/TerminalRail`, `ContentArea/DiffRail`) carries a second copy of it. Each toggle is revealed by hovering its own bar (which carries `group/bar`) — with two exceptions that keep it from being a control you have to already know about: it stays visible while focused, because a half holding the whole stage must always show the way back, and it appears on keyboard focus. `useTerminalDockPresent` is the one answer to "is the stage actually split", shared by the dock and the repo bar so a Focus button never appears with nothing to take the room from. The repo strip's `+` is a `RepoPicker` popover over the sidebar tree's repos; picking calls `work_attach`, closing a tab calls `work_detach` and hands the screen to the neighbour. The Review/Git/Browse strip belongs to the files panel it switches and is drawn as that panel's own first row — it used to be portalled up into `CodeHalfHeader`, which is why that header now holds repo tabs and nothing else. A workspace showing no repo and running nothing gets `Stage/EmptyStage` — the same two-column frame, each half centring one block: `Terminal/StartTerminal` (the same block the terminal panel shows when it has no tabs) and the repo picker. The sidebar header's `+` and ⌘N are the same verb, `newWorkspace` in `commands/workspaceCommands.ts`: `work_add` with a null title and no attachments, focused; there is no dialog and no create flow. This app is one window — macOS window tabs and multi-window are both gone, so ⌘N makes a workspace instead of another copy of the app.
 
+Workspaces **nest**: `parentId` puts one under another, to any depth, and the
+backend keeps `workspaces` a flat array in tree order — each entry followed by
+its own subtree — so every list here goes on being a list. The tree shows up as
+`depth` (what a card indents by, capped for drawing in `Sidebar/row-chrome`) and
+`ancestors` (the named chain, which is what the palette and the collapsed rail
+show, since neither has an indent to carry it). Dragging a card onto another
+nests it; dragging into a gap positions it and lands it at the depth of the row
+it displaces, which is what `gapDepth` draws the insertion line at. The store's
+`reorderWorkspaces` mirrors that rule — and `retree` mirrors the backend's
+derivation of `depth`/`ancestors` — so a dragged card is drawn at its new indent
+in the frame it lands rather than a round trip later. Menu moves pass
+`keepParent` instead and take the plain non-optimistic path: their settling rule
+is the backend's `reflow`, and a second copy of that here would buy a frame and
+cost a source of truth.
+
 `autoCreated` is backend plumbing for cleanup. It is never rendered and nothing branches on it — a router-made workspace and a human-made one are the same thing on screen.
 
 The _other_ half of cleanup is an event: closing a workspace's last terminal drops the workspace too, when it has no typed title and at most one attachment. `reapSpentWorkspace` in `components/Terminal/close.ts` holds the rule and the argument for why it is an event rather than a sweep.

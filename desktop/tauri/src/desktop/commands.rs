@@ -529,11 +529,42 @@ pub fn work_add(
     Ok(review::work::views(state.workspaces))
 }
 
+/// Remove a workspace. `recursive` takes everything nested under it as well —
+/// the frontend asks the human first (the confirmation names the
+/// sub-workspaces and their terminals before it takes them) and sends the
+/// answer here. Absent means the safe reading: the children come up a level
+/// and stay in the queue.
 #[tauri::command]
-pub fn work_remove(id: String) -> Result<Vec<WorkspaceView>, String> {
+pub fn work_remove(id: String, recursive: Option<bool>) -> Result<Vec<WorkspaceView>, String> {
     let t0 = Instant::now();
-    let (state, item) = review::work::remove(&id).map_err(|e| e.to_string())?;
-    info!("work_remove {} in {:?}", item.id, t0.elapsed());
+    let mode = if recursive.unwrap_or(false) {
+        review::work::Removal::Subtree
+    } else {
+        review::work::Removal::PromoteChildren
+    };
+    let (state, removed) = review::work::remove(&id, mode).map_err(|e| e.to_string())?;
+    info!(
+        "work_remove {} (+{} nested) in {:?}",
+        removed.workspace.id,
+        removed.descendants.len(),
+        t0.elapsed()
+    );
+    Ok(review::work::views(state.workspaces))
+}
+
+/// Put a workspace under another — the sidebar's card-onto-card drop. A null
+/// `parentId` takes it back out to the top level.
+#[tauri::command]
+pub fn work_nest(id: String, parent_id: Option<String>) -> Result<Vec<WorkspaceView>, String> {
+    let t0 = Instant::now();
+    let (state, item) =
+        review::work::set_parent(&id, parent_id.as_deref()).map_err(|e| e.to_string())?;
+    info!(
+        "work_nest {} under {:?} in {:?}",
+        item.id,
+        item.parent_id,
+        t0.elapsed()
+    );
     Ok(review::work::views(state.workspaces))
 }
 
@@ -549,10 +580,19 @@ pub fn work_rename(id: String, title: Option<String>) -> Result<Vec<WorkspaceVie
 
 /// Reorder an item. `position` is 0-based, matching the array the frontend
 /// dragged (the CLI's `review workspace reorder` is the 1-based surface).
+///
+/// `keepParent` is the card menu's move verbs: reorder among the siblings and
+/// leave the nesting alone. Without it the row lands at the depth of the row it
+/// displaces, which is what a drag means.
 #[tauri::command]
-pub fn work_move(id: String, position: usize) -> Result<Vec<WorkspaceView>, String> {
+pub fn work_move(
+    id: String,
+    position: usize,
+    keep_parent: Option<bool>,
+) -> Result<Vec<WorkspaceView>, String> {
     let t0 = Instant::now();
-    let (state, item) = review::work::move_workspace(&id, position).map_err(|e| e.to_string())?;
+    let (state, item) = review::work::move_workspace(&id, position, keep_parent.unwrap_or(false))
+        .map_err(|e| e.to_string())?;
     info!("work_move {} -> {position} in {:?}", item.id, t0.elapsed());
     Ok(review::work::views(state.workspaces))
 }
@@ -629,7 +669,10 @@ pub async fn work_route(
         t0.elapsed()
     );
     Ok(RouteLanding {
-        workspace: review::work::WorkspaceView::from(landing.workspace),
+        workspace: review::work::view_of(
+            &review::work::list().map_err(|e| e.to_string())?.workspaces,
+            landing.workspace,
+        ),
         created: landing.created,
     })
 }

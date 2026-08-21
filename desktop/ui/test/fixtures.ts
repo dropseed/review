@@ -58,6 +58,12 @@ export function workspace(
     autoCreated: false,
     createdAt: "2026-08-13T00:00:00.000Z",
     ...overrides,
+    // The tree facts the backend derives, after the spread so a fixture can
+    // state `parentId` alone and get a consistent `depth` — a deeper one says
+    // so explicitly.
+    parentId: overrides.parentId ?? null,
+    depth: overrides.depth ?? (overrides.parentId ? 1 : 0),
+    ancestors: overrides.ancestors ?? [],
   };
 }
 

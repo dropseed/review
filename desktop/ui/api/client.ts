@@ -524,11 +524,39 @@ export interface ApiClient {
     attachments: Attachment[],
   ): Promise<Workspace[]>;
 
-  /** Delete a work item */
-  removeWorkspace(id: string): Promise<Workspace[]>;
+  /**
+   * Delete a work item.
+   *
+   * `recursive` takes everything nested under it too. Left off, the
+   * sub-workspaces come up to its level and stay in the queue — the safe
+   * reading, and the only one a caller with nobody to ask may use.
+   */
+  removeWorkspace(id: string, recursive?: boolean): Promise<Workspace[]>;
 
-  /** Move a work item to a 0-based position in the priority order */
-  moveWorkspace(id: string, position: number): Promise<Workspace[]>;
+  /**
+   * Move a work item to a 0-based row in the queue, taking everything nested
+   * under it.
+   *
+   * The destination decides the depth: it lands as a sibling of the row it
+   * displaces, and at the end of the list — where there is no such row — at the
+   * top level. `reorderWorkspaces` in the store mirrors this so the optimistic
+   * list matches what comes back.
+   *
+   * `keepParent` asks the other question — reorder among the siblings, leaving
+   * the nesting alone — which is what a menu verb aimed at position means.
+   */
+  moveWorkspace(
+    id: string,
+    position: number,
+    keepParent?: boolean,
+  ): Promise<Workspace[]>;
+
+  /**
+   * Put a workspace under another, or — with a null `parentId` — back at the
+   * top level. Rejected when the new parent is the workspace itself or sits
+   * beneath it, which is the only impossible nesting.
+   */
+  nestWorkspace(id: string, parentId: string | null): Promise<Workspace[]>;
 
   /**
    * Show a repo in a workspace — opening a repo tab.

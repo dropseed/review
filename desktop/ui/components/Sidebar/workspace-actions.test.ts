@@ -59,10 +59,12 @@ const EMPTY_CONTEXT: WorkspaceContext = {
 };
 
 function cardActions(items: Workspace[], index: number): WorkAction[] {
+  // The move verbs are a function of the *queue* — they reorder a card among
+  // its siblings — so the store has to be holding the list they are about.
+  useReviewStore.setState({ workspaces: items });
   return workspaceActions({
     workspace: items[index],
     index,
-    count: items.length,
     status: describeWorkspace(items[index], EMPTY_CONTEXT),
     onRename: () => {},
   });
@@ -240,12 +242,57 @@ describe("a menu verb runs the drag's own mutation", () => {
     const items = [item("one"), item("two"), item("three")];
     useReviewStore.setState({ workspaces: items });
 
-    // Card 0 moved down lands at 1 — the gap below it counts the list as it
-    // looks before the card is lifted out, which is the drop path's own rule.
+    // Card 0 moved down lands on row 1 — the row index counts the list after
+    // the card has been lifted out — and keeps whatever it is nested under,
+    // which is what separates a menu move from a drag.
     run(cardActions(items, 0), "workspace.moveDown");
     await vi.waitFor(() =>
-      expect(moveWorkspace).toHaveBeenCalledWith("one", 1),
+      expect(moveWorkspace).toHaveBeenCalledWith("one", 1, true),
     );
+  });
+
+  it("moves a card past everything nested under its next sibling", async () => {
+    // one, two (holding a child), three: moving `one` down has to clear the
+    // child too, or it lands inside the group it was stepping over.
+    const items = [
+      item("one"),
+      item("two"),
+      workspace("child", { parentId: "two", depth: 1 }),
+      item("three"),
+    ];
+
+    run(cardActions(items, 0), "workspace.moveDown");
+    await vi.waitFor(() =>
+      expect(moveWorkspace).toHaveBeenCalledWith("one", 2, true),
+    );
+  });
+
+  it("moves a nested card among its siblings, never out of the group", async () => {
+    // The row above `second` is `first`, its sibling; the row above *that* is
+    // their parent, which "move up" must never make it a sibling of.
+    const items = [
+      item("parent"),
+      workspace("first", { parentId: "parent", depth: 1 }),
+      workspace("second", { parentId: "parent", depth: 1 }),
+    ];
+
+    run(cardActions(items, 2), "workspace.moveUp");
+    await vi.waitFor(() =>
+      expect(moveWorkspace).toHaveBeenCalledWith("second", 1, true),
+    );
+  });
+
+  it("offers a nested card the way out, and a top-level one nothing to leave", () => {
+    const items = [
+      item("parent"),
+      workspace("child", { parentId: "parent", depth: 1 }),
+    ];
+    const has = (index: number) =>
+      flattenWorkActions(cardActions(items, index)).some(
+        (action) => workActionVerb(action.id) === "workspace.unnest",
+      );
+    expect(has(1)).toBe(true);
+    expect(has(0)).toBe(false);
   });
 
   it("closes a repo through the slice the tab bar writes with", async () => {
@@ -310,7 +357,7 @@ describe("a menu verb runs the drag's own mutation", () => {
 });
 
 describe("what a noun declines to offer", () => {
-  it("won't move the top card up, or the last one down", () => {
+  it("won't move the first sibling up, or the last one down", () => {
     const items = [item("one"), item("two")];
     const first = cardActions(items, 0);
     const last = cardActions(items, 1);

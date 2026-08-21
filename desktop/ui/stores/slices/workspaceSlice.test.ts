@@ -1,5 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
-import { createWorkspaceSlice, reorderWorkspaces } from "./workspaceSlice";
+import {
+  createWorkspaceSlice,
+  reorderWorkspaces,
+  subtreeLength,
+} from "./workspaceSlice";
 import type { Attachment, Workspace } from "../../types";
 import { attachment, workspace } from "../../test/fixtures";
 
@@ -44,6 +48,69 @@ describe("reorderWorkspaces", () => {
     // Clamping to where it already is counts as not moving.
     expect(reorderWorkspaces(items, "c", 99)).toBe(items);
     expect(reorderWorkspaces(items, "a", -1)).toBe(items);
+  });
+});
+
+/** parent (holding one child), then two loose cards. */
+const tree = [
+  item("parent"),
+  workspace("child", { title: "child", parentId: "parent", depth: 1 }),
+  item("x"),
+  item("y"),
+];
+
+describe("subtreeLength", () => {
+  it("counts a card and everything nested under it", () => {
+    expect(subtreeLength(tree, 0)).toBe(2);
+    expect(subtreeLength(tree, 1)).toBe(1);
+    expect(subtreeLength(tree, 3)).toBe(1);
+    expect(subtreeLength(tree, 9)).toBe(0);
+  });
+});
+
+describe("reorderWorkspaces over a tree", () => {
+  const shape = (items: Workspace[]) =>
+    items.map((entry) => `${"  ".repeat(entry.depth)}${entry.id}`);
+
+  it("takes the whole subtree, and lands at the depth of the row displaced", () => {
+    // `parent` down onto row 1 — the row `x` occupies once the two of them are
+    // lifted out. `x` is top-level, so `parent` stays top-level.
+    expect(shape(reorderWorkspaces(tree, "parent", 1))).toEqual([
+      "x",
+      "parent",
+      "  child",
+      "y",
+    ]);
+  });
+
+  it("nests a card dropped where a nested row was", () => {
+    // `y` onto row 1, which `child` occupies: it becomes another child of
+    // `parent`, above the row it pushed down — and its ancestry follows it
+    // without waiting for the backend's answer.
+    const next = reorderWorkspaces(tree, "y", 1);
+    expect(shape(next)).toEqual(["parent", "  y", "  child", "x"]);
+    expect(next[1].parentId).toBe("parent");
+    expect(next[1].ancestors).toEqual([
+      { id: "parent", displayTitle: "parent" },
+    ]);
+  });
+
+  it("takes a nested card back out at the end of the list", () => {
+    // The last row is the one gap with nothing below it to be a sibling of,
+    // which is what makes it the way out of a group by drag alone.
+    const next = reorderWorkspaces(tree, "child", 3);
+    expect(shape(next)).toEqual(["parent", "x", "y", "child"]);
+    expect(next[3].parentId).toBeNull();
+    expect(next[3].ancestors).toEqual([]);
+  });
+
+  it("clamps to the last row the subtree can occupy", () => {
+    expect(shape(reorderWorkspaces(tree, "parent", 99))).toEqual([
+      "x",
+      "y",
+      "parent",
+      "  child",
+    ]);
   });
 });
 

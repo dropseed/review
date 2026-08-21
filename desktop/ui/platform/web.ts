@@ -74,7 +74,14 @@ class WebDialogService implements DialogService {
     return window.prompt("Enter the full path to a git repository:") || null;
   }
 
-  async confirm(message: string, _title?: string): Promise<boolean> {
+  async confirm(
+    message: string,
+    _title?: string,
+    // `window.confirm` has two fixed buttons; every caller's message reads
+    // correctly without the labels, which is the contract that makes this
+    // fallback honest rather than merely lossy.
+    _labels?: { ok?: string; cancel?: string },
+  ): Promise<boolean> {
     return window.confirm(message);
   }
 

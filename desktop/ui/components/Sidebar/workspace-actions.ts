@@ -28,6 +28,7 @@ import { jumpToTerminal } from "../Terminal/jump";
 import { openTerminalTab } from "../Terminal/newTab";
 import type { ViewerPr, Workspace } from "../../types";
 import { applyWorkDrop } from "./workspace-drag";
+import { subtreeLength } from "../../stores/slices/workspaceSlice";
 import { type WorkspaceStatus } from "./workspace-status";
 
 /**
@@ -94,26 +95,34 @@ function openPrAction(id: string, pr: ViewerPr | undefined): WorkAction[] {
 // ----- Work item (a card) -----
 
 /**
- * Reorder through the drop path, so a menu move and a dragged move are the
- * same act. Gap indices count the list as it looks before the entry is lifted
- * out, which is why "down" is `index + 2` — see `gapPosition`.
+ * The rows sharing a workspace's parent, in queue order — what "up", "down"
+ * and "top" move it among.
+ *
+ * Siblings, not neighbours: a verb aimed at *position* must not change what a
+ * workspace is nested under, and the row above a card is very often its own
+ * parent or a cousin at another depth.
  */
-function moveEntry(
-  workspace: Workspace,
-  index: number,
-  gapIndex: number,
-): void {
-  void applyWorkDrop(
-    { kind: "gap", index: gapIndex },
-    { kind: "item", drag: { id: workspace.id, index } },
+function siblingRows(items: Workspace[], workspace: Workspace): number[] {
+  return items.flatMap((entry, index) =>
+    entry.parentId === workspace.parentId ? [index] : [],
   );
+}
+
+/**
+ * Reorder a card among its siblings, by the row it should end up on.
+ *
+ * `keepParent` is why this no longer goes through `applyWorkDrop` the way the
+ * terminal verbs still do: the drop path answers "where did the pointer land",
+ * and these three verbs are asking something a pointer cannot say — move within
+ * this group. The mutation is the same one either gesture ends in.
+ */
+function moveEntry(workspace: Workspace, row: number): void {
+  void store().moveWorkspace(workspace.id, row, true);
 }
 
 export interface WorkspaceActionsInput {
   workspace: Workspace;
   index: number;
-  /** How many entries there are, so the end of the list declines "down". */
-  count: number;
   /** The entry's derived status — where the PR and the chip labels are. */
   status: WorkspaceStatus;
   /** Start the inline rename. Component state, so the entry supplies it. */
@@ -123,7 +132,6 @@ export interface WorkspaceActionsInput {
 export function workspaceActions({
   workspace,
   index,
-  count,
   status,
   onRename,
 }: WorkspaceActionsInput): WorkAction[] {
@@ -150,6 +158,24 @@ export function workspaceActions({
     ],
   }));
 
+  // The card's own siblings, and where it sits among them. A workspace at the
+  // top level has every other top-level card for a sibling, so this is the
+  // same three verbs it has always had — just stated in terms that survive
+  // nesting.
+  const items = store().workspaces;
+  const siblings = siblingRows(items, workspace);
+  const among = siblings.indexOf(index);
+  const first = siblings[0] ?? index;
+  const previous = siblings[among - 1] ?? index;
+  const next = siblings[among + 1];
+  // Down means past the next sibling *and everything nested under it*, less
+  // the rows this card takes with it — the row index is counted after the
+  // subtree has been lifted out.
+  const down =
+    next === undefined
+      ? index
+      : next + subtreeLength(items, next) - subtreeLength(items, index);
+
   return [
     {
       id: "workspace.focus",
@@ -172,22 +198,37 @@ export function workspaceActions({
     { id: "workspace.rename", label: "Rename", run: onRename },
     {
       id: "workspace.moveTop",
-      label: "Move to top",
-      disabled: index === 0,
-      run: () => moveEntry(workspace, index, 0),
+      label: workspace.parentId ? "Move to first" : "Move to top",
+      disabled: among <= 0,
+      run: () => moveEntry(workspace, first),
     },
     {
       id: "workspace.moveUp",
       label: "Move up",
-      disabled: index === 0,
-      run: () => moveEntry(workspace, index, index - 1),
+      disabled: among <= 0,
+      run: () => moveEntry(workspace, previous),
     },
     {
       id: "workspace.moveDown",
       label: "Move down",
-      disabled: index >= count - 1,
-      run: () => moveEntry(workspace, index, index + 2),
+      // Past the next sibling means past everything nested under it — and the
+      // landing row is that far down minus the rows this card takes with it.
+      // `reflow` settles it back inside the group, which is what makes "down
+      // past the last sibling" mean "last child" rather than "out of here".
+      disabled: next === undefined,
+      run: () => moveEntry(workspace, down),
     },
+    // Out one level, the reverse of dropping this card onto another. Nesting
+    // *in* is the drag, because it needs a target; coming out doesn't.
+    ...(workspace.parentId
+      ? [
+          {
+            id: "workspace.unnest",
+            label: "Move out of group",
+            run: () => void store().nestWorkspace(workspace.id, null),
+          },
+        ]
+      : []),
     // One repo needs no submenu — the three verbs name it themselves. Several
     // do, or the menu becomes a list of branches you have to read twice.
     ...(repoVerbs.length === 1

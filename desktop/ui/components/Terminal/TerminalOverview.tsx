@@ -172,7 +172,13 @@ function OverviewTab({
       <button
         type="button"
         onClick={() => jumpToTab(tab.id)}
-        title={`Go to ${glance?.title ?? "terminal"} in ${workspace.displayTitle}`}
+        // The full chain in the tooltip, the leaf alone in the strip below:
+        // a nested workspace's own title rarely says what it belongs to, and
+        // this is the one place here with room to say it.
+        title={`Go to ${glance?.title ?? "terminal"} in ${[
+          ...workspace.ancestors.map((a) => a.displayTitle),
+          workspace.displayTitle,
+        ].join(" › ")}`}
         className="flex shrink-0 select-none items-center gap-1.5 border-b
                    border-edge/60 px-2 py-1 text-left text-xs text-fg-muted
                    hover:text-fg-secondary"

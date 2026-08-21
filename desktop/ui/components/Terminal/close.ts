@@ -12,6 +12,7 @@ import {
   tabWorkspaceId,
 } from "../../stores/slices/terminalSlice";
 import { collectLeafIds, type TerminalTab } from "./pane-tree";
+import type { Workspace } from "../../types";
 import { disposeTerminal } from "./registry";
 
 /**
@@ -157,12 +158,12 @@ async function confirmKill(ids: string[]): Promise<boolean> {
  * Drop a workspace whose last terminal just went away, when there is nothing
  * in it a person authored.
  *
- * "Nothing authored" is precisely: no typed title, and at most one attachment.
- * Such a workspace says only what its own repo already says, so re-opening that
- * repo — or starting another shell in it — mints an identical one, and leaving
- * it behind turns the queue into a list of finished things. A typed title or a
- * second repo is a person having built something here, and neither is ever
- * reaped: removal stays theirs.
+ * "Nothing authored" is precisely: no typed title, at most one attachment, and
+ * nothing nested under it. Such a workspace says only what its own repo already
+ * says, so re-opening that repo — or starting another shell in it — mints an
+ * identical one, and leaving it behind turns the queue into a list of finished
+ * things. A typed title, a second repo, or a sub-workspace is a person having
+ * built something here, and none of them is ever reaped: removal stays theirs.
  *
  * This is the *event* half of cleanup, and deliberately not a rule
  * `work::cleanup` could carry — a passive sweep with this predicate would also
@@ -182,6 +183,9 @@ async function reapSpentWorkspace(
   const workspace = state.workspaces.find((entry) => entry.id === workspaceId);
   if (!workspace) return;
   if (workspace.title !== null || workspace.attachments.length > 1) return;
+  // Something is nested under it: the card is a group somebody built, whatever
+  // its own title and repo say.
+  if (state.workspaces.some((entry) => entry.parentId === workspaceId)) return;
   const survivor = Object.values(state.terminalSessions).some(
     (session) =>
       session.workspaceId === workspaceId && !closing.includes(session.id),
@@ -279,19 +283,97 @@ export async function closeFocusedTerminal(): Promise<boolean> {
 export async function removeWorkspaceAndTerminals(
   workspaceId: string,
 ): Promise<boolean> {
+  const asked = useReviewStore.getState();
+  const title =
+    asked.workspaces.find((entry) => entry.id === workspaceId)?.displayTitle ??
+    "this workspace";
+
+  // What goes with it is the human's call, and it is asked before anything
+  // else: whether the sub-workspaces are coming decides which terminals are
+  // even at stake, so the "these shells will die" prompt cannot be written
+  // until it is answered.
+  const scope = await chooseRemovalScope(
+    title,
+    descendantsOf(asked.workspaces, workspaceId),
+  );
+  if (scope === null) return false;
+
+  // Read again, because a dialog is modal to the person and to nothing else:
+  // an agent's `review terminal start` — or another window — can land a
+  // session in this subtree while one is open. A session missing from `ids`
+  // is a shell that survives the only card it was reachable from, which is
+  // the exact thing this function exists to prevent.
   const state = useReviewStore.getState();
+  const going =
+    scope === "subtree"
+      ? [workspaceId, ...descendantsOf(state.workspaces, workspaceId)]
+      : [workspaceId];
   // The daemon's attribution, not the tab list's: a session the store knows
   // about but no tab is drawing is still a shell this card is responsible for.
   const ids = Object.values(state.terminalSessions)
-    .filter((session) => session.workspaceId === workspaceId)
+    .filter((session) => going.includes(session.workspaceId ?? ""))
     .map((session) => session.id);
-  const title =
-    state.workspaces.find((entry) => entry.id === workspaceId)?.displayTitle ??
-    "this workspace";
   if (!(await confirmRemove(title, ids))) return false;
   for (const id of ids) teardown(id);
-  await state.removeWorkspace(workspaceId);
+  await state.removeWorkspace(workspaceId, scope === "subtree");
   return true;
+}
+
+/** Every workspace nested under `workspaceId`, at any depth, in queue order. */
+function descendantsOf(
+  workspaces: readonly Workspace[],
+  workspaceId: string,
+): string[] {
+  const inside = new Set([workspaceId]);
+  // One pass is enough: the queue arrives in tree order, so a parent is always
+  // seen before its children.
+  const found: string[] = [];
+  for (const entry of workspaces) {
+    if (entry.parentId && inside.has(entry.parentId)) {
+      inside.add(entry.id);
+      found.push(entry.id);
+    }
+  }
+  return found;
+}
+
+/**
+ * What a removal takes: the card alone, the card and everything under it, or
+ * nothing because the answer was no.
+ */
+type RemovalScope = "one" | "subtree";
+
+/**
+ * Ask what a removal should take when the card has workspaces nested under it.
+ *
+ * A card with nothing under it never sees this — there is nothing to decide,
+ * and the terminal prompt below is the only question a removal has ever asked.
+ * Neither answer is safe enough to be the default: taking the sub-workspaces
+ * silently removes work that was never looked at, and leaving them silently
+ * empties a group the person thought they were clearing. So this is two
+ * questions rather than a guess, and declining the second one cancels.
+ */
+async function chooseRemovalScope(
+  title: string,
+  nested: readonly string[],
+): Promise<RemovalScope | null> {
+  if (nested.length === 0) return "one";
+  const { dialogs } = getPlatformServices();
+  const count = `${nested.length} ${nested.length === 1 ? "workspace" : "workspaces"}`;
+  const takeAll = await dialogs.confirm(
+    `${title} has ${count} nested under it.\n\nRemove those too, or keep them and move them up a level?`,
+    "Remove nested workspaces?",
+    { ok: `Remove all ${nested.length + 1}`, cancel: "Keep them" },
+  );
+  if (takeAll) return "subtree";
+  // Declining to take them is not declining the removal — it is the other
+  // removal, so it still gets asked rather than assumed.
+  const keepThem = await dialogs.confirm(
+    `Remove ${title} on its own? The ${count} under it move up a level and stay in the queue.`,
+    "Remove this workspace?",
+    { ok: "Remove", cancel: "Cancel" },
+  );
+  return keepThem ? "one" : null;
 }
 
 /**
@@ -301,7 +383,10 @@ export async function removeWorkspaceAndTerminals(
  * are a dead terminal's remains, and a dialog about closing them is a question
  * with one answer. A card with nothing live in it is removed silently.
  */
-async function confirmRemove(title: string, ids: string[]): Promise<boolean> {
+async function confirmRemove(
+  title: string,
+  ids: readonly string[],
+): Promise<boolean> {
   const { terminalStatuses, terminalSessions, terminalExited } =
     useReviewStore.getState();
   const live = ids.filter((id) => !(id in terminalExited));

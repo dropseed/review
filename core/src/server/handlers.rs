@@ -26,7 +26,7 @@ use crate::sources::traits::{
 };
 use crate::symbols::{FileSymbolDiff, Symbol, SymbolDefinition};
 use crate::trust::patterns::TrustCategory;
-use crate::work::{self, Attachment, WorkspaceView};
+use crate::work::{self, Attachment, Removal, WorkspaceView};
 
 pub(super) type ApiResult<T> = Result<Json<T>, (StatusCode, String)>;
 
@@ -137,6 +137,7 @@ pub fn build_api_router() -> Router {
         .route("/api/work/list", post(work_list))
         .route("/api/work/add", post(work_add))
         .route("/api/work/remove", post(work_remove))
+        .route("/api/work/nest", post(work_nest))
         .route("/api/work/rename", post(work_rename))
         .route("/api/work/move", post(work_move))
         .route("/api/work/attach", post(work_attach))
@@ -1051,12 +1052,6 @@ struct WorkAddRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct WorkIdRequest {
-    id: String,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct WorkRenameRequest {
     id: String,
     /// Absent (or empty) clears the stored title and resumes derivation.
@@ -1070,6 +1065,11 @@ struct WorkMoveRequest {
     id: String,
     /// 0-based, matching the array the frontend reordered.
     position: usize,
+    /// Reorder among the siblings and leave the nesting alone — the card
+    /// menu's move verbs. Absent means the drag's rule: land at the depth of
+    /// the row displaced.
+    #[serde(default)]
+    keep_parent: bool,
 }
 
 #[derive(Deserialize)]
@@ -1101,6 +1101,25 @@ struct WorkAttachRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct WorkRemoveRequest {
+    id: String,
+    /// Take everything nested under it too. The app asks the human first and
+    /// sends the answer; absent means the safe reading, "promote the children".
+    #[serde(default)]
+    recursive: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkNestRequest {
+    id: String,
+    /// The workspace it goes under; null takes it out to the top level.
+    #[serde(default)]
+    parent_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct WorkDetachRequest {
     id: String,
     path: String,
@@ -1125,8 +1144,29 @@ async fn work_add(Json(req): Json<WorkAddRequest>) -> ApiResult<Vec<WorkspaceVie
     .await
 }
 
-async fn work_remove(Json(req): Json<WorkIdRequest>) -> ApiResult<Vec<WorkspaceView>> {
-    blocking(move || Ok(work::views(work::remove(&req.id)?.0.workspaces))).await
+async fn work_remove(Json(req): Json<WorkRemoveRequest>) -> ApiResult<Vec<WorkspaceView>> {
+    blocking(move || {
+        let mode = if req.recursive {
+            Removal::Subtree
+        } else {
+            Removal::PromoteChildren
+        };
+        Ok(work::views(work::remove(&req.id, mode)?.0.workspaces))
+    })
+    .await
+}
+
+/// Nest a workspace under another, or — with a null `parentId` — take it back
+/// out to the top level.
+async fn work_nest(Json(req): Json<WorkNestRequest>) -> ApiResult<Vec<WorkspaceView>> {
+    blocking(move || {
+        Ok(work::views(
+            work::set_parent(&req.id, req.parent_id.as_deref())?
+                .0
+                .workspaces,
+        ))
+    })
+    .await
 }
 
 async fn work_rename(Json(req): Json<WorkRenameRequest>) -> ApiResult<Vec<WorkspaceView>> {
@@ -1141,7 +1181,9 @@ async fn work_rename(Json(req): Json<WorkRenameRequest>) -> ApiResult<Vec<Worksp
 async fn work_move(Json(req): Json<WorkMoveRequest>) -> ApiResult<Vec<WorkspaceView>> {
     blocking(move || {
         Ok(work::views(
-            work::move_workspace(&req.id, req.position)?.0.workspaces,
+            work::move_workspace(&req.id, req.position, req.keep_parent)?
+                .0
+                .workspaces,
         ))
     })
     .await
@@ -1174,7 +1216,7 @@ async fn work_route(Json(req): Json<WorkRouteRequest>) -> ApiResult<RouteLanding
             work::router::location_of_ref(std::path::Path::new(&req.repo_path), &req.r#ref);
         let landing = work::router::land(&location, req.workspace_id.as_deref())?;
         Ok(RouteLanding {
-            workspace: work::WorkspaceView::from(landing.workspace),
+            workspace: work::view_of(&work::list()?.workspaces, landing.workspace),
             created: landing.created,
         })
     })

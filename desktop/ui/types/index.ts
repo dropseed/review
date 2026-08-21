@@ -774,9 +774,29 @@ export interface Workspace {
   displayTitle: string;
   /** The code side's repo tabs, in order. */
   attachments: Attachment[];
+  /**
+   * The workspace this one sits under, or null at the top level — how a
+   * workspace that is really a subtask of a larger one says so.
+   *
+   * The array stays flat and stays the rendered order: the backend keeps each
+   * workspace immediately followed by its own subtree, so everything that
+   * counts rows (⌘1–9, the rail, the palette, the queue's drop gaps) goes on
+   * counting rows, and the tree shows up as `depth`.
+   */
+  parentId: string | null;
+  /** How many workspaces this one sits under. 0 at the top level. */
+  depth: number;
+  /** Everything above it, outermost first — the breadcrumb, already named. */
+  ancestors: WorkspaceAncestor[];
   /** Backend plumbing for cleanup. Never rendered, never branched on. */
   autoCreated: boolean;
   createdAt: string;
+}
+
+/** One rung above a workspace, for a surface that shows it out of queue order. */
+export interface WorkspaceAncestor {
+  id: string;
+  displayTitle: string;
 }
 
 // Information about a git worktree

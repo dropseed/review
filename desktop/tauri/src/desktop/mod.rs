@@ -787,6 +787,7 @@ pub fn run() {
             commands::work_list,
             commands::work_add,
             commands::work_remove,
+            commands::work_nest,
             commands::work_rename,
             commands::work_move,
             commands::work_attach,

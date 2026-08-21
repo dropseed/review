@@ -85,7 +85,11 @@ class TauriDialogService implements DialogService {
     return typeof selected === "string" ? selected : null;
   }
 
-  async confirm(message: string, title?: string): Promise<boolean> {
+  async confirm(
+    message: string,
+    title?: string,
+    labels?: { ok?: string; cancel?: string },
+  ): Promise<boolean> {
     // A dialog that can't open must not look like a silent "no". Tauri
     // rejects the call when the capability isn't granted, and every caller
     // here treats a rejection as "don't proceed" — which presents as a button
@@ -94,7 +98,11 @@ class TauriDialogService implements DialogService {
     // caller: a missing permission is a property of the platform, not of the
     // question being asked.
     try {
-      return await showConfirm(message, { title });
+      return await showConfirm(message, {
+        title,
+        okLabel: labels?.ok,
+        cancelLabel: labels?.cancel,
+      });
     } catch (err) {
       console.error("[dialog] confirm failed to open:", err);
       toast.error("Couldn't open the confirmation dialog");
