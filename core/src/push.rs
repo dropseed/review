@@ -197,7 +197,7 @@ fn mutate<T, F>(apply: F) -> Result<(PushState, T), PushError>
 where
     F: Fn(&mut PushState) -> (T, bool),
 {
-    for attempt in 0..MAX_SAVE_RETRIES {
+    for _ in 0..MAX_SAVE_RETRIES {
         let mut state = load()?;
         let (value, changed) = apply(&mut state);
         if !changed {
@@ -206,7 +206,7 @@ where
         state.version += 1;
         match save(&state) {
             Ok(()) => return Ok((state, value)),
-            Err(PushError::VersionConflict { .. }) if attempt + 1 < MAX_SAVE_RETRIES => {}
+            Err(PushError::VersionConflict { .. }) => {}
             Err(e) => return Err(e),
         }
     }

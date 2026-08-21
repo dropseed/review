@@ -331,7 +331,7 @@ pub fn mutate_review<F>(
 where
     F: Fn(&mut ReviewState) -> bool,
 {
-    for attempt in 0..MAX_SAVE_RETRIES {
+    for _ in 0..MAX_SAVE_RETRIES {
         let mut state = storage::load_review_state(repo, ref_name)
             .map_err(|e| format!("Failed to load review: {e}"))?;
         let changed = apply(&mut state);
@@ -349,7 +349,7 @@ where
         state.prepare_for_save();
         match storage::save_review_state(repo, &state) {
             Ok(()) => return Ok(state),
-            Err(StorageError::VersionConflict { .. }) if attempt + 1 < MAX_SAVE_RETRIES => {}
+            Err(StorageError::VersionConflict { .. }) => {}
             Err(e) => return Err(format!("Failed to save review: {e}")),
         }
     }
