@@ -340,7 +340,7 @@ fn mutate<T, F>(apply: F) -> Result<(WorkState, T), WorkError>
 where
     F: Fn(&mut WorkState) -> Result<(T, bool), WorkError>,
 {
-    for attempt in 0..MAX_SAVE_RETRIES {
+    for _ in 0..MAX_SAVE_RETRIES {
         let mut state = storage::load()?;
         let (value, changed) = apply(&mut state)?;
         if !changed {
@@ -349,7 +349,7 @@ where
         state.version += 1;
         match storage::save(&state) {
             Ok(()) => return Ok((state, value)),
-            Err(WorkError::VersionConflict { .. }) if attempt + 1 < MAX_SAVE_RETRIES => {}
+            Err(WorkError::VersionConflict { .. }) => {}
             Err(e) => return Err(e),
         }
     }
@@ -1034,6 +1034,29 @@ mod tests {
         // Both writes survive: the retry reapplied on top of theirs.
         assert_eq!(shown(&state), ["existing", "theirs", "ours"]);
         assert_eq!(state, list().unwrap());
+    }
+
+    #[test]
+    fn mutate_gives_up_with_contended_after_exhausting_every_retry() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _home, _repo) = setup_test();
+
+        add_ws("existing", vec![]);
+
+        // A competing writer wins the race on every single attempt, so no
+        // retry ever lands a save. `mutate` must give up with the friendly
+        // `Contended` error rather than leaking the raw conflict from its
+        // last attempt.
+        let result = mutate(|state| {
+            let mut theirs = storage::load().unwrap();
+            push_new(&mut theirs, Some("theirs".to_owned()), vec![], false);
+            theirs.version += 1;
+            storage::save(&theirs).unwrap();
+            push_new(state, Some("ours".to_owned()), vec![], false);
+            Ok(((), true))
+        });
+
+        assert!(matches!(result, Err(WorkError::Contended)));
     }
 
     #[test]

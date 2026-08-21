@@ -331,7 +331,7 @@ pub fn run_undo(args: UndoArgs) -> Result<(), String> {
 
     // Wholesale replacement, so `mutate_review`'s mutate-what-you-loaded shape
     // doesn't fit; the retry against concurrent writers is the same, though.
-    for attempt in 0..MAX_SAVE_RETRIES {
+    for _ in 0..MAX_SAVE_RETRIES {
         let current = storage::load_review_state(&repo, ref_name)
             .map_err(|e| format!("Failed to load review: {e}"))?;
         let mut state = target.clone();
@@ -380,7 +380,7 @@ pub fn run_undo(args: UndoArgs) -> Result<(), String> {
                 }
                 return Ok(());
             }
-            Err(StorageError::VersionConflict { .. }) if attempt + 1 < MAX_SAVE_RETRIES => {}
+            Err(StorageError::VersionConflict { .. }) => {}
             Err(e) => return Err(format!("Failed to save review: {e}")),
         }
     }
