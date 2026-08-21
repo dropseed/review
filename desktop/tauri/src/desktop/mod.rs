@@ -136,12 +136,6 @@ fn emit_cli_open_review(
     }
 }
 
-/// Emit a menu event to the app's window.
-///
-/// A broadcast, because there is exactly one window to broadcast to. This used
-/// to hunt for the focused window: with several open, the app-global macOS menu
-/// bar fires `on_menu_event` once and every window would have reacted to it.
-#[cfg(desktop)]
 /// Everything that happens once the app exists: consent restore, the menu bar,
 /// and the two watchers that are global rather than per-repo.
 ///
@@ -522,6 +516,11 @@ fn init_sentry(consent: &Arc<AtomicBool>) -> Option<sentry::ClientInitGuard> {
     }))
 }
 
+/// Emit a menu event to the app's window.
+///
+/// A broadcast, because there is exactly one window to broadcast to. This used
+/// to hunt for the focused window: with several open, the app-global macOS menu
+/// bar fires `on_menu_event` once and every window would have reacted to it.
 fn emit_menu_event<P: serde::Serialize + Clone>(app: &tauri::AppHandle, event: &str, payload: P) {
     let _ = app.emit(event, payload);
 }

@@ -2727,11 +2727,7 @@ const greet = (name: string) => {
         assert!(added.new_range.is_some());
         assert!(added.old_range.is_none());
         // existing() should NOT appear (unchanged)
-        assert!(result
-            .symbols
-            .iter()
-            .find(|s| s.name == "existing")
-            .is_none());
+        assert!(!result.symbols.iter().any(|s| s.name == "existing"));
     }
 
     #[cfg(feature = "symbols-rust-lang")]
@@ -2781,11 +2777,7 @@ const greet = (name: string) => {
         assert_eq!(result.symbols.len(), 1);
         assert_eq!(result.symbols[0].name, "modified");
         // unchanged should not appear
-        assert!(result
-            .symbols
-            .iter()
-            .find(|s| s.name == "unchanged")
-            .is_none());
+        assert!(!result.symbols.iter().any(|s| s.name == "unchanged"));
     }
 
     #[cfg(feature = "symbols-rust-lang")]
@@ -2846,11 +2838,7 @@ const greet = (name: string) => {
         assert_eq!(added_child.unwrap().change_type, SymbolChangeType::Added);
 
         // alpha should not appear in children (unchanged)
-        assert!(class_sym
-            .children
-            .iter()
-            .find(|s| s.name == "alpha")
-            .is_none());
+        assert!(!class_sym.children.iter().any(|s| s.name == "alpha"));
     }
 
     #[cfg(feature = "symbols-rust-lang")]

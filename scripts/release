@@ -98,9 +98,26 @@ sed -i '' 's/"version": "[^"]*"/"version": "'"$VERSION"'"/' desktop/tauri/tauri.
 # members, and unlike `cargo check` it doesn't compile anything.
 cargo update --workspace --quiet
 
+# And desktop/package-lock.json, which carries the version in exactly two
+# places. Set both by hand rather than regenerating the lockfile: `npm install
+# --package-lock-only` also re-adds the bundled optional platform deps a plain
+# `npm install` prunes on whichever machine ran it, so the two would take turns
+# rewriting each other. Without this the lockfile keeps last release's number
+# until someone runs `npm install`, and the tree is dirty from the moment the
+# release lands.
+node -e '
+  const fs = require("fs");
+  const path = "desktop/package-lock.json";
+  const lock = JSON.parse(fs.readFileSync(path, "utf8"));
+  lock.version = process.argv[1];
+  if (lock.packages && lock.packages[""]) lock.packages[""].version = process.argv[1];
+  fs.writeFileSync(path, JSON.stringify(lock, null, 2) + "\n");
+' "$VERSION"
+
 echo ""
 echo "Updated versions:"
 echo "  desktop/package.json:          $(grep '"version"' desktop/package.json | head -1 | xargs)"
+echo "  desktop/package-lock.json:     $(grep '"version"' desktop/package-lock.json | head -1 | xargs)"
 echo "  core/Cargo.toml:               $(grep '^version' core/Cargo.toml | head -1 | xargs)"
 echo "  desktop/tauri/Cargo.toml:      $(grep '^version' desktop/tauri/Cargo.toml | head -1 | xargs)"
 echo "  desktop/tauri/tauri.conf.json: $(grep '"version"' desktop/tauri/tauri.conf.json | xargs)"
@@ -116,7 +133,7 @@ trap 'rm -f "$MSG_FILE"' EXIT
     cat "$NOTES_FILE"
 } > "$MSG_FILE"
 
-git commit desktop/package.json core/Cargo.toml desktop/tauri/Cargo.toml desktop/tauri/tauri.conf.json Cargo.lock -F "$MSG_FILE"
+git commit desktop/package.json desktop/package-lock.json core/Cargo.toml desktop/tauri/Cargo.toml desktop/tauri/tauri.conf.json Cargo.lock -F "$MSG_FILE"
 
 echo ""
 echo "Created release commit for v$VERSION"
