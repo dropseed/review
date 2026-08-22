@@ -33,17 +33,33 @@ export async function openTerminalTab(
    * workspace is precisely the one its active tab is not.
    */
   on?: ReviewTarget | null,
+  /**
+   * Whether to put the terminal on screen (see `reveal`). True for every
+   * caller whose gesture *was* "give me a terminal"; the repo picker passes
+   * false, because there the shell is a courtesy and the repo just opened is
+   * what the person asked to look at.
+   */
+  opts: { reveal?: boolean } = {},
 ): Promise<string | null> {
+  const show = opts.reveal !== false;
   const store = useReviewStore.getState();
   const target = on ?? activeTabTarget(workspace ?? null);
 
   if (!workspace || !target) {
-    return store.startTerminal("", "", 80, 24, undefined, workspace?.id);
+    const id = await store.startTerminal(
+      "",
+      "",
+      80,
+      24,
+      undefined,
+      workspace?.id,
+    );
+    return show ? reveal(id) : id;
   }
 
   const cwd = await checkoutFor(target.repoPath, target.ref);
   if (!cwd) return null;
-  return store.startTerminal(
+  const id = await store.startTerminal(
     target.repoPath,
     cwd,
     80,
@@ -51,6 +67,37 @@ export async function openTerminalTab(
     undefined,
     workspace.id,
   );
+  return show ? reveal(id) : id;
+}
+
+/**
+ * Put the shell that was just started on screen.
+ *
+ * Starting a terminal is the one gesture that says "I want to use a terminal",
+ * so it is also what gives the terminal the room to be used in — otherwise the
+ * two surfaces where the stage is *not* already showing it both answer a tap
+ * with nothing: on the desktop a code-focused stage keeps the panel collapsed
+ * to its rail, and at phone width only one half is drawn at a time. The shell
+ * started either way; it was simply invisible, which reads as a dead button.
+ *
+ * `toggleTerminalPanel` guarded on `code` is the same move `jump.ts` makes to
+ * reach a terminal that wants a human, and it lands on `split` — beside what is
+ * already there rather than instead of it. Nothing here asks whether this is a
+ * phone: `Stage/compact.ts` already resolves `split` to the terminal half at
+ * that width, and writing the phone's answer into `contentFocus` would edit the
+ * layout the desktop chose, which is exactly what the compact layout must never
+ * do.
+ *
+ * Nothing happens when the terminal is already on screen, so a ⌘T from inside a
+ * shell never rearranges the stage — and nothing happens when no session
+ * started, so a declined worktree prompt or a failed start leaves the stage
+ * where it was.
+ */
+function reveal(id: string | null): string | null {
+  if (id === null) return null;
+  const store = useReviewStore.getState();
+  if (store.contentFocus === "code") store.toggleTerminalPanel();
+  return id;
 }
 
 /**

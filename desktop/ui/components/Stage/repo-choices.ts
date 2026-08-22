@@ -164,8 +164,13 @@ export async function openRepoIn(
   // Named explicitly rather than left to `activeTabTarget`: the store's own
   // notion of the active tab is a render behind the attach we just made, and a
   // multi-repo workspace's first tab is precisely the one this pick is not.
-  await openTerminalTab(workspace, {
-    repoPath: choice.path,
-    ref: choice.refName ?? "",
-  });
+  await openTerminalTab(
+    workspace,
+    { repoPath: choice.path, ref: choice.refName ?? "" },
+    // The gesture was "open this repo", so the stage stays on the repo. The
+    // shell is a courtesy; taking the screen for it would answer a different
+    // question than the one asked — and at phone width it would replace the
+    // half the pick was made in.
+    { reveal: false },
+  );
 }

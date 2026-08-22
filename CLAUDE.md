@@ -125,8 +125,13 @@ subscriber (`StreamFrame::Resized`, protocol v2 — the WS forwards it as a
 `{"t":"resize"}` text frame, Tauri as `terminal:resized:{id}`). An owner
 hearing a size it didn't ask for letterboxes at the remote grid and wears a
 "sized elsewhere" badge; clicking or typing in it fits the grid back. Compact
-gets the symmetric deliberate act — a "Fit to screen" button, shown only while
-the drawing is scaled — which is the only way a phone resizes anything.
+gets the symmetric deliberate act: a phone resizes the grid only when it is
+asked to in so many words, which is two buttons and nothing else — "Fit to
+screen", shown only while the drawing is scaled, and the text-size steps, which
+have to be a fit because a larger font on the same grid is drawn at a smaller
+scale and comes out the size it was. Both go through the mounted pane
+(`registry`'s `requestFit`), since clearing and restoring the drawing's
+transform around the measurement is pane-local work.
 
 ## Terminal VT engine
 

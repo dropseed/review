@@ -7,7 +7,12 @@ import {
   acquireTerminal,
   attachRenderer,
   beginTerminalReplay,
+  endDrag,
   onTerminalGrid,
+  openLinkAt,
+  requestFit,
+  scrollByDrag,
+  setFitAction,
   seedTerminalGridSize,
   setTerminalMountPolicy,
   setTerminalRemoteClaim,
@@ -16,6 +21,7 @@ import {
   terminalRemoteClaim,
   terminalReplayInFlight,
 } from "./registry";
+import { applyArmedModifiers } from "./soft-keys";
 import { buildXtermTheme } from "./xterm-theme";
 import { TERMINAL_FONT_WEIGHT_BOLD } from "../../stores/slices/preferencesSlice";
 import { decodeBase64 } from "./base64";
@@ -38,6 +44,15 @@ interface TerminalPaneProps {
 }
 
 const RESIZE_DEBOUNCE_MS = 50;
+
+/**
+ * How far a finger travels before the gesture is a scroll rather than a tap.
+ *
+ * Below it nothing scrolls and nothing is cancelled, so the tap that focuses
+ * the shell (and raises the keyboard) still lands with the small movement any
+ * real thumb makes.
+ */
+const TOUCH_SLOP_PX = 6;
 
 interface GridSize {
   cols: number;
@@ -82,10 +97,11 @@ export function TerminalPane({
   const remoteSizeRef = useRef<GridSize | null>(null);
   /** Viewer only: the scale the grid is drawn at (1 = fits naturally). */
   const [viewScale, setViewScale] = useState(1);
+  /** The same number, readable from the touch handlers without re-binding
+   *  them every time the drawing rescales. */
+  const scaleRef = useRef(1);
   /** Owner reclaim (fit + resize), reachable from render handlers. */
   const reclaimRef = useRef<(() => void) | null>(null);
-  /** Compact "Fit to screen": one deliberate resize to this container. */
-  const fitActionRef = useRef<(() => void) | null>(null);
 
   // Keep the latest options in refs so the setup effect (keyed only on id and
   // mode) reads current values without re-running and re-opening the terminal.
@@ -113,6 +129,7 @@ export function TerminalPane({
     // A fresh mount (or a mode flip re-running this effect) starts unclaimed.
     remoteSizeRef.current = null;
     setRemoteSize(null);
+    scaleRef.current = 1;
     setViewScale(1);
 
     // Consume the "fresh" flag before acquiring — a freshly created session has
@@ -191,11 +208,13 @@ export function TerminalPane({
       } catch {
         /* disposed mid-layout */
       }
+      scaleRef.current = s;
       setViewScale(s);
     };
 
     /** Back to normal flow — the element is the container's again. */
     const clearScaledLayout = () => {
+      scaleRef.current = 1;
       const el = term.element;
       if (!el) return;
       el.style.width = "";
@@ -240,11 +259,13 @@ export function TerminalPane({
 
     // Compact's one deliberate resize: fit the shared grid to this screen —
     // then resume drawing as a viewer. Everything else a viewer does is
-    // read-only toward the PTY.
-    fitActionRef.current = () => {
+    // read-only toward the PTY. Published on the registry entry rather than
+    // held here, because the panel's text-size stepper asks for the same
+    // resize from outside this pane.
+    setFitAction(id, () => {
       doFit();
       scheduleScaledLayout();
-    };
+    });
 
     // Initial layout. A viewer starts at the PTY's true grid (seeded from the
     // session listing until the first resized event); an owner fits — unless
@@ -305,7 +326,10 @@ export function TerminalPane({
     // remotely-claimed grid is using the terminal *here*, which reclaims it.
     const onDataDisposable = term.onData((data) => {
       if (!isViewer && remoteSizeRef.current) doFit();
-      client.terminalWrite(id, data).catch((err) => {
+      // The phone's key bar arms Control here rather than sending anything of
+      // its own: the key it modifies comes from the system keyboard, and this
+      // is where that keystroke passes (see soft-keys.ts).
+      client.terminalWrite(id, applyArmedModifiers(data)).catch((err) => {
         console.error("[terminal] Write failed:", err);
       });
     });
@@ -351,6 +375,82 @@ export function TerminalPane({
       scheduleScaledLayout();
     });
 
+    // ----- Touch: the drag that scrolls -----
+    //
+    // Registered here rather than as React props because both of these have to
+    // be able to cancel the browser's own gesture, and React's touch listeners
+    // are passive — `preventDefault` inside one does nothing. The container
+    // also carries `touch-none`, so iOS never claims the drag as a pan of the
+    // page before the first move event arrives.
+    let dragY: number | null = null;
+    let dragTravel = 0;
+
+    const onTouchStart = (event: TouchEvent) => {
+      // Two fingers is a zoom or a system gesture, not ours.
+      if (event.touches.length !== 1) {
+        dragY = null;
+        return;
+      }
+      dragY = event.touches[0].clientY;
+      dragTravel = 0;
+    };
+
+    const onTouchMove = (event: TouchEvent) => {
+      if (dragY === null || event.touches.length !== 1) return;
+      const y = event.touches[0].clientY;
+      // A finger moving up the screen pulls the text up with it, which is a
+      // positive delta — the same sign a wheel uses for the same movement.
+      const delta = dragY - y;
+      dragY = y;
+      dragTravel += Math.abs(delta);
+      if (dragTravel < TOUCH_SLOP_PX) return;
+      event.preventDefault();
+      // The drawing may be scaled down, and the grid is measured in its own
+      // unscaled pixels: a finger crossing a scaled pane crosses more rows
+      // than the distance it travelled on glass.
+      scrollByDrag(id, term, delta / (scaleRef.current || 1));
+    };
+
+    /**
+     * Which cell a point on glass is over, as a fraction of the drawing.
+     *
+     * Fractions rather than cell metrics because a compact pane is *scaled*,
+     * and that is exactly the sum xterm gets wrong for its own click handling
+     * (see `openLinkAt`): it measures a scaled rect against unscaled cells. A
+     * fraction of the drawing is the same fraction of the grid at any scale.
+     */
+    const cellAt = (clientX: number, clientY: number) => {
+      const screen = term.element?.querySelector<HTMLElement>(".xterm-screen");
+      if (!screen) return null;
+      const rect = screen.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return null;
+      const col = Math.floor(((clientX - rect.left) / rect.width) * term.cols);
+      const row = Math.floor(((clientY - rect.top) / rect.height) * term.rows);
+      if (col < 0 || row < 0 || col >= term.cols || row >= term.rows) {
+        return null;
+      }
+      return { col, row };
+    };
+
+    const onTouchEnd = (event: TouchEvent) => {
+      const tapped = dragY !== null && dragTravel < TOUCH_SLOP_PX;
+      const touch = event.changedTouches[0];
+      dragY = null;
+      endDrag(term);
+      if (!tapped || !touch) return;
+      const cell = cellAt(touch.clientX, touch.clientY);
+      if (!cell || !openLinkAt(id, cell.col, cell.row)) return;
+      // The tap was the link's. Swallowing it here is what keeps the
+      // synthesized click from also focusing the shell and raising the
+      // keyboard behind the page that is opening.
+      event.preventDefault();
+    };
+
+    container.addEventListener("touchstart", onTouchStart, { passive: true });
+    container.addEventListener("touchmove", onTouchMove, { passive: false });
+    container.addEventListener("touchend", onTouchEnd, { passive: false });
+    container.addEventListener("touchcancel", onTouchEnd, { passive: true });
+
     // Debounced reaction to container size changes: an owner refits; a viewer
     // — and an owner letterboxing a claimed grid — only rescales its drawing,
     // so a window resize is not a silent reclaim.
@@ -369,10 +469,15 @@ export function TerminalPane({
     return () => {
       if (resizeTimer) clearTimeout(resizeTimer);
       observer.disconnect();
+      container.removeEventListener("touchstart", onTouchStart);
+      container.removeEventListener("touchmove", onTouchMove);
+      container.removeEventListener("touchend", onTouchEnd);
+      container.removeEventListener("touchcancel", onTouchEnd);
+      endDrag(term);
       onDataDisposable.dispose();
       unsubGrid();
       reclaimRef.current = null;
-      fitActionRef.current = null;
+      setFitAction(id, null);
       setTerminalMountPolicy(id, null);
       // The next mount decides its own layout, but don't leave a scale on an
       // instance that may next be adopted by a differently-sized pane.
@@ -414,7 +519,12 @@ export function TerminalPane({
       {/* xterm's element is appended here imperatively; the overlays below live
           beside this div, never inside it, so React and xterm each own their
           own children. */}
-      <div ref={containerRef} className="h-full w-full overflow-hidden" />
+      {/* `touch-none`: every touch here is the terminal's — a drag scrolls it
+          (see the listeners above), and there is nothing behind it to pan. */}
+      <div
+        ref={containerRef}
+        className="h-full w-full touch-none overflow-hidden"
+      />
 
       {/* An owner letterboxing a grid another client claimed says so, quietly.
           Inert — the click it invites lands on the pane and reclaims. */}
@@ -439,7 +549,7 @@ export function TerminalPane({
           // raise the soft keyboard mid-fit, shrinking the very viewport the
           // fit is measuring.
           onMouseDown={(e) => e.stopPropagation()}
-          onClick={() => fitActionRef.current?.()}
+          onClick={() => requestFit(id)}
           className="absolute bottom-2 right-2 z-10 rounded-md
                      bg-surface-raised/90 px-2.5 py-1.5 text-xs text-fg-muted
                      shadow-sm hover:text-fg-secondary"

@@ -7,6 +7,8 @@ import {
   type TerminalTab,
 } from "../../stores/slices/terminalSlice";
 import { useFocusedWorkspace } from "../../stores/selectors/workspaces";
+import { useIsCompact } from "../../hooks/useIsCompact";
+import { useIsTouchPrimary } from "../../hooks/useIsTouchPrimary";
 import { useWorkspaceTabs } from "../../stores/selectors/terminals";
 import { basename } from "../Sidebar/terminal-status-format";
 import { PhaseDot } from "../Sidebar/PhaseDot";
@@ -30,6 +32,8 @@ import {
 import { closeTerminalPane, closeTerminalTab } from "./close";
 import { openTerminalTab } from "./newTab";
 import { StartTerminal } from "./StartTerminal";
+import { SoftKeys } from "./SoftKeys";
+import { TerminalTextSize } from "./TerminalTextSize";
 import { PaneTree } from "./PaneTree";
 import { FocusToggle } from "../Stage/FocusToggle";
 import { WarningIcon } from "../ui/icons";
@@ -82,6 +86,11 @@ export function TerminalPanel(): ReactNode {
   // workspaces would throw away its screen.
   const focusedWorkspace = useFocusedWorkspace();
   const stripTabs = useWorkspaceTabs(focusedWorkspace?.id ?? null);
+  const compact = useIsCompact();
+  // Two questions, deliberately not one: the text-size steps are a width fact
+  // (the desktop has a settings panel for them), while the keys are a device
+  // fact — an iPad in landscape is wide and still has no Escape key.
+  const touchPrimary = useIsTouchPrimary();
   // A tab's position in the *whole* strip, which is what a reorder moves and
   // what `data-strip-index` has to carry. Built once rather than an `indexOf`
   // per rendered tab.
@@ -98,6 +107,8 @@ export function TerminalPanel(): ReactNode {
     activeTab && stripTabs.some((tab) => tab.id === activeTab.id)
       ? activeTab.id
       : null;
+  // The pane the key bar types into: whichever one the showing tab has focused.
+  const showingPaneId = showingTabId ? (activeTab?.focused ?? null) : null;
 
   // Offered only for a pane that has somewhere to leave: the sole pane of a tab
   // already is its own tab, and a slot that did nothing would still read as an
@@ -406,8 +417,12 @@ export function TerminalPanel(): ReactNode {
           </button>
         </div>
 
-        {/* This half's own focus toggle, at the far end. */}
+        {/* This half's own focus toggle, at the far end — and, on a phone,
+            the text-size steps that have no settings panel to live in. */}
         <div className="ml-2 flex shrink-0 items-center">
+          {compact && showingPaneId && (
+            <TerminalTextSize paneId={showingPaneId} />
+          )}
           <FocusToggle half="terminal" />
         </div>
       </div>
@@ -442,6 +457,9 @@ export function TerminalPanel(): ReactNode {
           ))
         )}
       </div>
+
+      {/* The keys a software keyboard doesn't have, for the pane on screen. */}
+      {touchPrimary && showingPaneId && <SoftKeys terminalId={showingPaneId} />}
     </div>
   );
 }

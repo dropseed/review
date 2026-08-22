@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { Sidebar } from "./components/Sidebar";
 import { QueueDrawer } from "./components/Sidebar/QueueDrawer";
 import { CompactBar } from "./components/Stage/CompactBar";
+import { useKeyboardInset } from "./hooks/useKeyboardInset";
 import { CompactNavProvider } from "./components/Stage/CompactNav";
 import { ReviewView } from "./components/ReviewView";
 import { NewReviewView } from "./components/NewReviewView";
@@ -232,15 +233,21 @@ function AppShell() {
   useWindowTitle(repoPath, comparison, comparisonReady);
 
   const compact = useIsCompact();
+  // iOS keeps the page full height with its keyboard up, drawing the bottom of
+  // the app underneath it — including the terminal's own key row. This
+  // publishes what it covers as `--keyboard-inset`, which the shell's height
+  // below subtracts.
+  useKeyboardInset();
 
   return (
     <TooltipProvider delayDuration={300}>
-      {/* h-dvh, not h-screen: on a phone `vh` is the tallest the viewport ever
-          gets, so a bottom bar measured against it spends the first scroll
-          hidden behind Safari's toolbar. */}
+      {/* dvh, not vh: on a phone `vh` is the tallest the viewport ever gets, so
+          a bottom bar measured against it spends the first scroll hidden behind
+          Safari's toolbar. `--keyboard-inset` is the other half of that — see
+          useKeyboardInset, which is what publishes it. */}
       <CompactNavProvider>
         {({ queueOpen, closeQueue }) => (
-          <div className="flex h-dvh bg-surface">
+          <div className="flex h-[calc(100dvh-var(--keyboard-inset,0px))] bg-surface">
             {/* The sidebar is chrome: it owns the window's left edge, and the
                 two work halves float on it as rounded panels. At phone width
                 there is no edge to spare, so the same component is a drawer

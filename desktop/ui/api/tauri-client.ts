@@ -13,7 +13,9 @@ import type {
   ApiClient,
   GitChangedPayload,
   RepoActivityChangedPayload,
+  TerminalStartParams,
 } from "./client";
+import { terminalStartPayload } from "./client";
 import type {
   BranchList,
   RefEntry,
@@ -886,24 +888,11 @@ export class TauriClient implements ApiClient {
     }
   }
 
-  async terminalStart(params: {
-    terminalId: string;
-    repoPath: string;
-    cwd: string;
-    cols: number;
-    rows: number;
-    shell?: string;
-    workspaceId?: string;
-  }): Promise<TerminalStarted> {
-    return invoke<TerminalStarted>("terminal_start", {
-      terminalId: params.terminalId,
-      repoPath: params.repoPath,
-      cwd: params.cwd,
-      cols: params.cols,
-      rows: params.rows,
-      shell: params.shell ?? null,
-      workspaceId: params.workspaceId ?? null,
-    });
+  async terminalStart(params: TerminalStartParams): Promise<TerminalStarted> {
+    return invoke<TerminalStarted>(
+      "terminal_start",
+      terminalStartPayload(params),
+    );
   }
 
   async terminalAssignWorkspace(

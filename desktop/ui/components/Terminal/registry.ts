@@ -18,6 +18,7 @@ import { getApiClient } from "../../api";
 import { IS_MAC, matchesEvent } from "../../commands/shortcuts";
 import { getAllCommands } from "../../commands/registry";
 import { getPlatformServices } from "../../platform";
+import { findUrlAtOffset } from "../../utils/urlInText";
 import { buildXtermTheme } from "./xterm-theme";
 import {
   encodeKittyKey,
@@ -80,6 +81,12 @@ interface RegistryEntry {
    * its true size, scaled, and never resizes. `null` while unmounted.
    */
   mountPolicy: "owner" | "viewer" | null;
+  /**
+   * The mounted pane's "fit the grid to me" — published here, beside the policy
+   * it obeys, so a control outside the pane can ask for one (see `requestFit`).
+   * `null` while unmounted.
+   */
+  fitAction: (() => void) | null;
   /**
    * Live output held back until a cold reattach's replay has been written, so
    * historical scrollback lands ahead of new bytes. `null` once flushed.
@@ -206,6 +213,7 @@ export function acquireTerminal(
     gridListeners: new Set(),
     remoteClaim: null,
     mountPolicy: null,
+    fitAction: null,
     // A brand-new instance has nothing on screen yet, so hold output until the
     // caller has decided whether it needs a replay first.
     pending: [],
@@ -290,6 +298,18 @@ export function setTerminalMountPolicy(
   if (entry) entry.mountPolicy = policy;
 }
 
+/** The last link opened, so one tap cannot open two of them — see below. */
+let lastOpened = { uri: "", at: 0 };
+
+/**
+ * How long a second open of the same link counts as the same gesture.
+ *
+ * Long enough for the click iOS synthesizes after a tap (a few hundred ms),
+ * short enough that deliberately opening the same link twice still opens it
+ * twice.
+ */
+const DUPLICATE_OPEN_MS = 500;
+
 /**
  * Open a link clicked in a terminal in the user's browser.
  *
@@ -305,6 +325,12 @@ function openTerminalLink(uri: string): void {
     return;
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return;
+  // A tap on a phone is answered here *and*, a moment later, by the synthesized
+  // click xterm's own web-links addon hears. Both are the same tap on the same
+  // link, so the second one is dropped rather than opening a second copy.
+  const now = Date.now();
+  if (lastOpened.uri === uri && now - lastOpened.at < DUPLICATE_OPEN_MS) return;
+  lastOpened = { uri, at: now };
   void getPlatformServices()
     .opener.openUrl(uri)
     .catch((err: unknown) =>
@@ -496,9 +522,36 @@ function cellHeight(term: Terminal): number {
  */
 export function forgetCellHeight(term: Terminal): void {
   wheelCellHeight.delete(term);
-  // The carry is pixels measured against that row height; without the height
-  // it was accumulated under, it would be divided by whatever comes next.
+  // A carry is pixels measured against that row height; without the height it
+  // was accumulated under, it would be divided by whatever comes next.
   wheelCarry.delete(term);
+  dragCarry.delete(term);
+}
+
+/**
+ * Whole rows of movement, keeping the remainder for next time.
+ *
+ * Both gestures that move a terminal — the wheel and a finger — arrive as
+ * pixels smaller than a row, and both have to accumulate rather than round
+ * away, so this is stated once and given the carry to accumulate in. A leftover
+ * only stays meaningful while the gesture keeps its direction: added to a
+ * reversal it would eat the first notch of the new direction instead of
+ * contributing to it.
+ */
+function takeRows(
+  carry: WeakMap<Terminal, number>,
+  term: Terminal,
+  deltaPx: number,
+  rowHeight: number,
+): number {
+  const prior = carry.get(term) ?? 0;
+  const carried =
+    prior === 0 || Math.sign(prior) === Math.sign(deltaPx)
+      ? prior + deltaPx
+      : deltaPx;
+  const rows = Math.trunc(carried / rowHeight);
+  carry.set(term, carried - rows * rowHeight);
+  return rows;
 }
 
 /**
@@ -526,16 +579,7 @@ export function normalizeWheel(term: Terminal, event: WheelEvent): boolean {
   if (event.deltaMode !== WheelEvent.DOM_DELTA_PIXEL) return true;
   const rowHeight = cellHeight(term);
   if (!rowHeight) return true;
-  // A leftover carry only stays meaningful while the gesture keeps its
-  // direction: added to a reversal it would eat the first notch of the new
-  // direction instead of contributing to it.
-  const prior = wheelCarry.get(term) ?? 0;
-  const carried =
-    prior === 0 || Math.sign(prior) === Math.sign(event.deltaY)
-      ? prior + event.deltaY
-      : event.deltaY;
-  const lines = Math.trunc(carried / rowHeight);
-  wheelCarry.set(term, carried - lines * rowHeight);
+  const lines = takeRows(wheelCarry, term, event.deltaY, rowHeight);
   // Nothing to report yet: the movement stays in the carry for the next
   // event. Declining skips xterm's whole wheel path — including the cancel it
   // applies on the no-scrollback (alternate screen) branch — so that cancel
@@ -559,6 +603,231 @@ export function normalizeWheel(term: Terminal, event: WheelEvent): boolean {
   });
   Object.defineProperty(event, "deltaY", { value: lines, configurable: true });
   return true;
+}
+
+/** Sub-row drag movement not yet worth a line, per terminal — see scrollByDrag. */
+const dragCarry = new WeakMap<Terminal, number>();
+
+/**
+ * How many cursor keys one drag event may send a full-screen program.
+ *
+ * A flick measured against a small cell height can come out as dozens of rows,
+ * and a TUI reads those as dozens of keypresses — a menu run off its end, a
+ * history walked past what you meant. The wheel never produces a burst like
+ * that because each notch is its own event; a finger can.
+ */
+const MAX_KEYS_PER_DRAG_EVENT = 8;
+
+/** The final byte each cursor key ends with. */
+const CURSOR_FINAL = { up: "A", down: "B", right: "C", left: "D" } as const;
+
+/** The escape a cursor key sends, in whichever mode the program has asked for. */
+function cursorKey(term: Terminal, dir: keyof typeof CURSOR_FINAL): string {
+  const application = term.modes.applicationCursorKeysMode;
+  return `\x1b${application ? "O" : "["}${CURSOR_FINAL[dir]}`;
+}
+
+/**
+ * Scroll by a finger drag, given movement in the terminal element's own CSS
+ * pixels (a scaled pane divides by its scale before calling).
+ *
+ * Touch is not a gesture xterm has: @xterm/xterm 6.0.0 ships the Gesture
+ * machinery its scrollback viewport would need and never attaches it to
+ * anything, and the viewport is a *sibling* of the screen the finger lands on
+ * rather than its ancestor — so the browser has no scrollable box to pan
+ * either. On a phone that adds up to a terminal that cannot be scrolled at all,
+ * which is why this exists.
+ *
+ * `deltaPx` is how far the content should move up, matching a wheel's positive
+ * deltaY: a finger travelling up the screen drags the text up and reveals what
+ * comes after it. The remainder below a whole row is carried, so a slow drag
+ * still moves a line at a time instead of being rounded away — the same
+ * treatment `normalizeWheel` gives a trackpad, and the same reset on a reversal.
+ *
+ * The alternate screen has no scrollback to move, so movement there is cursor
+ * keys — exactly what xterm does with a wheel over a full-screen TUI, which is
+ * what makes a drag inside Claude Code or `less` do what the wheel does on the
+ * desktop.
+ */
+export function scrollByDrag(
+  id: string,
+  term: Terminal,
+  deltaPx: number,
+): void {
+  const rowHeight = cellHeight(term);
+  if (!rowHeight) return;
+  const lines = takeRows(dragCarry, term, deltaPx, rowHeight);
+  if (lines === 0) return;
+  if (term.buffer.active.type === "alternate") {
+    const key = cursorKey(term, lines > 0 ? "down" : "up");
+    const count = Math.min(Math.abs(lines), MAX_KEYS_PER_DRAG_EVENT);
+    writeToPty(id, key.repeat(count));
+    return;
+  }
+  term.scrollLines(lines);
+}
+
+/** Forget a drag's remainder, so the next one starts from nothing. */
+export function endDrag(term: Terminal): void {
+  dragCarry.delete(term);
+}
+
+/**
+ * How far either way a wrapped line is followed to find the URL under a tap.
+ *
+ * A logical line is bounded only by where the program last printed a newline,
+ * and the scrollback holds 10,000 rows — so a `cat` of a minified bundle is one
+ * "line", and joining it would build a megabyte of string and regex-scan it on
+ * every tap, including the tap whose only job was to focus the shell. No URL
+ * anyone can aim a thumb at is further away than this.
+ */
+const LINK_WRAP_ROWS = 64;
+
+/**
+ * Open the link at a cell, if there is one. Answers whether it found one.
+ *
+ * This exists because a phone's terminal is *scaled* — it draws the PTY's true
+ * grid transformed down to fit — and xterm hit-tests a click by dividing the
+ * element's (scaled) bounding rect by its own unscaled cell metrics, so every
+ * tap resolves to a cell somewhere left of and above the one under the finger.
+ * The link under the thumb is therefore never the link xterm thinks was
+ * clicked. The caller works in fractions of the drawing instead, which is true
+ * at any scale, and this reads the buffer directly.
+ *
+ * Wrapped rows are rejoined first: a URL long enough to be worth tapping is
+ * usually long enough to have wrapped, and each half on its own is not a URL.
+ * Which URL is under the offset — and where it ends — is `utils/urlInText`, the
+ * same rules the diff's own ⌘-click uses, so one link cannot open two pages
+ * depending on where it was read.
+ */
+export function openLinkAt(id: string, col: number, row: number): boolean {
+  const entry = registry.get(id);
+  if (!entry) return false;
+  const { term } = entry;
+  const buffer = term.buffer.active;
+  const cols = term.cols;
+
+  // The logical line this row belongs to: back to the row that isn't a
+  // continuation, then forward through every row that is — both bounded.
+  const tappedRow = buffer.viewportY + row;
+  let start = tappedRow;
+  const floor = Math.max(0, tappedRow - LINK_WRAP_ROWS);
+  while (start > floor && buffer.getLine(start)?.isWrapped) start -= 1;
+  const ceiling = Math.min(buffer.length, tappedRow + LINK_WRAP_ROWS);
+  let text = "";
+  let tapped = -1;
+  for (let y = start; y < ceiling; y++) {
+    const line = buffer.getLine(y);
+    if (!line) break;
+    if (y > start && !line.isWrapped) break;
+    if (y === tappedRow) tapped = text.length + col;
+    // Untrimmed, so a cell's column is its index: trimming an interior row
+    // would slide every column after it.
+    text += line.translateToString(false).padEnd(cols, " ");
+  }
+  if (tapped < 0) return false;
+
+  const uri = findUrlAtOffset(text, tapped);
+  if (!uri) return false;
+  openTerminalLink(uri);
+  return true;
+}
+
+/** Publish the mounted pane's fit, or drop it when the pane unmounts. */
+export function setFitAction(id: string, fit: (() => void) | null): void {
+  const entry = registry.get(id);
+  if (entry) entry.fitAction = fit;
+}
+
+/**
+ * Ask the pane showing this session to fit the PTY's grid to itself.
+ *
+ * The pane's, because fitting a scaled pane is pane-local DOM work — the
+ * drawing's transform has to come off before the grid can be measured and go
+ * back on after — which is also why `refreshAllTerminalOptions` leaves a viewer
+ * rescaled rather than refitted: a font change on this screen is no reason to
+ * reflow every other client.
+ *
+ * This is the exception that proves it: the text-size stepper, whose whole
+ * purpose is defeated otherwise. A compact pane draws the grid scaled to fit,
+ * so a larger font on the same grid is drawn at a smaller scale and comes out
+ * exactly the size it was. Fewer, bigger columns is what "bigger text" means
+ * here, and that is a resize — asked for in so many words, which is the same
+ * standard "Fit to screen" meets.
+ */
+export function requestFit(id: string): void {
+  registry.get(id)?.fitAction?.();
+}
+
+/**
+ * What the key bar can send. Named rather than encoded, because what a key
+ * sends depends on what the program running in that session has negotiated.
+ */
+export type SoftKeyName = "Escape" | "Tab" | keyof typeof CURSOR_FINAL;
+
+/** The bytes a key sends when no keyboard protocol is in play. */
+const LEGACY_KEY: Record<SoftKeyName, string> = {
+  Escape: "\x1b",
+  Tab: "\t",
+  up: "\x1b[A",
+  down: "\x1b[B",
+  right: "\x1b[C",
+  left: "\x1b[D",
+};
+
+/** What `KeyboardEvent.key` calls each of them. */
+const EVENT_KEY: Record<SoftKeyName, string> = {
+  Escape: "Escape",
+  Tab: "Tab",
+  up: "ArrowUp",
+  down: "ArrowDown",
+  right: "ArrowRight",
+  left: "ArrowLeft",
+};
+
+/**
+ * Send a named key to a session — the phone's key bar, which has no keyboard
+ * of its own to press.
+ *
+ * Routed through the same encoder every hardware keystroke goes through
+ * (`encodeKittyKey`, see `handleCustomKey`) rather than writing an escape of
+ * its own. A program that has negotiated the kitty keyboard protocol — Claude
+ * Code does — reads `CSI 27 u` for Escape and ignores a bare `\x1b`, so a bar
+ * that encoded its own keys would send the one key it exists for into a hole,
+ * and only for the programs it matters most to. With the protocol off, the
+ * encoder declines and the legacy bytes are sent, cursor keys honouring DECCKM
+ * exactly as `cursorKey` does.
+ */
+export function sendKey(
+  id: string,
+  name: SoftKeyName,
+  opts: { shift?: boolean } = {},
+): void {
+  const term = registry.get(id)?.term;
+  const shift = opts.shift === true;
+  const event = new KeyboardEvent("keydown", {
+    key: EVENT_KEY[name],
+    shiftKey: shift,
+  });
+  const encoded = encodeKittyKey(event, kittyFlags(id), {
+    applicationCursorKeys: term?.modes.applicationCursorKeysMode ?? false,
+  });
+  if (encoded) {
+    writeToPty(id, encoded);
+    return;
+  }
+  // Shift+Tab is the one legacy sequence that isn't the plain key: `CSI Z` is
+  // what a shell and a TUI both read as "backwards", and Claude Code's mode
+  // switch is bound to it.
+  if (name === "Tab" && shift) {
+    writeToPty(id, "\x1b[Z");
+    return;
+  }
+  if (term && name in CURSOR_FINAL) {
+    writeToPty(id, cursorKey(term, name as keyof typeof CURSOR_FINAL));
+    return;
+  }
+  writeToPty(id, LEGACY_KEY[name]);
 }
 
 function applyFontOptions(term: Terminal, opts: TerminalFontOptions): void {

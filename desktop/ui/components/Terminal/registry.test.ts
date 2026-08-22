@@ -7,6 +7,7 @@ import type { TerminalFontOptions } from "./registry";
 // exists under Vite's dev server, not under vitest — mock it here rather
 // than touching api/index.ts, which is outside this change's scope.
 const terminalResize = vi.fn().mockResolvedValue(undefined);
+const terminalWrite = vi.fn().mockResolvedValue(undefined);
 /** Output listeners registered by the registry, keyed by terminal id. */
 const outputListeners = new Map<
   string,
@@ -22,6 +23,7 @@ const unsubResized = vi.fn();
 vi.mock("../../api", () => ({
   getApiClient: () => ({
     terminalResize,
+    terminalWrite,
     onTerminalOutput: (
       id: string,
       cb: (chunk: { data: Uint8Array; seq: number }) => void,
@@ -45,6 +47,14 @@ vi.mock("../../api", () => ({
   }),
 }));
 
+const openUrl = vi.fn().mockResolvedValue(undefined);
+vi.mock("../../platform", () => ({
+  getPlatformServices: () => ({
+    opener: { openUrl },
+    clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
+  }),
+}));
+
 /** Push a PTY output chunk at the registry, as the transport would. */
 function emitOutput(id: string, text: string, seq: number): void {
   outputListeners.get(id)?.({ data: new TextEncoder().encode(text), seq });
@@ -62,8 +72,12 @@ const {
   acquireTerminal,
   beginTerminalReplay,
   disposeTerminal,
+  endDrag,
   forgetCellHeight,
+  openLinkAt,
+  sendKey,
   normalizeWheel,
+  scrollByDrag,
   onTerminalGrid,
   refreshAllTerminalOptions,
   refreshAllTerminalThemes,
@@ -97,6 +111,7 @@ function acquire(id: string) {
 
 afterEach(() => {
   while (ids.length) disposeTerminal(ids.pop()!);
+  openUrl.mockClear();
   document.documentElement.removeAttribute("style");
   terminalResize.mockClear();
   unsubOutput.mockClear();
@@ -354,9 +369,12 @@ function fakeTerm(
 ) {
   let reads = 0;
   let height = pixelHeight;
+  const scrolled: number[] = [];
   const term = {
     rows,
     buffer: { active: { type: screen } },
+    modes: { applicationCursorKeysMode: false },
+    scrollLines: (lines: number) => scrolled.push(lines),
     element: {
       get clientHeight(): number {
         reads += 1;
@@ -367,8 +385,12 @@ function fakeTerm(
   return {
     term: term as unknown as Terminal,
     reads: () => reads,
+    scrolled,
     setPixelHeight: (value: number) => {
       height = value;
+    },
+    setApplicationCursorKeys: (on: boolean) => {
+      term.modes.applicationCursorKeysMode = on;
     },
   };
 }
@@ -455,6 +477,169 @@ describe("normalizeWheel", () => {
     expect(normalizeWheel(term, event)).toBe(true);
     expect(event.deltaY).toBe(3);
     expect(reads()).toBe(0);
+  });
+});
+
+describe("scrollByDrag", () => {
+  it("scrolls the scrollback a row at a time, carrying the remainder", () => {
+    // 400px over 10 rows: a row is 40px of finger travel.
+    const { term, scrolled } = fakeTerm(400, 10, "normal");
+    scrollByDrag("t", term, 30);
+    expect(scrolled).toEqual([]);
+    scrollByDrag("t", term, 30);
+    expect(scrolled).toEqual([1]);
+    // A drag the other way scrolls back up.
+    endDrag(term);
+    scrollByDrag("t", term, -80);
+    expect(scrolled).toEqual([1, -2]);
+  });
+
+  it("sends cursor keys where there is no scrollback to move", () => {
+    const { term, scrolled, setApplicationCursorKeys } = fakeTerm(
+      400,
+      10,
+      "alternate",
+    );
+    terminalWrite.mockClear();
+    scrollByDrag("t", term, 80);
+    expect(scrolled).toEqual([]);
+    expect(terminalWrite).toHaveBeenCalledWith("t", "\x1b[B\x1b[B");
+
+    // The program can ask for the other encoding, and a key it doesn't
+    // recognize is a key it ignores.
+    endDrag(term);
+    setApplicationCursorKeys(true);
+    terminalWrite.mockClear();
+    scrollByDrag("t", term, -40);
+    expect(terminalWrite).toHaveBeenCalledWith("t", "\x1bOA");
+  });
+
+  it("caps one drag event's keys, so a flick is not a burst of keypresses", () => {
+    const { term } = fakeTerm(400, 10, "alternate");
+    terminalWrite.mockClear();
+    // 40 rows of travel in one event — a real flick on a phone.
+    scrollByDrag("t", term, 1600);
+    expect(terminalWrite.mock.calls[0][1]).toBe("\x1b[B".repeat(8));
+  });
+
+  it("drops the carry when the drag reverses", () => {
+    const { term, scrolled } = fakeTerm(400, 10, "normal");
+    // 30px of downward residue must not eat the first upward row.
+    scrollByDrag("t", term, 30);
+    scrollByDrag("t", term, -40);
+    expect(scrolled).toEqual([-1]);
+  });
+});
+
+describe("sendKey", () => {
+  /** Write a sequence and wait for xterm to have parsed it. */
+  async function feed(id: string, text: string) {
+    const { term } = acquire(id);
+    await new Promise<void>((resolve) => term.write(text, resolve));
+    return term;
+  }
+
+  it("sends the legacy bytes when no keyboard protocol is in play", async () => {
+    await feed("k", "");
+    terminalWrite.mockClear();
+
+    sendKey("k", "Escape");
+    sendKey("k", "Tab");
+    sendKey("k", "Tab", { shift: true });
+    sendKey("k", "up");
+
+    expect(terminalWrite.mock.calls.map((c) => c[1])).toEqual([
+      "\x1b",
+      "\t",
+      "\x1b[Z",
+      "\x1b[A",
+    ]);
+  });
+
+  it("follows the cursor-key mode the program asked for", async () => {
+    // DECCKM on: a program in application-cursor mode reads SS3, not CSI.
+    await feed("k2", "\x1b[?1h");
+    terminalWrite.mockClear();
+
+    sendKey("k2", "down");
+    expect(terminalWrite).toHaveBeenCalledWith("k2", "\x1bOB");
+  });
+
+  /**
+   * The reason this goes through the registry at all: a program that has
+   * pushed kitty flags — Claude Code does — reads `CSI 27 u` for Escape and
+   * ignores a bare `\x1b`, so a key bar encoding its own bytes would send the
+   * one key it exists for into a hole, in exactly the sessions it matters most
+   * in.
+   */
+  it("encodes with the kitty protocol once a program has negotiated it", async () => {
+    await feed("k3", "\x1b[>1u");
+    terminalWrite.mockClear();
+
+    sendKey("k3", "Escape");
+    expect(terminalWrite).toHaveBeenCalledWith("k3", "\x1b[27u");
+
+    sendKey("k3", "Tab", { shift: true });
+    expect(terminalWrite).toHaveBeenCalledWith("k3", "\x1b[9;2u");
+  });
+
+  it("is silent for a session that has gone", () => {
+    terminalWrite.mockClear();
+    sendKey("nobody", "Escape");
+    // No instance, no cursor mode to consult — the legacy byte still goes,
+    // because the session may outlive its pane.
+    expect(terminalWrite).toHaveBeenCalledWith("nobody", "\x1b");
+  });
+});
+
+describe("openLinkAt", () => {
+  /** Write a screen and wait for xterm to have parsed it. */
+  async function screen(id: string, text: string) {
+    const { term } = acquire(id);
+    await new Promise<void>((resolve) => term.write(text, resolve));
+    return term;
+  }
+
+  it("opens the link under the cell, and nothing under the rest of the line", async () => {
+    await screen("l", "see https://example.com/one now");
+    // "see " is four cells, so the URL starts at column 4.
+    expect(openLinkAt("l", 10, 0)).toBe(true);
+    expect(openUrl).toHaveBeenCalledWith("https://example.com/one");
+
+    openUrl.mockClear();
+    expect(openLinkAt("l", 1, 0)).toBe(false);
+    expect(openUrl).not.toHaveBeenCalled();
+  });
+
+  it("reads a link that wrapped across rows as one link", async () => {
+    const { term } = acquire("w");
+    term.resize(20, 10);
+    const url = `https://example.com/${"a".repeat(30)}`;
+    await new Promise<void>((resolve) => term.write(url, resolve));
+    // The tap lands on the second row — half a URL, which is not a URL.
+    expect(openLinkAt("w", 5, 1)).toBe(true);
+    expect(openUrl).toHaveBeenCalledWith(url);
+  });
+
+  it("leaves the punctuation a sentence ends with out of the link", async () => {
+    await screen("p", "see (https://example.com/two).");
+    expect(openLinkAt("p", 10, 0)).toBe(true);
+    expect(openUrl).toHaveBeenCalledWith("https://example.com/two");
+  });
+
+  it("opens a link once, however many taps the platform reports", async () => {
+    await screen("d", "https://example.com/three");
+    expect(openLinkAt("d", 3, 0)).toBe(true);
+    // xterm's own web-links addon hears the synthesized click a moment later
+    // and asks for the same link again; the second ask is the same gesture.
+    expect(openLinkAt("d", 3, 0)).toBe(true);
+    expect(openUrl).toHaveBeenCalledTimes(1);
+  });
+
+  it("declines a scheme that isn't the web", async () => {
+    await screen("s", "file:///etc/passwd and ftp://host/x");
+    expect(openLinkAt("s", 3, 0)).toBe(false);
+    expect(openUrl).not.toHaveBeenCalled();
   });
 });
 

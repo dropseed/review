@@ -87,6 +87,50 @@ export interface RepoActivityChangedPayload {
   activity: RepoLocalActivity;
 }
 
+/** What starting a terminal takes, on either transport. */
+export interface TerminalStartParams {
+  terminalId: string;
+  repoPath: string;
+  cwd: string;
+  cols: number;
+  rows: number;
+  shell?: string;
+  /**
+   * The workspace to be born in, when the caller knows which one — the stage's
+   * own "+". Omitted, the backend routes by cwd. Naming it here rather than
+   * reassigning afterwards is what keeps the workspace and the session
+   * together.
+   */
+  workspaceId?: string;
+}
+
+/**
+ * That, as either wire wants it.
+ *
+ * Shared because the two clients used to enumerate these fields separately and
+ * quietly disagreed: the web client never sent `workspaceId`, so every terminal
+ * started from a phone was routed by its cwd instead of landing in the
+ * workspace on screen — and nothing could catch it, since an absent hint is a
+ * *valid* request that simply means "you decide". An optional field left out of
+ * one payload is the one drift a shared builder makes impossible.
+ *
+ * Optionals go as explicit `null` rather than being dropped: Tauri's argument
+ * deserialization wants the key present, and it costs the HTTP side nothing.
+ */
+export function terminalStartPayload(
+  params: TerminalStartParams,
+): Record<string, unknown> {
+  return {
+    terminalId: params.terminalId,
+    repoPath: params.repoPath,
+    cwd: params.cwd,
+    cols: params.cols,
+    rows: params.rows,
+    shell: params.shell ?? null,
+    workspaceId: params.workspaceId ?? null,
+  };
+}
+
 export interface ApiClient {
   // ----- Git operations -----
 
@@ -728,21 +772,7 @@ export interface ApiClient {
    * has to know where to draw it — and whether that workspace is one the queue
    * has never listed.
    */
-  terminalStart(params: {
-    terminalId: string;
-    repoPath: string;
-    cwd: string;
-    cols: number;
-    rows: number;
-    shell?: string;
-    /**
-     * The workspace to be born in, when the caller knows which one — the
-     * stage's own "+". Omitted, the backend routes by cwd. Naming it here
-     * rather than reassigning afterwards is what keeps the workspace and the
-     * session together.
-     */
-    workspaceId?: string;
-  }): Promise<TerminalStarted>;
+  terminalStart(params: TerminalStartParams): Promise<TerminalStarted>;
 
   /**
    * Move a session into a workspace — what dragging a terminal onto a card

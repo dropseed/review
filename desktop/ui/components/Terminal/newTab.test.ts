@@ -19,11 +19,11 @@ const started: {
   workspaceId?: string;
 }[] = [];
 
-function stubStartTerminal(): void {
+function stubStartTerminal(id: string | null = "session-1"): void {
   useReviewStore.setState({
     startTerminal: async (repoPath, cwd, _cols, _rows, _shell, workspaceId) => {
       started.push({ repoPath, cwd, workspaceId });
-      return "session-1";
+      return id;
     },
   });
 }
@@ -75,6 +75,7 @@ afterEach(() => {
     reviewRef: null,
     reviewTier: null,
     activeReviewKey: null,
+    contentFocus: "code",
   });
   vi.clearAllMocks();
 });
@@ -209,5 +210,60 @@ describe("where a workspace's terminal starts", () => {
       cwd: "",
       workspaceId: undefined,
     });
+  });
+});
+
+/**
+ * The bug this pins: on both surfaces where the terminal is not already on
+ * screen, starting one used to look like a dead button — the shell started, out
+ * of sight, and nothing about the stage changed. A phone shows one half at a
+ * time, so a new workspace's "Start a terminal" left you on the empty code
+ * half; a code-focused desktop stage left the panel collapsed to its rail.
+ */
+describe("what starting a terminal puts on screen", () => {
+  it("gives the terminal half of a code-focused stage back", async () => {
+    stubStartTerminal();
+    useReviewStore.setState({ contentFocus: "code" });
+
+    await openTerminalTab(workspace([]));
+
+    // Beside the code rather than instead of it. Phone width needs no branch
+    // here: `compactStageHalf` already draws "split" as the terminal half, and
+    // writing "terminal" instead would edit the layout the desktop chose.
+    expect(useReviewStore.getState().contentFocus).toBe("split");
+  });
+
+  it("leaves a stage that already shows the terminal alone", async () => {
+    stubStartTerminal();
+    useReviewStore.setState({ contentFocus: "terminal" });
+
+    await openTerminalTab(workspace([]));
+
+    // ⌘T from inside a maximized shell must not rearrange the stage.
+    expect(useReviewStore.getState().contentFocus).toBe("terminal");
+  });
+
+  it("stays put when nothing started", async () => {
+    stubStartTerminal(null);
+    useReviewStore.setState({ contentFocus: "code" });
+
+    await openTerminalTab(workspace([]));
+
+    expect(useReviewStore.getState().contentFocus).toBe("code");
+  });
+
+  /**
+   * The repo picker starts a shell as a courtesy after "open this repo". Taking
+   * the screen for it would answer a different question than the one asked —
+   * and at phone width it would replace the half the pick was made in.
+   */
+  it("stays put for a caller whose gesture was not about the terminal", async () => {
+    stubStartTerminal();
+    useReviewStore.setState({ contentFocus: "code" });
+
+    await openTerminalTab(workspace([]), null, { reveal: false });
+
+    expect(useReviewStore.getState().contentFocus).toBe("code");
+    expect(started).toHaveLength(1);
   });
 });

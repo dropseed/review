@@ -9,7 +9,9 @@ import type {
   ApiClient,
   GitChangedPayload,
   RepoActivityChangedPayload,
+  TerminalStartParams,
 } from "./client";
+import { terminalStartPayload } from "./client";
 import { TerminalSocket } from "./terminal-socket";
 import type {
   BranchList,
@@ -809,7 +811,12 @@ export class HttpClient implements ApiClient {
     ref: string,
     workspaceId?: string,
   ): Promise<RouteLanding> {
-    return this.post("/api/work/route", { repoPath, ref, workspaceId });
+    return this.post("/api/work/route", {
+      repoPath,
+      ref,
+      // Explicit, not dropped — the same rule `terminalStartPayload` keeps.
+      workspaceId: workspaceId ?? null,
+    });
   }
 
   // ----- File watcher -----
@@ -1054,23 +1061,11 @@ export class HttpClient implements ApiClient {
     return this.post<boolean>("/api/terminal/available").catch(() => false);
   }
 
-  async terminalStart(params: {
-    terminalId: string;
-    repoPath: string;
-    cwd: string;
-    cols: number;
-    rows: number;
-    shell?: string;
-    workspaceId?: string;
-  }): Promise<TerminalStarted> {
-    const started = await this.post<TerminalStarted>("/api/terminal/start", {
-      terminalId: params.terminalId,
-      repoPath: params.repoPath,
-      cwd: params.cwd,
-      cols: params.cols,
-      rows: params.rows,
-      shell: params.shell ?? null,
-    });
+  async terminalStart(params: TerminalStartParams): Promise<TerminalStarted> {
+    const started = await this.post<TerminalStarted>(
+      "/api/terminal/start",
+      terminalStartPayload(params),
+    );
     // Session exists now — open its socket so output/status start flowing.
     this.ensureTerminalSocket(params.terminalId);
     return started;
