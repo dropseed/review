@@ -749,18 +749,24 @@ pub fn run_note(args: NoteArgs) -> Result<(), String> {
 
 /// Split the requested hunk IDs into those present in the live diff and those
 /// that aren't, warning on each unknown ID. Errors if none matched. Returns
-/// `(targets, unknown_ids)`.
+/// `(targets, unknown_ids)`, each deduplicated so a repeated ID (shell glob
+/// expansion, an agent script with overlapping selections) isn't double
+/// counted in the printed/JSON result.
 fn resolve_mark_targets(
     comparison_key: &str,
     live_ids: &HashSet<String>,
     explicit: &[String],
 ) -> Result<(Vec<String>, Vec<String>), String> {
     let mut known = Vec::new();
+    let mut known_seen = HashSet::new();
     let mut unknown = Vec::new();
+    let mut unknown_seen = HashSet::new();
     for id in explicit {
         if live_ids.contains(id) {
-            known.push(id.clone());
-        } else {
+            if known_seen.insert(id.clone()) {
+                known.push(id.clone());
+            }
+        } else if unknown_seen.insert(id.clone()) {
             unknown.push(id.clone());
         }
     }
@@ -812,5 +818,23 @@ mod tests {
         assert!(validate_note_append("   ").is_err());
         assert!(validate_note_append("").is_err());
         assert!(validate_note_append("looks good").is_ok());
+    }
+
+    #[test]
+    fn resolve_mark_targets_dedupes_repeated_ids() {
+        let live_ids: HashSet<String> = ["a.rs:111", "b.rs:222"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let explicit = [
+            "a.rs:111".to_owned(),
+            "a.rs:111".to_owned(),
+            "b.rs:222".to_owned(),
+            "missing.rs:333".to_owned(),
+            "missing.rs:333".to_owned(),
+        ];
+        let (known, unknown) = resolve_mark_targets("main..head", &live_ids, &explicit).unwrap();
+        assert_eq!(known, vec!["a.rs:111".to_owned(), "b.rs:222".to_owned()]);
+        assert_eq!(unknown, vec!["missing.rs:333".to_owned()]);
     }
 }
