@@ -3,7 +3,7 @@
 //! These commands work on the working tree and the git index directly. They
 //! do not read or write review state, so they need no saved review.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 
 use clap::Args;
@@ -261,20 +261,38 @@ fn push_hash_failures(
     }
 }
 
+/// Split the requested targets into per-file hunk hashes and whole-file
+/// paths, deduplicated so a repeated target (shell glob expansion, an agent
+/// script with overlapping selections) isn't staged — and counted — twice.
+fn group_stage_targets(targets: &[String]) -> (BTreeMap<String, Vec<String>>, Vec<String>) {
+    let mut hunks_by_file: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut hunk_seen: HashSet<(String, String)> = HashSet::new();
+    let mut whole_files: Vec<String> = Vec::new();
+    let mut whole_file_seen: HashSet<String> = HashSet::new();
+    for target in targets {
+        match parse_hunk_target(target) {
+            HunkTarget::Hunk { file, hash } => {
+                if hunk_seen.insert((file.clone(), hash.clone())) {
+                    hunks_by_file.entry(file).or_default().push(hash);
+                }
+            }
+            HunkTarget::File { path } => {
+                if whole_file_seen.insert(path.clone()) {
+                    whole_files.push(path);
+                }
+            }
+        }
+    }
+    (hunks_by_file, whole_files)
+}
+
 /// `review stage` / `review unstage` — apply hunks (or whole files) to or
 /// from the git index. `unstage` reverses the direction.
 pub fn run_stage(args: StageArgs, unstage: bool) -> Result<(), String> {
     let repo_path = get_repo_path(&args.repo)?;
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
 
-    let mut hunks_by_file: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    let mut whole_files: Vec<String> = Vec::new();
-    for target in &args.targets {
-        match parse_hunk_target(target) {
-            HunkTarget::Hunk { file, hash } => hunks_by_file.entry(file).or_default().push(hash),
-            HunkTarget::File { path } => whole_files.push(path),
-        }
-    }
+    let (hunks_by_file, whole_files) = group_stage_targets(&args.targets);
 
     let side = if unstage { "staged" } else { "unstaged" };
     let mut done: Vec<String> = Vec::new();
@@ -364,4 +382,26 @@ pub fn run_stage(args: StageArgs, unstage: bool) -> Result<(), String> {
         return Err(format!("Failed to {action} {} item(s).", failed.len()));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn group_stage_targets_dedupes_repeated_hunks_and_files() {
+        let targets = [
+            "a.rs:aaaaaaaa".to_owned(),
+            "a.rs:aaaaaaaa".to_owned(),
+            "a.rs:bbbbbbbb".to_owned(),
+            "b.rs".to_owned(),
+            "b.rs".to_owned(),
+        ];
+        let (hunks_by_file, whole_files) = group_stage_targets(&targets);
+        assert_eq!(
+            hunks_by_file.get("a.rs").unwrap(),
+            &vec!["aaaaaaaa".to_owned(), "bbbbbbbb".to_owned()]
+        );
+        assert_eq!(whole_files, vec!["b.rs".to_owned()]);
+    }
 }
