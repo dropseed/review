@@ -73,7 +73,6 @@ export interface ReviewSlice {
   carriedForward: number;
 
   // Actions
-  setReviewState: (state: ReviewState) => void;
   dismissCarriedForward: () => void;
 
   // Persistence
@@ -108,7 +107,6 @@ export interface ReviewSlice {
   unsaveHunkForLater: (hunkId: string) => void;
   saveAllFileHunksForLater: (filePath: string) => void;
   saveAllDirHunksForLater: (dirPath: string) => void;
-  setHunkLabel: (hunkId: string, label: string | string[]) => void;
 
   // Feedback export
   exportRejectionFeedback: () => RejectionFeedback | null;
@@ -342,30 +340,6 @@ function patchReviewState(
   return true;
 }
 
-/**
- * Merge a partial HunkState into a single hunk entry and trigger a debounced
- * save. The shared shape behind setHunkLabel — each axis of the attributed
- * model patches one field the same way.
- */
-function patchHunk(
-  get: () => {
-    reviewState: ReviewState | null;
-    saveReviewState: () => Promise<void>;
-  },
-  set: (partial: { reviewState: ReviewState }) => void,
-  hunkId: string,
-  partial: Partial<HunkState>,
-): void {
-  const { reviewState } = get();
-  if (!reviewState) return;
-  patchReviewState(get, set, {
-    hunks: {
-      ...reviewState.hunks,
-      [hunkId]: { ...reviewState.hunks[hunkId], ...partial },
-    },
-  });
-}
-
 export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
   (client: ApiClient) => (set, get) => ({
     reviewState: null,
@@ -373,7 +347,6 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     savedReviewsLoading: false,
     carriedForward: 0,
 
-    setReviewState: (state) => set({ reviewState: state }),
     dismissCarriedForward: () => set({ carriedForward: 0 }),
 
     loadReviewState: async () => {
@@ -688,11 +661,6 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
     saveAllDirHunksForLater: (dirPath) => {
       const ids = getDirHunkIds(get, dirPath);
       updateHunkStatuses(get, set, ids, "saved_for_later");
-    },
-
-    setHunkLabel: (hunkId, label) => {
-      const labels = Array.isArray(label) ? label : [label];
-      patchHunk(get, set, hunkId, { classification: attributed(labels, "ui") });
     },
 
     setReviewNotes: (notes) => {

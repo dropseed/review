@@ -291,7 +291,6 @@ export interface FilesSlice {
   setCommitRange: (range: CommitRange | null) => void;
   /** Atomically set repoPath and the active review in one update, preventing phantom review entries. */
   switchReview: (path: string, resolved: ResolvedReview) => void;
-  setFiles: (files: FileEntry[]) => void;
   /** Replace a single file's FileDiff in one set(). Skips if contentHash is unchanged. */
   syncFileHunks: (filePath: string, freshHunks: DiffHunk[]) => void;
 
@@ -593,8 +592,6 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
           baseReason: resolved.baseReason ?? null,
         });
       },
-
-      setFiles: (files) => set({ files, flatFileList: flattenFiles(files) }),
 
       syncFileHunks: (filePath, freshHunks) => {
         const { filesByPath } = get();
