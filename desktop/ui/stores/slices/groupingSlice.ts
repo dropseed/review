@@ -75,7 +75,7 @@ export interface GroupingSlice {
  * any new hunk IDs into an ungrouped catchall at the end. Mirrors the CLI's
  * `guide show` reconciliation so the app and CLI agree on what a guide covers.
  */
-function patchStaleGroups(
+export function patchStaleGroups(
   groups: HunkGroup[],
   currentHunkIds: Set<string>,
 ): HunkGroup[] {
