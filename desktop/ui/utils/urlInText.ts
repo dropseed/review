@@ -10,11 +10,15 @@
  */
 
 /**
- * Stops short of `)]},;` so a URL inside brackets or a list ends where the
- * prose resumes; the balanced-paren case is handled below rather than here,
- * since a `)` can belong to either.
+ * Stops short of `]},;` so a URL inside brackets or a list ends where the
+ * prose resumes. `)` is deliberately *not* excluded here — it can belong to
+ * either the URL (a Wikipedia-style `Foo_(bar)`) or the surrounding prose (a
+ * markdown link's `(url)`, a parenthetical aside), and only `cleanUrlTrailing`
+ * below can tell those apart by checking whether the parens balance.
+ * Excluding it here would cut the match off at the first `)` either way,
+ * before that check ever ran.
  */
-const URL_RE = /https?:\/\/[^\s"'`<>)\]},;]+/g;
+const URL_RE = /https?:\/\/[^\s"'`<>\]},;]+/g;
 
 /** Strip trailing punctuation likely from sentence-level context, not the URL itself. */
 export function cleanUrlTrailing(url: string): string {
