@@ -3948,6 +3948,96 @@ mod tests {
         }
     }
 
+    #[test]
+    fn strip_port_removes_a_trailing_numeric_port() {
+        assert_eq!(strip_port("github.com:443"), "github.com");
+        assert_eq!(strip_port("github.com:22"), "github.com");
+    }
+
+    #[test]
+    fn strip_port_leaves_a_host_with_no_colon_untouched() {
+        assert_eq!(strip_port("github.com"), "github.com");
+    }
+
+    #[test]
+    fn strip_port_leaves_a_non_numeric_or_empty_suffix_untouched() {
+        // Not a port — the whole string is returned, not just the part
+        // before the colon, since what follows isn't a port at all.
+        assert_eq!(strip_port("host:abc"), "host:abc");
+        assert_eq!(strip_port("host:"), "host:");
+    }
+
+    #[test]
+    fn strip_port_only_strips_the_last_colon_segment() {
+        assert_eq!(strip_port("a:b:443"), "a:b");
+    }
+
+    #[test]
+    fn split_range_sep_prefers_three_dots_over_two() {
+        // A plain `split_once("..")` would greedily match inside the `...`
+        // itself; the three-dot separator must be tried first.
+        assert_eq!(
+            split_range_sep("main...feature"),
+            Some(("main", "...", "feature"))
+        );
+    }
+
+    #[test]
+    fn split_range_sep_falls_back_to_two_dots() {
+        assert_eq!(
+            split_range_sep("main..feature"),
+            Some(("main", "..", "feature"))
+        );
+    }
+
+    #[test]
+    fn split_range_sep_splits_on_the_first_occurrence() {
+        assert_eq!(split_range_sep("a...b...c"), Some(("a", "...", "b...c")));
+    }
+
+    #[test]
+    fn split_range_sep_is_none_without_a_separator() {
+        assert_eq!(split_range_sep("main"), None);
+        assert_eq!(split_range_sep(""), None);
+    }
+
+    #[test]
+    fn parse_shortstat_reads_every_field() {
+        assert_eq!(
+            parse_shortstat(" 3 files changed, 10 insertions(+), 5 deletions(-)\n"),
+            (3, 10, 5)
+        );
+    }
+
+    #[test]
+    fn parse_shortstat_handles_a_missing_clause() {
+        // No deletions clause at all.
+        assert_eq!(
+            parse_shortstat("1 file changed, 2 insertions(+)"),
+            (1, 2, 0)
+        );
+        // No insertions clause at all.
+        assert_eq!(
+            parse_shortstat("2 files changed, 3 deletions(-)"),
+            (2, 0, 3)
+        );
+    }
+
+    #[test]
+    fn parse_shortstat_handles_singular_wording() {
+        assert_eq!(
+            parse_shortstat("1 file changed, 1 insertion(+), 1 deletion(-)"),
+            (1, 1, 1)
+        );
+    }
+
+    #[test]
+    fn parse_shortstat_is_zero_for_blank_or_unrecognized_output() {
+        assert_eq!(parse_shortstat(""), (0, 0, 0));
+        assert_eq!(parse_shortstat("   \n"), (0, 0, 0));
+        assert_eq!(parse_shortstat("nothing to see here"), (0, 0, 0));
+    }
+
     /// Fetched PR heads live under `refs/review/`, never `refs/heads/`, so a PR
     /// whose head branch shares a name with a local branch can't collide with
     /// it — and `git branch` stays clean.
