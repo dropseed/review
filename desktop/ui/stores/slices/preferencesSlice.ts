@@ -361,7 +361,6 @@ export interface PreferencesSlice {
   setTerminalLaunchCommand: (command: string) => void;
   /** Pin the usage window an agent's sidebar bar plots; null restores the default. */
   setUsagePinnedWindow: (agentId: string, windowLabel: string | null) => void;
-  setCodeTheme: (theme: string) => void;
   setUiTheme: (themeId: string) => void;
   setDiffLineDiffType: (type: DiffLineDiffType) => void;
   setDiffOverflow: (overflow: DiffOverflow) => void;
@@ -506,11 +505,6 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
       else next[agentId] = windowLabel;
       set({ usagePinnedWindows: next });
       storage.set("usagePinnedWindows", next);
-    },
-
-    setCodeTheme: (theme) => {
-      set({ codeTheme: theme });
-      storage.set("codeTheme", theme);
     },
 
     setUiTheme: (themeId) => {
