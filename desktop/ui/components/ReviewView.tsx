@@ -12,11 +12,9 @@ import { clsx } from "clsx";
 import { useReviewStore } from "../stores";
 import { useProvideCommandUi } from "../commands/host";
 import { getMissingRefs } from "../stores/slices/groupingSlice";
-import { ephemeralView } from "../stores/selectors/ephemeral";
-import { EphemeralViewBanner } from "./EphemeralViewBanner";
+import { ephemeralView } from "../stores/selectors/viewpoint";
 import { StartReviewButton } from "./StartReviewButton";
 import { getApiClient } from "../api";
-import type { ReviewTarget } from "../types";
 import {
   useMenuEvents,
   useFileWatcher,
@@ -50,13 +48,9 @@ const ClassificationsModal = lazy(() =>
 
 interface ReviewViewProps {
   comparisonReady: number;
-  onStartReview?: (path: string, target: ReviewTarget) => Promise<void>;
 }
 
-export function ReviewView({
-  comparisonReady,
-  onStartReview,
-}: ReviewViewProps): ReactNode {
+export function ReviewView({ comparisonReady }: ReviewViewProps): ReactNode {
   const repoPath = useReviewStore((s) => s.repoPath);
   const comparison = useReviewStore((s) => s.comparison);
   const reviewRef = useReviewStore((s) => s.reviewRef);
@@ -255,70 +249,66 @@ export function ReviewView({
   return (
     <div className="flex h-full flex-row bg-surface">
       <div className="flex flex-1 flex-col min-w-0">
-        {/* Status banners — hidden while the deleted-ref notice is shown.
-            A commit being peeked at replaces all three below rather than
-            stacking with them: they describe the review's own diff, which is
-            not what is on screen, and only the peek's banner can say why or
-            offer the way back. */}
-        {!compareRefMissing &&
-          (viewingCommit ? (
-            <EphemeralViewBanner onStartReview={onStartReview} />
-          ) : (
-            <>
-              {readOnlyPreview && (
-                <div className="flex items-center justify-between gap-3 border-b border-edge bg-surface-raised/50 px-4 py-2">
-                  <span className="text-xs text-fg-muted">
-                    Read-only preview — approvals are disabled
-                  </span>
-                  <StartReviewButton
-                    label="Start Review"
-                    target={startReviewTarget}
-                    onStartReview={onStartReview}
-                  />
-                </div>
-              )}
+        {/* Status banners — hidden while the deleted-ref notice is shown, and
+            while a commit is being peeked at: all three describe the review's
+            own diff, which is not what is on screen. What a peek needs instead
+            — which commit, and the way back — is the files column's comparison
+            bar, and the offer to review it is that column's first row. */}
+        {!compareRefMissing && !viewingCommit && (
+          <>
+            {readOnlyPreview && (
+              <div className="flex items-center justify-between gap-3 border-b border-edge bg-surface-raised/50 px-4 py-2">
+                <span className="text-xs text-fg-muted">
+                  Read-only preview — approvals are disabled
+                </span>
+                <StartReviewButton
+                  label="Start Review"
+                  target={startReviewTarget}
+                />
+              </div>
+            )}
 
-              {/* Stale worktree indicator */}
-              {worktreeStale && worktreePath && !readOnlyPreview && (
-                <div className="flex items-center gap-2 border-b border-edge bg-amber-500/5 px-4 py-1.5">
-                  <WarningIcon className="h-3.5 w-3.5 shrink-0 text-amber-500" />
-                  <span className="text-xs text-fg-muted flex-1">
-                    Worktree is behind branch tip — review may not reflect
-                    latest changes
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleUpdateWorktree}
-                    disabled={updatingWorktree}
-                    className="text-xs font-medium text-amber-600 hover:text-amber-500
+            {/* Stale worktree indicator */}
+            {worktreeStale && worktreePath && !readOnlyPreview && (
+              <div className="flex items-center gap-2 border-b border-edge bg-amber-500/5 px-4 py-1.5">
+                <WarningIcon className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+                <span className="text-xs text-fg-muted flex-1">
+                  Worktree is behind branch tip — review may not reflect latest
+                  changes
+                </span>
+                <button
+                  type="button"
+                  onClick={handleUpdateWorktree}
+                  disabled={updatingWorktree}
+                  className="text-xs font-medium text-amber-600 hover:text-amber-500
                          disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
-                  >
-                    {updatingWorktree ? "Updating..." : "Update"}
-                  </button>
-                </div>
-              )}
+                >
+                  {updatingWorktree ? "Updating..." : "Update"}
+                </button>
+              </div>
+            )}
 
-              {/* Checkout prompt — shown for reviews without a worktree.
+            {/* Checkout prompt — shown for reviews without a worktree.
             Skipped when on the current branch, since the main working tree
             already matches the branch being reviewed (LSP works correctly). */}
-              {!readOnlyPreview && !worktreePath && !isOnCurrentBranch && (
-                <div className="flex items-center gap-2 border-b border-edge px-4 py-1.5">
-                  <span className="text-xs text-fg-faint flex-1">
-                    Check out to enable LSP features (hover, go-to-definition)
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleCheckoutClick}
-                    disabled={checkingOut}
-                    className="text-xs font-medium text-fg-muted hover:text-fg-secondary
+            {!readOnlyPreview && !worktreePath && !isOnCurrentBranch && (
+              <div className="flex items-center gap-2 border-b border-edge px-4 py-1.5">
+                <span className="text-xs text-fg-faint flex-1">
+                  Check out to enable LSP features (hover, go-to-definition)
+                </span>
+                <button
+                  type="button"
+                  onClick={handleCheckoutClick}
+                  disabled={checkingOut}
+                  className="text-xs font-medium text-fg-muted hover:text-fg-secondary
                          disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
-                  >
-                    {checkingOut ? "Checking out..." : "Check out"}
-                  </button>
-                </div>
-              )}
-            </>
-          ))}
+                >
+                  {checkingOut ? "Checking out..." : "Check out"}
+                </button>
+              </div>
+            )}
+          </>
+        )}
 
         {/* Content region. The deleted-ref notice replaces the diff when the
             compared branch no longer exists. */}

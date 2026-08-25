@@ -19,7 +19,10 @@ import { FilesRail } from "./FilesRail";
 export function FilesPanelDock({
   full = false,
   availablePx,
-}: { full?: boolean; availablePx?: number } = {}): ReactNode {
+}: {
+  full?: boolean;
+  availablePx?: number;
+} = {}): ReactNode {
   const stored = useReviewStore((s) => s.filesPanelCollapsed);
   // `full` is the phone: the panel *is* the code half there, so it fills it and
   // the persisted collapse has no say — a preference about how to share a row

@@ -6,7 +6,7 @@
 //
 // Commit groups are not handled here: narrowing to a commit re-diffs (see
 // commitRange), which discards the very hunks this function focuses. Commit
-// selection goes through `setCommitRange` in CommitRangePicker instead.
+// selection goes through `setViewpoint` in ComparisonBar instead.
 
 import { useReviewStore } from "../../stores";
 import { getHunkByIdMap } from "../../stores/selectors/hunkData";

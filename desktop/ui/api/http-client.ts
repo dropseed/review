@@ -15,8 +15,6 @@ import { terminalStartPayload } from "./client";
 import { TerminalSocket } from "./terminal-socket";
 import type {
   BranchList,
-  RefEntry,
-  RefDescription,
   ClassifyResponse,
   Comparison,
   CommitComparison,
@@ -210,14 +208,6 @@ export class HttpClient implements ApiClient {
 
   async listBranches(repoPath: string): Promise<BranchList> {
     return this.post("/api/git/branches", { repoPath });
-  }
-
-  async listRefs(repoPath: string): Promise<RefEntry[]> {
-    return this.post("/api/git/refs", { repoPath });
-  }
-
-  async describeRef(repoPath: string, gitRef: string): Promise<RefDescription> {
-    return this.post("/api/git/describe-ref", { repoPath, gitRef });
   }
 
   async getGitStatus(repoPath: string): Promise<GitStatusSummary> {

@@ -1,6 +1,6 @@
 import { memo, useMemo, type JSX } from "react";
 import { useReviewStore } from "../../stores";
-import { viewOnly } from "../../stores/selectors/ephemeral";
+import { viewOnly } from "../../stores/selectors/viewpoint";
 import { useAllHunks } from "../../stores/selectors/hunks";
 import type { DiffViewMode } from "../../stores/slices/preferencesSlice";
 import { useNavigate } from "react-router-dom";

@@ -12,16 +12,18 @@ import type {
 } from "../../types";
 import { buildFileDiff } from "../../types";
 import type { ReviewScope } from "../../types/scope";
-import type { CommitRange } from "../../types/commitRange";
-import { sameRange } from "../../types/commitRange";
+import type { Viewpoint } from "../../types/viewpoint";
+import {
+  REVIEW_VIEWPOINT,
+  sameViewpoint,
+  viewpointComparison,
+} from "../../types/viewpoint";
 import type { ReviewStore, SliceCreatorWithClient } from "../types";
 import { createDebouncedFn, flattenFiles, isChangedStatus } from "../types";
 import { mergeDeltaHunks, patchFileTree } from "../filesDelta";
 import type { RestoredComparison } from "../comparisonCache";
 import { storeSnapshot, takeSnapshot } from "../comparisonCache";
-import { ephemeralView } from "../selectors/ephemeral";
 import type { UndoEntry } from "./undoSlice";
-import { ephemeralResetState } from "./ephemeralSlice";
 import { symbolsResetState, repoSymbolsResetState } from "./symbolsSlice";
 import { classificationResetState } from "./classificationSlice";
 import { EMPTY_STAGED_SET, gitCommitResetState } from "./gitSlice";
@@ -61,17 +63,16 @@ export function beginDiffSwap(
  * Take the outgoing comparison's snapshot at the one moment it is current by
  * construction: the swap has been decided, the reset below hasn't run yet.
  *
- * Declined for anything that isn't the review's own settled diff. A commit peek
- * and a commit-range narrowing both put a comparison the review isn't of into
- * `comparison`; a standalone file has no comparison at all; and a load still in
- * flight would be stored as a finished one and restored as the whole answer.
+ * Declined for anything that isn't the review's own settled diff. Any viewpoint
+ * but `review` puts a comparison the review isn't of into `comparison`; a
+ * standalone file has no comparison at all; and a load still in flight would be
+ * stored as a finished one and restored as the whole answer.
  */
 function captureOutgoing(state: ReviewStore): void {
   const { repoPath, comparison, reviewRef, reviewState } = state;
   if (!repoPath || !comparison || !reviewRef || !reviewState) return;
   if (state.isStandaloneFile) return;
-  if (state.commitRange !== null) return;
-  if (ephemeralView(state) !== null) return;
+  if (state.viewpoint.kind !== "review") return;
   if (state.loadingProgress !== null) return;
   if (state.flatFileList.length === 0) return;
 
@@ -237,8 +238,13 @@ export interface FilesSlice {
   // this is what "All commits" restores, and what commit attribution (the
   // branch's full commit list) is always loaded from.
   reviewComparison: Comparison | null;
-  // The commit sub-range `comparison` is currently narrowed to, if any.
-  commitRange: CommitRange | null;
+  /**
+   * Which revision the code half is looking at — the review's own comparison,
+   * a slice of it, or a commit being peeked at. `comparison` is derived from
+   * it against `reviewComparison`, so the two can't disagree about what is on
+   * screen. Read through `stores/selectors/viewpoint`.
+   */
+  viewpoint: Viewpoint;
   // The active review's identity: the ref being reviewed. Store keys and
   // keyed records (grouping, navigation snapshots, activeReviewKey) derive from
   // this, so they survive a base-override change.
@@ -283,12 +289,10 @@ export interface FilesSlice {
   /** Set the active review (comparison + identity) within the current repo. */
   setComparison: (resolved: ResolvedReview | null) => void;
   /**
-   * Narrow the review to a commit sub-range, or restore the full review
-   * comparison with `null`. Re-diffs (the range *is* the comparison), so it
-   * clears loaded files/hunks — but keeps the review's identity and its commit
-   * attribution, which describe the branch rather than the current range.
+   * Look at something else: a slice of the review, a commit, or the review
+   * itself again. The single writer — nothing else moves what is on screen.
    */
-  setCommitRange: (range: CommitRange | null) => void;
+  setViewpoint: (next: Viewpoint) => void;
   /** Atomically set repoPath and the active review in one update, preventing phantom review entries. */
   switchReview: (path: string, resolved: ResolvedReview) => void;
   /** Replace a single file's FileDiff in one set(). Skips if contentHash is unchanged. */
@@ -425,9 +429,8 @@ const reviewIdentityResetState = {
   reviewBaseOverride: null as string | null,
   baseReason: null as BaseReason | null,
   reviewComparison: null as Comparison | null,
-  commitRange: null as CommitRange | null,
+  viewpoint: REVIEW_VIEWPOINT,
   reviewState: null,
-  ...ephemeralResetState,
   // History
   attribution: null as HunkAttribution | null,
   attributionLoading: false,
@@ -503,7 +506,7 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
       repoPath: null,
       comparison: null,
       reviewComparison: null,
-      commitRange: null,
+      viewpoint: REVIEW_VIEWPOINT,
       reviewRef: null,
       reviewBaseOverride: null,
       baseReason: null,
@@ -557,20 +560,45 @@ export const createFilesSlice: SliceCreatorWithClient<FilesSlice> =
         });
       },
 
-      setCommitRange: (range) => {
-        const { reviewComparison, commitRange } = get();
+      setViewpoint: (next) => {
+        const state = get();
+        const { reviewComparison, viewpoint: current } = state;
+        // Nothing to look at, and nothing to come back to: every viewpoint is
+        // expressed against the review's own comparison, including the ones
+        // that replace it.
         if (!reviewComparison) return;
-        if (sameRange(range, commitRange)) return;
+        if (sameViewpoint(current, next)) return;
 
-        beginDiffSwap(get(), { snapshot: true });
+        // A snapshot records where the user was so the swap can be stepped
+        // back out of — off for the one swap that *is* the way back, since
+        // leaving a peek restores the file the peek interrupted and taking a
+        // snapshot here would overwrite that with the commit's own.
+        beginDiffSwap(state, {
+          snapshot: current.kind !== "commit" || next.kind === "commit",
+        });
 
         // Only the diff data resets. The review's identity — and with it the
         // branch's commit list, which is what the picker offers ranges from —
         // is untouched by construction, not carried forward field by field.
         set({
           ...diffDataResetState,
-          comparison: range ? range.comparison : reviewComparison,
-          commitRange: range,
+          viewpoint: next,
+          comparison: viewpointComparison(next, reviewComparison),
+          // A peek must not create review state on disk, and the way it
+          // doesn't is that the review state is null for the whole of it:
+          // `loadReviewState` refuses to refill it while one is up, and every
+          // write path below that already returns early on a null state, so
+          // they are all closed by this one gate rather than by five flags
+          // that could drift apart. Nulled on the way *out* too, so the
+          // loader — which re-runs on the comparison it lands on — refills it
+          // from disk rather than leaving the peek's emptiness behind.
+          ...((next.kind === "commit" || current.kind === "commit") && {
+            reviewState: null,
+          }),
+          // Whether the branch has a checkout to act against is not something
+          // looking at a different revision changes, so it survives the reset
+          // above rather than being recomputed as false on the way back.
+          readOnlyPreview: state.readOnlyPreview,
         });
       },
 

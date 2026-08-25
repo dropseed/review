@@ -26,8 +26,8 @@ use review::service::{
 };
 use review::sources::github::{GhCliProvider, GitHubPrRef, GitHubProvider, PullRequest};
 use review::sources::local_git::{
-    CommitComparison, DiffShortStat, HunkAttribution, LocalGitSource, RefDescription, RefEntry,
-    RemoteInfo, SearchMatch, WorktreeCheckout, WorktreeInfo,
+    CommitComparison, DiffShortStat, HunkAttribution, LocalGitSource, RemoteInfo, SearchMatch,
+    WorktreeCheckout, WorktreeInfo,
 };
 use review::sources::traits::{
     BranchList, CommitDetail, CommitEntry, Comparison, FileEntry, GitStatusSummary,
@@ -923,32 +923,6 @@ pub fn unregister_repo(repo_path: String) -> Result<(), String> {
 pub fn list_branches(repo_path: String) -> Result<BranchList, String> {
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
     source.list_branches().map_err(|e| e.to_string())
-}
-
-/// Every ref already known locally — what Browse can be pinned to. Nothing is
-/// fetched.
-#[tauri::command]
-pub fn list_refs(repo_path: String) -> Result<Vec<RefEntry>, String> {
-    let t0 = Instant::now();
-    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
-    let refs = source.list_refs().map_err(|e| e.to_string())?;
-    info!("list_refs: {} refs in {:?}", refs.len(), t0.elapsed());
-    Ok(refs)
-}
-
-/// Resolve what a ref names, erroring when nothing does — this is what turns
-/// something the user typed or pasted into a ref Browse can pin to.
-#[tauri::command]
-pub fn describe_ref(repo_path: String, git_ref: String) -> Result<RefDescription, String> {
-    let t0 = Instant::now();
-    let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
-    let described = source.describe_ref(&git_ref).map_err(|e| e.to_string())?;
-    info!(
-        "describe_ref: {git_ref} -> {} in {:?}",
-        described.short_sha,
-        t0.elapsed()
-    );
-    Ok(described)
 }
 
 #[tauri::command]

@@ -1,6 +1,8 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import type { FileEntry } from "../../types";
 import { makeComparison } from "../../types";
+import type { Viewpoint } from "../../types/viewpoint";
+import { REVIEW_VIEWPOINT } from "../../types/viewpoint";
 
 const { listDirectoryContents, listAllFiles, listRepoFiles, listFiles } =
   vi.hoisted(() => ({
@@ -46,13 +48,26 @@ beforeEach(() => {
   } as never);
 });
 
-describe("setCommitRange", () => {
-  const range = (base: string, head: string, ordinal: number) => ({
-    kind: "commits" as const,
-    loOrdinal: ordinal,
-    hiOrdinal: ordinal,
-    title: `#${ordinal}`,
-    comparison: makeComparison(base, head),
+describe("setViewpoint", () => {
+  const range = (base: string, head: string, ordinal: number): Viewpoint => ({
+    kind: "range",
+    range: {
+      kind: "commits" as const,
+      loOrdinal: ordinal,
+      hiOrdinal: ordinal,
+      title: `#${ordinal}`,
+      comparison: makeComparison(base, head),
+    },
+  });
+  const peek = (hash: string, base: string): Viewpoint => ({
+    kind: "commit",
+    view: {
+      hash,
+      shortHash: hash.slice(0, 7),
+      subject: "a commit",
+      comparison: makeComparison(base, hash),
+      isMerge: false,
+    },
   });
   const reviewComparison = {
     base: "main",
@@ -68,7 +83,8 @@ describe("setCommitRange", () => {
       reviewComparison,
       reviewRef: "feature",
       baseReason: "branchVsDefault",
-      commitRange: null,
+      viewpoint: REVIEW_VIEWPOINT,
+      reviewState: { hunks: {} },
       attribution,
       attributionLoaded: true,
       files: [{ name: "a.ts", path: "a.ts", isDirectory: false }],
@@ -77,7 +93,7 @@ describe("setCommitRange", () => {
 
   it("swaps in the range as the comparison but keeps the review's identity", () => {
     seed();
-    useReviewStore.getState().setCommitRange(range("main", "sha1", 1));
+    useReviewStore.getState().setViewpoint(range("main", "sha1", 1));
 
     const s = useReviewStore.getState();
     expect(s.comparison?.key).toBe("main..sha1");
@@ -88,9 +104,18 @@ describe("setCommitRange", () => {
     expect(s.files).toEqual([]);
   });
 
+  it("keeps the review attached while narrowed — a range is still the review", () => {
+    seed();
+    useReviewStore.getState().setViewpoint(range("main", "sha1", 1));
+
+    // The no-persistence gate is the peek's alone: decisions made inside a
+    // range are the review's and still save.
+    expect(useReviewStore.getState().reviewState).not.toBeNull();
+  });
+
   it("keeps commit attribution, which describes the branch and not the range", () => {
     seed();
-    useReviewStore.getState().setCommitRange(range("sha1", "sha2", 2));
+    useReviewStore.getState().setViewpoint(range("sha1", "sha2", 2));
 
     // Dropping this would leave the picker offering only the commit already
     // selected, with no way back to the full list.
@@ -101,12 +126,60 @@ describe("setCommitRange", () => {
 
   it("restores the review comparison when the range is cleared", () => {
     seed();
-    useReviewStore.getState().setCommitRange(range("main", "sha1", 1));
-    useReviewStore.getState().setCommitRange(null);
+    useReviewStore.getState().setViewpoint(range("main", "sha1", 1));
+    useReviewStore.getState().setViewpoint(REVIEW_VIEWPOINT);
 
     const s = useReviewStore.getState();
     expect(s.comparison).toEqual(reviewComparison);
-    expect(s.commitRange).toBeNull();
+    expect(s.viewpoint).toEqual(REVIEW_VIEWPOINT);
+  });
+
+  it("ignores a viewpoint that names what is already on screen", () => {
+    seed();
+    useReviewStore.getState().setViewpoint(range("main", "sha1", 1));
+    useReviewStore.setState({
+      files: [{ name: "b.ts", path: "b.ts", isDirectory: false }],
+    } as never);
+    useReviewStore.getState().setViewpoint(range("main", "sha1", 1));
+
+    // A no-op, not a re-diff: the same range re-selected must not throw away
+    // the diff already on screen.
+    expect(useReviewStore.getState().files).toHaveLength(1);
+  });
+
+  it("nulls the review state for a peek, which is what stops it persisting", () => {
+    seed();
+    useReviewStore.getState().setViewpoint(peek("abc1234", "abc1234^"));
+
+    const s = useReviewStore.getState();
+    expect(s.comparison?.key).toBe("abc1234^..abc1234");
+    expect(s.reviewState).toBeNull();
+    // The review's identity is untouched, so leaving restores it intact.
+    expect(s.reviewComparison).toEqual(reviewComparison);
+    expect(s.reviewRef).toBe("feature");
+  });
+
+  it("leaves a peek back onto the review, with its state to be reloaded", () => {
+    seed();
+    useReviewStore.getState().setViewpoint(peek("abc1234", "abc1234^"));
+    useReviewStore.getState().setViewpoint(REVIEW_VIEWPOINT);
+
+    const s = useReviewStore.getState();
+    expect(s.comparison).toEqual(reviewComparison);
+    expect(s.viewpoint).toEqual(REVIEW_VIEWPOINT);
+    // Still null on the way out — the loader refills it from disk against the
+    // comparison it lands on.
+    expect(s.reviewState).toBeNull();
+  });
+
+  it("does nothing without a review comparison to express it against", () => {
+    seed();
+    useReviewStore.setState({ reviewComparison: null } as never);
+    useReviewStore.getState().setViewpoint(range("main", "sha1", 1));
+
+    const s = useReviewStore.getState();
+    expect(s.viewpoint).toEqual(REVIEW_VIEWPOINT);
+    expect(s.comparison).toEqual(reviewComparison);
   });
 });
 

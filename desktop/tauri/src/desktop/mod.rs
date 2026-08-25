@@ -736,8 +736,6 @@ pub fn run() {
             commands::fetch_origin,
             commands::get_default_branch,
             commands::list_branches,
-            commands::list_refs,
-            commands::describe_ref,
             commands::list_worktree_status,
             commands::create_worktree,
             commands::remove_worktree,

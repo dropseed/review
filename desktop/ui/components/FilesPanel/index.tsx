@@ -25,19 +25,16 @@ import { StatusGroupList } from "./StatusGroupList";
 import { CarryForwardRow } from "./CarryForwardRow";
 import { GuideBanner } from "./GuideBanner";
 import { GuideModePanel } from "./GuideModePanel";
-import { CommitRangePicker } from "./CommitRangePicker";
-import { CommitRangeHeader } from "./CommitRangeHeader";
+import { ComparisonBar } from "./ComparisonBar";
 import { AnnotationDock } from "./AnnotationDock";
 import { ReviewActionBar } from "./ReviewActionBar";
 import { SortMenuItems } from "./PanelToolbar";
 import { visibleFilesPanelTabs } from "./tabs";
-import { BrowseRefBar } from "./BrowseRefBar";
-import { CommitLog } from "./CommitLog";
 import { useBrowseRefTree } from "./useBrowseRefTree";
 import { collectDirPaths, processTree } from "./FileTree.utils";
-import { browseRef } from "../../stores/selectors/browse";
-import { ephemeralView } from "../../stores/selectors/ephemeral";
+import { ephemeralView, historicRef } from "../../stores/selectors/viewpoint";
 import type { FileHunkStatus } from "./types";
+import { StartReviewButton } from "../StartReviewButton";
 
 import { EMPTY_TRUST_LIST } from "../../types";
 /** No file at a ref has a review status — there is nothing to compare it to. */
@@ -72,11 +69,8 @@ export function FilesPanel() {
   const comparison = useReviewStore((s) => s.comparison);
   const guideMode = useReviewStore((s) => s.guideMode);
 
-  // Browse-tab section collapse. History starts closed: Browse is a file tree,
-  // and a log unfolding above it every time would push the tree off screen to
-  // answer a question that wasn't asked.
+  // Browse-tab section collapse.
   const [browseFilesOpen, setBrowseFilesOpen] = useState(true);
-  const [browseHistoryOpen, setBrowseHistoryOpen] = useState(false);
 
   // Review-tab section collapse — owned here (not in StatusGroupList) so the
   // user's expand/collapse choices survive switching to another tab and back.
@@ -107,7 +101,7 @@ export function FilesPanel() {
   const {
     selectedFile,
     viewMode,
-    showGitTab,
+    gitEnabled,
     gitChangeCount,
     hasHunks,
     setFilesPanelTab,
@@ -143,7 +137,7 @@ export function FilesPanel() {
 
   // One table, rendered here and by the collapsed rail — so the rail can't
   // offer a tab this strip doesn't have.
-  const visibleTabs = visibleFilesPanelTabs(comparison !== null, showGitTab);
+  const visibleTabs = visibleFilesPanelTabs(comparison, gitEnabled);
 
   // What the Review tab has waiting, for its badge. Taken from the panel's own
   // stats rather than a store-wide count: the badge labels these sections, so
@@ -164,18 +158,19 @@ export function FilesPanel() {
     panesOnScreen,
   );
 
-  // Browse-as-of: while pinned, the tree comes from the object database at that
-  // ref instead of from `allFiles`, which describes the working tree. Sorting
-  // is shared with the unpinned tree; hunk status is not, because a revision
-  // that isn't being compared to anything has none.
-  const pinnedRef = useReviewStore(browseRef);
-  const viewingCommit = useReviewStore(ephemeralView) !== null;
+  // Browse-as-of: with no checkout of the head on screen, the tree comes from
+  // the object database at that revision instead of from `allFiles`, which
+  // describes the working tree. Sorting is shared with the working tree's tree;
+  // hunk status is not, because a revision that isn't being compared to
+  // anything has none.
+  const browseAtRef = useReviewStore(historicRef);
+  const peek = useReviewStore(ephemeralView);
   const refTree = useBrowseRefTree();
-  const pinnedFilesTree = useMemo(
+  const refFilesTree = useMemo(
     () => processTree(refTree.entries, NO_HUNK_STATUS, "browse", fileSortOrder),
     [refTree.entries, fileSortOrder],
   );
-  const browseTree = pinnedRef ? pinnedFilesTree : allFilesTree;
+  const browseTree = browseAtRef ? refFilesTree : allFilesTree;
 
   // A first visit to a comparison, still loading. A refresh never sets this
   // (that is what `isRefreshing` suppresses), and a restore from the snapshot
@@ -183,8 +178,8 @@ export function FilesPanel() {
   const comparisonLoading = useReviewStore((s) => s.loadingProgress !== null);
 
   // Browse is the surface the whole-repo listing exists for, so it is the one
-  // that pays for it. A pinned ref reads the object database instead and needs
-  // nothing from the working tree's listing.
+  // that pays for it. A historic revision reads the object database instead and
+  // needs nothing from the working tree's listing.
   //
   // The tab starts on Browse and is auto-switched to Review once hunks arrive,
   // so "showing Browse" is only true of a settled panel: one the user put here,
@@ -192,13 +187,13 @@ export function FilesPanel() {
   const ensureAllFiles = useReviewStore((s) => s.ensureAllFiles);
   const tabChosen = useReviewStore((s) => s.filesPanelTabChosen);
   useEffect(() => {
-    if (viewMode !== "browse" || pinnedRef) return;
+    if (viewMode !== "browse" || browseAtRef) return;
     if (comparisonLoading) return;
     if (!tabChosen && hasHunks) return;
     void ensureAllFiles();
   }, [
     viewMode,
-    pinnedRef,
+    browseAtRef,
     comparisonLoading,
     tabChosen,
     hasHunks,
@@ -206,15 +201,15 @@ export function FilesPanel() {
   ]);
 
   // Expand-all needs the directories of the tree on screen. `allDirPaths` is
-  // the working tree's, and offering those against a pinned tree would expand
-  // paths that revision doesn't have. The walk is memoized on the pinned tree
-  // alone — folding `allDirPaths` into its deps would re-walk it on every hunk
-  // status change, which cannot move a revision's directories.
-  const pinnedDirPaths = useMemo(
-    () => collectDirPaths(pinnedFilesTree),
-    [pinnedFilesTree],
+  // the working tree's, and offering those against a historic tree would expand
+  // paths that revision doesn't have. The walk is memoized on that tree alone —
+  // folding `allDirPaths` into its deps would re-walk it on every hunk status
+  // change, which cannot move a revision's directories.
+  const refDirPaths = useMemo(
+    () => collectDirPaths(refFilesTree),
+    [refFilesTree],
   );
-  const browseDirPaths = pinnedRef ? pinnedDirPaths : allDirPaths;
+  const browseDirPaths = browseAtRef ? refDirPaths : allDirPaths;
 
   // Context menu support
   const openInSplit = useReviewStore((s) => s.openInSplit);
@@ -289,13 +284,20 @@ export function FilesPanel() {
         <TabsList aria-label="File view mode">
           {visibleTabs.map((tab) => {
             const Icon = tab.icon;
-            return (
-              <TabsTrigger key={tab.id} value={tab.id} aria-label={tab.label}>
+            const trigger = (
+              <TabsTrigger
+                value={tab.id}
+                aria-label={tab.label}
+                disabled={tab.disabled}
+                className="disabled:opacity-40"
+              >
                 <Icon className="size-3 shrink-0 @min-[16rem]:hidden" />
                 <span className="hidden truncate @min-[16rem]:inline">
                   {tab.label}
                 </span>
-                {tab.id === "git" && <TabCount value={gitChangeCount} />}
+                {tab.id === "git" && !tab.disabled && (
+                  <TabCount value={gitChangeCount} />
+                )}
                 {/* Unresolved, not total: the count is there to answer
                           "is anything waiting", and a check answers it better
                           than a zero once the answer is no. */}
@@ -308,6 +310,17 @@ export function FilesPanel() {
                     )
                   ))}
               </TabsTrigger>
+            );
+            // A disabled trigger takes no pointer events, so the tooltip hangs
+            // off a wrapper — which is the only place the reason is readable.
+            return tab.disabled ? (
+              <SimpleTooltip key={tab.id} content={tab.disabledReason}>
+                <span className="flex min-w-0 flex-1">{trigger}</span>
+              </SimpleTooltip>
+            ) : (
+              <span key={tab.id} className="flex min-w-0 flex-1">
+                {trigger}
+              </span>
             );
           })}
         </TabsList>
@@ -332,7 +345,12 @@ export function FilesPanel() {
     <ReviewDataProvider value={reviewDataContextValue}>
       <FilesPanelProvider value={filesPanelContextValue}>
         <div className="flex h-full flex-col">
-          <div className="px-3 py-2">{tabStrip}</div>
+          {/* One control above the tabs rather than one per tab: what is being
+              compared is the same fact whichever list is below it. */}
+          <div className="flex flex-col gap-1.5 px-3 py-2">
+            <ComparisonBar />
+            {tabStrip}
+          </div>
 
           {/* Panel content based on view mode. A comparison still arriving
               takes the body from all three tabs, leaving the strip above in
@@ -355,16 +373,27 @@ export function FilesPanel() {
                 <>
                   <CarryForwardRow />
                   <GuideBanner />
-                  {/* A narrowing survives a peek at a commit (leaving one
-                      returns to it), so while one is up these two would
-                      describe the review's own comparison over a diff of a
-                      different commit entirely. The banner above the diff
-                      owns the way back. */}
-                  {!viewingCommit && (
-                    <>
-                      <CommitRangePicker />
-                      <CommitRangeHeader />
-                    </>
+                  {/* A commit being looked at is not a mode — it is this
+                      screen with the review slot empty, and this is the one
+                      row that differs. It sits in the list rather than above
+                      the diff because that is where its absence is felt. */}
+                  {peek && (
+                    <div
+                      className="mx-3 mb-1 flex items-center justify-between gap-2 rounded-md
+                                 border border-dashed border-edge px-2.5 py-1.5"
+                    >
+                      <span className="min-w-0 truncate text-xxs text-fg-muted">
+                        No review of this commit yet
+                      </span>
+                      <StartReviewButton
+                        label="Start"
+                        target={
+                          repoPath
+                            ? { path: repoPath, target: { ref: peek.hash } }
+                            : null
+                        }
+                      />
+                    </div>
                   )}
                   <StatusGroupList
                     sectionedFiles={sectionedFiles}
@@ -373,6 +402,7 @@ export function FilesPanel() {
                     renamedDirPaths={renamedDirPaths}
                     hunks={hunks}
                     reviewState={reviewState}
+                    changedOnly={peek !== null}
                     expandAll={expandAll}
                     collapseAll={collapseAll}
                     needsReviewOpen={needsReviewOpen}
@@ -391,40 +421,16 @@ export function FilesPanel() {
                   idle line ("Approve, reject, or comment to start your
                   review") would be instructions for something that isn't
                   possible here. */}
-              {!viewingCommit && <ReviewActionBar />}
+              {peek === null && <ReviewActionBar />}
             </>
           ) : (
             <div className="flex flex-1 flex-col overflow-hidden">
-              <BrowseRefBar
-                description={refTree.description}
-                loading={refTree.loading}
-                error={refTree.error}
-              />
               <div className="flex-1 overflow-y-auto scrollbar-thin">
-                {/* The log for whatever revision Browse is showing — the pin
-                    when there is one, the working tree's HEAD otherwise — so
-                    the two sections never describe different revisions.
-
-                    Withheld without a comparison: viewing a commit works by
-                    swapping the one being diffed, and a tab that is only
-                    browsing has none to swap or to give back. */}
-                {comparison !== null && (
-                  <CollapsibleSection
-                    title="History"
-                    isOpen={browseHistoryOpen}
-                    onToggle={() => setBrowseHistoryOpen(!browseHistoryOpen)}
-                    statusBadge={
-                      <span className="truncate text-xxs font-normal text-fg-faint">
-                        {pinnedRef ?? "HEAD"}
-                      </span>
-                    }
-                  >
-                    {/* Mounted only while open: the log is a `git log` per ref,
-                      and Browse's job is the tree. */}
-                    {browseHistoryOpen && <CommitLog gitRef={pinnedRef} />}
-                  </CollapsibleSection>
-                )}
-
+                {/* This tab is the tree at whatever head is on screen, and
+                    nothing else — the bar above says which revision that is,
+                    and its menu is the way to a different one. A ref picker
+                    and a log of its own were how Browse came to be reading one
+                    revision while the diff beside it was of another. */}
                 <CollapsibleSection
                   title="Files"
                   isOpen={browseFilesOpen}
@@ -449,10 +455,14 @@ export function FilesPanel() {
                   }
                 >
                   <div className="py-1">
-                    {refTree.loading || (!pinnedRef && allFilesLoading) ? (
+                    {refTree.loading || (!browseAtRef && allFilesLoading) ? (
                       <div className="flex justify-center py-6">
                         <Spinner className="size-5 border-2 border-edge-default border-t-status-modified" />
                       </div>
+                    ) : refTree.error ? (
+                      <p className="px-3 py-4 text-xxs text-status-rejected">
+                        {refTree.error}
+                      </p>
                     ) : browseTree.length > 0 ? (
                       browseTree.map((entry) => (
                         <FileNode

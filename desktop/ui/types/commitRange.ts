@@ -8,7 +8,7 @@
 // Ordinals are 1-based into the branch's oldest-first commit list, matching the
 // `#n` labels the picker renders.
 
-import type { CommitEntry, Comparison, HunkAttribution } from "./index";
+import type { CommitEntry, Comparison } from "./index";
 import { makeComparison } from "./index";
 
 export interface CommitRange {
@@ -103,16 +103,6 @@ export function uncommittedRange(branchHead: string): CommitRange {
     title: "Uncommitted changes",
     comparison: makeComparison(branchHead, branchHead),
   };
-}
-
-/** The CommitEntry[] a range spans, oldest first — for the context header. */
-export function commitsInRange(
-  range: CommitRange | null,
-  attribution: HunkAttribution | null,
-): CommitEntry[] {
-  if (!range || !attribution || range.kind !== "commits") return [];
-  // The ordinals index into this same oldest-first list.
-  return attribution.commits.slice(range.loOrdinal - 1, range.hiOrdinal);
 }
 
 /** Whether two ranges name the same sub-comparison (for click-to-toggle). */

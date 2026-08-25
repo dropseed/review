@@ -25,7 +25,7 @@ import type {
 } from "@pierre/diffs";
 import type { CodeViewOptions } from "@pierre/diffs";
 import { useReviewStore } from "../../stores";
-import { viewOnly } from "../../stores/selectors/ephemeral";
+import { viewOnly } from "../../stores/selectors/viewpoint";
 import { stringHash } from "../../utils/string-hash";
 import type { DiffHunk, LineAnnotation } from "../../types";
 import type { SupportedLanguages } from "./languageMap";

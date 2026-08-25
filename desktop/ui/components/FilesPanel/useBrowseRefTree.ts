@@ -1,60 +1,57 @@
 import { useEffect, useState } from "react";
 import { getApiClient } from "../../api";
 import { useReviewStore } from "../../stores";
-import { browseRef } from "../../stores/selectors/browse";
-import type { FileEntry, RefDescription } from "../../types";
+import { activeHistoricRef } from "../../stores/selectors/viewpoint";
+import type { FileEntry } from "../../types";
 
 export interface BrowseRefTree {
-  /** The tree at the pinned ref; empty while unpinned or still loading. */
+  /** The tree at that revision; empty at the working tree or still loading. */
   entries: FileEntry[];
-  /** What the pinned ref names — the banner's subtitle. */
-  description: RefDescription | null;
   loading: boolean;
   error: string | null;
 }
 
 const NO_ENTRIES: FileEntry[] = [];
-const UNPINNED: BrowseRefTree = {
+const WORKING_TREE: BrowseRefTree = {
   entries: NO_ENTRIES,
-  description: null,
   loading: false,
   error: null,
 };
 
 /**
- * The repository's file tree as of the pinned ref, and what that ref names.
+ * The repository's file tree as of the revision Browse is reading at. Empty
+ * while it is reading the working tree, which is what `allFiles` already
+ * describes. What that revision *is* is the comparison bar's to say.
  *
  * Local to the panel rather than folded into the store's `allFiles`: this is a
  * read of the object database that only Browse consumes, and keeping it
- * separate is what stops a pinned peek from redrawing the Review tab's
- * sections — which describe the working tree — underneath it.
+ * separate is what stops it from redrawing the Review tab's sections — which
+ * describe the working tree — underneath it. Asked of the *active* revision so
+ * a repo nobody is browsing is never listed at all.
  */
 export function useBrowseRefTree(): BrowseRefTree {
   const repoPath = useReviewStore((s) => s.repoPath);
-  const ref = useReviewStore(browseRef);
-  const [state, setState] = useState<BrowseRefTree>(UNPINNED);
+  const ref = useReviewStore(activeHistoricRef);
+  const [state, setState] = useState<BrowseRefTree>(WORKING_TREE);
 
   useEffect(() => {
     if (!repoPath || !ref) {
-      setState(UNPINNED);
+      setState(WORKING_TREE);
       return;
     }
 
     let cancelled = false;
-    setState({ ...UNPINNED, loading: true });
+    setState({ ...WORKING_TREE, loading: true });
 
-    const api = getApiClient();
-    Promise.all([
-      api.listFilesAtRef(repoPath, ref),
-      api.describeRef(repoPath, ref),
-    ])
-      .then(([entries, description]) => {
+    getApiClient()
+      .listFilesAtRef(repoPath, ref)
+      .then((entries) => {
         if (cancelled) return;
-        setState({ entries, description, loading: false, error: null });
+        setState({ entries, loading: false, error: null });
       })
       .catch((err) => {
         if (cancelled) return;
-        setState({ ...UNPINNED, error: String(err) });
+        setState({ ...WORKING_TREE, error: String(err) });
       });
 
     return () => {

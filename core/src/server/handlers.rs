@@ -18,8 +18,7 @@ use crate::service::watcher_events::{categorize_change, ChangeKind, GitChangedPa
 use crate::service::*;
 use crate::sources::github::{GhCliProvider, GitHubPrRef, GitHubProvider, PullRequest};
 use crate::sources::local_git::{
-    CommitComparison, DiffShortStat, LocalGitSource, RefDescription, RefEntry, RemoteInfo,
-    SearchMatch, WorktreeInfo,
+    CommitComparison, DiffShortStat, LocalGitSource, RemoteInfo, SearchMatch, WorktreeInfo,
 };
 use crate::sources::traits::{
     BranchList, CommitDetail, CommitEntry, Comparison, DiffSource, FileEntry, GitStatusSummary,
@@ -56,8 +55,6 @@ pub fn build_api_router() -> Router {
         .route("/api/git/fetch-origin", post(git_fetch_origin))
         .route("/api/git/default-branch", post(git_default_branch))
         .route("/api/git/branches", post(git_branches))
-        .route("/api/git/refs", post(git_refs))
-        .route("/api/git/describe-ref", post(git_describe_ref))
         .route("/api/git/status", post(git_status))
         .route("/api/git/status-raw", post(git_status_raw))
         .route("/api/git/stage-file", post(git_stage_file))
@@ -498,22 +495,6 @@ async fn git_branches(Json(req): Json<RepoPathRequest>) -> ApiResult<BranchList>
     blocking(move || {
         let source = LocalGitSource::new(PathBuf::from(&req.repo_path))?;
         source.list_branches().map_err(Into::into)
-    })
-    .await
-}
-
-async fn git_refs(Json(req): Json<RepoPathRequest>) -> ApiResult<Vec<RefEntry>> {
-    blocking(move || {
-        let source = LocalGitSource::new(PathBuf::from(&req.repo_path))?;
-        source.list_refs().map_err(Into::into)
-    })
-    .await
-}
-
-async fn git_describe_ref(Json(req): Json<ResolveRefRequest>) -> ApiResult<RefDescription> {
-    blocking(move || {
-        let source = LocalGitSource::new(PathBuf::from(&req.repo_path))?;
-        source.describe_ref(&req.git_ref).map_err(Into::into)
     })
     .await
 }

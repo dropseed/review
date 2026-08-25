@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useReviewStore } from "../../../stores";
 import { useHasAnyHunks } from "../../../stores/selectors/hunks";
+import { headIsWorkingTree } from "../../../stores/selectors/checkout";
 import type { FilesPanelTab, ProcessedFileEntry } from "../types";
 
 interface UseFilePanelNavigationOptions {
@@ -27,25 +28,24 @@ function directoryExistsInTree(
 }
 
 /**
- * Whether the Git tab applies to this review, and how many files it would show.
+ * Whether the Git tab can be opened for what is on screen, and how many files
+ * it would show.
  *
- * A working tree is a thing a review either has or hasn't: reviewing a branch
- * that isn't checked out means there is nothing to show — that's inapplicable,
- * not empty, and it's the only reason to hide the tab. Emptiness deliberately
- * does NOT hide it: a tab that vanishes as you stage the last file makes the
- * row of tabs move under you and leaves no way to tell "nothing changed" from
- * "where did that go". The count carries that instead.
+ * A working tree is a thing a head either is or isn't: looking at a branch
+ * that is checked out nowhere — a PR's fetched ref, a commit being peeked at —
+ * means there is nothing to stage against. "Checked out" includes the linked
+ * worktree a review owns, which is the same rule core's `working_tree_dir`
+ * resolves the diff against. Emptiness deliberately does NOT disable it: a tab
+ * that goes dead as you stage the last file leaves no way to tell "nothing
+ * changed" from "not available here". The count carries that instead.
  *
  * Shared with the panel's collapsed rail, which offers the same tabs and so has
  * to answer this the same way.
  */
-export function useGitTab(): { showGitTab: boolean; gitChangeCount: number } {
+export function useGitTab(): { gitEnabled: boolean; gitChangeCount: number } {
   const gitStatus = useReviewStore((s) => s.gitStatus);
-  const comparison = useReviewStore((s) => s.comparison);
-  const showGitTab =
-    gitStatus !== null &&
-    comparison !== null &&
-    comparison.head === gitStatus.currentBranch;
+  const hasWorkingTree = useReviewStore(headIsWorkingTree);
+  const gitEnabled = gitStatus !== null && hasWorkingTree;
 
   // Files, not entries: git lists a path under both staged and unstaged when
   // it has changes of each kind, and "2" for one edited file would be a lie.
@@ -58,7 +58,7 @@ export function useGitTab(): { showGitTab: boolean; gitChangeCount: number } {
     ]).size;
   }, [gitStatus]);
 
-  return { showGitTab, gitChangeCount };
+  return { gitEnabled, gitChangeCount };
 }
 
 /**
@@ -120,14 +120,14 @@ export function useFilePanelNavigation({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasHunks, autoSelectFilesPanelTab]);
 
-  const { showGitTab, gitChangeCount } = useGitTab();
+  const { gitEnabled, gitChangeCount } = useGitTab();
 
   // Auto-switch away from git tab when it is no longer applicable
   useEffect(() => {
-    if (viewMode === "git" && !showGitTab) {
+    if (viewMode === "git" && !gitEnabled) {
       setFilesPanelTab("changes");
     }
-  }, [viewMode, showGitTab, setFilesPanelTab]);
+  }, [viewMode, gitEnabled, setFilesPanelTab]);
 
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const fileRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
@@ -260,7 +260,7 @@ export function useFilePanelNavigation({
   return {
     selectedFile,
     viewMode,
-    showGitTab,
+    gitEnabled,
     gitChangeCount,
     hasHunks,
     setFilesPanelTab: handleSetFilesPanelTab,

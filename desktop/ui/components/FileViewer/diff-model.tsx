@@ -8,7 +8,7 @@ import {
 } from "react";
 import type { DiffLineAnnotation, TokenEventBase } from "@pierre/diffs";
 import { useReviewStore } from "../../stores";
-import { viewOnly } from "../../stores/selectors/ephemeral";
+import { viewOnly } from "../../stores/selectors/viewpoint";
 import { useAllHunks, useHunkById } from "../../stores/selectors/hunks";
 import { getPlatformServices } from "../../platform";
 import { countLines } from "../../utils/count-lines";
@@ -238,7 +238,7 @@ export function useDiffAnnotationModel({
     );
     if (!range) return;
     if (state.guideMode) state.setGuideMode(false);
-    state.setCommitRange(range);
+    state.setViewpoint({ kind: "range", range });
   }, []);
 
   // Hunks outside the active review scope (e.g. a guide group) collapse to

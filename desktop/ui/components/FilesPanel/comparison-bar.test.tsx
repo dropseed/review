@@ -1,8 +1,18 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 
+const api = vi.hoisted(() => ({
+  listCommits: vi.fn().mockResolvedValue([]),
+}));
+
 vi.mock("../../api", () => ({
-  getApiClient: () => new Proxy({}, { get: () => () => undefined }),
+  getApiClient: () =>
+    new Proxy(api, {
+      get: (target, key) =>
+        key in target
+          ? target[key as keyof typeof target]
+          : () => Promise.resolve(undefined),
+    }),
 }));
 vi.mock("../../platform", () => ({
   getPlatformServices: () => ({
@@ -11,10 +21,13 @@ vi.mock("../../platform", () => ({
   }),
 }));
 
-import { CommitRangePicker } from "./CommitRangePicker";
+import { ComparisonBar } from "./ComparisonBar";
+import { TooltipProvider } from "../ui/tooltip";
 import { useReviewStore } from "../../stores";
 import { makeComparison } from "../../types";
+import { REVIEW_VIEWPOINT } from "../../types/viewpoint";
 import type { CommitEntry, LocalBranchInfo } from "../../types";
+import type { CommitRange } from "../../types/commitRange";
 
 const REPO = "/repo";
 
@@ -54,7 +67,8 @@ function seed(branches: LocalBranchInfo[]): void {
     repoPath: REPO,
     currentBranch: "feature",
     worktreePath: null,
-    commitRange: null,
+    viewpoint: REVIEW_VIEWPOINT,
+    comparison: makeComparison("main", "feature"),
     reviewComparison: makeComparison("main", "feature"),
     attributionLoaded: true,
     attributionLoading: false,
@@ -74,10 +88,25 @@ function seed(branches: LocalBranchInfo[]): void {
   });
 }
 
+/** The bar itself — the one control here that opens a menu. */
+function trigger(): HTMLElement {
+  return document.querySelector('[aria-haspopup="menu"]') as HTMLElement;
+}
+
+/** The range the bar just narrowed to, read off the viewpoint it set. */
+function pickedRange(): CommitRange | null {
+  const { viewpoint } = useReviewStore.getState();
+  return viewpoint.kind === "range" ? viewpoint.range : null;
+}
+
 function openMenu(): void {
-  render(<CommitRangePicker />);
+  render(
+    <TooltipProvider>
+      <ComparisonBar />
+    </TooltipProvider>,
+  );
   fireEvent.pointerDown(
-    screen.getByRole("button"),
+    trigger(),
     new PointerEvent("pointerdown", { bubbles: true, button: 0 }),
   );
 }
@@ -87,7 +116,8 @@ afterEach(() => {
   useReviewStore.setState({
     repoPath: null,
     currentBranch: null,
-    commitRange: null,
+    viewpoint: REVIEW_VIEWPOINT,
+    comparison: null,
     reviewComparison: null,
     attribution: null,
     attributionLoaded: false,
@@ -98,37 +128,51 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("the range picker's trigger", () => {
+describe("the bar's two lines", () => {
   /**
-   * It used to read "All commits", which named the contents and left out what
-   * they were being compared against — the half nobody could see, and the whole
-   * of why a review reads bigger than expected.
+   * The base was visible only in the macOS window title: "All commits" named
+   * the contents and left out what they were being compared against, which is
+   * the half nobody could see and the whole of why a review reads bigger than
+   * the branch is.
    */
-  it("names the base it is diffing against", () => {
+  it("names the head on top and the base it is diffing against beneath", () => {
     seed([branch("feature", { isCurrent: true })]);
-    render(<CommitRangePicker />);
-
-    expect(screen.getByRole("button").textContent).toContain(
-      "Whole branch · vs main",
+    render(
+      <TooltipProvider>
+        <ComparisonBar />
+      </TooltipProvider>,
     );
+
+    expect(screen.getByText("feature")).toBeDefined();
+    expect(screen.getByText("working tree")).toBeDefined();
+    expect(
+      screen.getByText("vs main · whole branch · 4 commits"),
+    ).toBeDefined();
   });
 
   it("names the picked slice instead once there is one", () => {
     seed([branch("feature", { isCurrent: true, unpushedCommits: 2 })]);
     useReviewStore.setState({
-      commitRange: {
-        kind: "commits",
-        loOrdinal: 3,
-        hiOrdinal: 4,
-        title: "Unpushed · 2 commits",
-        comparison: makeComparison("sha2", "sha4"),
+      viewpoint: {
+        kind: "range",
+        range: {
+          kind: "commits",
+          loOrdinal: 3,
+          hiOrdinal: 4,
+          title: "Unpushed · 2 commits",
+          comparison: makeComparison("sha2", "sha4"),
+        },
       },
+      comparison: makeComparison("sha2", "sha4"),
     });
-    render(<CommitRangePicker />);
-
-    expect(screen.getByRole("button").textContent).toContain(
-      "Unpushed · 2 commits",
+    render(
+      <TooltipProvider>
+        <ComparisonBar />
+      </TooltipProvider>,
     );
+
+    expect(screen.getByText("Unpushed · 2 commits")).toBeDefined();
+    expect(screen.getByText("vs sha2 · 2 commits")).toBeDefined();
   });
 
   /**
@@ -142,14 +186,21 @@ describe("the range picker's trigger", () => {
     seed([branch("feature", { isCurrent: true })]);
     useReviewStore.setState({
       baseReason: "pullRequest",
+      comparison: makeComparison("main", "refs/review/pr/7"),
       reviewComparison: makeComparison("main", "refs/review/pr/7"),
       currentBranch: "something-else",
     });
-    render(<CommitRangePicker />);
-
-    expect(screen.getByRole("button").textContent).toContain(
-      "Whole PR · vs main",
+    render(
+      <TooltipProvider>
+        <ComparisonBar />
+      </TooltipProvider>,
     );
+
+    // Nobody calls it `refs/review/pr/7` out loud, and its head is not a
+    // checkout — which is the fact the tag and the tint are there to carry.
+    expect(screen.getByText("#7")).toBeDefined();
+    expect(screen.getByText("PR")).toBeDefined();
+    expect(screen.getByText("vs main · whole PR · 4 commits")).toBeDefined();
   });
 
   /**
@@ -162,11 +213,87 @@ describe("the range picker's trigger", () => {
     useReviewStore.setState({
       baseReason: "somethingNewerThanThisApp" as never,
     });
-    render(<CommitRangePicker />);
-
-    expect(screen.getByRole("button").textContent).toContain(
-      "Whole branch · vs main",
+    render(
+      <TooltipProvider>
+        <ComparisonBar />
+      </TooltipProvider>,
     );
+
+    expect(
+      screen.getByText("vs main · whole branch · 4 commits"),
+    ).toBeDefined();
+  });
+
+  /**
+   * The way back lives where the "vs" sentence already is, rather than in a
+   * banner above the diff: leaving a slice is a change of comparison like any
+   * other, and it belongs beside the one being left.
+   */
+  it("offers the way back only while it is showing something else", () => {
+    seed([branch("feature", { isCurrent: true })]);
+    render(
+      <TooltipProvider>
+        <ComparisonBar />
+      </TooltipProvider>,
+    );
+    expect(screen.queryByLabelText(/Back to/)).toBeNull();
+
+    cleanup();
+    seed([branch("feature", { isCurrent: true })]);
+    useReviewStore.setState({
+      viewpoint: {
+        kind: "commit",
+        view: {
+          hash: "d41c7ee",
+          shortHash: "d41c7e",
+          subject: "Collapse the revision states",
+          comparison: makeComparison("d41c7ee^", "d41c7ee"),
+          isMerge: false,
+        },
+      },
+      comparison: makeComparison("d41c7ee^", "d41c7ee"),
+    });
+    render(
+      <TooltipProvider>
+        <ComparisonBar />
+      </TooltipProvider>,
+    );
+
+    expect(
+      screen.getByText("d41c7e Collapse the revision states"),
+    ).toBeDefined();
+    expect(screen.getByText("vs its parent")).toBeDefined();
+
+    fireEvent.click(screen.getByLabelText("Back to feature"));
+    expect(useReviewStore.getState().viewpoint.kind).toBe("review");
+  });
+
+  /** The diff of a merge looks complete and isn't — the other parents' changes
+   *  are simply not in it, and only the bar is left to say so. */
+  it("says which parent a merge is being shown against", () => {
+    seed([branch("feature", { isCurrent: true })]);
+    useReviewStore.setState({
+      viewpoint: {
+        kind: "commit",
+        view: {
+          hash: "m1",
+          shortHash: "m1",
+          subject: "Merge branch 'x'",
+          comparison: makeComparison("m1^", "m1"),
+          isMerge: true,
+        },
+      },
+      comparison: makeComparison("m1^", "m1"),
+    });
+    render(
+      <TooltipProvider>
+        <ComparisonBar />
+      </TooltipProvider>,
+    );
+
+    expect(
+      screen.getByText(/merge shown against its first parent/),
+    ).toBeDefined();
   });
 });
 
@@ -199,9 +326,43 @@ describe("the unpushed slice", () => {
 
     // #3 and #4 — anchored at the commit before the range so #3's own change
     // is inside it.
-    expect(useReviewStore.getState().commitRange?.comparison.key).toBe(
-      "sha2..sha4",
-    );
+    expect(pickedRange()?.comparison.key).toBe("sha2..sha4");
+  });
+});
+
+describe("the branch's commits", () => {
+  /** A log reads newest first; the ordinals a range is expressed in count from
+   *  the oldest, which is the branch's own narrative order. */
+  it("are listed like a log and narrow the review when picked", () => {
+    seed([branch("feature", { isCurrent: true })]);
+    openMenu();
+
+    // Hash then subject, newest first.
+    const rows = screen.getAllByText(/^commit \d$/).map((el) => el.textContent);
+    expect(rows).toEqual([
+      "sha4commit 4",
+      "sha3commit 3",
+      "sha2commit 2",
+      "sha1commit 1",
+    ]);
+
+    fireEvent.click(screen.getByText("commit 3"));
+
+    // The commit before it is the base, so #3's own change is inside the range
+    // rather than being used as its baseline.
+    expect(pickedRange()?.comparison.key).toBe("sha2..sha3");
+  });
+
+  it("extend to a range on shift-click, anchored at what is already picked", () => {
+    seed([branch("feature", { isCurrent: true })]);
+    openMenu();
+    fireEvent.click(screen.getByText("commit 2"));
+
+    cleanup();
+    openMenu();
+    fireEvent.click(screen.getByText("commit 4"), { shiftKey: true });
+
+    expect(pickedRange()?.comparison.key).toBe("sha1..sha4");
   });
 });
 
@@ -231,6 +392,25 @@ describe("a stale base", () => {
 
     expect(screen.queryByText(/commits behind/)).toBeNull();
   });
+
+  /**
+   * A trunk review has no commits and one slice, so it is the emptiest this
+   * menu ever gets — and a stale base is the one thing it can still be wrong
+   * about. Nothing about that quietness may swallow the warning.
+   */
+  it("is still reported on a review with nothing else to choose", () => {
+    seed([branch("master", { isCurrent: true, behindUpstream: 12 })]);
+    useReviewStore.setState({
+      baseReason: "trunkWorkingTree",
+      currentBranch: "master",
+      comparison: makeComparison("master", "master"),
+      reviewComparison: makeComparison("master", "master"),
+      attribution: { commits: [], hunks: {} } as never,
+    });
+    openMenu();
+
+    expect(screen.getByText(/commits behind on master/)).toBeDefined();
+  });
 });
 
 describe("a pinned base", () => {
@@ -244,13 +424,16 @@ describe("a pinned base", () => {
     seed([branch("feature", { isCurrent: true })]);
     useReviewStore.setState({
       baseReason: "override",
+      comparison: makeComparison("e14efa9", "feature"),
       reviewComparison: makeComparison("e14efa9", "feature"),
     });
-    render(<CommitRangePicker />);
-
-    expect(screen.getByRole("button").textContent).toContain(
-      "Since e14efa9 · pinned · 4 commits",
+    render(
+      <TooltipProvider>
+        <ComparisonBar />
+      </TooltipProvider>,
     );
+
+    expect(screen.getByText("vs e14efa9 · pinned · 4 commits")).toBeDefined();
   });
 
   /**
@@ -264,6 +447,7 @@ describe("a pinned base", () => {
     useReviewStore.setState({
       baseReason: "override",
       reviewRef: "feature",
+      comparison: makeComparison("e14efa9", "feature"),
       reviewComparison: makeComparison("e14efa9", "feature"),
       setBaseOverride,
     } as never);
@@ -287,6 +471,7 @@ describe("a pinned base", () => {
       currentBranch: "main",
       baseReason: "override",
       reviewRef: "main",
+      comparison: makeComparison("e14efa9", "main"),
       reviewComparison: makeComparison("e14efa9", "main"),
       setBaseOverride,
     } as never);
@@ -305,7 +490,7 @@ describe("a pinned base", () => {
     useReviewStore.setState({ baseReason: "branchVsDefault" });
     openMenu();
 
-    expect(screen.queryByText(/Unpin/)).toBeNull();
+    expect(screen.queryByText(/pinned/)).toBeNull();
   });
 });
 
@@ -335,15 +520,15 @@ describe("uncommitted work", () => {
     useReviewStore.setState({
       baseReason: "trunkWorkingTree",
       currentBranch: "master",
+      comparison: makeComparison("master", "master"),
       reviewComparison: makeComparison("master", "master"),
       attribution: { commits: [], hunks: {} } as never,
     });
-    render(<CommitRangePicker />);
+    openMenu();
 
-    // One slice and no commits: a static line, not a menu whose only row is
-    // the row you are already on.
-    expect(screen.queryByRole("button")).toBeNull();
-    expect(screen.getByText("Uncommitted · master")).toBeDefined();
+    expect(screen.getByText("uncommitted changes")).toBeDefined();
+    expect(screen.getAllByText("Uncommitted")).toHaveLength(1);
+    expect(screen.queryByText(/Uncommitted work is included/)).toBeNull();
   });
 
   it("is not mentioned when the branch isn't checked out anywhere", () => {
@@ -353,23 +538,5 @@ describe("uncommitted work", () => {
 
     expect(screen.queryByText(/Uncommitted work is included/)).toBeNull();
     expect(screen.queryByText("Uncommitted")).toBeNull();
-  });
-
-  /**
-   * A trunk review collapses to the static line above — but a stale base is
-   * the one thing still wrong about it, and that collapse must not swallow
-   * the warning that says so.
-   */
-  it("still reports a stale base once collapsed to a static line", () => {
-    seed([branch("master", { isCurrent: true, behindUpstream: 12 })]);
-    useReviewStore.setState({
-      baseReason: "trunkWorkingTree",
-      currentBranch: "master",
-      reviewComparison: makeComparison("master", "master"),
-      attribution: { commits: [], hunks: {} } as never,
-    });
-    openMenu();
-
-    expect(screen.getByText(/commits behind on master/)).toBeDefined();
   });
 });

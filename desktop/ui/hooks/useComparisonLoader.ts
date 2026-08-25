@@ -7,7 +7,7 @@ import {
   statusFingerprint,
   type RestoredComparison,
 } from "../stores/comparisonCache";
-import { ephemeralView } from "../stores/selectors/ephemeral";
+import { ephemeralView } from "../stores/selectors/viewpoint";
 import { flattenFiles } from "../stores/types";
 
 /**
@@ -151,7 +151,7 @@ export function useComparisonLoader(
       try {
         // A commit being peeked at: load the diff and stop. Everything below
         // this either reads or writes review state, and a peek has none by
-        // construction (`setEphemeralView` clears it, `loadReviewState`
+        // construction (`setViewpoint` clears it, `loadReviewState`
         // refuses to refill it) — so running any of it would at best do
         // nothing and at worst reconcile the review's decisions against a
         // comparison the review isn't of.

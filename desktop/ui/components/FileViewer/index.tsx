@@ -8,8 +8,7 @@ import {
 } from "react";
 import { useReviewStore } from "../../stores";
 import { readContextKeys } from "../../commands/contextKeys";
-import { browseRef } from "../../stores/selectors/browse";
-import { viewOnly } from "../../stores/selectors/ephemeral";
+import { activeHistoricRef, viewOnly } from "../../stores/selectors/viewpoint";
 import { getApiClient } from "../../api";
 import { useFileViewerState } from "./hooks/useFileViewerState";
 import type { DiffHunk, FileContent, FileEntry } from "../../types";
@@ -120,16 +119,12 @@ export function FileViewer({
 
   // The ref this file is being *read at*, when that isn't the working tree's
   // revision. Kept apart from `viewOnly` below because this one names a ref and
-  // has to exclude the three modes that read a file off disk regardless of the
-  // pin — what to fetch, and what to fetch it from, is a per-file question.
-  const browsePin = useReviewStore(browseRef);
-  const filesPanelTab = useReviewStore((s) => s.filesPanelTab);
+  // has to exclude the three modes that read a file off disk regardless of it —
+  // what to fetch, and what to fetch it from, is a per-file question.
+  const browseAtRef = useReviewStore(activeHistoricRef);
   const pinnedRef =
-    filesPanelTab === "browse" &&
-    !isExternalFile &&
-    !isStandaloneFile &&
-    !isWorkingTreeMode
-      ? browsePin
+    !isExternalFile && !isStandaloneFile && !isWorkingTreeMode
+      ? browseAtRef
       : null;
 
   // Nothing here can be decided on or annotated — see `viewOnly` for the three

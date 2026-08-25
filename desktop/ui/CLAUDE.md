@@ -71,6 +71,38 @@ cost a source of truth.
 
 The _other_ half of cleanup is an event: closing a workspace's last terminal drops the workspace too, when it has no typed title and at most one attachment. `reapSpentWorkspace` in `components/Terminal/close.ts` holds the rule and the argument for why it is an event rather than a sweep.
 
+## The viewpoint is the comparison
+
+The code half shows one `base..head` at a time, and every list in the files
+panel is a function of it: Review is the diff, Browse is the tree at `head`,
+and Git is the working tree — applicable exactly when `head` is checked out
+(`isCheckedOut` in `stores/selectors/checkout.ts`, mirroring core's
+`working_tree_dir`: the branch checked out here, or the linked worktree this
+review owns). The working tree is not a special place; it is what core diffs
+against when the head is checked out, which is also why `head..head` reads as
+"uncommitted".
+
+Two comparisons, one on screen. `reviewComparison` is the review's own
+`base..head` — the persisted identity, keyed by `reviewRef`. `comparison` is
+the plumbing every data call diffs, and it is *derived* from `viewpoint`
+(`types/viewpoint.ts`): `review` means the two are the same; `range` narrows to
+a `CommitRange` within the review, a re-diff of `prev..commit` with the review
+state still attached (decisions land on the branch's hunks — never a second
+approval surface); `commit` is a peek at a commit the review isn't of, and
+`reviewState` is null for its whole duration, which is the one gate that keeps a
+look from writing anything. `setViewpoint` is the only writer.
+
+`FilesPanel/ComparisonBar` is the one control, above the tab strip: the head on
+top, "vs base · slice · N commits" underneath, tinted whenever the head isn't
+checked out, and a menu whose every row is a comparison with both ends named —
+the whole slice, uncommitted, unpushed, this branch's commits (a narrowing;
+shift-click a range), older history (a peek), change base. A commit reaches the
+screen by one rule wherever it was clicked: on the branch it narrows, off it it
+peeks. Git greys out rather than disappearing when the head isn't checked out,
+so the tab row holds still and the tooltip says why. Browse has no picker of
+its own; it reads at the head on screen, fetched only while Browse is open
+(`activeHistoricRef`).
+
 ## Phone width is a degraded desktop, never a mode
 
 `useIsCompact()` (below Tailwind's `md`, so a JS branch and an `md:` class flip on the same pixel) is the one answer to "is this a phone". Everything reading it **degrades and writes nothing back** — the rule `useResponsiveDiffViewMode` already follows for a split diff in a narrow pane — so a stored preference survives a phone visit untouched and returns intact when the window widens.

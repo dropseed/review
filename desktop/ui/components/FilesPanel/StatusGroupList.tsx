@@ -168,6 +168,17 @@ export interface StatusGroupListProps {
   renamedDirPaths: Set<string>;
   hunks: DiffHunk[];
   reviewState: ReviewState | null;
+  /**
+   * Show one list of what changed instead of the four status groups.
+   *
+   * A commit being looked at has no review: no decisions recorded and none
+   * that can be made. The status groups would be four promises this screen
+   * cannot keep — "Reviewed 0 · No files reviewed yet" over a diff nothing can
+   * be approved in. With no review state every hunk buckets as pending, so
+   * this is the same rows the needs-review section already holds; what changes
+   * is that they stop being called a queue.
+   */
+  changedOnly?: boolean;
   expandAll: (dirPaths: Set<string>, excludePaths?: Set<string>) => void;
   collapseAll: () => void;
   // Collapse state is owned by the parent FilesPanel so it survives switching
@@ -187,6 +198,9 @@ export interface StatusGroupListProps {
  * effective review status (Trusted, Reviewed, Needs Review, Saved for
  * Later), each rendered on the shared group-header contract. A peer of the
  * Commits and Guide groupings — see FilesPanel/index.tsx.
+ *
+ * `changedOnly` collapses all four into one list of what changed, for a
+ * comparison that has no review attached.
  */
 export function StatusGroupList({
   sectionedFiles,
@@ -195,6 +209,7 @@ export function StatusGroupList({
   renamedDirPaths,
   hunks,
   reviewState,
+  changedOnly = false,
   expandAll,
   collapseAll,
   needsReviewOpen,
@@ -583,6 +598,43 @@ export function StatusGroupList({
           </p>
         </div>
       </div>
+    );
+  }
+
+  if (changedOnly) {
+    return (
+      <FileSelectionProvider>
+        <div className="flex-1 overflow-y-auto scrollbar-thin">
+          {/* No status icon and no count pill: both are how a section says
+              which state its hunks are in, and this one is not a state. The
+              count rides in the title instead. */}
+          <GroupHeader
+            title={`Changed · ${stats.total}`}
+            progress={{ done: 0, total: 0 }}
+            isExpanded={needsReviewOpen}
+            onToggleExpanded={() => setNeedsReviewOpen(!needsReviewOpen)}
+            actionContent={rollingDiffAction("Changed", pendingHunkIds)}
+            // What survives is what only affects reading: how the list is
+            // sorted and shaped. Nothing here decides anything, which is the
+            // whole reason the other menus are gone.
+            menuContent={
+              <>
+                {expandCollapseItems(needsReviewDirPaths)}
+                {changesDisplayMode === "tree" && <DropdownMenuSeparator />}
+                {viewOptionsMenuContent}
+              </>
+            }
+          >
+            <FileListSection
+              treeEntries={sectionedFiles.needsReview}
+              flatFilePaths={flatSectionedFiles.needsReview}
+              displayMode={changesDisplayMode}
+              hunkContext="needs-review"
+              emptyMessage="No files changed"
+            />
+          </GroupHeader>
+        </div>
+      </FileSelectionProvider>
     );
   }
 

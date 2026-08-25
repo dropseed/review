@@ -1,6 +1,6 @@
 import { useMemo, useRef } from "react";
 import { useReviewStore } from "../../stores";
-import { ephemeralView } from "../../stores/selectors/ephemeral";
+import { ephemeralView } from "../../stores/selectors/viewpoint";
 import { useAllHunks, useHunkIdsByStatus } from "../../stores/selectors/hunks";
 import type { HunkGroup } from "../../types";
 

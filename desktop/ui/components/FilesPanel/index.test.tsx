@@ -6,7 +6,7 @@ import { makeComparison } from "../../types";
 // The store wires a real backend client at module load; these tests drive the
 // panel's own rendering, not the backend.
 vi.mock("../../api", () => ({
-  getApiClient: () => new Proxy({}, { get: () => () => undefined }),
+  getApiClient: () => new Proxy({}, { get: () => () => Promise.resolve([]) }),
 }));
 vi.mock("../../platform", () => ({
   getPlatformServices: () => ({
@@ -20,8 +20,7 @@ vi.mock("../../platform", () => ({
 vi.mock("./StatusGroupList", () => ({ StatusGroupList: () => null }));
 vi.mock("./GuideBanner", () => ({ GuideBanner: () => null }));
 vi.mock("./GuideModePanel", () => ({ GuideModePanel: () => null }));
-vi.mock("./CommitRangePicker", () => ({ CommitRangePicker: () => null }));
-vi.mock("./CommitRangeHeader", () => ({ CommitRangeHeader: () => null }));
+vi.mock("./ComparisonBar", () => ({ ComparisonBar: () => null }));
 vi.mock("./AnnotationDock", () => ({ AnnotationDock: () => null }));
 vi.mock("./ReviewActionBar", () => ({ ReviewActionBar: () => null }));
 vi.mock("./GitStatusPanel", () => ({ GitStatusPanel: () => null }));

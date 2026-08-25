@@ -6,7 +6,6 @@ import {
   Navigate,
   Outlet,
   useNavigate,
-  useOutletContext,
 } from "react-router-dom";
 import { toast } from "sonner";
 import { Sidebar } from "./components/Sidebar";
@@ -27,7 +26,7 @@ import { activateSidebarRow } from "./utils/sidebar-tree";
 import { makeReviewKey } from "./utils/review-key";
 import { getErrorMessage } from "./utils/errors";
 import { closeWindowWithConfirmation } from "./utils/close-window";
-import { prReviewTarget, type ReviewTarget, type ViewerPr } from "./types";
+import { prReviewTarget, type ViewerPr } from "./types";
 import {
   useRepositoryInit,
   useComparisonLoader,
@@ -44,8 +43,8 @@ import {
   usePollWhileVisible,
   useWorkspaceDeepLink,
   useAttentionBadge,
-  type RepoStatus,
 } from "./hooks";
+import { useAppContext } from "./app-context";
 import { useReviewFreshness } from "./hooks/useReviewFreshness";
 import { useIsCompact } from "./hooks/useIsCompact";
 import {
@@ -303,22 +302,6 @@ function AppShell() {
   );
 }
 
-interface AppContext {
-  repoStatus: RepoStatus;
-  repoError: string | null;
-  repoPath: string | null;
-  comparisonReady: number;
-  handleOpenRepo: () => Promise<void>;
-  handleCloseRepo: () => void;
-  handleSelectRepo: (path: string) => Promise<void>;
-  handleNewReview: (path: string, target: ReviewTarget) => Promise<void>;
-  handleStartReview: (path: string, target: ReviewTarget) => Promise<void>;
-}
-
-export function useAppContext() {
-  return useOutletContext<AppContext>();
-}
-
 /**
  * What "/" shows: the focused workspace's empty state when there is one, and
  * the app's own empty states when there isn't.
@@ -402,8 +385,7 @@ function NewReviewRoute() {
 
 /** Review UI — shown at /:owner/:repo/review/:ref (ref is encodeURIComponent-encoded) */
 function ReviewRoute() {
-  const { repoPath, repoStatus, comparisonReady, handleStartReview } =
-    useAppContext();
+  const { repoPath, repoStatus, comparisonReady } = useAppContext();
 
   useFileRouteSync();
 
@@ -419,12 +401,7 @@ function ReviewRoute() {
     return <Navigate to="/" replace />;
   }
 
-  return (
-    <ReviewView
-      comparisonReady={comparisonReady}
-      onStartReview={handleStartReview}
-    />
-  );
+  return <ReviewView comparisonReady={comparisonReady} />;
 }
 
 /** The root router component */

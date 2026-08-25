@@ -85,6 +85,12 @@ interface RailTabProps {
   label: string;
   edge: RailEdge;
   active?: boolean;
+  /**
+   * Listed but not openable — dimmed and inert. `aria-disabled` rather than
+   * `disabled`, because a disabled button swallows the hover its tooltip
+   * needs, and the tooltip is the only place the reason can be read.
+   */
+  disabled?: boolean;
   onClick: () => void;
   /** Status marker shown at the tab's head, above the label. */
   marker?: ReactNode;
@@ -110,6 +116,7 @@ export function RailTab({
   label,
   edge,
   active = false,
+  disabled = false,
   onClick,
   marker,
   rich,
@@ -122,15 +129,20 @@ export function RailTab({
     >
       <button
         type="button"
-        onClick={onClick}
+        onClick={disabled ? undefined : onClick}
+        aria-disabled={disabled || undefined}
         aria-label={label}
         aria-current={active ? "true" : undefined}
         className={clsx(
           "flex w-6 shrink-0 flex-col items-center gap-1 rounded px-0.5 py-1.5",
           "transition-colors duration-100",
-          active
-            ? "bg-surface-raised text-fg-secondary"
-            : "text-fg-muted hover:bg-fg/[0.08] hover:text-fg-secondary",
+          // Dimmed rather than dropped, and still hoverable — the tooltip is
+          // the only place the reason can be read.
+          disabled
+            ? "cursor-default text-fg-faint/50"
+            : active
+              ? "bg-surface-raised text-fg-secondary"
+              : "text-fg-muted hover:bg-fg/[0.08] hover:text-fg-secondary",
         )}
       >
         {marker}

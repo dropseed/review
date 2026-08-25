@@ -22,9 +22,9 @@ export function FilesRail(): ReactNode {
   const setFilesPanelTab = useReviewStore((s) => s.setFilesPanelTab);
   const activeTab = useReviewStore((s) => s.filesPanelTab);
   const comparison = useReviewStore((s) => s.comparison);
-  const { showGitTab, gitChangeCount } = useGitTab();
+  const { gitEnabled, gitChangeCount } = useGitTab();
 
-  const tabs = visibleFilesPanelTabs(comparison !== null, showGitTab);
+  const tabs = visibleFilesPanelTabs(comparison, gitEnabled);
 
   return (
     <Rail className="w-9 shrink-0 border-l border-edge bg-surface">
@@ -44,20 +44,23 @@ export function FilesRail(): ReactNode {
             key={tab.id}
             text={tab.label}
             label={
-              tab.id === "git" && gitChangeCount > 0
-                ? `Git — ${gitChangeCount} uncommitted file${
-                    gitChangeCount === 1 ? "" : "s"
-                  }`
-                : tab.description
+              tab.disabled
+                ? `${tab.label} — ${tab.disabledReason}`
+                : tab.id === "git" && gitChangeCount > 0
+                  ? `Git — ${gitChangeCount} uncommitted file${
+                      gitChangeCount === 1 ? "" : "s"
+                    }`
+                  : tab.description
             }
             edge="right"
             active={tab.id === activeTab}
+            disabled={tab.disabled}
             onClick={() => {
               setFilesPanelTab(tab.id);
               setFilesPanelCollapsed(false);
             }}
             marker={
-              tab.id === "git" && gitChangeCount > 0 ? (
+              tab.id === "git" && !tab.disabled && gitChangeCount > 0 ? (
                 <span className="text-xxs tabular-nums text-status-modified">
                   {gitChangeCount}
                 </span>

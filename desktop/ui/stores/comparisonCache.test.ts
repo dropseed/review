@@ -108,9 +108,8 @@ function seedLoaded(repoPath: string, comparison: Comparison, ref: string) {
     reviewRef: ref,
     reviewBaseOverride: null,
     baseReason: "branchVsDefault",
-    commitRange: null,
+    viewpoint: { kind: "review" },
     isStandaloneFile: false,
-    ephemeralByReview: {},
     loadingProgress: null,
     files: tree,
     flatFileList: ["a.ts"],
@@ -171,12 +170,15 @@ describe("snapshot on leave", () => {
   it("does not capture a commit-range narrowing", () => {
     seedLoaded(REPO_A, featureA, "feature-a");
     useReviewStore.setState({
-      commitRange: {
-        kind: "commits",
-        loOrdinal: 1,
-        hiOrdinal: 1,
-        title: "#1",
-        comparison: featureA,
+      viewpoint: {
+        kind: "range",
+        range: {
+          kind: "commits",
+          loOrdinal: 1,
+          hiOrdinal: 1,
+          title: "#1",
+          comparison: featureA,
+        },
       },
     } as never);
 
@@ -189,12 +191,15 @@ describe("snapshot on leave", () => {
 
   it("does not capture a commit peek", () => {
     seedLoaded(REPO_A, featureA, "feature-a");
-    useReviewStore.getState().setEphemeralView({
-      hash: "abc123",
-      shortHash: "abc123",
-      subject: "a commit",
-      comparison: featureA,
-      isMerge: false,
+    useReviewStore.getState().setViewpoint({
+      kind: "commit",
+      view: {
+        hash: "abc123",
+        shortHash: "abc123",
+        subject: "a commit",
+        comparison: featureA,
+        isMerge: false,
+      },
     });
 
     useReviewStore

@@ -1,13 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
   commitRangeFor,
-  commitsInRange,
   sameRange,
   uncommittedRange,
   unpushedRange,
 } from "./commitRange";
 import { commitRangeForSha } from "./commitRange";
-import type { CommitEntry, HunkAttribution } from "./index";
+import type { CommitEntry } from "./index";
 
 // Oldest first, matching attribution order and the picker's `#n` ordinals.
 const commits: CommitEntry[] = [
@@ -72,28 +71,6 @@ describe("uncommittedRange", () => {
     const r = uncommittedRange("feature");
     expect(r.kind).toBe("uncommitted");
     expect(r.comparison.key).toBe("feature..feature");
-  });
-});
-
-describe("commitsInRange", () => {
-  const attribution = { commits, hunkCommits: {} } as HunkAttribution;
-
-  it("returns the spanned commits oldest first", () => {
-    const r = commitRangeFor(commits, "main", 2, 3)!;
-    expect(commitsInRange(r, attribution).map((c) => c.hash)).toEqual([
-      "sha2",
-      "sha3",
-    ]);
-  });
-
-  it("returns nothing for the uncommitted range or a missing attribution", () => {
-    expect(commitsInRange(uncommittedRange("feature"), attribution)).toEqual(
-      [],
-    );
-    expect(commitsInRange(commitRangeFor(commits, "main", 1, 1), null)).toEqual(
-      [],
-    );
-    expect(commitsInRange(null, attribution)).toEqual([]);
   });
 });
 

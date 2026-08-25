@@ -1,5 +1,7 @@
 import type { ComponentType } from "react";
 import { BranchIcon, DiffIcon, FileIcon, type IconProps } from "../ui/icons";
+import type { Comparison } from "../../types";
+import { refLabel } from "./refLabel";
 import type { FilesPanelTab } from "./types";
 
 /**
@@ -43,18 +45,38 @@ export const FILES_PANEL_TABS: readonly FilesPanelTabSpec[] = [
   },
 ];
 
+export interface FilesPanelTabState extends FilesPanelTabSpec {
+  /** Listed, but nothing to open. */
+  disabled: boolean;
+  /** Why — the tooltip, since a disabled tab can't say it any other way. */
+  disabledReason?: string;
+}
+
 /**
- * The tabs a review can actually show. Git needs a working tree this review is
- * looking at, and Review needs something to compare — both are inapplicable
- * rather than empty, which is the only reason a tab is withheld.
+ * The tabs a review shows, and which of them can be opened.
+ *
+ * Git greys out rather than vanishing. Staging is its own activity and keeps
+ * its own tab whether or not this comparison can reach a working tree — a tab
+ * that comes and goes with the head moves the row of tabs under the cursor and
+ * leaves no way to tell "nothing to stage" from "where did that go". Review is
+ * the one that is still withheld, because with no comparison at all it is not
+ * empty, it is meaningless.
  */
 export function visibleFilesPanelTabs(
-  hasComparison: boolean,
-  showGitTab: boolean,
-): FilesPanelTabSpec[] {
-  return FILES_PANEL_TABS.filter((tab) => {
-    if (tab.id === "git") return hasComparison && showGitTab;
-    if (tab.id === "changes") return hasComparison;
-    return true;
-  });
+  comparison: Comparison | null,
+  gitEnabled: boolean,
+): FilesPanelTabState[] {
+  return FILES_PANEL_TABS.filter(
+    (tab) => tab.id !== "changes" || comparison,
+  ).map((tab) =>
+    tab.id === "git" && !gitEnabled
+      ? {
+          ...tab,
+          disabled: true,
+          disabledReason: comparison
+            ? `${refLabel(comparison.head)} isn't checked out`
+            : "Nothing here is checked out",
+        }
+      : { ...tab, disabled: false },
+  );
 }

@@ -146,29 +146,6 @@ export interface BranchList {
   dates?: Record<string, string>;
 }
 
-/** What sort of ref a {@link RefEntry} names. */
-export type RefKind = "localBranch" | "remoteBranch" | "tag";
-
-/** A ref git already knows locally — somewhere Browse can be pinned to. */
-export interface RefEntry {
-  /** Short name, e.g. "main", "origin/feature-x", "v1.2.0". */
-  name: string;
-  kind: RefKind;
-  /** ISO-8601 creation date, absent when git reported none. */
-  date?: string | null;
-}
-
-/** What a ref resolves to — the pinned banner's subtitle, and the check that
- *  something the user typed is a ref at all. */
-export interface RefDescription {
-  /** The ref as asked for, not as resolved. */
-  name: string;
-  sha: string;
-  shortSha: string;
-  subject: string;
-  date: string;
-}
-
 /**
  * One commit, resolved into something diffable.
  *

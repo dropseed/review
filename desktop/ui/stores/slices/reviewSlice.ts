@@ -20,7 +20,7 @@ import {
 import { computeReviewProgress } from "../../hooks/useReviewProgress";
 import { makeReviewKey } from "./groupingSlice";
 import { getAllHunksFromState } from "../selectors/hunkData";
-import { ephemeralView } from "../selectors/ephemeral";
+import { ephemeralView } from "../selectors/viewpoint";
 import { invalidateSnapshots } from "../comparisonCache";
 
 // Debounced save operation (exported so cancelPendingSaves can cancel it)

@@ -8,8 +8,6 @@
 
 import type {
   BranchList,
-  RefEntry,
-  RefDescription,
   GitStatusSummary,
   Comparison,
   GitHubPrRef,
@@ -154,15 +152,6 @@ export interface ApiClient {
 
   /** List all branches (local and remote) */
   listBranches(repoPath: string): Promise<BranchList>;
-
-  /**
-   * Every ref git already knows locally — branches, remote-tracking branches
-   * and tags. Nothing is fetched: this is the set a read-only peek can serve.
-   */
-  listRefs(repoPath: string): Promise<RefEntry[]>;
-
-  /** Resolve what a ref names, rejecting anything git can't resolve. */
-  describeRef(repoPath: string, gitRef: string): Promise<RefDescription>;
 
   /** Get git status (staged, unstaged, untracked files) */
   getGitStatus(repoPath: string): Promise<GitStatusSummary>;

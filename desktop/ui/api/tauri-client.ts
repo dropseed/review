@@ -18,8 +18,6 @@ import type {
 import { terminalStartPayload } from "./client";
 import type {
   BranchList,
-  RefEntry,
-  RefDescription,
   ClassifyResponse,
   Comparison,
   CommitComparison,
@@ -111,14 +109,6 @@ export class TauriClient implements ApiClient {
 
   async listBranches(repoPath: string): Promise<BranchList> {
     return invoke<BranchList>("list_branches", { repoPath });
-  }
-
-  async listRefs(repoPath: string): Promise<RefEntry[]> {
-    return invoke<RefEntry[]>("list_refs", { repoPath });
-  }
-
-  async describeRef(repoPath: string, gitRef: string): Promise<RefDescription> {
-    return invoke<RefDescription>("describe_ref", { repoPath, gitRef });
   }
 
   async getGitStatus(repoPath: string): Promise<GitStatusSummary> {

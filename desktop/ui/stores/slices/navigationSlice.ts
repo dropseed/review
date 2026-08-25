@@ -7,7 +7,6 @@ import {
 } from "../../types/scope";
 import type { ReviewStore, SliceCreator } from "../types";
 import { getHunkLocationMap } from "../selectors/hunkData";
-import { reviewScopeKey } from "../../utils/review-key";
 
 export type FocusedPane = "primary" | "secondary";
 export type SplitOrientation = "horizontal" | "vertical";
@@ -59,20 +58,6 @@ export interface NavigationSlice {
   prevFile: () => void;
   nextHunk: () => void;
   prevHunk: () => void;
-
-  /**
-   * The ref each review's Browse tab is pinned to. A key with no entry means
-   * the working tree — Browse's default, and where "Back to now" returns.
-   *
-   * Session state, and only that. It is never written to the workspace's
-   * attachment (`refName`) or to `work.json`: an attachment says what the
-   * workspace is *about*, and reading an old revision is looking, not being
-   * about. Keyed per review so walking two repos' histories in two tabs
-   * doesn't have them overwrite each other.
-   */
-  browseRefByReview: Record<string, string>;
-  /** Pin Browse to `ref`, or return it to the working tree with `null`. */
-  setBrowseRef: (ref: string | null) => void;
 
   // Navigation actions
   navigateToBrowse: (filePath?: string, scrollTo?: { hunkId: string }) => void;
@@ -589,22 +574,6 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
     });
   },
 
-  browseRefByReview: {},
-
-  setBrowseRef: (ref) => {
-    const key = reviewScopeKey(get());
-    if (key === null) return;
-    set((state) => {
-      const next = { ...state.browseRefByReview };
-      if (ref === null) {
-        delete next[key];
-      } else {
-        next[key] = ref;
-      }
-      return { browseRefByReview: next };
-    });
-  },
-
   revealInBrowse: (filePath) => {
     set({
       ...OVERLAYS_CLEARED,
@@ -613,10 +582,6 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
       fileToReveal: filePath,
       selectedFile: filePath,
     });
-    // "Reveal in Browse" means this file, the one on screen — which is the
-    // working tree's. A pin left on would show whatever an older revision had
-    // at that path, or nothing at all.
-    get().setBrowseRef(null);
     // "Reveal in Browse" is a request to see the file *in the panel*, so this
     // is the one navigation that may reopen a collapsed one. Through the setter,
     // not as a field in the write above: collapse is a persisted preference, and
