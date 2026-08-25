@@ -392,6 +392,7 @@ pub fn print_json<T: Serialize>(value: &T) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::review::state::HunkState;
 
     #[test]
     fn parse_hunk_target_recognizes_hunk_id() {
@@ -443,6 +444,130 @@ mod tests {
     #[test]
     fn line_range_collapses_redundant_end() {
         assert_eq!(line_range(42, Some(42)), "42");
+    }
+
+    fn classify_response(hunk_id: &str, labels: &[&str]) -> ClassifyResponse {
+        let mut classifications = std::collections::HashMap::new();
+        classifications.insert(
+            hunk_id.to_owned(),
+            crate::classify::ClassificationResult {
+                label: labels.iter().map(|s| (*s).to_owned()).collect(),
+                reasoning: String::new(),
+            },
+        );
+        ClassifyResponse { classifications }
+    }
+
+    #[test]
+    fn hunk_labels_prefers_stored_labels_over_classification() {
+        let mut state = ReviewState::new("main", None);
+        state.hunks.insert(
+            "src/foo.rs:abcd1234".to_owned(),
+            HunkState {
+                classification: Some(Attributed::new(
+                    vec!["comments:added".to_owned()],
+                    Source::Ui,
+                )),
+                status: None,
+                stable_key: None,
+            },
+        );
+        let classification = classify_response("src/foo.rs:abcd1234", &["imports:added"]);
+
+        let labels = hunk_labels("src/foo.rs:abcd1234", &state, &classification);
+
+        assert_eq!(labels, vec!["comments:added".to_owned()]);
+    }
+
+    #[test]
+    fn hunk_labels_falls_back_to_classification_when_unset() {
+        let state = ReviewState::new("main", None);
+        let classification = classify_response("src/foo.rs:abcd1234", &["imports:added"]);
+
+        let labels = hunk_labels("src/foo.rs:abcd1234", &state, &classification);
+
+        assert_eq!(labels, vec!["imports:added".to_owned()]);
+    }
+
+    #[test]
+    fn hunk_labels_falls_back_when_stored_labels_are_empty() {
+        let mut state = ReviewState::new("main", None);
+        state.hunks.insert(
+            "src/foo.rs:abcd1234".to_owned(),
+            HunkState {
+                classification: Some(Attributed::new(vec![], Source::Ui)),
+                status: None,
+                stable_key: None,
+            },
+        );
+        let classification = classify_response("src/foo.rs:abcd1234", &["imports:added"]);
+
+        let labels = hunk_labels("src/foo.rs:abcd1234", &state, &classification);
+
+        assert_eq!(labels, vec!["imports:added".to_owned()]);
+    }
+
+    #[test]
+    fn effective_status_explicit_status_wins_over_trust() {
+        let mut state = ReviewState::new("main", None);
+        state.trust_list = vec!["imports:added".to_owned()];
+        state.hunks.insert(
+            "src/foo.rs:abcd1234".to_owned(),
+            HunkState {
+                classification: None,
+                status: Some(Attributed::new(HunkStatus::Rejected, Source::Cli)),
+                stable_key: None,
+            },
+        );
+
+        // Even though the labels would otherwise be trust-listed, the
+        // explicit decision takes precedence.
+        let status = effective_status("src/foo.rs:abcd1234", &["imports:added".to_owned()], &state);
+
+        assert_eq!(status, EffectiveStatus::Rejected);
+    }
+
+    #[test]
+    fn effective_status_maps_each_persisted_status() {
+        let mut state = ReviewState::new("main", None);
+        for (persisted, expected) in [
+            (HunkStatus::Approved, EffectiveStatus::Approved),
+            (HunkStatus::Rejected, EffectiveStatus::Rejected),
+            (HunkStatus::SavedForLater, EffectiveStatus::Saved),
+        ] {
+            state.hunks.insert(
+                "src/foo.rs:abcd1234".to_owned(),
+                HunkState {
+                    classification: None,
+                    status: Some(Attributed::new(persisted, Source::Cli)),
+                    stable_key: None,
+                },
+            );
+            assert_eq!(
+                effective_status("src/foo.rs:abcd1234", &[], &state),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn effective_status_falls_back_to_trust_list_when_no_decision_is_recorded() {
+        let mut state = ReviewState::new("main", None);
+        state.trust_list = vec!["imports:added".to_owned()];
+
+        // No entry in `state.hunks` at all.
+        assert_eq!(
+            effective_status("src/foo.rs:abcd1234", &["imports:added".to_owned()], &state),
+            EffectiveStatus::Trusted
+        );
+        assert_eq!(
+            effective_status(
+                "src/foo.rs:abcd1234",
+                &["comments:added".to_owned()],
+                &state
+            ),
+            EffectiveStatus::Unreviewed
+        );
     }
 
     #[test]
