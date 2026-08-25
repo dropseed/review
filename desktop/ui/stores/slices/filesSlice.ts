@@ -398,7 +398,6 @@ export const diffDataResetState = {
   guideContentMode: null,
   secondaryFile: null,
   focusedPane: "primary" as const,
-  groupingSidebarOpen: false,
   workingTreeDiffFile: null,
   scope: null as ReviewScope | null,
   guideMode: false,

@@ -19,7 +19,6 @@ src/
 │   ├── traits.rs       DiffSource, Comparison, FileEntry traits/types
 │   ├── local_git.rs    LocalGitSource (shell out to git CLI)
 │   └── github.rs       GitHub PR support via gh CLI
-├── narrative/      AI narrative generation (diff summary)
 ├── symbols/        Tree-sitter symbol extraction
 │   └── extractor.rs    Extract/diff symbols across old/new versions
 ├── filters.rs      File skip rules (generated files, binaries)

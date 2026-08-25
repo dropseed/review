@@ -112,14 +112,6 @@ export interface NavigationSlice {
   // Advance to next file if current file is fully reviewed
   advanceToNextUnreviewedFile: () => void;
 
-  // Grouping sidebar
-  groupingSidebarOpen: boolean;
-  setGroupingSidebarOpen: (open: boolean) => void;
-
-  // Track the exact narrative link that was last clicked (by source offset)
-  lastClickedNarrativeLinkOffset: number | null;
-  setLastClickedNarrativeLinkOffset: (offset: number | null) => void;
-
   // Modal state
 
   // Review scope: a named, exact hunk-ID set (a status bucket, a commit, the
@@ -733,14 +725,6 @@ export const createNavigationSlice: SliceCreator<NavigationSlice> = (
     }
     // All files are fully reviewed - stay on current file
   },
-
-  // Grouping sidebar
-  groupingSidebarOpen: false,
-  setGroupingSidebarOpen: (open) => set({ groupingSidebarOpen: open }),
-
-  lastClickedNarrativeLinkOffset: null,
-  setLastClickedNarrativeLinkOffset: (offset) =>
-    set({ lastClickedNarrativeLinkOffset: offset }),
 
   // Modal state
 
