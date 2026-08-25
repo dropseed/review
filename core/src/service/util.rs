@@ -176,17 +176,23 @@ pub fn validate_review_path(path: &str) -> anyhow::Result<PathBuf> {
         bail!("Path traversal detected: path contains '..'");
     }
 
-    let path_str = path.replace('\\', "/");
+    let normalized = Path::new(&path.replace('\\', "/")).to_path_buf();
 
-    // Allow writes to .git/review/ (legacy log path)
-    if path_str.contains("/.git/review/") || path_str.contains(".git/review/") {
+    // Allow writes to .git/review/ (legacy log path). Compared by path
+    // component, not substring, so a directory merely named like `my.git`
+    // can't be mistaken for the `.git` component itself.
+    let components: Vec<_> = normalized.components().collect();
+    let is_git_review = components
+        .windows(2)
+        .any(|w| w[0].as_os_str() == ".git" && w[1].as_os_str() == "review");
+    if is_git_review {
         return Ok(path_buf);
     }
 
     // Allow writes to the central ~/.review/ directory
     if let Ok(root) = crate::review::central::get_central_root() {
-        let root_str = root.to_string_lossy().replace('\\', "/");
-        if path_str.starts_with(&root_str) {
+        let root = Path::new(&root.to_string_lossy().replace('\\', "/")).to_path_buf();
+        if normalized.starts_with(&root) {
             return Ok(path_buf);
         }
     }
@@ -325,6 +331,35 @@ mod tests {
         let input = "{\n  \"a\": 1, // trailing comment\n  \"b\": 2\n}";
         let result = strip_jsonc_comments(input);
         assert_eq!(result, "{\n  \"a\": 1, \n  \"b\": 2\n}");
+    }
+
+    #[test]
+    fn validate_review_path_allows_git_review_and_rejects_traversal() {
+        assert!(validate_review_path("/repo/.git/review/log.json").is_ok());
+        assert!(validate_review_path(".git/review/log.json").is_ok());
+        assert!(validate_review_path("/repo/.git/review/../../etc/passwd").is_err());
+    }
+
+    #[test]
+    fn validate_review_path_rejects_lookalike_git_review_component() {
+        // `my.git` is a single path component, not a `.git` directory
+        // followed by `review` — the old substring check let this through.
+        assert!(validate_review_path("/tmp/my.git/review/x").is_err());
+    }
+
+    #[test]
+    fn validate_review_path_rejects_central_root_lookalike_sibling() {
+        let _lock = crate::review::central::tests::ENV_LOCK.lock().unwrap();
+        let (_guard, review_home, _repo) = crate::review::central::tests::setup_test();
+
+        let root = review_home.path();
+        assert!(validate_review_path(root.join("state.json").to_str().unwrap()).is_ok());
+
+        // A sibling directory whose name merely has the root as a string
+        // prefix (e.g. "<root>backup") must not be treated as inside it.
+        let mut sibling = root.as_os_str().to_owned();
+        sibling.push("backup/evil");
+        assert!(validate_review_path(sibling.to_str().unwrap()).is_err());
     }
 
     #[test]
