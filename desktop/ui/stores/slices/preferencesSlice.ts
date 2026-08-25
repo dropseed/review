@@ -238,8 +238,6 @@ const defaults = {
   // CLI and with any other machine reading the same `work.json`.
   lastWorkspaceId: null as string | null,
   fileSortOrder: "name" as FileSortOrder,
-  guideSideNavCollapsed: false,
-  guideSideNavWidth: 240,
   matchVscodeTheme: false,
   showOutline: false,
   lspDisabledLanguages: [] as string[],
@@ -325,10 +323,6 @@ export interface PreferencesSlice {
 
   // File sort order (shared across browse + changes tabs)
   fileSortOrder: FileSortOrder;
-
-  // Guide side nav
-  guideSideNavCollapsed: boolean;
-  guideSideNavWidth: number;
 
   // VS Code theme matching
   matchVscodeTheme: boolean;
@@ -429,11 +423,6 @@ export interface PreferencesSlice {
   togglePrRepoHidden: (repo: string) => void;
   /** Unfilter everything — the one gesture back from a list you've narrowed. */
   showAllPrRepos: () => void;
-
-  // Guide side nav actions
-  setGuideSideNavCollapsed: (collapsed: boolean) => void;
-  toggleGuideSideNav: () => void;
-  setGuideSideNavWidth: (width: number) => void;
 
   // VS Code theme matching actions
   setMatchVscodeTheme: (enabled: boolean) => Promise<void>;
@@ -776,20 +765,6 @@ export const createPreferencesSlice: SliceCreatorWithStorage<
     showAllPrRepos: () => {
       set({ hiddenPrRepos: [] });
       storage.set("hiddenPrRepos", []);
-    },
-
-    setGuideSideNavCollapsed: (collapsed) => {
-      set({ guideSideNavCollapsed: collapsed });
-      storage.set("guideSideNavCollapsed", collapsed);
-    },
-
-    toggleGuideSideNav: () => {
-      get().setGuideSideNavCollapsed(!get().guideSideNavCollapsed);
-    },
-
-    setGuideSideNavWidth: (width) => {
-      set({ guideSideNavWidth: width });
-      storage.set("guideSideNavWidth", width);
     },
 
     setMatchVscodeTheme: async (enabled) => {
