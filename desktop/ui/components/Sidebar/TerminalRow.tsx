@@ -45,7 +45,13 @@ export const TerminalRow = memo(function TerminalRow({
         jumpToTab(tabId);
       }}
       title={title}
-      className="flex items-center gap-1.5 rounded px-1 py-px hover:bg-fg/[0.06]"
+      // A real 44pt height on a touch screen, not hit slop: these stack, and
+      // slop on stacked rows overlaps — the row below would answer for the
+      // bottom of the row above it. `tap` is the press state, which is the only
+      // feedback there is here (the hover tint never fires on a finger).
+      className="tap flex items-center gap-1.5 rounded px-1 py-px
+                 hover:bg-fg/[0.06] active:bg-fg/[0.09]
+                 pointer-coarse:min-h-11 pointer-coarse:px-2"
     >
       <PhaseDot phase={severity ?? "idle"} dead={allDead} agent={agent} />
       <span

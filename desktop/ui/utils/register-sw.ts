@@ -10,7 +10,9 @@ import { isTauriEnvironment } from "../api/client";
  *   stale answer against hot-reloaded code;
  * - browsers without `serviceWorker` (the app still works, just isn't installable).
  *
- * The worker itself caches nothing — see `public/sw.js`.
+ * The worker precaches this build's app shell so a Home-Screen launch paints
+ * without waiting on the network — see `public/sw.js`, and the
+ * `review-precache-manifest` plugin in `vite.config.ts` that fills its list in.
  */
 export function registerServiceWorker(): void {
   if (typeof navigator === "undefined" || !("serviceWorker" in navigator))
@@ -26,6 +28,19 @@ export function registerServiceWorker(): void {
       .getRegistrations()
       .then((registrations) => registrations.forEach((r) => r.unregister()))
       .catch(() => {});
+    // Unregistering leaves the caches behind, and a precached `index.html`
+    // outlives the worker that put it there — on the same origin as the dev
+    // server, that is a production shell waiting to be served to a hot reload.
+    if (typeof caches !== "undefined") {
+      caches
+        .keys()
+        .then((names) =>
+          names
+            .filter((name) => name.startsWith("review-shell-"))
+            .forEach((name) => void caches.delete(name)),
+        )
+        .catch(() => {});
+    }
     return;
   }
 

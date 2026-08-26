@@ -552,6 +552,142 @@ kbd {
   }
 }
 
+/* ─── Touch-primary chrome ──────────────────────────────────────────────────
+   Everything below is about the phone: the installed PWA, running standalone
+   under the iOS status bar. None of it reaches the desktop app, which has no
+   safe-area insets (WKWebView reports zero on macOS) and no coarse pointer. */
+
+:root {
+  /* The device's own insets, named once so layout can use them without every
+     surface repeating an `env()` with its own fallback. `viewport-fit=cover`
+     and `black-translucent` in index.html are what make them non-zero: the app
+     paints under the status bar and the home indicator, and pays for it here. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+/* With the keyboard up there is no home indicator to clear — the keyboard is
+   what occupies that edge, and `--keyboard-inset` already accounts for it. iOS
+   usually zeroes the inset itself, but not on every version, and the failure
+   mode is a strip of dead surface floating above the keys you opened the
+   keyboard to reach. `useKeyboardInset` sets the attribute. */
+:root[data-keyboard="open"] {
+  --safe-bottom: 0px;
+}
+
+html {
+  /* No grey flash under a tap. Press feedback is `.tap` below, which is a state
+     we draw rather than one the platform paints over us. */
+  -webkit-tap-highlight-color: transparent;
+  /* iOS inflates text in a rotated narrow column unless told not to. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* No pull-to-refresh and no rubber-banding the whole document: this is an app
+   with its own scroll regions, and the document itself never scrolls. Inner
+   lists keep `auto`, so they still bounce at their own ends — the gesture that
+   tells you a list is over — and simply do not chain past it. */
+html, body {
+  overscroll-behavior: none;
+}
+
+@media (pointer: coarse) {
+  /* Chrome is not text. A long press on a button should start the press state,
+     not a selection or a callout menu; a long press inside a diff, a terminal,
+     or any prose still selects, because none of these match it. */
+  button, [role="button"], [role="tab"], nav, kbd {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
+
+/* Press feedback for compact chrome.
+
+   Instant in, eased out: a press that fades in over 150ms reads as lag, and one
+   that snaps back reads as a glitch. Touch-only — a desktop button says the
+   same thing with its hover, and dimming under the mouse would fight it.
+
+   Its own transition rather than a `transition-colors` beside it: this rule is
+   unlayered and would win the shorthand outright, so it carries the colors too
+   and is the one transition these controls need. */
+.tap {
+  transition-property: opacity, transform, color, background-color, border-color;
+  transition-duration: 150ms;
+  transition-timing-function: ease-out;
+}
+
+@media (pointer: coarse) {
+  .tap:active {
+    opacity: 0.55;
+    transform: scale(0.97);
+    transition-duration: 0s;
+  }
+}
+
+/* 44×44pt of hit area on a control that is drawn smaller — HIG's minimum,
+   bought with slop rather than by inflating the glyph. The pseudo-element is
+   invisible and centred, so it can spill outside the button's box without
+   moving anything. Slop rather than padding because several of these sit in
+   tight rows whose spacing is the design.
+
+   Stacked rows get a real height instead (see the queue's cards): slop on a
+   stack overlaps, and the later sibling would answer for its neighbour's edge. */
+@media (pointer: coarse) {
+  .tap-target {
+    position: relative;
+  }
+
+  .tap-target::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+  }
+
+  /* Height only, for a control in a horizontal strip: widening a tab would put
+     its slop over its neighbour's. A row is only ever short in one direction. */
+  .tap-target-y {
+    position: relative;
+  }
+
+  .tap-target-y::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: max(100%, 44px);
+    transform: translateY(-50%);
+  }
+}
+
+/* The phone uses the system face, the way every other app on it does — SF, at
+   the weights and optical sizes iOS renders natively. Inter stays on the
+   desktop, and monospace stays monospace everywhere: `--code-font-family` is
+   untouched, so terminals and diffs are unaffected.
+
+   Both custom properties, not just the shorthand: `--font-sans` is what a
+   `font-sans` utility resolves to, and the `font-family` declaration is what
+   everything that merely inherits gets. Unlayered, so it beats Tailwind's
+   `@theme` output in `@layer theme`.
+
+   Gated on the coarse pointer as well as the width, so a narrowed desktop
+   window keeps the typeface it was designed in. */
+@media (max-width: 767px) and (pointer: coarse) {
+  :root {
+    --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, 'Segoe UI', Roboto, sans-serif;
+    --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, 'Segoe UI', Roboto, sans-serif;
+    font-family: var(--font-sans);
+  }
+}
+
 /* The raised, rounded card the content region is split into — one per pane
    (terminal, diff). Callers supply their own background. */
 @utility panel-card {

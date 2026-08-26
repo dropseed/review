@@ -7,32 +7,87 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
-    <meta name="theme-color" content="#0c0a09" media="(prefers-color-scheme: dark)" />
-    <meta name="theme-color" content="#fafaf9" media="(prefers-color-scheme: light)" />
-    <!-- Fallback for browsers that ignore the media-scoped tags above; it has to
-         come last, since the first matching tag wins. -->
+    <!-- One color, not a `prefers-color-scheme` pair. The app's own default
+         theme is dark whatever the phone is set to (see `index.css`'s
+         `color-scheme: dark` and the stone token defaults), so a light-mode
+         device used to be handed a near-white document background and a
+         near-white theme-color to hold for the whole cold start — which is the
+         white the standalone app opened onto. This must keep matching the
+         surface directly under the status bar: `--color-surface`. -->
     <meta name="theme-color" content="#0c0a09" />
     <!-- PWA (web mode). Inert under Tauri: the manifest is never fetched by the
          webview, and the service worker is not registered there (see ui/utils/register-sw.ts). -->
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <!-- `black-translucent` draws the app *under* the iOS status bar, which needs
-         env(safe-area-inset-*) padding in the app shell before it stops overlapping
-         (deferred to the responsive pass); viewport-fit=cover above already allows it. -->
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <!-- `black-translucent` draws the app *under* the iOS status bar, which the
+         shell pays for with `env(safe-area-inset-top)` padding on the surface
+         behind it (see `router.tsx`) — so the status bar reads as part of the
+         app rather than as a black band bolted above it. `viewport-fit=cover`
+         above is what allows it. Status bar glyphs are always light in this
+         mode, which is right for every dark theme and is the trade for a light
+         one. -->
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
     <meta name="apple-mobile-web-app-title" content="Review" />
     <link
       rel="apple-touch-icon"
       sizes="180x180"
       href="/icons/apple-touch-icon-180.png"
     />
+    <!-- The Home-Screen launch screen. iOS shows white until the first paint
+         unless one of these matches the device exactly, and a cold start over a
+         tailnet is seconds of it. Regenerate with `scripts/startup-images`,
+         which prints this block. -->
+    <link
+      rel="apple-touch-startup-image"
+      href="/icons/startup/1320x2868.png"
+      media="(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      href="/icons/startup/1290x2796.png"
+      media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      href="/icons/startup/1284x2778.png"
+      media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      href="/icons/startup/1260x2736.png"
+      media="(device-width: 420px) and (device-height: 912px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      href="/icons/startup/1206x2622.png"
+      media="(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      href="/icons/startup/1179x2556.png"
+      media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      href="/icons/startup/1170x2532.png"
+      media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"
+    />
+    <link
+      rel="apple-touch-startup-image"
+      href="/icons/startup/750x1334.png"
+      media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)"
+    />
     <title>Review</title>
     <style>
+      /* `color-scheme` here as well as in index.css: this one applies before a
+         stylesheet has loaded, and it is what makes the browser paint its own
+         canvas — the surface behind the document during a cold start — dark. */
+      html { color-scheme: dark; }
       html, body { background-color: #0c0a09; margin: 0; height: 100%; }
-      @media (prefers-color-scheme: light) {
-        html, body { background-color: #fafaf9; }
-      }
       /* Loading indicator - replaced when React mounts */
       #initial-loader {
         position: fixed;
@@ -48,12 +103,6 @@
         border-top-color: #84cc16;
         border-radius: 50%;
         animation: spin 0.8s linear infinite;
-      }
-      @media (prefers-color-scheme: light) {
-        #initial-loader .spinner {
-          border-color: #d6d3d1;
-          border-top-color: #65a30d;
-        }
       }
       @keyframes spin {
         to { transform: rotate(360deg); }

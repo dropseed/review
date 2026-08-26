@@ -264,10 +264,26 @@ function AppShell() {
       {/* dvh, not vh: on a phone `vh` is the tallest the viewport ever gets, so
           a bottom bar measured against it spends the first scroll hidden behind
           Safari's toolbar. `--keyboard-inset` is the other half of that — see
-          useKeyboardInset, which is what publishes it. */}
+          useKeyboardInset, which is what publishes it.
+
+          The safe-area padding is the shell's, not each edge component's. The
+          installed app draws under the status bar and the home indicator
+          (`black-translucent` + `viewport-fit=cover`, see index.html), and both
+          edges are occupied by different things depending on what is open —
+          the terminal panel's tab strip or the code half's header on top, the
+          stage switcher or the code half on the bottom. Paying for the insets
+          once, here, means every one of them is clear of the hardware without
+          knowing anything about it, and the padding is `bg-surface`, which is
+          what the stage paints anyway: the status bar sits on the app rather
+          than on a band above it. Insets are zero everywhere but a notched
+          phone, so this is inert in the desktop app and in a browser. */}
       <CompactNavProvider>
         {({ queueOpen, closeQueue }) => (
-          <div className="flex h-[calc(100dvh-var(--keyboard-inset,0px))] bg-surface">
+          <div
+            className="flex h-[calc(100dvh-var(--keyboard-inset,0px))] bg-surface
+                       pt-[var(--safe-top)] pr-[var(--safe-right)]
+                       pb-[var(--safe-bottom)] pl-[var(--safe-left)]"
+          >
             {/* The sidebar is chrome: it owns the window's left edge, and the
                 two work halves float on it as rounded panels. At phone width
                 there is no edge to spare, so the same component is a drawer

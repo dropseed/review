@@ -50,6 +50,12 @@ export function useKeyboardInset(): void {
       if (inset === published) return;
       published = inset;
       document.documentElement.style.setProperty(PROPERTY, `${inset}px`);
+      // The same fact as a boolean, for the CSS that can't do arithmetic with
+      // it: `--safe-bottom` collapses to zero while the keyboard is up, because
+      // the home indicator it clears is not on screen then and its inset would
+      // be a strip of dead surface floating above the keys. See index.css.
+      if (inset > 0) document.documentElement.dataset.keyboard = "open";
+      else delete document.documentElement.dataset.keyboard;
     };
 
     const schedule = () => {
@@ -64,6 +70,7 @@ export function useKeyboardInset(): void {
       viewport.removeEventListener("resize", schedule);
       viewport.removeEventListener("scroll", schedule);
       document.documentElement.style.removeProperty(PROPERTY);
+      delete document.documentElement.dataset.keyboard;
     };
   }, []);
 }

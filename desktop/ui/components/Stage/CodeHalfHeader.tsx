@@ -58,8 +58,8 @@ export function CodeHalfHeader({
         <button
           type="button"
           onClick={() => useReviewStore.setState({ selectedFile: null })}
-          className="flex min-h-9 shrink-0 items-center gap-1 rounded-md px-2 text-xs
-                     text-fg-muted active:bg-surface-raised"
+          className="tap tap-target-y flex min-h-9 shrink-0 items-center gap-1
+                     rounded-md px-2 text-xs text-fg-muted active:bg-surface-raised"
         >
           <svg
             className="size-4"
@@ -156,7 +156,7 @@ function RepoTabs({ workspace }: { workspace: Workspace }): ReactNode {
               onClick={() => activateAttachment(repo.attachment)}
               aria-current={isActive ? "true" : undefined}
               title={repo.attachment.path}
-              className="max-w-[14rem] truncate py-1 pl-2 pr-1.5"
+              className="tap tap-target-y max-w-[14rem] truncate py-1 pl-2 pr-1.5"
             >
               <span className={clsx(repo.gone && "line-through opacity-60")}>
                 {repo.chipLabel}
@@ -166,9 +166,13 @@ function RepoTabs({ workspace }: { workspace: Workspace }): ReactNode {
               type="button"
               onClick={() => void close(repo.attachment.path)}
               aria-label={`Close ${repo.chipLabel}`}
-              className="pr-1.5 text-fg-faint opacity-0 transition-opacity duration-100
-                         hover:text-fg-secondary focus-visible:opacity-100
-                         group-hover:opacity-100"
+              // Revealed on hover at a mouse, always shown on a touch screen:
+              // there is no hover on a finger, so `group-hover` alone left a
+              // phone with no way to close a repo tab at all.
+              className="tap tap-target-y pr-1.5 text-fg-faint opacity-0 transition-opacity
+                         duration-100 hover:text-fg-secondary
+                         focus-visible:opacity-100 group-hover:opacity-100
+                         pointer-coarse:px-2 pointer-coarse:opacity-100"
             >
               ×
             </button>
@@ -192,8 +196,9 @@ function AddRepoTab({ workspace }: { workspace: Workspace }): ReactNode {
           type="button"
           aria-label="Open a repo"
           title="Open a repo"
-          className="shrink-0 rounded-md px-2 py-1 text-sm leading-none text-fg-muted
-                     hover:bg-fg/[0.06] hover:text-fg-secondary"
+          className="tap tap-target-y shrink-0 rounded-md px-2 py-1 text-sm
+                     leading-none text-fg-muted hover:bg-fg/[0.06]
+                     hover:text-fg-secondary pointer-coarse:px-3"
         >
           +
         </button>

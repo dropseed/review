@@ -40,12 +40,13 @@ export function CompactBar(): ReactNode {
 
   return (
     <nav
-      // pb from the home indicator's own inset rather than a guessed constant:
-      // the bar sits on the bottom edge, and `viewport-fit=cover` means that
-      // edge is under the indicator on every notched phone.
+      // No inset padding of its own: the shell pays for the home indicator once
+      // (`router.tsx`), in the same `bg-surface` this bar is drawn in, so the
+      // bar's own background reads as continuing under the indicator — and the
+      // bottom edge stays clear even in the layouts where this bar isn't the
+      // thing on it.
       className="flex shrink-0 items-stretch gap-1 border-t border-t-edge/40
-                 bg-surface px-2 pt-1 pb-[max(0.25rem,env(safe-area-inset-bottom))]
-                 md:hidden"
+                 bg-surface px-2 py-1 md:hidden"
       aria-label="Stage"
     >
       <BarButton
@@ -88,8 +89,12 @@ function BarButton({
       onClick={onClick}
       aria-current={current ? "page" : undefined}
       className={clsx(
-        `flex min-h-12 flex-1 flex-col items-center justify-center gap-0.5
-         rounded-lg text-[11px] font-medium transition-colors`,
+        // `tap` is the press state — dim and shrink the instant a finger lands,
+        // ease back over 150ms. On a tab bar that is the whole of the feedback:
+        // there is no hover here, and a tab that only changes once the view has
+        // switched leaves the tap looking unheard. See index.css.
+        `tap flex min-h-12 flex-1 flex-col items-center justify-center gap-0.5
+         rounded-lg text-[11px] font-medium`,
         current
           ? "bg-surface-raised text-fg-secondary"
           : "text-fg-muted active:bg-surface-raised/60",

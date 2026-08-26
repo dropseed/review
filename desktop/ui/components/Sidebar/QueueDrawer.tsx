@@ -72,9 +72,13 @@ export function QueueDrawer({
       />
       <div
         className={clsx(
+          // Its own insets, not the shell's: this is `fixed`, so it escapes the
+          // padding `router.tsx` pays for and owns all three edges it touches.
+          // The top one matters most — under `black-translucent` the drawer's
+          // first row would otherwise sit beneath the clock.
           `absolute inset-y-0 left-0 flex w-[min(20rem,82vw)] flex-col
            bg-surface shadow-2xl transition-transform duration-200 ease-out
-           pl-[env(safe-area-inset-left)] pb-[env(safe-area-inset-bottom)]`,
+           pt-[var(--safe-top)] pb-[var(--safe-bottom)] pl-[var(--safe-left)]`,
           open ? "translate-x-0" : "-translate-x-full",
         )}
       >

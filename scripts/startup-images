@@ -1,0 +1,115 @@
+#!/bin/bash
+set -e
+cd "$(dirname "$0")/.."
+
+# iOS Home-Screen launch images (`<link rel="apple-touch-startup-image">`).
+#
+# Without one, a standalone PWA launches onto a white screen and stays there
+# until the first paint — seconds, on a cold start over a tailnet. iOS will
+# synthesize a launch screen from the manifest, but only when it fetched the
+# manifest at add-to-Home-Screen time, so it is not something to rely on.
+#
+# Each image is the app icon centred on the same `--color-surface` the shell
+# paints, at one device's exact pixel size: iOS matches these by media query
+# and falls back to white when nothing matches, which is why the list has to
+# name whole current lineups rather than a representative few.
+#
+# Portrait only. A Home-Screen app launches portrait; a landscape launch falls
+# back to the manifest's `background_color`, which is the same dark surface.
+
+BG="#0c0a09"
+OUT=desktop/public/icons/startup
+
+rm -rf "$OUT"
+mkdir -p "$OUT"
+
+node -e "
+const fs = require('fs');
+const path = require('path');
+
+const bg = process.argv[1];
+const out = process.argv[2];
+
+// The icon's own markup, unwrapped so it can be placed inside a larger canvas.
+const icon = fs
+  .readFileSync('desktop/app-icon.svg', 'utf8')
+  .replace(/^[\s\S]*?<svg[^>]*>/, '')
+  .replace(/<\/svg>\s*\$/, '');
+
+// device CSS width x height, then DPR. The pixel size iOS matches on is the
+// product; the media query it matches with is the CSS size plus the DPR.
+const devices = [
+  [440, 956, 3], // iPhone 17 Pro Max, 16 Pro Max
+  [430, 932, 3], // iPhone 16 Plus, 15 Pro Max, 15 Plus, 14 Pro Max
+  [428, 926, 3], // iPhone 14 Plus, 13 Pro Max, 12 Pro Max
+  [420, 912, 3], // iPhone Air
+  [402, 874, 3], // iPhone 17 Pro, 17, 16 Pro
+  [393, 852, 3], // iPhone 16, 16e, 15 Pro, 15, 14 Pro
+  [390, 844, 3], // iPhone 14, 13, 13 Pro, 12, 12 Pro
+  [375, 667, 2], // iPhone SE (3rd gen)
+];
+
+const links = [];
+for (const [cw, ch, dpr] of devices) {
+  const w = cw * dpr;
+  const h = ch * dpr;
+  // A quarter of the narrow edge — the proportion iOS's own generated launch
+  // screen uses, so the handoff to it (landscape, or an unmatched device) is
+  // not a jump in size.
+  const size = Math.round(Math.min(w, h) * 0.25);
+  const x = Math.round((w - size) / 2);
+  const y = Math.round((h - size) / 2);
+  const scale = size / 512;
+
+  const svg = \`<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"\${w}\" height=\"\${h}\" viewBox=\"0 0 \${w} \${h}\">
+  <rect width=\"\${w}\" height=\"\${h}\" fill=\"\${bg}\"/>
+  <g transform=\"translate(\${x}, \${y}) scale(\${scale})\">\${icon}</g>
+</svg>\`;
+
+  const stem = \`\${w}x\${h}\`;
+  fs.writeFileSync(path.join(out, stem + '.svg'), svg);
+  links.push(
+    '    <link rel=\"apple-touch-startup-image\" href=\"/icons/startup/' +
+      stem +
+      '.png\" media=\"(device-width: ' +
+      cw +
+      'px) and (device-height: ' +
+      ch +
+      'px) and (-webkit-device-pixel-ratio: ' +
+      dpr +
+      ') and (orientation: portrait)\" />',
+  );
+}
+fs.writeFileSync(path.join(out, 'links.html'), links.join('\n') + '\n');
+" "$BG" "$OUT"
+
+for svg in "$OUT"/*.svg; do
+  stem=$(basename "$svg" .svg)
+  w=${stem%x*}
+  h=${stem#*x}
+  # sips wants height then width, and rasterizes the SVG at that size.
+  sips -s format png -z "$h" "$w" "$svg" --out "$OUT/$stem.png" >/dev/null
+  rm "$svg"
+done
+
+# sips writes 8-bit RGBA, ~100 KB apiece for what is a flat colour and a small
+# icon. These ship inside the binary, so quantize to a palette: same pixels to
+# the eye, about a fifth of the bytes.
+uv run --quiet --with pillow python - "$OUT"/*.png <<'PY'
+import sys
+from PIL import Image
+
+for path in sys.argv[1:]:
+    image = Image.open(path).convert("RGBA")
+    image.quantize(colors=256, method=Image.Quantize.FASTOCTREE).save(
+        path, optimize=True
+    )
+PY
+
+echo "Wrote $(ls "$OUT"/*.png | wc -l | tr -d ' ') startup images to $OUT"
+echo ""
+echo "Paste into desktop/index.html <head> (already there unless the device"
+echo "list above changed):"
+echo ""
+cat "$OUT/links.html"
+rm "$OUT/links.html"

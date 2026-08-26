@@ -84,8 +84,11 @@ export function CompactMenuButton(): ReactNode {
       type="button"
       onClick={openQueue}
       aria-label="Workspaces"
-      className="-ml-0.5 flex size-9 shrink-0 items-center justify-center rounded-md
-                 text-fg-muted active:bg-surface-raised"
+      // Drawn at 36px because that is the height of the row it sits in, but hit
+      // at 44 — `tap-target` spills the extra as invisible slop rather than
+      // pushing the tabs beside it over. `tap` is the press state. See index.css.
+      className="tap tap-target -ml-0.5 flex size-9 shrink-0 items-center
+                 justify-center rounded-md text-fg-muted active:bg-surface-raised"
     >
       <svg
         className="size-5"

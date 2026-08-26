@@ -342,7 +342,12 @@ const QueueEntry = memo(function QueueEntry({
               // A real container, not a hover ghost: entries are individually
               // clickable and draggable, and with the status phrase gone the
               // queue needs the card edge to say where one workspace ends.
+              // `min-h-11` on a touch screen: a card whose whole content is one
+              // short title is under 30px tall, and it is the queue's primary
+              // target. Height rather than slop — cards are stacked, and slop
+              // on a stack overlaps into the neighbour.
               "group relative cursor-default rounded-lg border px-2 py-1.5 outline-none transition-colors duration-100",
+              "pointer-coarse:min-h-11 pointer-coarse:py-2.5",
               isOver
                 ? "border-focus-ring bg-fg/[0.06]"
                 : focused
