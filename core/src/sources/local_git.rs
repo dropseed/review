@@ -705,6 +705,39 @@ impl LocalGitSource {
         })
     }
 
+    /// Whether a comparison's diff has any changes at all — the yes/no
+    /// question freshness checking actually asks, answered without paying for
+    /// [`Self::get_diff_shortstat`]'s full diff text.
+    ///
+    /// Mirrors that method's two modes, but uses `git diff --quiet` in place
+    /// of `--shortstat`. On the working-tree path, untracked files still need
+    /// a separate check (`--quiet` never sees them), run only when the quiet
+    /// diff itself came back clean, so this never spawns more processes than
+    /// the shortstat path did.
+    pub fn is_diff_active(&self, comparison: &Comparison) -> bool {
+        let wt_dir = self.working_tree_dir(comparison);
+        let merge_base = self.diff_base_ref(comparison);
+
+        let (dir, range) = match &wt_dir {
+            Some(dir) => (dir.as_path(), merge_base),
+            None => {
+                let resolved_head = self.resolve_ref_or_empty_tree(&comparison.head);
+                (
+                    self.repo_path.as_path(),
+                    format!("{merge_base}..{resolved_head}"),
+                )
+            }
+        };
+
+        match diff_has_changes(dir, &range) {
+            Ok(true) => true,
+            Ok(false) => wt_dir
+                .as_deref()
+                .is_some_and(|dir| self.get_untracked_files(dir).is_ok_and(|f| !f.is_empty())),
+            Err(_) => false,
+        }
+    }
+
     /// List all local and remote branches, separated, plus stashes
     /// Branches are sorted by most recent commit date (newest first)
     pub fn list_branches(&self) -> Result<super::traits::BranchList, LocalGitError> {
@@ -3387,6 +3420,25 @@ fn run_git_cmd(dir: &std::path::Path, args: &[&str]) -> Result<String, LocalGitE
     }
 }
 
+/// Whether `git diff --quiet <range>` in `dir` found any changes.
+///
+/// Unlike [`run_git_cmd`], a non-zero exit isn't automatically a failure:
+/// `--quiet` (which implies `--exit-code`) exits 1 to mean "a diff exists" —
+/// the expected outcome half the time — and sets diffcore's quick flag, so
+/// git stops at the first difference instead of generating full diff text.
+/// Only an exit code outside `{0, 1}` (e.g. 128 for a bad ref) is a genuine
+/// git failure.
+fn diff_has_changes(dir: &std::path::Path, range: &str) -> Result<bool, LocalGitError> {
+    let output = git_command(dir).args(["diff", "--quiet", range]).output()?;
+    match output.status.code() {
+        Some(0) => Ok(false),
+        Some(1) => Ok(true),
+        _ => Err(LocalGitError::Git(
+            String::from_utf8_lossy(&output.stderr).to_string(),
+        )),
+    }
+}
+
 /// A path as the filesystem reports it, falling back to the path itself when it
 /// doesn't resolve. Comparing worktree paths needs this on macOS, where
 /// `/tmp` is a symlink and git reports the resolved side.
@@ -4694,6 +4746,91 @@ mod tests {
         assert!(
             shas.contains(&expected_sha.as_str()),
             "expected middle-line commit to be attributed despite the uncommitted line shift: {shas:?}"
+        );
+    }
+
+    /// `is_diff_active` uses `git diff --quiet` instead of `--shortstat`, so it
+    /// must keep agreeing with the old shortstat-derived answer in the cases
+    /// that matter: a real content change, a mode-only change, and a file
+    /// that was touched but ended up unchanged.
+    #[test]
+    fn is_diff_active_agrees_with_shortstat_on_committed_comparisons() {
+        use crate::review::central::tests::ENV_LOCK;
+
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _review_home, repo_dir) = setup_test();
+        let repo_path = repo_dir.path();
+        run_git_cmd(repo_path, &["init"]).unwrap();
+        run_git_cmd(repo_path, &["config", "user.email", "t@example.com"]).unwrap();
+        run_git_cmd(repo_path, &["config", "user.name", "T"]).unwrap();
+
+        std::fs::write(repo_path.join("a.txt"), "hello\n").unwrap();
+        run_git_cmd(repo_path, &["add", "a.txt"]).unwrap();
+        run_git_cmd(repo_path, &["commit", "-m", "base"]).unwrap();
+        let base_sha = run_git_cmd(repo_path, &["rev-parse", "HEAD"])
+            .unwrap()
+            .trim()
+            .to_owned();
+
+        // No-op: base compared to itself has nothing to see.
+        let source = LocalGitSource::new(repo_path.to_path_buf()).unwrap();
+        let unchanged = Comparison::new(&base_sha, &base_sha);
+        assert!(!source.is_diff_active(&unchanged));
+
+        // Real content change.
+        std::fs::write(repo_path.join("a.txt"), "hello again\n").unwrap();
+        run_git_cmd(repo_path, &["commit", "-am", "content change"]).unwrap();
+        let content_sha = run_git_cmd(repo_path, &["rev-parse", "HEAD"])
+            .unwrap()
+            .trim()
+            .to_owned();
+        let content_change = Comparison::new(&base_sha, &content_sha);
+        assert!(source.is_diff_active(&content_change));
+
+        // Mode-only change (chmod +x, no content change).
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let path = repo_path.join("a.txt");
+            let mut perms = std::fs::metadata(&path).unwrap().permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&path, perms).unwrap();
+            run_git_cmd(repo_path, &["commit", "-am", "mode change"]).unwrap();
+            let mode_sha = run_git_cmd(repo_path, &["rev-parse", "HEAD"])
+                .unwrap()
+                .trim()
+                .to_owned();
+            let mode_change = Comparison::new(&content_sha, &mode_sha);
+            assert!(
+                source.is_diff_active(&mode_change),
+                "a mode-only change is still a change"
+            );
+        }
+    }
+
+    /// On the working-tree path, an untracked file with no tracked changes
+    /// must still count as active — `git diff --quiet` never sees it, so the
+    /// untracked-files check has to run even when the quiet diff is clean.
+    #[test]
+    fn is_diff_active_working_tree_counts_untracked_only_changes() {
+        use crate::review::central::tests::ENV_LOCK;
+
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _review_home, repo_dir, source, _head_sha) = setup_worktree_test();
+        let repo_path = repo_dir.path();
+
+        let current_branch = source.get_current_branch().unwrap();
+        let comparison = Comparison::new(&current_branch, &current_branch);
+        assert!(source.include_working_tree(&comparison));
+        assert!(
+            !source.is_diff_active(&comparison),
+            "clean working tree should not be active"
+        );
+
+        std::fs::write(repo_path.join("untracked.txt"), "new\n").unwrap();
+        assert!(
+            source.is_diff_active(&comparison),
+            "an untracked file should count as an active change"
         );
     }
 
