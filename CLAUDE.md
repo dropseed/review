@@ -153,7 +153,7 @@ matches exactly, **or** when the daemon is at 3+ and lists every name in that
 client's `REQUIRED_FEATURES`. The daemon owns live PTYs, so bumping the integer
 for an addition makes every older daemon unattachable — which means killing
 sessions nobody asked to lose, over a capability most clients never use. A
-breaking change is expressed from here on by *requiring a new feature name*;
+breaking change is expressed from here on by _requiring a new feature name_;
 the integer is reserved for a genuinely reshaped frame. The `review` CLI plays
 the same rule from the other side: the two commands that need
 `peek-scrollback` say so in one line against an older daemon, and every other
