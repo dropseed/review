@@ -244,6 +244,26 @@ export interface TerminalSlice {
   // Reducers (exposed as actions that route into the pure helpers below)
   applyTerminalStatus: (status: TerminalStatus) => void;
   applyTerminalExit: (exit: TerminalExit) => void;
+
+  /**
+   * Re-attribute a session the daemon says has moved. The inbound half of
+   * `attachTerminalToWorkspace`, which is the outbound one — this writes the
+   * store only, because the move has already happened somewhere else.
+   */
+  applyTerminalWorkspace: (id: string, workspaceId: string | null) => void;
+
+  /**
+   * Mark a session the daemon has stopped listing as gone.
+   *
+   * Gone is not the same as closed, and this deliberately keeps the pane: an
+   * exited terminal stays on screen showing what it said and what it exited
+   * with until a person closes it, and a session killed from the phone should
+   * read the same way here. So it lands in `terminalExited` — the map every
+   * surface asks "is this dead" — and nowhere else. `teardownSession` remains
+   * the one thing that removes a session, and it is reached by closing the
+   * pane, never by news from the daemon.
+   */
+  applyTerminalRemoved: (id: string) => void;
   /**
    * Fold the daemon's session list into the session maps and the tab list:
    * wrap any session no tab holds into one of its own, and drop panes whose
@@ -422,10 +442,10 @@ type TabState = Pick<TerminalSlice, "terminalTabs" | "activeTabId">;
  * Whether two statuses say the same thing about a session.
  *
  * Every field is a primitive, so this is a plain field-wise compare rather
- * than anything structural. It exists because the same status is delivered on
- * three channels (per-session, per-pane, global roll-up) and the redundant
- * copies must not each allocate a new `terminalStatuses` map — see
- * `applyTerminalStatus` on the slice.
+ * than anything structural. It exists because the same status can be delivered
+ * twice — the announcement channel, and, in web mode, the socket of a pane
+ * mounted on that session — and the redundant copy must not allocate a new
+ * `terminalStatuses` map — see `applyTerminalStatus` on the slice.
  */
 export function sameTerminalStatus(
   a: TerminalStatus,
@@ -572,12 +592,14 @@ export function mergeSessionList(
  *
  * The local half of an assignment the daemon has already accepted: without it
  * the row would not move until the next `terminalList`, which is seconds away
- * and looks like a drag that did nothing.
+ * and looks like a drag that did nothing. `null` is a real answer — a session
+ * can be moved out of every workspace — and is what the daemon announces when
+ * it re-routes one.
  */
 export function withWorkspace(
   state: Pick<TerminalSlice, "terminalSessions">,
   ids: string[],
-  workspaceId: string,
+  workspaceId: string | null,
 ): Record<string, TerminalSessionInfo> {
   const terminalSessions = { ...state.terminalSessions };
   for (const id of ids) {
@@ -871,10 +893,19 @@ export function resizeSplitInTab(
  *
  * The new tab's id is the session's own, which is what makes a reload rebuild
  * the same tabs.
+ *
+ * `placing` names the sessions this window is in the middle of putting
+ * somewhere itself — see the slice's own set. The daemon announces a birth to
+ * every client, this window included, and that frame can arrive before
+ * `terminalStart`'s own response does; wrapping it here would give the shell a
+ * tab of its own a moment before the start path gives it the one it asked for,
+ * and two tabs for one session is not self-healing — every later ingest sees
+ * both holding a live session and keeps them.
  */
 export function ingestTabs(
   state: TabState,
   sessions: TerminalSessionInfo[],
+  placing: ReadonlySet<string> = new Set(),
 ): Partial<TabState> {
   const live = new Set(sessions.map((s) => s.id));
 
@@ -888,7 +919,7 @@ export function ingestTabs(
   }
 
   for (const session of sessions) {
-    if (placed.has(session.id)) continue;
+    if (placed.has(session.id) || placing.has(session.id)) continue;
     terminalTabs.push(makeTab(session.id, session.id));
     placed.add(session.id);
   }
@@ -1062,9 +1093,22 @@ export function mostRecentTabId(
 export const createTerminalSlice: SliceCreatorWithClientAndStorage<
   TerminalSlice
 > = (client, storage) => (write, get) => {
-  // Per-session unsubscribe fns (status + exit). Module-of-closure state, not
-  // store state — these are non-serializable and window-local.
+  // Per-session unsubscribe fns (exit). Module-of-closure state, not store
+  // state — these are non-serializable and window-local.
   const sessionUnsubs = new Map<string, () => void>();
+
+  /**
+   * Sessions this window has claimed and is about to place in a tab.
+   *
+   * A start mints the session id here and hands it to the daemon, which
+   * announces the birth to every client — this one included — and that frame
+   * routinely beats the start's own response back. The claim says "this one is
+   * mine to place", so `ingestTabs` leaves it alone instead of wrapping it in a
+   * tab the start path is a moment away from replacing. Claimed alongside the
+   * exit subscription and for the same reason: both have to be in place before
+   * the daemon is told anything.
+   */
+  const placing = new Set<string>();
 
   /** Monotonic stamp for tab recency — see `terminalTabUsedAt`. */
   let useCounter = 0;
@@ -1156,18 +1200,19 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
     set({ ...restored, terminalTabUsedAt: usedAt });
   }
 
+  /**
+   * Watch one session's exit.
+   *
+   * Exit only: status arrives on the announcement channel, for every session at
+   * once, which `useTerminalEvents` subscribes to once at the app shell. A
+   * per-session status listener would be the same frame a second time.
+   */
   function subscribeSession(id: string): void {
     if (sessionUnsubs.has(id)) return;
-    const unsubStatus = client.onTerminalStatus(id, (status) =>
-      get().applyTerminalStatus(status),
+    sessionUnsubs.set(
+      id,
+      client.onTerminalExit(id, (exit) => get().applyTerminalExit(exit)),
     );
-    const unsubExit = client.onTerminalExit(id, (exit) =>
-      get().applyTerminalExit(exit),
-    );
-    sessionUnsubs.set(id, () => {
-      unsubStatus();
-      unsubExit();
-    });
   }
 
   /**
@@ -1302,8 +1347,10 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
     startTerminal: async (repoPath, cwd, cols, rows, shell, workspaceId) => {
       const id = crypto.randomUUID();
       const tabId = crypto.randomUUID();
-      // Subscribe BEFORE starting so the first status/exit can't race us.
+      // Subscribe and claim BEFORE starting, so neither the first exit nor the
+      // birth announcement can race us.
       subscribeSession(id);
+      placing.add(id);
       try {
         // The backend routes: the session is born in the workspace its cwd
         // belongs to, and says which one that is.
@@ -1334,6 +1381,10 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
         console.error("[terminal] Failed to start terminal:", err);
         toast.error("Failed to start terminal");
         return null;
+      } finally {
+        // Placed, or never born — either way this window is no longer holding
+        // a tab open for it.
+        placing.delete(id);
       }
     },
 
@@ -1341,7 +1392,11 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
       const target = get().terminalSessions[targetTerminalId];
       if (!target) return null;
       const id = crypto.randomUUID();
+      // Same claim as `startTerminal`: the split says which tab the new pane
+      // belongs to, and the announcement must not put it in one of its own
+      // while this is in flight.
       subscribeSession(id);
+      placing.add(id);
       try {
         // A split joins the tab it was opened from, so it belongs to that
         // tab's workspace — which is not always where its cwd would have
@@ -1382,6 +1437,8 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
         console.error("[terminal] Failed to split terminal:", err);
         toast.error("Failed to start terminal");
         return null;
+      } finally {
+        placing.delete(id);
       }
     },
 
@@ -1505,17 +1562,19 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
     ensureTerminalSubscription: (id) => subscribeSession(id),
 
     applyTerminalStatus: (status) => {
-      // Edge detection lives at the write, not on any one event channel: the
-      // per-session and global status streams both land here, in transport
-      // order, and only the first to arrive still sees the phase being
-      // replaced. A second delivery of the same status finds prev === next
-      // and stays quiet.
+      // Edge detection lives at the write, not on any one event channel:
+      // every stream carrying a status lands here, in transport order, and
+      // only the first to arrive still sees the phase being replaced. A
+      // second delivery of the same status finds prev === next and stays
+      // quiet.
       const prev = get().terminalStatuses[status.id];
       notifyTerminalAttention(prev, status);
       escalateAttention(get(), prev, status);
       // ...and the redundant deliveries stop here rather than reaching the
-      // store. Three channels carry each status, and a write allocates a new
-      // `terminalStatuses` map, so every surface that summarizes sessions --
+      // store. A status can arrive twice — the announcement channel, and, in
+      // web mode, a mounted pane's own socket carrying the same frame — and a
+      // write allocates a new `terminalStatuses` map, so every surface that
+      // summarizes sessions --
       // both rails, the tab strip, the sidebar badge, the overview grid --
       // would re-render two extra times per change. Titles are the field that
       // moves most (an agent rewrites its own on every turn), so those extra
@@ -1524,6 +1583,27 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
       set(applyTerminalStatus(get(), status));
     },
     applyTerminalExit: (exit) => set(applyTerminalExit(get(), exit)),
+
+    applyTerminalWorkspace: (id, workspaceId) => {
+      const session = get().terminalSessions[id];
+      // Unknown, or already where it is being told to be. The list poll and the
+      // event both report a move, and a write here allocates a new session map
+      // — which re-renders every surface that groups terminals by workspace.
+      if (!session || session.workspaceId === workspaceId) return;
+      set({ terminalSessions: withWorkspace(get(), [id], workspaceId) });
+    },
+
+    applyTerminalRemoved: (id) => {
+      const g = get();
+      // A session this window never knew, or one it already tore down (killing
+      // a terminal here removes it, then the daemon announces the removal).
+      if (!g.terminalSessions[id]) return;
+      // Already dead, and with a real exit code: `exited` arrives before
+      // `removed` for a shell that finished on its own, and null would be a
+      // worse answer than the number already stored.
+      if (id in g.terminalExited) return;
+      set(applyTerminalExit(g, { id, exitCode: null }));
+    },
 
     ingestTerminalList: (sessions) => {
       const g = get();
@@ -1541,6 +1621,7 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
         ...ingestTabs(
           g,
           Object.values(merged.terminalSessions ?? g.terminalSessions),
+          placing,
         ),
       });
       // The daemon has now answered which sessions exist, which is the half of

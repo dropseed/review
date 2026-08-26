@@ -58,6 +58,8 @@ import type {
   TerminalExit,
   TerminalResized,
   TerminalReplay,
+  TerminalWorkspaceAssigned,
+  TerminalRemoved,
 } from "../types";
 
 /**
@@ -812,8 +814,17 @@ export interface ApiClient {
    */
   terminalReplay(terminalId: string): Promise<TerminalReplay>;
 
-  /** Fetch a fresh plain-text screen snapshot (for status popovers). */
-  terminalPeek(terminalId: string): Promise<string>;
+  /**
+   * Peek several sessions in one round trip, keyed by id.
+   *
+   * The overview draws a card per running terminal and each card wants the
+   * current screen, so asking one at a time made the poll's cost the *number of
+   * terminals* — N sockets, N VT renders, N store writes, every couple of
+   * seconds. Ids the daemon doesn't know are omitted from the answer rather
+   * than failing it: a session that died between the ask and the answer is a
+   * normal race, not an error.
+   */
+  terminalPeekMany(terminalIds: string[]): Promise<Record<string, string>>;
 
   /** Subscribe to raw PTY output for a session (returns unsubscribe fn). */
   onTerminalOutput(
@@ -821,15 +832,12 @@ export interface ApiClient {
     callback: (output: TerminalOutput) => void,
   ): () => void;
 
-  /** Subscribe to status updates for a single session (returns unsubscribe fn). */
-  onTerminalStatus(
-    terminalId: string,
-    callback: (status: TerminalStatus) => void,
-  ): () => void;
-
   /**
-   * Subscribe to the global status roll-up — status changes for ANY session,
-   * used to keep the store's status map fresh without per-session listeners.
+   * Subscribe to the status roll-up — status changes for ANY session, and the
+   * one route status takes. A mounted pane is not a special case of it: the
+   * announcement channel carries every session's status whether or not this
+   * window is drawing it, so there is nothing a per-session subscription would
+   * have added.
    */
   onTerminalStatusChanged(
     callback: (status: TerminalStatus) => void,
@@ -850,6 +858,41 @@ export interface ApiClient {
     terminalId: string,
     callback: (exit: TerminalExit) => void,
   ): () => void;
+
+  /**
+   * Subscribe to sessions being *born*, anywhere — the phone's PWA, `review
+   * terminal start`, another window. There is no id to subscribe to yet when a
+   * session is created elsewhere, which is why this is global and why the app
+   * used to discover them only by re-listing.
+   */
+  onTerminalStarted(
+    callback: (session: TerminalSessionInfo) => void,
+  ): () => void;
+
+  /**
+   * The global exit roll-up: `onTerminalExit` for sessions this window never
+   * subscribed to. A shell that finished while its card sat in the queue
+   * unopened is exactly the one a person wants marked done.
+   */
+  onTerminalExited(callback: (exit: TerminalExit) => void): () => void;
+
+  /** Subscribe to sessions changing workspace, whichever client moved them. */
+  onTerminalWorkspaceAssigned(
+    callback: (assignment: TerminalWorkspaceAssigned) => void,
+  ): () => void;
+
+  /** Subscribe to sessions the daemon has stopped listing. */
+  onTerminalRemoved(callback: (removal: TerminalRemoved) => void): () => void;
+
+  /**
+   * "Everything you were told may be incomplete — ask again."
+   *
+   * Fired when the event channel is (re)established, and when the daemon says
+   * it dropped events for a subscriber that fell behind. The stream is what
+   * keeps the session list live; this is the admission that a stream can miss
+   * things, and the one call that repairs it.
+   */
+  onTerminalSessionsInvalidated(callback: () => void): () => void;
 }
 
 /**

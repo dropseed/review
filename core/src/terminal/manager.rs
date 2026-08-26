@@ -6,12 +6,15 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use anyhow::{anyhow, Result};
 use tokio::sync::mpsc::{self, Receiver};
 
+use super::events::{EventBus, EventSubscription};
 use super::poll::Poller;
 use super::session::Session;
+use super::vt::{PendingPeek, PEEK_TIMEOUT};
 use super::{SessionSpec, SessionStatus, TerminalId, TerminalMessage, TerminalSummary};
 
 /// The session map, shared with the foreground [`Poller`] so it can iterate live
@@ -38,6 +41,9 @@ pub struct SessionManager {
     sessions: SessionMap,
     /// The shared foreground poller, started lazily on the first `start`.
     poller: Mutex<Option<Poller>>,
+    /// The manager-wide event bus every session publishes into. See
+    /// [`super::events`] for the invariant it maintains.
+    events: EventBus,
 }
 
 impl SessionManager {
@@ -45,24 +51,42 @@ impl SessionManager {
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             poller: Mutex::new(None),
+            events: EventBus::new(),
         }
+    }
+
+    /// Watch everything that happens to every session — the push counterpart of
+    /// polling [`Self::list`].
+    ///
+    /// Take a `list` *after* this call and apply each event to it in order, and
+    /// the result is always the list `list` would return. See [`super::events`].
+    pub fn subscribe_events(&self) -> EventSubscription {
+        self.events.subscribe()
     }
 
     /// Spawn a session and register it, starting the shared poller on the first
     /// call. Errors if a session with the same id already exists.
     pub fn start(&self, spec: SessionSpec) -> Result<TerminalSummary> {
         let id = spec.terminal_id.clone();
-        let session = Arc::new(Session::spawn(spec)?);
-        let summary = session.summary();
+        let session = Arc::new(Session::spawn(spec, self.events.clone())?);
 
         let mut sessions = self.sessions.lock().unwrap();
         if sessions.contains_key(&id) {
             drop(sessions);
+            // This one was never in the list, so nothing about it may ever
+            // reach the bus: it is born silent and dies that way, rather than
+            // emitting events under an id the *live* session owns.
             let _ = session.kill();
             return Err(anyhow!("terminal {id} already exists"));
         }
-        sessions.insert(id, session);
+        sessions.insert(id, Arc::clone(&session));
         drop(sessions);
+
+        // Announce only once the session is findable: a subscriber that reacts
+        // to `started` by re-listing must not be told about one `list` would
+        // then deny.
+        session.announce_started();
+        let summary = session.summary();
 
         self.ensure_poller();
         Ok(summary)
@@ -133,15 +157,48 @@ impl SessionManager {
         Ok((bytes, cursor, session.status()))
     }
 
-    /// A fresh plain-text screen snapshot for a session (popover content peek).
+    /// A fresh plain-text screen snapshot for a session (popover content peek),
+    /// preceded by `scrollback` rows of the history immediately above the
+    /// visible screen — `0` is the visible screen alone, `u32::MAX` everything
+    /// the engine still holds.
     ///
-    /// Renders the current screen through the session's VT actor with a hard
-    /// timeout. Errors if the session is unknown, or if the actor did not answer
-    /// in time (e.g. the session has exited).
-    pub fn peek(&self, id: &TerminalId) -> Result<String> {
+    /// Renders through the session's VT actor with a hard timeout. Errors if the
+    /// session is unknown, or if the actor did not answer in time (e.g. the
+    /// session has exited).
+    pub fn peek_with(&self, id: &TerminalId, scrollback: u32) -> Result<String> {
         self.get(id)?
-            .peek()
+            .peek(scrollback)
             .ok_or_else(|| anyhow!("terminal {id} peek unavailable"))
+    }
+
+    /// Visible screens for many sessions at once, keyed by id — what a grid of
+    /// terminal cards asks for instead of one [`Self::peek_with`] per card.
+    ///
+    /// An id this manager does not know, or whose actor did not answer in time,
+    /// is simply absent from the map: the caller is asking about a *set* of
+    /// sessions, and one of them having just exited is the ordinary case rather
+    /// than a reason to fail the rest.
+    ///
+    /// **Every request goes out before any reply is waited on**, and the whole
+    /// batch shares one deadline. Each session renders on its own actor thread,
+    /// so the renders were always concurrent; it was the *waiting* that was
+    /// serial, which made a screenful of cards cost the sum of their timeouts
+    /// instead of the longest one — seconds of a stalled poll for one wedged
+    /// session among many healthy ones.
+    pub fn peek_many(&self, ids: &[String]) -> HashMap<String, String> {
+        let pending: Vec<(&String, PendingPeek)> = ids
+            .iter()
+            .filter_map(|id| {
+                let session = self.get(&TerminalId::from(id.as_str())).ok()?;
+                Some((id, session.request_peek(0)?))
+            })
+            .collect();
+
+        let deadline = Instant::now() + PEEK_TIMEOUT;
+        pending
+            .into_iter()
+            .filter_map(|(id, pending)| Some((id.clone(), pending.wait(deadline)?)))
+            .collect()
     }
 
     /// Attach a new subscriber to a session's live stream. Subscribe *before*
@@ -210,9 +267,50 @@ impl Default for SessionManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::terminal::events::SessionEvent;
     use crate::terminal::Phase;
     use std::path::PathBuf;
     use std::time::{Duration, Instant};
+
+    /// Drain the bus until `found` matches an event, or `timeout` elapses.
+    /// Returns every event seen, so a caller can assert on the whole sequence.
+    fn drain_events_until<F: Fn(&SessionEvent) -> bool>(
+        sub: &mut EventSubscription,
+        found: F,
+        timeout: Duration,
+    ) -> Vec<SessionEvent> {
+        let deadline = Instant::now() + timeout;
+        let mut seen = Vec::new();
+        while Instant::now() < deadline {
+            match sub.rx.try_recv() {
+                Ok(event) => {
+                    let done = found(&event);
+                    seen.push(event);
+                    if done {
+                        return seen;
+                    }
+                }
+                Err(tokio::sync::broadcast::error::TryRecvError::Empty) => {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Err(_) => break,
+            }
+        }
+        seen
+    }
+
+    /// Everything currently queued on the bus, without waiting for more.
+    fn drain_events(sub: &mut EventSubscription) -> Vec<SessionEvent> {
+        let mut seen = Vec::new();
+        while let Ok(event) = sub.rx.try_recv() {
+            seen.push(event);
+        }
+        seen
+    }
+
+    fn is_removed(event: &SessionEvent, wanted: &str) -> bool {
+        matches!(event, SessionEvent::Removed { id } if id.0 == wanted)
+    }
 
     fn spec(id: &str) -> SessionSpec {
         let tmp = std::env::temp_dir();
@@ -410,6 +508,249 @@ mod tests {
         assert!(manager.assign_workspace(&id, None).is_err());
     }
 
+    /// The bus has to narrate a session's whole life, because a subscriber's
+    /// only other source of truth is the `list` it took when it subscribed.
+    #[test]
+    fn the_bus_narrates_start_resize_reassign_and_teardown() {
+        let manager = SessionManager::new();
+        let id = TerminalId::from("bus-life");
+        let mut sub = manager.subscribe_events();
+
+        let summary = manager.start(spec("bus-life")).unwrap();
+        let started = drain_events_until(
+            &mut sub,
+            |e| matches!(e, SessionEvent::Started(_)),
+            Duration::from_secs(5),
+        );
+        match started.last() {
+            Some(SessionEvent::Started(announced)) => {
+                assert_eq!(announced.id, summary.id);
+                assert_eq!(
+                    (announced.cols, announced.rows),
+                    (summary.cols, summary.rows)
+                );
+            }
+            other => panic!("start did not announce the session: {other:?}"),
+        }
+
+        // A real resize is announced; repeating the same size is not, exactly
+        // as it is not fanned out to the session's own subscribers.
+        manager.resize(&id, 100, 30).unwrap();
+        let resized = drain_events_until(
+            &mut sub,
+            |e| {
+                matches!(
+                    e,
+                    SessionEvent::Resized {
+                        cols: 100,
+                        rows: 30,
+                        ..
+                    }
+                )
+            },
+            Duration::from_secs(5),
+        );
+        assert!(
+            resized.iter().any(|e| matches!(
+                e,
+                SessionEvent::Resized {
+                    cols: 100,
+                    rows: 30,
+                    ..
+                }
+            )),
+            "a real resize was never announced: {resized:?}"
+        );
+        manager.resize(&id, 100, 30).unwrap();
+        std::thread::sleep(Duration::from_millis(50));
+        assert!(
+            !drain_events(&mut sub)
+                .iter()
+                .any(|e| matches!(e, SessionEvent::Resized { .. })),
+            "an unchanged resize must not reach the bus"
+        );
+
+        manager
+            .assign_workspace(&id, Some("beefcafe".to_owned()))
+            .unwrap();
+        let assigned = drain_events_until(
+            &mut sub,
+            |e| matches!(e, SessionEvent::WorkspaceAssigned { .. }),
+            Duration::from_secs(5),
+        );
+        assert!(
+            assigned.iter().any(|e| matches!(
+                e,
+                SessionEvent::WorkspaceAssigned { id: got, workspace_id: Some(w) }
+                    if got == &id && w == "beefcafe"
+            )),
+            "reassignment never reached the bus: {assigned:?}"
+        );
+
+        // Teardown says both things, in order: the child is gone, and the
+        // session is out of the list.
+        manager.kill(&id).unwrap();
+        let torn_down = drain_events_until(
+            &mut sub,
+            |e| is_removed(e, "bus-life"),
+            Duration::from_secs(5),
+        );
+        let exited = torn_down
+            .iter()
+            .position(|e| matches!(e, SessionEvent::Exited { .. }));
+        let removed = torn_down.iter().position(|e| is_removed(e, "bus-life"));
+        assert!(exited.is_some(), "no Exited on teardown: {torn_down:?}");
+        assert!(removed.is_some(), "no Removed on teardown: {torn_down:?}");
+        assert!(
+            exited < removed,
+            "Removed must follow Exited: {torn_down:?}"
+        );
+    }
+
+    /// `list` hides an exited session immediately — long before the poller
+    /// reaps it — so a shell exiting on its own has to reach the bus as a
+    /// removal too, or a subscriber's list keeps a session `list` denies.
+    #[test]
+    fn a_shell_that_exits_on_its_own_leaves_the_list_on_the_bus() {
+        let manager = SessionManager::new();
+        let id = TerminalId::from("bus-exit");
+        let mut sub = manager.subscribe_events();
+        manager.start(spec("bus-exit")).unwrap();
+
+        manager.write(&id, b"exit\n").unwrap();
+
+        let seen = drain_events_until(
+            &mut sub,
+            |e| is_removed(e, "bus-exit"),
+            Duration::from_secs(5),
+        );
+        assert!(
+            seen.iter()
+                .any(|e| matches!(e, SessionEvent::Exited { .. })),
+            "a natural exit was never announced: {seen:?}"
+        );
+        assert!(
+            seen.iter().any(|e| is_removed(e, "bus-exit")),
+            "an exited session never left the list on the bus: {seen:?}"
+        );
+        assert!(manager.list(None).is_empty(), "list still shows it");
+
+        // The poller reaping it later must not say `Removed` a second time —
+        // the list can only lose a session once.
+        std::thread::sleep(Duration::from_millis(700));
+        assert!(
+            !drain_events(&mut sub)
+                .iter()
+                .any(|e| is_removed(e, "bus-exit")),
+            "the reap announced a second removal"
+        );
+
+        manager.shutdown_all();
+    }
+
+    /// A session spawned and then rejected for a duplicate id was never in the
+    /// list. Nothing about it may reach the bus — least of all an event naming
+    /// the id the *live* session owns.
+    #[test]
+    fn a_rejected_duplicate_never_reaches_the_bus() {
+        let manager = SessionManager::new();
+        let id = TerminalId::from("bus-dupe");
+        manager.start(spec("bus-dupe")).unwrap();
+
+        // Subscribe after the real session exists, so anything seen from here
+        // on can only be the orphan's.
+        let mut sub = manager.subscribe_events();
+        assert!(manager.start(spec("bus-dupe")).is_err());
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(
+            drain_events(&mut sub).is_empty(),
+            "the rejected session published events under a live session's id"
+        );
+        assert_eq!(manager.list(None).len(), 1, "the live session survived");
+
+        manager.kill(&id).unwrap();
+    }
+
+    /// `shutdown_all` empties the list, so every session in it has to leave the
+    /// list on the bus too.
+    #[test]
+    fn shutdown_all_removes_every_session_on_the_bus() {
+        let manager = SessionManager::new();
+        let mut sub = manager.subscribe_events();
+        manager.start(spec("bus-all-1")).unwrap();
+        manager.start(spec("bus-all-2")).unwrap();
+
+        manager.shutdown_all();
+
+        // Teardown order is the map's, so wait for the last removal rather than
+        // a particular one.
+        let outstanding = std::cell::Cell::new(2);
+        let seen = drain_events_until(
+            &mut sub,
+            |e| {
+                if matches!(e, SessionEvent::Removed { .. }) {
+                    outstanding.set(outstanding.get() - 1);
+                }
+                outstanding.get() == 0
+            },
+            Duration::from_secs(5),
+        );
+        for id in ["bus-all-1", "bus-all-2"] {
+            assert!(
+                seen.iter().any(|e| is_removed(e, id)),
+                "{id} never left the list on the bus: {seen:?}"
+            );
+        }
+    }
+
+    /// The peek's history is opt-in: the depth a caller asks for reaches the
+    /// engine, and asking for none is the screen alone.
+    #[test]
+    fn peek_takes_a_scrollback_depth_and_many_ids_at_once() {
+        let manager = SessionManager::new();
+        let id = TerminalId::from("peek-batch");
+        manager.start(spec("peek-batch")).unwrap();
+
+        let mut sub = manager.subscribe(&id).unwrap();
+        manager.write(&id, b"echo batch-marker\n").unwrap();
+        assert!(wait_for_output(
+            &mut sub.rx,
+            "batch-marker",
+            Duration::from_secs(5)
+        ));
+
+        // One round trip covers the sessions that exist and quietly omits the
+        // ones that do not.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut screens = HashMap::new();
+        while Instant::now() < deadline {
+            screens = manager.peek_many(&["peek-batch".to_owned(), "nobody".to_owned()]);
+            if screens
+                .get("peek-batch")
+                .is_some_and(|s| s.contains("batch-marker"))
+            {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(
+            screens
+                .get("peek-batch")
+                .is_some_and(|s| s.contains("batch-marker")),
+            "peek_many never reflected the marker: {screens:?}"
+        );
+        assert!(
+            !screens.contains_key("nobody"),
+            "an unknown id must be omitted, not raised: {screens:?}"
+        );
+
+        assert!(manager.peek_with(&id, u32::MAX).is_ok());
+
+        manager.kill(&id).unwrap();
+        assert!(manager.peek_with(&id, 0).is_err());
+        assert!(manager.peek_many(&["peek-batch".to_owned()]).is_empty());
+    }
+
     #[test]
     fn double_kill_errors_cleanly() {
         let manager = SessionManager::new();
@@ -541,7 +882,7 @@ mod tests {
         let deadline = Instant::now() + Duration::from_secs(5);
         let mut peeked = None;
         while Instant::now() < deadline {
-            if let Ok(text) = manager.peek(&id) {
+            if let Ok(text) = manager.peek_with(&id, 0) {
                 if text.contains("peek-marker-xyz") {
                     peeked = Some(text);
                     break;
@@ -559,7 +900,7 @@ mod tests {
         manager.kill(&id).unwrap();
 
         // After teardown, peek fails rather than hanging.
-        assert!(manager.peek(&id).is_err());
+        assert!(manager.peek_with(&id, 0).is_err());
     }
 
     /// Locate a zsh binary, or `None` if the platform doesn't have one.

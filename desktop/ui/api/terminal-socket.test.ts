@@ -1,86 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   TerminalSocket,
-  backoffDelay,
   SESSION_GONE_CODE,
   type TerminalSocketHandlers,
 } from "./terminal-socket";
 import type { TerminalStatus } from "../types";
-import { terminalStatus } from "../test/fixtures";
-
-/**
- * Minimal WebSocket double. Records sent frames and exposes helpers to drive
- * the socket from the "server" side (open, binary/text frames, close).
- */
-class FakeWebSocket {
-  static instances: FakeWebSocket[] = [];
-  static reset(): void {
-    FakeWebSocket.instances = [];
-  }
-  static last(): FakeWebSocket {
-    const ws = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
-    if (!ws) throw new Error("no FakeWebSocket instance");
-    return ws;
-  }
-
-  static readonly CONNECTING = 0;
-  static readonly OPEN = 1;
-  static readonly CLOSING = 2;
-  static readonly CLOSED = 3;
-
-  url: string;
-  binaryType = "blob";
-  readyState = FakeWebSocket.CONNECTING;
-  onopen: ((ev?: unknown) => void) | null = null;
-  onmessage: ((ev: { data: unknown }) => void) | null = null;
-  onclose: ((ev: { code: number }) => void) | null = null;
-  onerror: ((ev?: unknown) => void) | null = null;
-  sent: Array<string | Uint8Array | ArrayBuffer> = [];
-
-  constructor(url: string) {
-    this.url = url;
-    FakeWebSocket.instances.push(this);
-  }
-
-  send(data: string | Uint8Array | ArrayBuffer): void {
-    this.sent.push(data);
-  }
-
-  close(): void {
-    this.readyState = FakeWebSocket.CLOSED;
-  }
-
-  // ----- server-side drivers -----
-
-  simulateOpen(): void {
-    this.readyState = FakeWebSocket.OPEN;
-    this.onopen?.();
-  }
-
-  /** Emit a Binary frame: an 8-byte big-endian `seq` header + `bytes`. */
-  emitBinary(bytes: Uint8Array, seq = 0): void {
-    const buf = new ArrayBuffer(8 + bytes.byteLength);
-    new DataView(buf).setBigUint64(0, BigInt(seq), false);
-    new Uint8Array(buf, 8).set(bytes);
-    this.onmessage?.({ data: buf });
-  }
-
-  /** Emit a raw Binary frame verbatim (for malformed-frame tests). */
-  emitRawBinary(buf: ArrayBuffer): void {
-    this.onmessage?.({ data: buf });
-  }
-
-  emitText(text: string): void {
-    this.onmessage?.({ data: text });
-  }
-
-  serverClose(code = 1006): void {
-    this.readyState = FakeWebSocket.CLOSED;
-    this.onclose?.({ code });
-  }
-}
-
-const WebSocketImpl = FakeWebSocket as unknown as typeof WebSocket;
+import {
+  FakeWebSocket,
+  fakeWebSocketImpl,
+  terminalStatus,
+} from "../test/fixtures";
 
 function makeStatus(overrides: Partial<TerminalStatus> = {}): TerminalStatus {
   return terminalStatus("working", {
@@ -131,37 +60,14 @@ function makeSocket(
   opts: { rand?: () => number } = {},
 ): TerminalSocket {
   return new TerminalSocket("t1", cap.handlers, {
-    webSocketImpl: WebSocketImpl,
+    webSocketImpl: fakeWebSocketImpl,
     rand: opts.rand ?? (() => 0.5),
-    urlFor: (id) => `ws://test.local/api/terminal/${id}/ws`,
+    url: () => "ws://test.local/api/terminal/t1/ws",
   });
 }
 
 beforeEach(() => {
   FakeWebSocket.reset();
-});
-
-describe("backoffDelay", () => {
-  it("caps the ceiling at 8s regardless of attempt", () => {
-    // rand=1 → delay == ceiling. Attempt 20 would be astronomically large
-    // without the cap.
-    expect(backoffDelay(20, () => 1)).toBe(8000);
-    expect(backoffDelay(100, () => 1)).toBe(8000);
-  });
-
-  it("grows exponentially from 500ms until the cap", () => {
-    const one = () => 1;
-    expect(backoffDelay(0, one)).toBe(500);
-    expect(backoffDelay(1, one)).toBe(1000);
-    expect(backoffDelay(2, one)).toBe(2000);
-    expect(backoffDelay(3, one)).toBe(4000);
-    expect(backoffDelay(4, one)).toBe(8000); // 8000 is the cap
-  });
-
-  it("jitters within [ceiling/2, ceiling]", () => {
-    expect(backoffDelay(0, () => 0)).toBe(250); // floor
-    expect(backoffDelay(0, () => 1)).toBe(500); // ceiling
-  });
 });
 
 describe("TerminalSocket frame routing", () => {
@@ -204,7 +110,7 @@ describe("TerminalSocket frame routing", () => {
     socket.connect();
     const ws = FakeWebSocket.last();
     const status = makeStatus();
-    ws.emitText(JSON.stringify({ t: "status", ...status }));
+    ws.emitText({ t: "status", ...status });
     expect(cap.status).toHaveLength(1);
     expect(cap.status[0].phase).toBe("working");
     expect(cap.status[0].id).toBe("t1");
@@ -215,8 +121,8 @@ describe("TerminalSocket frame routing", () => {
     const socket = makeSocket(cap);
     socket.connect();
     const ws = FakeWebSocket.last();
-    ws.emitText(JSON.stringify({ t: "exit", exitCode: 137 }));
-    ws.emitText(JSON.stringify({ t: "exit", exitCode: null }));
+    ws.emitText({ t: "exit", exitCode: 137 });
+    ws.emitText({ t: "exit", exitCode: null });
     expect(cap.exit).toEqual([137, null]);
   });
 
@@ -225,8 +131,8 @@ describe("TerminalSocket frame routing", () => {
     const socket = makeSocket(cap);
     socket.connect();
     const ws = FakeWebSocket.last();
-    ws.emitText(JSON.stringify({ t: "resize", cols: 141, rows: 52 }));
-    ws.emitText(JSON.stringify({ t: "resize", cols: "141" })); // malformed
+    ws.emitText({ t: "resize", cols: 141, rows: 52 });
+    ws.emitText({ t: "resize", cols: "141" }); // malformed
     expect(cap.resized).toEqual([{ cols: 141, rows: 52 }]);
   });
 
@@ -237,7 +143,7 @@ describe("TerminalSocket frame routing", () => {
     const ws = FakeWebSocket.last();
     expect(() => ws.emitText("{not json")).not.toThrow();
     expect(() => ws.emitText("42")).not.toThrow(); // valid JSON, not an object
-    expect(() => ws.emitText(JSON.stringify({ t: "unknown" }))).not.toThrow();
+    expect(() => ws.emitText({ t: "unknown" })).not.toThrow();
     expect(cap.status).toHaveLength(0);
     expect(cap.exit).toHaveLength(0);
   });
@@ -269,7 +175,7 @@ describe("TerminalSocket reconnect lifecycle", () => {
       const ws = FakeWebSocket.last();
       ws.simulateOpen();
       // Server sends the exit frame, then a normal close (1000).
-      ws.emitText(JSON.stringify({ t: "exit", exitCode: 0 }));
+      ws.emitText({ t: "exit", exitCode: 0 });
       const openCount = FakeWebSocket.instances.length;
       ws.serverClose(1000);
       vi.runAllTimers();

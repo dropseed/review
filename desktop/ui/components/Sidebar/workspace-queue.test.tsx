@@ -12,7 +12,6 @@ import { IS_MAC } from "../../commands/shortcuts";
 vi.mock("../../api", () => ({
   getApiClient: () => ({
     listWorkspaces: vi.fn().mockResolvedValue([]),
-    terminalPeek: vi.fn().mockResolvedValue(""),
   }),
 }));
 

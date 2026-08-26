@@ -15,8 +15,12 @@
 //! - [`VtOutputSink`] (an [`OutputSink`] on the PTY reader thread) forwards each
 //!   raw chunk as [`VtMsg::Bytes`], and forwards EOF as [`VtMsg::Shutdown`].
 //! - [`Session::resize`](super::Session::resize) forwards [`VtMsg::Resize`].
-//! - [`VtThread::peek`] sends [`VtMsg::Peek`] with a reply channel and waits,
-//!   bounded by [`PEEK_TIMEOUT`], for the rendered screen.
+//! - [`VtThread::request_peek`] sends [`VtMsg::Peek`] with a reply channel, and
+//!   the [`PendingPeek`] it hands back waits — bounded by [`PEEK_TIMEOUT`] —
+//!   for the rendered screen. [`VtThread::peek`] is both in one call; keeping
+//!   them separable is what lets a caller with many sessions to render put
+//!   every request in flight before waiting on any of them, so N screens cost
+//!   one timeout rather than N.
 //!
 //! Because the engine is constructed *on* the actor thread (via an
 //! [`EngineFactory`] closure), a `!Send` engine never has to cross a thread
@@ -46,7 +50,7 @@
 
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 
@@ -61,7 +65,7 @@ const VT_INBOX_CAPACITY: usize = 1024;
 /// run from the reader thread (on a phase transition) and from API callers; both
 /// must stay responsive, so a wedged or slow actor yields `None` rather than a
 /// stall.
-const PEEK_TIMEOUT: Duration = Duration::from_millis(200);
+pub(super) const PEEK_TIMEOUT: Duration = Duration::from_millis(200);
 
 /// A terminal screen model that can be fed raw PTY bytes and rendered to text.
 ///
@@ -74,8 +78,13 @@ pub trait ScreenEngine {
     fn feed(&mut self, bytes: &[u8]);
     /// Resize the screen model's grid.
     fn resize(&mut self, cols: u16, rows: u16);
-    /// Render the current visible screen to plain text, one line per row.
-    fn screen_text(&mut self) -> String;
+    /// Render the current visible screen to plain text, one line per row,
+    /// preceded by up to `scrollback` rows of the history immediately above it.
+    ///
+    /// `0` is the visible screen alone — the only thing the peek ever showed,
+    /// and still what almost every caller wants. `u32::MAX` is everything the
+    /// engine has retained.
+    fn screen_text(&mut self, scrollback: u32) -> String;
 }
 
 /// Builds a [`ScreenEngine`] on the actor thread. The closure is `Send` (so it
@@ -88,8 +97,9 @@ enum VtMsg {
     Bytes(Bytes),
     /// Resize the grid to `cols` x `rows`.
     Resize(u16, u16),
-    /// Render the screen and send it back on the reply channel.
-    Peek(SyncSender<String>),
+    /// Render the screen — plus that many rows of history above it — and send
+    /// it back on the reply channel.
+    Peek(u32, SyncSender<String>),
     /// Stop the actor loop.
     Shutdown,
 }
@@ -126,14 +136,27 @@ impl VtThread {
         }
     }
 
-    /// Render the actor's current screen to plain text, or `None` if
-    /// unavailable (inbox full/actor gone, or the render didn't answer within
-    /// [`PEEK_TIMEOUT`]). Safe to call from the reader thread or an API caller:
-    /// it never blocks longer than the timeout.
-    pub fn peek(&self) -> Option<String> {
+    /// Render the actor's current screen to plain text — with `scrollback`
+    /// rows of history above it, or `0` for the visible screen alone — or
+    /// `None` if unavailable (inbox full/actor gone, or the render didn't
+    /// answer within [`PEEK_TIMEOUT`]). Safe to call from the reader thread or
+    /// an API caller: it never blocks longer than the timeout.
+    pub fn peek(&self, scrollback: u32) -> Option<String> {
+        self.request_peek(scrollback)?
+            .wait(Instant::now() + PEEK_TIMEOUT)
+    }
+
+    /// Ask the actor to render, without waiting for it. `None` if the request
+    /// could not even be posted (inbox full, or the actor is gone).
+    ///
+    /// The half of [`Self::peek`] a caller rendering *many* sessions wants:
+    /// each actor is its own thread, so their renders overlap, and waiting on
+    /// each in turn would add up N independent timeouts for work that took the
+    /// longest one.
+    pub fn request_peek(&self, scrollback: u32) -> Option<PendingPeek> {
         let (reply_tx, reply_rx) = sync_channel(1);
-        self.tx.try_send(VtMsg::Peek(reply_tx)).ok()?;
-        reply_rx.recv_timeout(PEEK_TIMEOUT).ok()
+        self.tx.try_send(VtMsg::Peek(scrollback, reply_tx)).ok()?;
+        Some(PendingPeek { reply: reply_rx })
     }
 
     /// Forward a resize to the actor. Non-blocking; a dropped resize (full inbox)
@@ -154,6 +177,27 @@ impl VtThread {
     }
 }
 
+/// A render asked for and not yet collected.
+///
+/// Holding one costs nothing — the actor renders whether or not anybody is
+/// waiting, and drops the answer if the receiver has gone.
+pub struct PendingPeek {
+    reply: Receiver<String>,
+}
+
+impl PendingPeek {
+    /// The rendered screen, or `None` if it did not arrive by `deadline`.
+    ///
+    /// A *deadline* rather than a duration, so a batch of pending peeks can
+    /// share one: the renders are already running in parallel, and each wait
+    /// should only be for however much of the batch's budget is left.
+    pub fn wait(self, deadline: Instant) -> Option<String> {
+        self.reply
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            .ok()
+    }
+}
+
 /// The actor loop: build the engine, then service messages until shutdown.
 fn run(factory: EngineFactory, rx: &Receiver<VtMsg>) {
     let mut engine = factory();
@@ -161,8 +205,8 @@ fn run(factory: EngineFactory, rx: &Receiver<VtMsg>) {
         match msg {
             VtMsg::Bytes(bytes) => engine.feed(&bytes),
             VtMsg::Resize(cols, rows) => engine.resize(cols, rows),
-            VtMsg::Peek(reply) => {
-                let screen = trim_screen(engine.screen_text());
+            VtMsg::Peek(scrollback, reply) => {
+                let screen = trim_screen(engine.screen_text(scrollback));
                 // Reply buffer holds one; if the waiter has already timed out and
                 // dropped its receiver, discard the render.
                 let _ = reply.try_send(screen);
@@ -223,6 +267,8 @@ mod tests {
         fed: Vec<u8>,
         last_resize: Option<(u16, u16)>,
         screen: String,
+        /// The scrollback depth the last render was asked for.
+        last_scrollback: Option<u32>,
         /// How long `screen_text` blocks — used to exercise the peek timeout.
         render_delay: Duration,
     }
@@ -238,9 +284,10 @@ mod tests {
         fn resize(&mut self, cols: u16, rows: u16) {
             self.state.lock().unwrap().last_resize = Some((cols, rows));
         }
-        fn screen_text(&mut self) -> String {
+        fn screen_text(&mut self, scrollback: u32) -> String {
             let (delay, screen) = {
-                let s = self.state.lock().unwrap();
+                let mut s = self.state.lock().unwrap();
+                s.last_scrollback = Some(scrollback);
                 (s.render_delay, s.screen.clone())
             };
             if !delay.is_zero() {
@@ -270,7 +317,7 @@ mod tests {
         sink.on_output(b"world");
         vt.send_resize(100, 40);
 
-        let peeked = vt.peek().expect("peek should return the screen");
+        let peeked = vt.peek(0).expect("peek should return the screen");
         assert_eq!(peeked, "line one\nprompt>");
 
         // The Peek reply proves all prior messages were drained in order.
@@ -278,7 +325,12 @@ mod tests {
             let s = state.lock().unwrap();
             assert_eq!(s.fed, b"hello world");
             assert_eq!(s.last_resize, Some((100, 40)));
+            assert_eq!(s.last_scrollback, Some(0));
         }
+
+        // And the depth a caller asks for reaches the engine unchanged.
+        vt.peek(u32::MAX).expect("peek should return the screen");
+        assert_eq!(state.lock().unwrap().last_scrollback, Some(u32::MAX));
 
         vt.shutdown_and_join();
     }
@@ -293,7 +345,7 @@ mod tests {
         let vt = spawn_fake(&state);
 
         assert!(
-            vt.peek().is_none(),
+            vt.peek(0).is_none(),
             "peek must time out when the actor renders too slowly"
         );
 
@@ -320,7 +372,7 @@ mod tests {
         // Park the prompt on the last row, as a full-screen TUI does.
         sink.on_output(b"\x1b[50;1H> prompt");
 
-        let peeked = vt.peek().expect("peek should return the screen");
+        let peeked = vt.peek(0).expect("peek should return the screen");
         assert!(
             peeked.contains("top-marker"),
             "content above the old 40-line horizon was cut: {peeked:?}"

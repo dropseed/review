@@ -225,7 +225,7 @@ review terminal start [--id NAME] [--cwd DIR] [--workspace ID] [--json]
 review terminal whoami [ID] [--json]                  # which session am I in?
 review terminal move <id>... --workspace <ID>         # reattribute sessions
 review terminal send <id> [TEXT] [--key KEY]... [--enter|--submit]
-review terminal peek <id>                             # what's on screen right now
+review terminal peek <id> [--scrollback N]            # what's on screen right now
 review terminal log <id> [-n N]                       # everything it has printed
 review terminal wait <id> [--until <phase|exit>] [--match REGEX] [--new-only] [--timeout SECS]
 review terminal resize <id> --cols N --rows M
@@ -320,16 +320,21 @@ again after you triggered a restart.
 
 ```
 review terminal peek my-task            # the whole visible screen
+review terminal peek my-task --scrollback 50   # plus 50 rows above it
 review terminal log my-task             # the session's full output history
 review terminal log my-task -n 100      # just the last 100 lines
 ```
 
 `peek` is the terminal's grid rendered as text, exactly as the human sees it —
-the answer to "what is it showing right now?". `log` is a different thing: the
-session's byte stream cooked into lines, `docker logs` for a terminal, so it
-reaches back past the screen — but a full-screen TUI, which draws itself with
-cursor moves, only comes out approximately. Reach for it when a command printed
-more than the window holds.
+the answer to "what is it showing right now?". `log` is the same render asked
+for at full depth: every row still held, history and screen alike, `docker
+logs` for a terminal. So it agrees with the terminal cell for cell too — a
+full-screen TUI comes out as what it drew, not as the bytes that drew it. Reach
+for it when a command printed more than the window holds.
+
+Both need the daemon the current app ships; if `log` or `--scrollback` reports
+that the daemon speaks an older protocol, ask the human to relaunch the Review
+app and use plain `peek` meanwhile.
 
 **Check on an agent or long task the human asked about** — read-only, any
 session:

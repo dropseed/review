@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Result};
 use log::{error, info, warn};
-use review::daemon::{socket_path, DaemonClient, Op, PROTOCOL_VERSION};
+use review::daemon::{features, socket_path, DaemonClient, Op, VersionInfo, PROTOCOL_VERSION};
 use tauri::{AppHandle, Manager};
 
 /// Where a spawned daemon's stdout/stderr are appended.
@@ -46,6 +46,34 @@ const POLL_INTERVAL_MAX: Duration = Duration::from_millis(25);
 /// sessions survive app updates.
 const DEV_BUILD: bool = cfg!(debug_assertions);
 
+/// The daemon capabilities this app cannot run without.
+///
+/// **This list, not [`PROTOCOL_VERSION`], is how a breaking change is expressed
+/// from v3 on.** Needing something new means adding its feature name here; it
+/// must never mean bumping the integer. The integer is a blunt instrument — an
+/// app that insists on an exact match makes every older daemon unattachable,
+/// and unattachable means *restarted*, which kills every shell the user had
+/// running. A name lets an old-but-sufficient daemon keep serving, and only a
+/// daemon that genuinely cannot do what this app needs gets replaced.
+///
+/// Spelled out rather than aliased to [`features::ALL`], because what a daemon
+/// *serves* and what this app *requires* are two independent decisions. They
+/// happen to coincide today — everything v3 added is load-bearing here: the
+/// events channel is the only way sessions started elsewhere appear, and the
+/// terminal overview peeks every card in one call — but tying them together
+/// would make every future capability, however optional, retroactively
+/// mandatory, and so make every daemon predating it unattachable.
+const REQUIRED_FEATURES: &[&str] = &[
+    features::EVENTS,
+    features::PEEK_SCROLLBACK,
+    features::PEEK_MANY,
+];
+
+/// The first protocol version that reports features at all. Below it a daemon
+/// lists nothing, so no requirement can be satisfied and the integer is the
+/// whole contract.
+const FEATURE_NEGOTIATION_PROTOCOL: u32 = 3;
+
 /// What [`ensure_daemon`] should do about the daemon it just probed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
@@ -70,10 +98,29 @@ pub enum Action {
 pub struct Probe {
     /// A daemon answered on the socket.
     pub connect_ok: bool,
-    /// It serves our [`PROTOCOL_VERSION`] — the compatibility contract.
+    /// It can be driven by this app — see [`protocol_acceptable`]. Not "it is
+    /// our exact version": a daemon at an older protocol that still serves
+    /// every [`REQUIRED_FEATURES`] name matches too.
     pub protocol_match: bool,
     /// It is byte-for-byte the build we would spawn.
     pub identity_match: bool,
+}
+
+/// Whether this app can drive the daemon that answered the version probe.
+///
+/// Either it is the protocol this build serves — the trivial case — or it is a
+/// daemon at [`FEATURE_NEGOTIATION_PROTOCOL`] or above that lists every name in
+/// [`REQUIRED_FEATURES`]. The second half is the whole point of the feature
+/// vocabulary: a daemon can be several protocol versions behind and still do
+/// everything asked of it, and attaching to it keeps its shells alive.
+fn protocol_acceptable(version: &VersionInfo) -> bool {
+    if version.protocol == Some(PROTOCOL_VERSION) {
+        return true;
+    }
+    version
+        .protocol
+        .is_some_and(|protocol| protocol >= FEATURE_NEGOTIATION_PROTOCOL)
+        && version.has_features(REQUIRED_FEATURES)
 }
 
 /// Decide what to do from what the version probe told us.
@@ -98,6 +145,21 @@ pub fn attach_decision(probe: Probe, dev_build: bool) -> Action {
         Action::RespawnMismatch
     } else {
         Action::AttachSkewed
+    }
+}
+
+/// What a probed daemon speaks, for the log lines that have to explain a
+/// respawn. Both halves matter now — the integer alone no longer says whether
+/// a daemon is usable — so both are named.
+fn describe_protocol(version: Option<&VersionInfo>) -> String {
+    let Some(version) = version else {
+        return "no version answer".to_owned();
+    };
+    let protocol = version.describe_protocol();
+    if version.features.is_empty() {
+        protocol
+    } else {
+        format!("{protocol} with {}", version.features.join(", "))
     }
 }
 
@@ -138,9 +200,7 @@ pub async fn ensure_daemon(app: &AppHandle) -> Result<DaemonClient> {
     let decision = attach_decision(
         Probe {
             connect_ok: existing.is_some(),
-            protocol_match: daemon_version
-                .as_ref()
-                .is_some_and(|v| v.protocol == Some(PROTOCOL_VERSION)),
+            protocol_match: daemon_version.as_ref().is_some_and(protocol_acceptable),
             identity_match: daemon_version
                 .as_ref()
                 .is_some_and(|v| v.identity == expected_identity),
@@ -173,8 +233,9 @@ pub async fn ensure_daemon(app: &AppHandle) -> Result<DaemonClient> {
             {
                 info!(
                     "[daemon] attached to daemon {daemon_identity} (this app expects {expected_identity}) — \
-                     protocol {PROTOCOL_VERSION} matches and it has live sessions, so they survive the update; \
+                     it serves {} and has live sessions, so they survive the update; \
                      it upgrades on a later launch once idle",
+                    describe_protocol(daemon_version.as_ref()),
                 );
                 Ok(client)
             } else {
@@ -187,12 +248,11 @@ pub async fn ensure_daemon(app: &AppHandle) -> Result<DaemonClient> {
         }
         Action::RespawnMismatch => {
             warn!(
-                "[daemon] running daemon is {daemon_identity} (protocol {}) but this app expects \
-                 {expected_identity} (protocol {PROTOCOL_VERSION}) — restarting it (any sessions it had are lost)",
-                daemon_version
-                    .as_ref()
-                    .and_then(|v| v.protocol)
-                    .map_or_else(|| "none".to_owned(), |p| p.to_string()),
+                "[daemon] running daemon is {daemon_identity} ({}) but this app expects \
+                 {expected_identity} (protocol {PROTOCOL_VERSION}, or {FEATURE_NEGOTIATION_PROTOCOL}+ \
+                 serving {}) — restarting it (any sessions it had are lost)",
+                describe_protocol(daemon_version.as_ref()),
+                REQUIRED_FEATURES.join(", "),
             );
             let client = existing.ok_or_else(|| anyhow!("respawn without a live connection"))?;
             stop_daemon(client, &socket).await;
@@ -434,6 +494,70 @@ fn resolve_daemon_binary(app: &AppHandle) -> Result<PathBuf> {
 mod tests {
     use super::*;
 
+    /// A version answer, as the probe would have decoded it.
+    fn version(protocol: Option<u32>, features: &[&str]) -> VersionInfo {
+        VersionInfo {
+            identity: "0.0.1+deadbeefdeadbeef".to_owned(),
+            protocol,
+            features: features.iter().map(|f| (*f).to_owned()).collect(),
+        }
+    }
+
+    /// The feature half of the attach rule, which is the whole reason the
+    /// integer stopped governing: a daemon behind this build's protocol but
+    /// serving everything asked of it is attached to, and its shells live.
+    #[test]
+    fn a_daemon_matches_by_features_not_only_by_version() {
+        assert!(
+            protocol_acceptable(&version(Some(PROTOCOL_VERSION), &[])),
+            "our own protocol is accepted whatever it lists — the trivial case, \
+             and the one that must not depend on a feature name existing yet"
+        );
+        assert!(
+            protocol_acceptable(&version(Some(PROTOCOL_VERSION + 7), REQUIRED_FEATURES)),
+            "a daemon several bumps ahead still serves what we need"
+        );
+        assert!(
+            !protocol_acceptable(&version(Some(PROTOCOL_VERSION + 7), &[])),
+            "…but a newer integer alone promises nothing: no names, no attach"
+        );
+        assert!(
+            !protocol_acceptable(&version(
+                Some(FEATURE_NEGOTIATION_PROTOCOL - 1),
+                REQUIRED_FEATURES
+            )),
+            "below feature negotiation the names are not a contract, however \
+             they got into the payload"
+        );
+        assert!(
+            !protocol_acceptable(&version(None, REQUIRED_FEATURES)),
+            "a daemon from before the protocol was versioned is a mismatch"
+        );
+    }
+
+    /// Missing *one* required name is a mismatch. The point of naming
+    /// capabilities is that this is the failure mode a future breaking change
+    /// takes — never a version bump that would strand every older daemon.
+    ///
+    /// Probed at a protocol other than our own, since our own is accepted
+    /// outright: a daemon built from this same source serves what this build
+    /// serves, and making the app interrogate itself would only mean the day a
+    /// feature is added is the day the app cannot attach to its own daemon.
+    #[test]
+    fn one_missing_feature_is_enough_to_respawn() {
+        for dropped in REQUIRED_FEATURES {
+            let served: Vec<&str> = REQUIRED_FEATURES
+                .iter()
+                .copied()
+                .filter(|name| name != dropped)
+                .collect();
+            assert!(
+                !protocol_acceptable(&version(Some(PROTOCOL_VERSION + 1), &served)),
+                "a daemon that cannot do {dropped} cannot be driven by this app"
+            );
+        }
+    }
+
     /// The whole policy as one table: (connect_ok, protocol_match,
     /// identity_match, dev_build) → action, with the rationale as the failure
     /// message. `AttachSkewed` is deliberately a *release-only* answer — the
@@ -448,15 +572,15 @@ mod tests {
             (true, true, true, true, Action::Attach,
              "the exact expected build is attached to, in dev too"),
             (true, false, false, false, Action::RespawnMismatch,
-             "a daemon speaking a different protocol cannot be driven at all"),
+             "a daemon missing the protocol or a required feature cannot be driven at all"),
             (true, false, false, true, Action::RespawnMismatch,
-             "a daemon speaking a different protocol cannot be driven, in dev too"),
+             "a daemon missing the protocol or a required feature cannot be driven, in dev too"),
             (true, true, false, true, Action::RespawnMismatch,
              "in dev the hash governs: a rebuilt daemon must run its new code \
               (the live stale-daemon bug of 2026-08-14)"),
             (true, true, false, false, Action::AttachSkewed,
-             "in release the protocol governs: an app update must not kill the \
-              sessions of a daemon it can still talk to"),
+             "in release the wire governs: an app update must not kill the \
+              sessions of a daemon it can still drive"),
             (false, false, false, false, Action::SpawnFresh,
              "nothing listening spawns fresh"),
             (false, true, true, true, Action::SpawnFresh,

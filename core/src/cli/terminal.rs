@@ -7,25 +7,32 @@
 //! like any other.
 //!
 //! The agent-facing surface mirrors what terminal multiplexers expose to
-//! scripts: raw input (`send`), a screen snapshot (`peek`, the libghostty-vt
-//! render), the output history behind it (`log`, the same bytes a cold reattach
-//! replays), and blocking waits (`wait --until <phase>` / `wait --match
-//! <regex>`). The waits are built entirely client-side on the daemon's stream
-//! connection — status transitions and raw output frames — so the daemon
-//! needed no new ops.
+//! scripts: raw input (`send`), a screen snapshot (`peek`), the history above
+//! it (`log`), and blocking waits (`wait --until <phase>` / `wait --match
+//! <regex>`). `peek` and `log` are one question asked at two depths — both are
+//! the session's libghostty-vt render, `log` simply asking for every row the
+//! engine still holds — so what `log` prints agrees with the terminal cell for
+//! cell rather than approximating it. The waits are built entirely client-side
+//! on the daemon's stream connection — status transitions and raw output
+//! frames — so the daemon needed no new ops.
+//!
+//! Some of that needs a daemon new enough to serve it, and a CLI ahead of the
+//! running daemon is ordinary rather than broken: the daemon outlives the app
+//! that spawned it. So a command that needs a named capability asks for the
+//! daemon's [`VersionInfo`] first and, when it is missing, says which wire the
+//! daemon speaks and what to relaunch — while every command that needs nothing
+//! new keeps working, and keeps costing the same round trips, against any
+//! generation of daemon.
 
 use std::sync::LazyLock;
 use std::time::Duration;
 
-use base64::Engine as _;
 use clap::{Args, Subcommand, ValueEnum};
 use regex::Regex;
 use serde_json::json;
 
-use crate::daemon::{socket_path, DaemonClient, Op, ReplayPayload, StreamFrame, B64};
-use crate::terminal::{
-    trim_trailing_blank_lines, Phase, SessionStatus, TerminalSummary, TERMINAL_ID_ENV,
-};
+use crate::daemon::{features, socket_path, DaemonClient, Op, StreamFrame, VersionInfo};
+use crate::terminal::{Phase, SessionStatus, TerminalSummary, TERMINAL_ID_ENV};
 use crate::work::{self, router};
 
 use super::common::{new_id_suffix, print_json, resolve_cwd_arg};
@@ -52,8 +59,9 @@ pub enum TerminalAction {
     /// Move sessions to another workspace
     Move(MoveArgs),
     /// Print a plain-text snapshot of a session's visible screen
-    Peek(TargetArgs),
-    /// Print a session's output history (scrollback plus the current screen)
+    Peek(PeekArgs),
+    /// Print a session's whole output history (everything above the screen,
+    /// then the screen)
     Log(LogArgs),
     /// Send text and/or named keys to a session's stdin
     Send(SendArgs),
@@ -133,13 +141,20 @@ pub struct TargetArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct PeekArgs {
+    #[command(flatten)]
+    pub target: TargetArgs,
+    /// Also render up to N rows of history immediately above the visible
+    /// screen (`log` is this with no limit)
+    #[arg(long, value_name = "N")]
+    pub scrollback: Option<u32>,
+}
+
+#[derive(Debug, Args)]
 pub struct LogArgs {
     #[command(flatten)]
     pub target: TargetArgs,
-    /// Print only the last N lines (default: the whole history). This is a
-    /// line-oriented rendering of the session's byte stream, not a grid render,
-    /// so anything drawn with cursor moves comes out approximate — `peek` is
-    /// the truth about what is on screen right now
+    /// Print only the last N lines (default: the whole history)
     #[arg(short = 'n', long = "lines", value_name = "N")]
     pub lines: Option<usize>,
 }
@@ -259,6 +274,7 @@ async fn dispatch(action: TerminalAction) -> Result<(), String> {
     let client = DaemonClient::connect(&socket)
         .await
         .map_err(|_| DAEMON_UNAVAILABLE.to_owned())?;
+    require_features(&client, required_features(&action)).await?;
 
     match action {
         TerminalAction::List(args) => run_list(&client, args).await,
@@ -272,6 +288,53 @@ async fn dispatch(action: TerminalAction) -> Result<(), String> {
         TerminalAction::Resize(args) => run_resize(&client, args).await,
         TerminalAction::Kill(args) => run_kill(&client, args).await,
     }
+}
+
+/// The daemon capabilities this action cannot be answered without.
+///
+/// A list rather than a bool, so a refusal can name what is missing — and
+/// empty for nearly everything, because nearly everything here is what the
+/// daemon has always been able to do.
+fn required_features(action: &TerminalAction) -> &'static [&'static str] {
+    match action {
+        // The rows above the viewport are the engine's to render.
+        TerminalAction::Log(_) => &[features::PEEK_SCROLLBACK],
+        // Only when it is asked for: a bare `peek` is the visible screen every
+        // daemon has always answered with.
+        TerminalAction::Peek(args) if args.scrollback.is_some() => &[features::PEEK_SCROLLBACK],
+        _ => &[],
+    }
+}
+
+/// Refuse before running, when the daemon does not serve everything the
+/// command needs.
+///
+/// The daemon outlives the app that spawned it, so a CLI ahead of the running
+/// daemon is the ordinary case and deserves the ordinary fix — rather than
+/// whatever an old daemon happens to do with a field it does not understand,
+/// which for `scrollback` is to answer with the viewport and say nothing.
+/// Nothing is asked when nothing is needed, so the commands that work against
+/// any daemon pay for none of this.
+async fn require_features(client: &DaemonClient, needed: &[&str]) -> Result<(), String> {
+    if needed.is_empty() {
+        return Ok(());
+    }
+    let version = client.version().await.map_err(|e| format!("{e:#}"))?;
+    if version.has_features(needed) {
+        return Ok(());
+    }
+    Err(outdated_daemon(&version, needed))
+}
+
+/// One line: which wire the daemon speaks, what this command needed of it, and
+/// the single thing that fixes it.
+fn outdated_daemon(version: &VersionInfo, needed: &[&str]) -> String {
+    let missing = version.missing_features(needed).join("`, `");
+    let speaks = version.describe_protocol();
+    format!(
+        "The Review daemon speaks {speaks} and this command needs `{missing}` — \
+         relaunch the Review app to upgrade it."
+    )
 }
 
 /// Run one control op and decode its Ok payload.
@@ -518,30 +581,42 @@ async fn run_move(client: &DaemonClient, args: MoveArgs) -> Result<(), String> {
 }
 
 /// What is on screen: the VT grid rendered by libghostty-vt, so it agrees with
-/// the terminal cell for cell. For what has scrolled past it, see [`run_log`].
-async fn run_peek(client: &DaemonClient, args: TargetArgs) -> Result<(), String> {
-    let id = resolve_id(client, &args.id).await?;
-    let text: String = request(client, Op::Peek { terminal_id: id }).await?;
+/// the terminal cell for cell. `--scrollback N` prepends N rows of what has
+/// already scrolled past it; [`run_log`] is that with no limit.
+async fn run_peek(client: &DaemonClient, args: PeekArgs) -> Result<(), String> {
+    let id = resolve_id(client, &args.target.id).await?;
+    let text = client
+        .peek_with(&id, args.scrollback.unwrap_or(0))
+        .await
+        .map_err(|e| format!("{e:#}"))?;
     println!("{text}");
     Ok(())
 }
 
-/// What the session has printed — `docker logs` for a terminal.
+/// Everything the session has printed — `docker logs` for a terminal.
 ///
-/// A different answer from a different source than [`run_peek`]'s: the daemon's
-/// scrollback ring, the raw PTY bytes a cold reattach replays, cooked into
-/// lines here. That reaches back past the screen, at the cost of only
-/// approximating anything that draws itself with cursor moves.
+/// The same render as [`run_peek`], asked for at full depth: every row the VT
+/// engine still holds, history and visible screen alike. So this agrees with
+/// the terminal cell for cell too — a TUI that draws itself with cursor moves
+/// comes out as what it drew, not as the byte stream that drew it.
 async fn run_log(client: &DaemonClient, args: LogArgs) -> Result<(), String> {
     let id = resolve_id(client, &args.target.id).await?;
-    let replay: ReplayPayload = request(client, Op::Replay { terminal_id: id }).await?;
-    let bytes = B64
-        .decode(replay.data_b64.as_bytes())
-        .map_err(|e| format!("Could not decode the session's scrollback: {e}"))?;
-    let mut text = cook_stream(&bytes);
-    // The blank rows a screen's unused height leaves at the end are padding
-    // whether or not `-n` was passed.
-    trim_trailing_blank_lines(&mut text);
+    // The render arrives already trimmed of the blank rows below the last
+    // thing written, so `-n` counts lines that were actually printed.
+    //
+    // Ask for only as much history as `-n` can possibly need. A grid row is at
+    // most one printed line but often less than one — a line longer than the
+    // grid is wide occupies several rows — so N lines can span more than N
+    // rows; ×2 is the margin for that soft wrapping, and rendering the whole
+    // retained scrollback (up to a megabyte of it) just to throw away all but
+    // the last few lines is what this avoids.
+    let depth = args.lines.map_or(u32::MAX, |n| {
+        u32::try_from(n).unwrap_or(u32::MAX).saturating_mul(2)
+    });
+    let text = client
+        .peek_with(&id, depth)
+        .await
+        .map_err(|e| format!("{e:#}"))?;
     println!(
         "{}",
         match args.lines {
@@ -550,16 +625,6 @@ async fn run_log(client: &DaemonClient, args: LogArgs) -> Result<(), String> {
         }
     );
     Ok(())
-}
-
-/// Render a whole PTY byte stream to plain text with the same terminal
-/// semantics `wait --match` applies (see [`append_cooked`]). Unbounded on
-/// purpose: the caller asked for history, and the ring is already finite.
-fn cook_stream(bytes: &[u8]) -> String {
-    let mut text = String::new();
-    let mut pending_cr = false;
-    append_cooked(&mut text, &mut pending_cr, &String::from_utf8_lossy(bytes));
-    text
 }
 
 /// The last `n` lines of `text`, or all of them if it is shorter.
@@ -770,13 +835,12 @@ async fn wait_for(
         .map_err(|e| format!("Could not open the output stream for {id}: {e}"))?;
 
     if let Some(regex) = matcher.filter(|_| check_screen) {
-        let screen: String = request(
-            client,
-            Op::Peek {
-                terminal_id: id.to_owned(),
-            },
-        )
-        .await?;
+        // The viewport, not the history: a wait is about now — and this has to
+        // keep working against a daemon of any generation.
+        let screen = client
+            .peek_with(id, 0)
+            .await
+            .map_err(|e| format!("{e:#}"))?;
         if let Some(line) = matched_line(&screen, regex) {
             return Ok(WaitOutcome::Matched(line));
         }
@@ -988,10 +1052,85 @@ mod tests {
     }
 
     #[test]
-    fn cook_stream_renders_the_whole_replay() {
-        // The same semantics as the match window, applied to raw bytes.
-        let bytes = b"\x1b[32mbuilding\x1b[0m\r\n50%\r100%\r\ndone\r\n";
-        assert_eq!(cook_stream(bytes), "building\n100%\ndone\n");
+    fn peek_takes_an_optional_scrollback_depth() {
+        let TerminalAction::Peek(peek) = action(&["review", "terminal", "peek", "abc"]) else {
+            panic!("expected peek");
+        };
+        assert_eq!(peek.target.id, "abc");
+        // A bare peek is the visible screen — which every daemon can answer,
+        // so it asks nothing of this one.
+        assert_eq!(peek.scrollback, None);
+        assert!(required_features(&TerminalAction::Peek(peek)).is_empty());
+
+        let TerminalAction::Peek(peek) =
+            action(&["review", "terminal", "peek", "abc", "--scrollback", "200"])
+        else {
+            panic!("expected peek");
+        };
+        assert_eq!(peek.scrollback, Some(200));
+        assert_eq!(
+            required_features(&TerminalAction::Peek(peek)),
+            [features::PEEK_SCROLLBACK]
+        );
+    }
+
+    /// The negotiation's whole point: `log` needs a v3 daemon, and everything
+    /// a v2 daemon can already answer keeps being askable of one.
+    #[test]
+    fn only_the_commands_that_need_a_new_daemon_ask_for_one() {
+        assert_eq!(
+            required_features(&action(&["review", "terminal", "log", "abc"])),
+            [features::PEEK_SCROLLBACK]
+        );
+        for argv in [
+            &["review", "terminal", "list"][..],
+            &["review", "terminal", "peek", "abc"],
+            &["review", "terminal", "send", "abc", "hi"],
+            &["review", "terminal", "wait", "abc", "--match", "done"],
+            &[
+                "review", "terminal", "resize", "abc", "--cols", "80", "--rows", "24",
+            ],
+            &["review", "terminal", "kill", "abc"],
+        ] {
+            assert!(
+                required_features(&action(argv)).is_empty(),
+                "{argv:?} would refuse to run against a v2 daemon"
+            );
+        }
+    }
+
+    /// One line, naming the wire, the gap, and the fix — because the person
+    /// reading it can do exactly one thing about it.
+    #[test]
+    fn an_outdated_daemon_is_named_along_with_its_fix() {
+        let v2 = VersionInfo {
+            identity: "0.0.162+aabbccdd00112233".into(),
+            protocol: Some(2),
+            features: Vec::new(),
+        };
+        assert_eq!(
+            outdated_daemon(&v2, &[features::PEEK_SCROLLBACK]),
+            "The Review daemon speaks protocol 2 and this command needs \
+             `peek-scrollback` — relaunch the Review app to upgrade it."
+        );
+
+        // Only what is actually missing is named.
+        let partial = VersionInfo {
+            identity: "0.0.163+aabbccdd00112233".into(),
+            protocol: Some(3),
+            features: vec![features::PEEK_SCROLLBACK.to_owned()],
+        };
+        let message = outdated_daemon(&partial, &[features::PEEK_SCROLLBACK, features::EVENTS]);
+        assert!(message.contains("needs `events`"), "{message}");
+
+        // A daemon from before the protocol was versioned has no number.
+        let ancient = VersionInfo {
+            identity: "0.0.124+deadbeef00000000".into(),
+            protocol: None,
+            features: Vec::new(),
+        };
+        let message = outdated_daemon(&ancient, &[features::EVENTS]);
+        assert!(message.contains("an unversioned protocol"), "{message}");
     }
 
     #[test]
@@ -1269,6 +1408,8 @@ mod daemon_tests {
         }
     }
 
+    /// `log` and `peek` are the same render at two depths: the viewport alone,
+    /// or everything the engine still holds above it.
     #[tokio::test]
     async fn log_reaches_past_the_visible_screen() {
         let harness = Harness::start().await;
@@ -1276,31 +1417,42 @@ mod daemon_tests {
         start_session(&harness, &client, "t-screen").await;
 
         // More lines than the 24-row grid holds, so the early ones can only
-        // come from the scrollback the replay carries.
+        // come from the history above the viewport.
         client
             .write("t-screen", b"for i in $(seq 1 60); do echo line-$i; done\r")
             .await
             .unwrap();
         peek_until(&client, "t-screen", |screen| screen.contains("line-60")).await;
 
-        let replay: ReplayPayload = request(
-            &client,
-            Op::Replay {
-                terminal_id: "t-screen".to_owned(),
-            },
-        )
-        .await
-        .unwrap();
-        let mut history = cook_stream(&B64.decode(replay.data_b64.as_bytes()).unwrap());
+        let screen = client.peek_with("t-screen", 0).await.unwrap();
+        assert!(
+            !screen.contains("line-1\n"),
+            "the viewport is still only the viewport: {screen}"
+        );
+
+        let history = client.peek_with("t-screen", u32::MAX).await.unwrap();
         assert!(history.contains("line-1\n"), "{history}");
         assert!(history.contains("line-60"), "{history}");
-        // The tail is the tail, whatever the grid happened to show. `run_log`
-        // trims the padding first, so this does too.
-        trim_trailing_blank_lines(&mut history);
+        // The render arrives trimmed of its trailing blank rows, so `-n` takes
+        // lines that were printed rather than the grid's padding.
         let last = tail(&history, 3);
         assert_eq!(last.lines().count(), 3, "{last}");
         assert!(last.contains("line-60"), "{last}");
         assert!(!last.contains("line-50"), "{last}");
+    }
+
+    /// A daemon built from this tree serves everything the CLI knows how to
+    /// need, so the gate only ever bites against an older one.
+    #[tokio::test]
+    async fn a_current_daemon_serves_everything_the_cli_needs() {
+        let harness = Harness::start().await;
+        let client = harness.client().await;
+        require_features(&client, &[features::PEEK_SCROLLBACK])
+            .await
+            .unwrap();
+        require_features(&client, &[features::EVENTS, features::PEEK_MANY])
+            .await
+            .unwrap();
     }
 
     #[tokio::test]

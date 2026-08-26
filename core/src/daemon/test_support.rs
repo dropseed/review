@@ -55,12 +55,7 @@ impl Drop for Harness {
 pub(crate) async fn peek_until(client: &DaemonClient, id: &str, probe: impl Fn(&str) -> bool) {
     let deadline = tokio::time::Instant::now() + TIMEOUT;
     loop {
-        let screen: String = client
-            .request_as(Op::Peek {
-                terminal_id: id.to_owned(),
-            })
-            .await
-            .unwrap();
+        let screen = client.peek_with(id, 0).await.unwrap();
         if probe(&screen) || tokio::time::Instant::now() >= deadline {
             return;
         }

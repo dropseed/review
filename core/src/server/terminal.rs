@@ -17,12 +17,18 @@
 //!   `{"t":"status",…}` / `{"t":"resize","cols":N,"rows":N}` (another client
 //!   resized the shared PTY) / `{"t":"exit","exitCode":…}`; client→server
 //!   binary is stdin and text is `{"t":"resize","cols":N,"rows":N}`.
+//! - **One WebSocket per tab** (`/api/terminal/events`) carrying the daemon's
+//!   whole-daemon [`Event`] firehose, which is where the Tauri path emits
+//!   `terminal:started` and friends instead. Frames are the daemon's own JSON
+//!   verbatim, so this half of the bridge has no wire of its own to keep in
+//!   step with `protocol.rs`.
 //!
 //! Control payloads pass straight through as `serde_json::Value` — the daemon
 //! already speaks the frontend's camelCase, and re-typing them would drag
 //! `crate::terminal` (and its PTY stack, and Zig) into every web build. See the
 //! decoupling note in [`crate::daemon::protocol`].
 
+use std::collections::HashMap;
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -40,7 +46,8 @@ use serde_json::{json, Value};
 use super::handlers::{internal_err, ApiResult};
 use super::origin_allowed;
 use crate::daemon::{
-    DaemonClient, Op, StreamFrame, StreamHandle, ERR_CLOSED, ERR_CONNECTING, ERR_SENDING,
+    DaemonClient, Event, EventsHandle, Op, StreamFrame, StreamHandle, ERR_CLOSED, ERR_CONNECTING,
+    ERR_SENDING,
 };
 
 /// Close code meaning "this session no longer exists" — the one close the
@@ -54,6 +61,60 @@ const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(30);
 /// before it is treated as half-open and dropped. Two and a half intervals, so
 /// one lost ping is not a disconnect.
 const KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(75);
+
+/// The half-open-socket policy, which both websocket pumps run.
+///
+/// A tab that goes away without a close frame — laptop lid, lost Wi-Fi, a proxy
+/// giving up — leaves its task, its daemon connection and its subscriber alive
+/// forever. So each pump pings every [`KEEPALIVE_INTERVAL`] (browsers pong
+/// automatically, so an idle tab is not disturbed) and gives up on a peer that
+/// has said nothing at all for [`KEEPALIVE_TIMEOUT`], reaping a half-open
+/// socket within ~2 ticks.
+///
+/// One type rather than one copy per pump, because the two loops are otherwise
+/// nothing alike — a per-session stream carries input and geometry both ways,
+/// the events socket is daemon→browser only — and only this policy has to be
+/// the same in both.
+struct Keepalive {
+    interval: tokio::time::Interval,
+    last_inbound: Instant,
+}
+
+impl Keepalive {
+    fn new() -> Self {
+        // First tick one interval out, so a socket is not pinged the instant it
+        // opens.
+        let mut interval = tokio::time::interval_at(
+            tokio::time::Instant::now() + KEEPALIVE_INTERVAL,
+            KEEPALIVE_INTERVAL,
+        );
+        // A burst of catch-up pings after a busy stretch would say nothing the
+        // first one didn't; space them instead.
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        Self {
+            interval,
+            last_inbound: Instant::now(),
+        }
+    }
+
+    /// Wait for the next ping — a `select!` arm.
+    async fn tick(&mut self) {
+        self.interval.tick().await;
+    }
+
+    /// How long the peer has been silent, once that is past
+    /// [`KEEPALIVE_TIMEOUT`]: the socket is half-open and its pump should stop.
+    fn silent_too_long(&self) -> Option<Duration> {
+        let silence = self.last_inbound.elapsed();
+        (silence > KEEPALIVE_TIMEOUT).then_some(silence)
+    }
+
+    /// Any inbound frame at all proves the peer is there — a pong most of the
+    /// time, since an attached-but-idle socket sends nothing else.
+    fn saw_inbound(&mut self) {
+        self.last_inbound = Instant::now();
+    }
+}
 
 // ============================================================
 // Shared state
@@ -201,6 +262,8 @@ pub(super) fn router(bridge: TerminalBridge) -> Router {
         .route("/api/terminal/list", post(list))
         .route("/api/terminal/replay", post(replay))
         .route("/api/terminal/peek", post(peek))
+        .route("/api/terminal/peek-many", post(peek_many))
+        .route("/api/terminal/events", any(events_ws))
         .route("/api/terminal/{id}/ws", any(ws))
         .with_state(bridge)
 }
@@ -267,6 +330,23 @@ struct ResizeRequest {
     terminal_id: String,
     cols: u16,
     rows: u16,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PeekRequest {
+    terminal_id: String,
+    /// Rows of history to include above the visible screen. Absent — which is
+    /// every request a pane or a card makes — defaults to `0`, the viewport
+    /// alone, exactly as before this field existed.
+    #[serde(default)]
+    scrollback: u32,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PeekManyRequest {
+    terminal_ids: Vec<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -446,11 +526,30 @@ async fn replay(
 
 async fn peek(
     State(bridge): State<TerminalBridge>,
-    Json(request): Json<TerminalIdRequest>,
+    Json(request): Json<PeekRequest>,
 ) -> ApiResult<String> {
     bridge
         .request_as(Op::Peek {
             terminal_id: request.terminal_id,
+            scrollback: request.scrollback,
+        })
+        .await
+        .map(Json)
+        .map_err(internal_err)
+}
+
+/// Every mounted overview card's screen in one round trip.
+///
+/// The map is keyed by terminal id and ids the daemon does not know are simply
+/// absent — a card whose session died between the poll being composed and it
+/// being served is a missing key, not a failed request for all the others.
+async fn peek_many(
+    State(bridge): State<TerminalBridge>,
+    Json(request): Json<PeekManyRequest>,
+) -> ApiResult<HashMap<String, String>> {
+    bridge
+        .request_as(Op::PeekMany {
+            terminal_ids: request.terminal_ids,
         })
         .await
         .map(Json)
@@ -529,28 +628,17 @@ async fn attach(bridge: TerminalBridge, mut socket: WebSocket, terminal_id: Stri
 ///   logged the failure and kept going would leave the pane *looking* connected
 ///   while every keystroke fell on the floor. Closing puts the frontend back on
 ///   its `POST /api/terminal/write` fallback until its backoff re-attaches.
-/// - **Silence.** A tab that goes away without a close frame — laptop lid, lost
-///   Wi-Fi, a proxy giving up — leaves this task, its daemon connection and its
-///   subscriber alive forever. A ping every [`KEEPALIVE_INTERVAL`] costs
-///   nothing (browsers pong automatically, so an idle tab is not disturbed) and
-///   a half-open socket stops answering and is reaped within ~2 ticks.
+/// - **Silence.** See [`Keepalive`], which is the whole of this pump's half-open
+///   policy and the events pump's alike.
 async fn pump(mut socket: WebSocket, client: DaemonClient, mut stream: StreamHandle, id: &str) {
-    let mut keepalive = tokio::time::interval(KEEPALIVE_INTERVAL);
-    // A burst of catch-up pings after a busy stretch would say nothing the
-    // first one didn't; space them instead.
-    keepalive.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    // The first tick is immediate; skip it so a socket is not pinged the
-    // instant it opens.
-    keepalive.tick().await;
-    let mut last_inbound = Instant::now();
+    let mut keepalive = Keepalive::new();
 
     loop {
         tokio::select! {
-            _ = keepalive.tick() => {
-                if last_inbound.elapsed() > KEEPALIVE_TIMEOUT {
+            () = keepalive.tick() => {
+                if let Some(silence) = keepalive.silent_too_long() {
                     log::debug!(
-                        "[terminal_ws] {id} silent for {:?}; closing a half-open socket",
-                        last_inbound.elapsed()
+                        "[terminal_ws] {id} silent for {silence:?}; closing a half-open socket"
                     );
                     return;
                 }
@@ -588,9 +676,7 @@ async fn pump(mut socket: WebSocket, client: DaemonClient, mut stream: StreamHan
                 let Some(Ok(message)) = incoming else {
                     return; // closed, or a transport error
                 };
-                // Any frame at all proves the peer is there — a pong most of
-                // the time, since an attached-but-idle pane sends nothing else.
-                last_inbound = Instant::now();
+                keepalive.saw_inbound();
                 match translate_inbound(&message) {
                     Inbound::Input(bytes) => {
                         if let Err(e) = client.write(id, bytes).await {
@@ -719,6 +805,119 @@ fn translate_inbound(message: &Message) -> Inbound<'_> {
     }
 }
 
+// ============================================================
+// The events WebSocket
+// ============================================================
+
+/// The whole-daemon event firehose, one socket per tab.
+///
+/// Same origin gate as the per-session socket, and for the same reason: a
+/// WebSocket handshake is exempt from CORS, so without this any page the user
+/// visits could watch every session on the machine appear, move and die.
+async fn events_ws(
+    State(bridge): State<TerminalBridge>,
+    headers: HeaderMap,
+    upgrade: WebSocketUpgrade,
+) -> Response {
+    if !origin_allowed(headers.get(axum::http::header::ORIGIN), &headers) {
+        log::warn!(
+            "[terminal_events_ws] refused an upgrade from origin {:?}",
+            headers.get(axum::http::header::ORIGIN)
+        );
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    upgrade.on_upgrade(move |socket| attach_events(bridge, socket))
+}
+
+/// Open the daemon's events connection and pump it, or close if there is no
+/// daemon to open one on.
+///
+/// A close is the honest answer to both failures here, and it is the same
+/// answer: the frontend's backoff reconnects and re-lists, which is exactly the
+/// resync the channel's invariant asks for. There is no [`SESSION_GONE`]
+/// equivalent — no daemon is a state that ends, unlike a session that is gone
+/// for good.
+async fn attach_events(bridge: TerminalBridge, mut socket: WebSocket) {
+    let t0 = Instant::now();
+    let opened = bridge
+        .with_client(|client| async move { client.open_events().await })
+        .await;
+
+    let events = match opened {
+        Ok(events) => events,
+        Err(e) => {
+            log::warn!("[terminal_events_ws] could not open the events channel: {e:#}");
+            let _ = socket.send(Message::Close(None)).await;
+            return;
+        }
+    };
+
+    log::info!("[terminal_events_ws] attached in {:?}", t0.elapsed());
+    pump_events(socket, events).await;
+}
+
+/// Forward every daemon event to the browser until either side ends.
+///
+/// Daemon→client only: nothing the browser sends here means anything, so
+/// inbound frames exist purely as proof the peer is still there. The keepalive
+/// policy is the per-session socket's ([`pump`]), and matters more here — an
+/// events socket on a quiet daemon can sit silent for hours, which is precisely
+/// when a half-open one would go unnoticed.
+async fn pump_events(mut socket: WebSocket, mut events: EventsHandle) {
+    let mut keepalive = Keepalive::new();
+
+    loop {
+        tokio::select! {
+            () = keepalive.tick() => {
+                if let Some(silence) = keepalive.silent_too_long() {
+                    log::debug!(
+                        "[terminal_events_ws] silent for {silence:?}; closing a half-open socket"
+                    );
+                    return;
+                }
+                if socket.send(Message::Ping(Default::default())).await.is_err() {
+                    return; // client went away
+                }
+            }
+            event = events.recv() => {
+                let Some(event) = event else {
+                    // The daemon went away — the only way this channel ends.
+                    log::debug!("[terminal_events_ws] daemon connection lost");
+                    let _ = socket.send(Message::Close(None)).await;
+                    return;
+                };
+                let Some(message) = event_frame(&event) else { continue };
+                if socket.send(message).await.is_err() {
+                    return; // client went away
+                }
+            }
+            incoming = socket.recv() => {
+                let Some(Ok(message)) = incoming else {
+                    return; // closed, or a transport error
+                };
+                if matches!(message, Message::Close(_)) {
+                    return;
+                }
+                keepalive.saw_inbound();
+            }
+        }
+    }
+}
+
+/// One daemon event → one text frame, in the protocol's own JSON shape.
+///
+/// The shape is [`Event`]'s serde derive and nothing else, so the browser sees
+/// exactly what the daemon's own encoder produces and this bridge never gets a
+/// say in what an event looks like. Serializing it cannot fail; if it somehow
+/// did, dropping the frame beats sending a browser something unparseable.
+fn event_frame(event: &Event) -> Option<Message> {
+    let frame = serde_json::to_string(event).ok().map(Message::text);
+    if frame.is_none() {
+        log::warn!("[terminal_events_ws] could not encode an event: {event:?}");
+    }
+    frame
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -828,6 +1027,35 @@ mod tests {
                 message: "no such terminal t9".into()
             }),
             Outbound::Gone
+        );
+    }
+
+    /// An event reaches the browser as the daemon's own JSON — same tag, same
+    /// camelCase field names — because the frontend decodes `protocol.rs`'s
+    /// shapes directly and nothing here re-describes them.
+    #[test]
+    fn events_are_forwarded_as_the_daemons_own_json() {
+        let message = event_frame(&Event::Exited {
+            terminal_id: "t1".into(),
+            exit_code: Some(0),
+        })
+        .expect("an exit encodes");
+        assert_eq!(
+            text_of(&message),
+            json!({"event": "exited", "terminalId": "t1", "exitCode": 0})
+        );
+
+        let message = event_frame(&Event::Lagged).expect("lagged encodes");
+        assert_eq!(text_of(&message), json!({"event": "lagged"}));
+
+        // A `Started` carries a `TerminalSummary` the bridge never types.
+        let message = event_frame(&Event::Started {
+            session: json!({"id": "t1", "cwd": "/tmp"}),
+        })
+        .expect("a start encodes");
+        assert_eq!(
+            text_of(&message),
+            json!({"event": "started", "session": {"id": "t1", "cwd": "/tmp"}})
         );
     }
 
@@ -957,6 +1185,43 @@ mod daemon_tests {
         fn ws_url(&self, id: &str) -> String {
             format!("ws://{}/api/terminal/{id}/ws", self.addr)
         }
+
+        fn events_url(&self) -> String {
+            format!("ws://{}/api/terminal/events", self.addr)
+        }
+    }
+
+    type ClientSocket = tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >;
+
+    /// Read event frames off `socket` until one satisfies `done`, returning
+    /// everything seen including it.
+    async fn collect_events(
+        socket: &mut ClientSocket,
+        done: impl Fn(&Value) -> bool,
+    ) -> Vec<Value> {
+        tokio::time::timeout(TIMEOUT, async {
+            let mut seen: Vec<Value> = Vec::new();
+            while let Some(Ok(message)) = socket.next().await {
+                if let WsMessage::Text(text) = message {
+                    let event: Value =
+                        serde_json::from_str(text.as_str()).expect("every frame is JSON");
+                    let stop = done(&event);
+                    seen.push(event);
+                    if stop {
+                        return seen;
+                    }
+                }
+            }
+            panic!("the events socket ended before the event under test: {seen:?}");
+        })
+        .await
+        .expect("the daemon should announce this promptly")
+    }
+
+    fn is_event(event: &Value, name: &str, terminal_id: &str) -> bool {
+        event["event"] == json!(name) && event["terminalId"] == json!(terminal_id)
     }
 
     /// A throwaway review home, so routing writes its `work.json` into a
@@ -1094,6 +1359,165 @@ mod daemon_tests {
         let (status, listed) = served.post("/api/terminal/list", json!({})).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(listed.as_array().map(Vec::len), Some(0), "{listed}");
+    }
+
+    /// The events socket is how a browser tab learns about sessions it did not
+    /// start: opened first, it sees the whole life of one started afterwards
+    /// over plain HTTP, without ever calling `list`.
+    #[tokio::test]
+    #[allow(
+        clippy::await_holding_lock,
+        reason = "serialises $REVIEW_HOME for the test body; single-threaded runtime"
+    )]
+    async fn the_events_socket_carries_a_sessions_whole_life() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _home = isolated_home();
+
+        let harness = Harness::start().await;
+        let served = Served::start(&harness).await;
+
+        // Opened *before* the session exists — the ordering the channel's
+        // invariant is stated in.
+        let (mut socket, _) = tokio_tungstenite::connect_async(served.events_url())
+            .await
+            .expect("the events socket attaches with no session in sight");
+
+        let cwd = harness.dir.path().to_string_lossy().into_owned();
+        let (status, started) = served
+            .post(
+                "/api/terminal/start",
+                json!({
+                    "terminalId": "web-ev",
+                    "repoPath": cwd,
+                    "cwd": cwd,
+                    "cols": 80,
+                    "rows": 24,
+                    "shell": "/bin/sh",
+                }),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "start failed: {started}");
+
+        let seen = collect_events(&mut socket, |event| {
+            event["event"] == json!("started") && event["session"]["id"] == json!("web-ev")
+        })
+        .await;
+        let announced = seen.last().unwrap();
+        assert_eq!(
+            announced["session"]["cwd"],
+            json!(cwd),
+            "the summary travels whole, not just an id: {announced}"
+        );
+
+        // Output moves the phase machine, which is the other half of what the
+        // per-session status drains used to be opened for. Waited out before
+        // the kill, because an exit sets the phase without publishing one.
+        let (status, _) = served
+            .post(
+                "/api/terminal/write",
+                json!({"terminalId": "web-ev", "data": "echo announced\n"}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK);
+
+        let seen = collect_events(&mut socket, |event| {
+            event["event"] == json!("status") && event["status"]["id"] == json!("web-ev")
+        })
+        .await;
+        assert!(
+            seen.last().unwrap()["status"]["phase"].is_string(),
+            "a status frame carries the session's whole status: {seen:?}"
+        );
+
+        let (status, _) = served
+            .post("/api/terminal/kill", json!({"terminalId": "web-ev"}))
+            .await;
+        assert_eq!(status, StatusCode::OK);
+
+        let seen = collect_events(&mut socket, |event| is_event(event, "removed", "web-ev")).await;
+        assert!(
+            seen.iter().any(|e| is_event(e, "exited", "web-ev")),
+            "a killed session exits before it leaves the list: {seen:?}"
+        );
+    }
+
+    /// The events socket needs the same hand-rolled origin check the session
+    /// socket does — it is the same CORS exemption, and every session on the
+    /// machine is behind it.
+    #[tokio::test]
+    async fn a_foreign_origin_cannot_open_the_events_socket() {
+        let harness = Harness::start().await;
+        let served = Served::start(&harness).await;
+
+        let mut request = served.events_url().into_client_request().unwrap();
+        request
+            .headers_mut()
+            .insert("origin", "https://evil.example".parse().unwrap());
+
+        let refused = tokio_tungstenite::connect_async(request)
+            .await
+            .expect_err("a cross-origin upgrade must not succeed");
+        let tokio_tungstenite::tungstenite::Error::Http(response) = refused else {
+            panic!("expected an HTTP refusal, got {refused:?}");
+        };
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    /// What the overview polls: every mounted card's screen in one request,
+    /// keyed by id, with ids the daemon no longer knows simply absent.
+    #[tokio::test]
+    #[allow(
+        clippy::await_holding_lock,
+        reason = "serialises $REVIEW_HOME for the test body; single-threaded runtime"
+    )]
+    async fn peek_many_answers_every_session_in_one_round_trip() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _home = isolated_home();
+
+        let harness = Harness::start().await;
+        let served = Served::start(&harness).await;
+        let cwd = harness.dir.path().to_string_lossy().into_owned();
+
+        for id in ["web-a", "web-b"] {
+            let (status, started) = served
+                .post(
+                    "/api/terminal/start",
+                    json!({
+                        "terminalId": id,
+                        "repoPath": cwd,
+                        "cwd": cwd,
+                        "cols": 80,
+                        "rows": 24,
+                        "shell": "/bin/sh",
+                    }),
+                )
+                .await;
+            assert_eq!(status, StatusCode::OK, "start failed: {started}");
+        }
+
+        let (status, screens) = served
+            .post(
+                "/api/terminal/peek-many",
+                json!({"terminalIds": ["web-a", "web-b", "ghost"]}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{screens}");
+        assert!(screens["web-a"].is_string(), "{screens}");
+        assert!(screens["web-b"].is_string(), "{screens}");
+        assert!(
+            screens.get("ghost").is_none(),
+            "an unknown id is absent, not an error: {screens}"
+        );
+
+        // `peek` still answers one session, and its new field is optional.
+        let (status, peeked) = served
+            .post(
+                "/api/terminal/peek",
+                json!({"terminalId": "web-a", "scrollback": 200}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(peeked.is_string(), "{peeked}");
     }
 
     /// A socket for a session the daemon never heard of must close 4404, so the

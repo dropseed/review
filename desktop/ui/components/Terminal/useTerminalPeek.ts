@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import { getApiClient } from "../../api";
+import { sharedTerminalPeekPoller } from "./peek-poller";
 
-const PEEK_INTERVAL_MS = 2000;
 const TICK_INTERVAL_MS = 1000;
 
 /**
@@ -12,9 +11,11 @@ const TICK_INTERVAL_MS = 1000;
  * Pull-based on purpose: peeks are deliberately not part of the status stream
  * (see the backend's status module), so anything that wants screen content asks
  * for it only while it's actually on screen — a mounted card, an open popover.
- * Returns `null` until the first peek resolves; a failed peek (session just
- * died) settles on "" rather than an error, since "nothing to show" is the
- * honest answer.
+ * The asking itself is not this hook's: every mounted card subscribes to one
+ * shared poller, which batches them into a single call per tick (see
+ * `peek-poller`). Returns `null` until the first peek resolves; a peek the
+ * daemon can't answer (session just died) settles on "" rather than an error,
+ * since "nothing to show" is the honest answer.
  */
 export function useTerminalPeek(sessionId: string | null): string | null {
   const [peek, setPeek] = useState<string | null>(null);
@@ -24,48 +25,15 @@ export function useTerminalPeek(sessionId: string | null): string | null {
       setPeek(null);
       return;
     }
-    let cancelled = false;
-    // In flight at most once — a slow peek must not stack behind the interval.
-    let pending = false;
-    let interval: ReturnType<typeof setInterval> | null = null;
-
-    const pull = () => {
-      if (pending) return;
-      pending = true;
-      getApiClient()
-        .terminalPeek(sessionId)
-        .then((text) => {
-          // A terminal that isn't moving returns the same screen forever;
-          // keeping the old string spares every card a re-render per tick.
-          if (!cancelled) setPeek((prev) => (prev === text ? prev : text));
-        })
-        .catch(() => {
-          if (!cancelled) setPeek((prev) => prev ?? "");
-        })
-        .finally(() => {
-          pending = false;
-        });
-    };
-
-    // Each peek costs a round trip to the daemon and a full VT screen render,
-    // so a backgrounded window stops asking entirely rather than paying for
-    // screens nobody can see.
-    const sync = () => {
-      if (document.visibilityState === "visible") {
-        pull();
-        interval ??= setInterval(pull, PEEK_INTERVAL_MS);
-      } else if (interval !== null) {
-        clearInterval(interval);
-        interval = null;
-      }
-    };
-
-    sync();
-    document.addEventListener("visibilitychange", sync);
+    // The poller only calls back on a changed screen, so this is already the
+    // "unchanged string → no re-render" the cards want; the guard is here for
+    // the one case it can't see, a re-subscribe handing back its cache.
+    const unsubscribe = sharedTerminalPeekPoller().subscribe(
+      sessionId,
+      (text) => setPeek((prev) => (prev === text ? prev : text)),
+    );
     return () => {
-      cancelled = true;
-      document.removeEventListener("visibilitychange", sync);
-      if (interval !== null) clearInterval(interval);
+      unsubscribe();
       setPeek(null);
     };
   }, [sessionId]);

@@ -1105,7 +1105,7 @@ export type TerminalPhase =
 /**
  * Status snapshot for a single terminal session. Mirrors the backend
  * `SessionStatus` (serde camelCase). Screen content is pulled on demand via
- * `terminalPeek`, never carried on the status.
+ * `terminalPeekMany`, never carried on the status.
  */
 export interface TerminalStatus {
   id: string;
@@ -1205,6 +1205,28 @@ export interface TerminalResized {
   id: string;
   cols: number;
   rows: number;
+}
+
+/**
+ * Payload of the `terminal:workspace-assigned` event — a session changed cards.
+ *
+ * Attribution lives on the session and any client may move it, so this is how
+ * a window learns that a terminal it is drawing now belongs somewhere else.
+ * `workspaceId` is null when the session was moved out of every workspace.
+ */
+export interface TerminalWorkspaceAssigned {
+  id: string;
+  workspaceId: string | null;
+}
+
+/**
+ * Payload of the `terminal:removed` event — the daemon has stopped listing this
+ * session (killed here or anywhere, or dropped with the daemon's own shutdown).
+ * It says the session is *gone*, not that its pane should be, which is a
+ * distinction `useTerminalEvents` is careful about.
+ */
+export interface TerminalRemoved {
+  id: string;
 }
 
 /** Result of `terminalReplay` — ring-buffer scrollback for xterm reattach. */

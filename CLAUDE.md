@@ -137,6 +137,28 @@ scale and comes out the size it was. Both go through the mounted pane
 (`registry`'s `requestFit`), since clearing and restoring the drawing's
 transform around the measurement is pane-local work.
 
+## The daemon wire is versioned by name
+
+Protocol 3 adds three things, all additive: an **events channel**
+(`{"kind":"events"}`, one connection per client) carrying every session's
+lifecycle — started, status, resized, workspace-assigned, exited, removed — so
+a client takes one `Op::List` and is told the rest instead of polling for it;
+**`scrollback` on `Op::Peek`**, which is what lets a peek reach above the
+viewport; and **`Op::PeekMany`**, one round trip for a grid of cards.
+`VersionInfo` now carries `features` — `["events", "peek-scrollback",
+"peek-many"]` — alongside the integer.
+
+From v3 on the integer stops moving. A client attaches when the protocol
+matches exactly, **or** when the daemon is at 3+ and lists every name in that
+client's `REQUIRED_FEATURES`. The daemon owns live PTYs, so bumping the integer
+for an addition makes every older daemon unattachable — which means killing
+sessions nobody asked to lose, over a capability most clients never use. A
+breaking change is expressed from here on by _requiring a new feature name_;
+the integer is reserved for a genuinely reshaped frame. The `review` CLI plays
+the same rule from the other side: the two commands that need
+`peek-scrollback` say so in one line against an older daemon, and every other
+command keeps working against a v2 one without even asking.
+
 ## Terminal VT engine
 
 The embedded terminal's content peek replays PTY bytes into a screen model to answer "what is on screen right now?". That model is **libghostty-vt** — Ghostty's own VT core — so the peek agrees with the visible terminal on wide characters, emoji clusters, and combining marks instead of approximating them.
@@ -285,8 +307,8 @@ A workspace's terminals are the daemon's record, not the queue's: each session c
 - `review terminal whoami [ID] [--json]` — which session this is and what workspace it is in. `ID` defaults to `$REVIEW_TERMINAL_ID`, which every session's shell inherits from `Session::spawn`. The workspace is **not** exported, because `AssignWorkspace` can move a session under a running shell — it is resolved live against `work.json` on every call, and an id that has left the queue says so rather than erroring
 - `review terminal move <ID>... --workspace <WORKSPACE>` — the CLI's drag-to-card: resolves the workspace read-only and sends `AssignWorkspace` per session, writing nothing to `work.json`
 - `review terminal send <id> [TEXT] [--key KEY]... [--enter|--submit [--settle-ms N]]` — write to the PTY; named keys: enter, tab, esc, backspace, space, arrows, home/end, ctrl-\<letter\>. `--enter` appends `\r` to the same write; `--submit` sends it as a _second_ write after a settle delay (500ms), which is what a TUI with an autocomplete popup open needs — Claude Code reads a newline arriving with the text as accepting the highlighted entry rather than submitting what was typed
-- `review terminal peek <id>` — the whole visible screen (the libghostty-vt render), trimmed only of its trailing blank rows: the grid's height is the bound, and a line cap on top of it hid the top of any tall window drawing a short transcript. This is the truth about what is on screen right now
-- `review terminal log <id> [-n N]` — a different question from a different source: the session's whole output history (the scrollback ring `Op::Replay` carries — the bytes a cold reattach replays — plus the current screen), cooked line-by-line with `wait --match`'s terminal semantics, `-n` tailing it like `docker logs`. It reaches past the screen but only approximates anything drawn with cursor moves
+- `review terminal peek <id> [--scrollback N]` — the whole visible screen (the libghostty-vt render), trimmed only of its trailing blank rows: the grid's height is the bound, and a line cap on top of it hid the top of any tall window drawing a short transcript. This is the truth about what is on screen right now. `--scrollback N` prepends N rows of what has already scrolled past it, and needs a daemon serving `peek-scrollback`
+- `review terminal log <id> [-n N]` — the same render at full depth: every row the VT engine still holds, history and current screen alike, `-n` tailing it like `docker logs`. Because it is the engine's render and not the byte stream that fed it, a TUI drawing itself with cursor moves comes out as what it drew. Needs `peek-scrollback`; against an older daemon it says so and names the fix
 - `review terminal wait <id> [--until <phase|exit>] [--match REGEX] [--new-only] [--timeout SECS]` — block until a status transition, output matching the regex, or exit; built client-side on the stream connection. Bare `wait <id>` means `--until waiting-for-input` ("what I sent has finished"), which is the call agents actually make; `prompt` is an accepted alias for that phase. `--match` tests the current screen first and then the stream, so a line printed a moment _before_ the wait started still answers — the failure mode that used to be a timeout. `--new-only` (only meaningful with `--match`) skips the screen for the rarer "wait for the _next_ occurrence". The screen and the phase snapshot are both taken after subscribing, so a line landing in between is matched twice at worst and never missed
 - `review terminal resize <id> --cols N --rows M` · `review terminal kill <id>...`
 

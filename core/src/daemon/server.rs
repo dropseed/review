@@ -25,10 +25,12 @@ use tokio::sync::{Mutex, Notify};
 use super::codec::{read_frame, write_frame};
 use super::pid_path;
 use super::protocol::{
-    encode_output_framed, Hello, Op, OpResult, ReplayPayload, Request, Response, StreamFrame,
-    VersionInfo, B64, PROTOCOL_VERSION,
+    encode_output_framed, features, Event, Hello, Op, OpResult, ReplayPayload, Request, Response,
+    StreamFrame, VersionInfo, B64, PROTOCOL_VERSION,
 };
-use crate::terminal::{SessionManager, SessionSpec, Subscription, TerminalId, TerminalMessage};
+use crate::terminal::{
+    SessionEvent, SessionManager, SessionSpec, Subscription, TerminalId, TerminalMessage,
+};
 
 /// Serve terminal sessions on `socket` until Ctrl-C, SIGTERM, or [`Op::Quit`].
 ///
@@ -148,6 +150,7 @@ async fn handle_connection(
         Hello::Stream { terminal_id } => {
             serve_stream(reader, writer, manager, TerminalId::from(terminal_id)).await
         }
+        Hello::Events => serve_events(reader, writer, manager).await,
     }
 }
 
@@ -289,9 +292,17 @@ async fn dispatch(op: Op, manager: &Arc<SessionManager>) -> OpResult {
                 .await,
             )
         }
-        Op::Peek { terminal_id } => {
+        Op::Peek {
+            terminal_id,
+            scrollback,
+        } => {
             let id = TerminalId::from(terminal_id);
-            to_result(blocking(move || manager.peek(&id)).await)
+            to_result(blocking(move || manager.peek_with(&id, scrollback)).await)
+        }
+        // Never fails per id — an unknown one is left out of the map, not
+        // raised — so only the join can fail; lift it into the helper.
+        Op::PeekMany { terminal_ids } => {
+            to_result(blocking(move || Ok(manager.peek_many(&terminal_ids))).await)
         }
         Op::Available => OpResult::Ok(serde_json::Value::Bool(true)),
         // Not just the version: this always fingerprints the running binary, so
@@ -303,10 +314,17 @@ async fn dispatch(op: Op, manager: &Arc<SessionManager>) -> OpResult {
         // rebuilt under a running daemon, and the check exists to catch exactly
         // that. See `STARTUP_IDENTITY` and `build_identity`. The protocol rides
         // along so the app can attach across an identity mismatch when the wire
-        // still agrees — sessions surviving an app update.
+        // still agrees — sessions surviving an app update. The feature names
+        // are the finer-grained form of that: from v3 on a client asks for what
+        // it needs by name rather than for a version number, so a daemon that
+        // predates the client's newest trick keeps serving everything else.
         Op::Version => to_result(anyhow::Ok(VersionInfo {
             identity: startup_identity().to_owned(),
             protocol: Some(PROTOCOL_VERSION),
+            features: features::ALL
+                .iter()
+                .map(|name| (*name).to_owned())
+                .collect(),
         })),
         // `shutdown_all_sessions` kills every session but leaves the daemon
         // serving; `quit` does the same and then lets `serve` return (the
@@ -430,6 +448,93 @@ async fn serve_stream(
             return Ok(()); // client went away
         }
     }
+}
+
+// ============================================================
+// Events channel
+// ============================================================
+
+/// Pump every session's lifecycle to one client until it goes away.
+///
+/// Deliberately unlike [`serve_stream`] in two ways. It opens with nothing —
+/// the client's own [`Op::List`], taken after this connection exists, is the
+/// baseline the events apply to, and sending a snapshot here would only race
+/// that one. And falling behind is not fatal: the client is told
+/// ([`Event::Lagged`]) and keeps receiving, because the fix is a fresh `list`,
+/// not a reconnect.
+async fn serve_events(
+    mut reader: tokio::net::unix::OwnedReadHalf,
+    mut writer: OwnedWriteHalf,
+    manager: Arc<SessionManager>,
+) -> Result<()> {
+    let mut rx = manager.subscribe_events().rx;
+
+    // As on a stream connection, reading exists only to notice a disconnect
+    // promptly — the client never sends anything here.
+    let mut discard = [0u8; 64];
+
+    loop {
+        let received = tokio::select! {
+            received = rx.recv() => received,
+            read = reader.read(&mut discard) => match read {
+                Ok(0) | Err(_) => return Ok(()), // client detached
+                Ok(_) => continue,               // unexpected input; ignore
+            },
+        };
+
+        let event = match received {
+            // An event that will not serialize (nothing in these payloads can,
+            // but the encoder is allowed to say so) costs that one event, not
+            // the connection — dropping the channel would cost the client every
+            // session's live status over one unencodable field.
+            Ok(event) => match wire_event(event) {
+                Ok(event) => event,
+                Err(e) => {
+                    log::warn!("[daemon] dropping an unencodable event: {e}");
+                    continue;
+                }
+            },
+            // One `lagged` per episode: the receiver is repositioned by the
+            // error itself, so the next overflow is the next report.
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(dropped)) => {
+                log::debug!("[daemon] events subscriber lagged, dropped {dropped}");
+                Event::Lagged
+            }
+            // The manager is gone, so there is nothing left to report.
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => return Ok(()),
+        };
+
+        if write_frame(&mut writer, &event.encode()).await.is_err() {
+            return Ok(()); // client went away
+        }
+    }
+}
+
+/// Map a manager event onto its wire form, serializing the terminal-typed
+/// payloads the protocol module deliberately does not know about.
+fn wire_event(event: SessionEvent) -> Result<Event> {
+    Ok(match event {
+        SessionEvent::Started(summary) => Event::Started {
+            session: serde_json::to_value(*summary)?,
+        },
+        SessionEvent::Status(status) => Event::Status {
+            status: serde_json::to_value(status)?,
+        },
+        SessionEvent::Resized { id, cols, rows } => Event::Resized {
+            terminal_id: id.0,
+            cols,
+            rows,
+        },
+        SessionEvent::WorkspaceAssigned { id, workspace_id } => Event::WorkspaceAssigned {
+            terminal_id: id.0,
+            workspace_id,
+        },
+        SessionEvent::Exited { id, exit_code } => Event::Exited {
+            terminal_id: id.0,
+            exit_code,
+        },
+        SessionEvent::Removed { id } => Event::Removed { terminal_id: id.0 },
+    })
 }
 
 #[cfg(all(test, feature = "daemon-client"))]
@@ -657,13 +762,8 @@ mod tests {
 
         // Peek renders the screen through the VT actor, which trails the PTY.
         let peeked = poll_until(TIMEOUT, || async {
-            let text = client
-                .request(Op::Peek {
-                    terminal_id: id.to_owned(),
-                })
-                .await
-                .ok()?;
-            text.as_str()?.contains("daemon-ok").then_some(())
+            let text = client.peek_with(id, 0).await.ok()?;
+            text.contains("daemon-ok").then_some(())
         })
         .await;
         assert!(peeked, "peek never reflected the echoed marker");
@@ -701,12 +801,7 @@ mod tests {
         .unwrap_or(false);
         assert!(saw_exit, "kill did not deliver an Exit frame");
 
-        assert!(client
-            .request(Op::Peek {
-                terminal_id: id.to_owned()
-            })
-            .await
-            .is_err());
+        assert!(client.peek_with(id, 0).await.is_err());
         assert!(client
             .request(Op::List { repo_path: None })
             .await
@@ -923,6 +1018,246 @@ mod tests {
             !pid_path(&harness.socket).exists(),
             "pid file was left behind"
         );
+    }
+
+    /// Collect events until `found` matches one, or [`TIMEOUT`] elapses.
+    /// Returns everything seen, so a test can assert on the sequence.
+    async fn events_until(
+        handle: &mut crate::daemon::EventsHandle,
+        found: impl Fn(&Event) -> bool,
+    ) -> Vec<Event> {
+        let mut seen = Vec::new();
+        let _ = tokio::time::timeout(TIMEOUT, async {
+            while let Some(event) = handle.recv().await {
+                let done = found(&event);
+                seen.push(event);
+                if done {
+                    return;
+                }
+            }
+        })
+        .await;
+        seen
+    }
+
+    fn is_removed(event: &Event, wanted: &str) -> bool {
+        matches!(event, Event::Removed { terminal_id } if terminal_id == wanted)
+    }
+
+    /// The whole point of the channel: one connection, and every session's
+    /// life shows up on it — including sessions this client never started.
+    #[tokio::test]
+    async fn the_events_channel_narrates_every_session() {
+        let harness = Harness::start().await;
+        let client = harness.client().await;
+        let repo = tempfile::TempDir::new().unwrap();
+        let id = "events-rt";
+
+        // Subscribe first: the invariant is about a `list` taken *after* this.
+        let mut events = client.open_events().await.unwrap();
+        assert!(client
+            .request(Op::List { repo_path: None })
+            .await
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .is_empty());
+
+        client.request(start_op(id, repo.path())).await.unwrap();
+        let seen = events_until(&mut events, |e| matches!(e, Event::Started { .. })).await;
+        match seen.last() {
+            // The payload is the same `TerminalSummary` `list` returns, so a
+            // client can put it straight into its list without a round trip.
+            Some(Event::Started { session }) => {
+                assert_eq!(session["id"], id);
+                assert_eq!(session["cols"], 80);
+            }
+            other => panic!("no started event: {other:?}"),
+        }
+
+        client
+            .request(Op::Resize {
+                terminal_id: id.to_owned(),
+                cols: 101,
+                rows: 31,
+            })
+            .await
+            .unwrap();
+        let seen = events_until(&mut events, |e| matches!(e, Event::Resized { .. })).await;
+        assert!(
+            seen.contains(&Event::Resized {
+                terminal_id: id.to_owned(),
+                cols: 101,
+                rows: 31,
+            }),
+            "resize never reached the events channel: {seen:?}"
+        );
+
+        client
+            .assign_workspace(id, Some("0a1b2c3d".to_owned()))
+            .await
+            .unwrap();
+        let seen = events_until(&mut events, |e| {
+            matches!(e, Event::WorkspaceAssigned { .. })
+        })
+        .await;
+        assert!(
+            seen.contains(&Event::WorkspaceAssigned {
+                terminal_id: id.to_owned(),
+                workspace_id: Some("0a1b2c3d".to_owned()),
+            }),
+            "reassignment never reached the events channel: {seen:?}"
+        );
+
+        // A status transition carries the same object the per-session stream
+        // does, so one drain can feed every phase dot.
+        client.write(id, b"sleep 5\n").await.unwrap();
+        let seen = events_until(
+            &mut events,
+            |e| matches!(e, Event::Status { status } if status["runningCommand"] == "sleep"),
+        )
+        .await;
+        assert!(
+            seen.iter().any(
+                |e| matches!(e, Event::Status { status } if status["runningCommand"] == "sleep")
+            ),
+            "no status transition on the events channel: {seen:?}"
+        );
+
+        // Killing says both things, in order — and `list` agrees.
+        client
+            .request(Op::Kill {
+                terminal_id: id.to_owned(),
+            })
+            .await
+            .unwrap();
+        let seen = events_until(&mut events, |e| is_removed(e, id)).await;
+        let exited = seen
+            .iter()
+            .position(|e| matches!(e, Event::Exited { terminal_id, .. } if terminal_id == id));
+        let removed = seen.iter().position(|e| is_removed(e, id));
+        assert!(exited.is_some(), "no exited event: {seen:?}");
+        assert!(removed.is_some(), "no removed event: {seen:?}");
+        assert!(exited < removed, "removed must follow exited: {seen:?}");
+        assert!(client
+            .request(Op::List { repo_path: None })
+            .await
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .is_empty());
+    }
+
+    /// A subscriber that stops reading must be told it lost events and then
+    /// keep being served — the fix for a lag is a fresh `list`, not a
+    /// reconnect, and dropping the connection would cost the client every
+    /// session's live status until it noticed.
+    #[tokio::test]
+    async fn a_lagging_subscriber_is_told_and_keeps_serving() {
+        let harness = Harness::start().await;
+        let client = harness.client().await;
+        let repo = tempfile::TempDir::new().unwrap();
+
+        let id = "lag-source";
+        client.request(start_op(id, repo.path())).await.unwrap();
+        let mut events = client.open_events().await.unwrap();
+
+        // Overflow every cushion between the bus and this client — which never
+        // reads a frame until the loop is done — using the cheapest event
+        // there is: reassignment touches no PTY and is announced
+        // unconditionally. The count has to clear the daemon's bus, the
+        // socket's own buffers, and this handle's queue, so it is deliberately
+        // far more than the sum of the two we know.
+        let overflow = 20 * crate::terminal::EVENT_CHANNEL_CAPACITY;
+        for chunk in (0..overflow).collect::<Vec<_>>().chunks(500) {
+            let sending = chunk
+                .iter()
+                .map(|n| client.assign_workspace(id, Some(format!("w{n}"))));
+            for result in futures::future::join_all(sending).await {
+                result.unwrap();
+            }
+        }
+
+        let seen = events_until(&mut events, |e| matches!(e, Event::Lagged)).await;
+        assert!(
+            seen.contains(&Event::Lagged),
+            "a subscriber that fell behind was never told: {} events seen",
+            seen.len()
+        );
+
+        // Still connected, and still narrating: a session started after the
+        // lag arrives like any other.
+        client
+            .request(start_op("after-the-lag", repo.path()))
+            .await
+            .unwrap();
+        let seen = events_until(
+            &mut events,
+            |e| matches!(e, Event::Started { session } if session["id"] == "after-the-lag"),
+        )
+        .await;
+        assert!(
+            seen.iter().any(
+                |e| matches!(e, Event::Started { session } if session["id"] == "after-the-lag")
+            ),
+            "the connection stopped serving after a lag"
+        );
+
+        client.request(Op::ShutdownAllSessions).await.unwrap();
+    }
+
+    /// `peek` reaches past the visible screen only when asked, and `peek_many`
+    /// answers for a set of sessions in one round trip.
+    #[tokio::test]
+    async fn peek_takes_a_scrollback_depth_and_a_batch_of_ids() {
+        let harness = Harness::start().await;
+        let client = harness.client().await;
+        let repo = tempfile::TempDir::new().unwrap();
+        let id = "peek-history";
+
+        client.request(start_op(id, repo.path())).await.unwrap();
+        // 24 rows of grid; scroll a marker well off the top of it.
+        client
+            .write(id, b"echo scrolled-marker; for i in 1 2 3 4 5 6 7 8 9 0; do echo pad$i; echo pad$i; echo pad$i; done\n")
+            .await
+            .unwrap();
+
+        // The marker leaves the visible screen…
+        let gone = poll_until(TIMEOUT, || async {
+            let screen = client.peek_with(id, 0).await.ok()?;
+            (!screen.contains("scrolled-marker") && screen.contains("pad0")).then_some(())
+        })
+        .await;
+        assert!(gone, "the marker never scrolled off the visible screen");
+
+        // …but history brings it back, and asking for everything is enough.
+        let full = client.peek_with(id, u32::MAX).await.unwrap();
+        assert!(
+            full.contains("scrolled-marker"),
+            "history did not reach the scrolled-off marker: {full:?}"
+        );
+        assert!(
+            full.lines().count() > client.peek_with(id, 0).await.unwrap().lines().count(),
+            "history rendered no more than the viewport"
+        );
+
+        // A batch answers for what exists and omits what does not.
+        let screens = client
+            .peek_many(&[id.to_owned(), "nobody".to_owned()])
+            .await
+            .unwrap();
+        assert!(screens.contains_key(id), "batch missed a live session");
+        assert!(
+            !screens.contains_key("nobody"),
+            "an unknown id must be omitted, not raised: {screens:?}"
+        );
+
+        client
+            .request(Op::Kill {
+                terminal_id: id.to_owned(),
+            })
+            .await
+            .unwrap();
     }
 
     /// Poll `f` until it yields `Some`, or `timeout` elapses.

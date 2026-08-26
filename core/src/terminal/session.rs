@@ -20,9 +20,10 @@ use portable_pty::{native_pty_system, Child, ChildKiller, CommandBuilder, Master
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::mpsc::Sender;
 
+use super::events::{EventBus, SessionEvent};
 use super::ring::Ring;
 use super::status::StatusScanner;
-use super::vt::{self, VtThread};
+use super::vt::{self, PendingPeek, VtThread};
 use super::{
     now_millis, shell_integration, Phase, SessionSpec, SessionStatus, TerminalId, TerminalMessage,
     TerminalSummary,
@@ -56,6 +57,19 @@ struct Shared {
     exit_code: Mutex<Option<i32>>,
     /// Owned child handle, used by the reader thread to reap the exit code.
     child: Mutex<Box<dyn Child + Send + Sync>>,
+    /// The manager-wide event bus (see [`super::events`]).
+    events: EventBus,
+    /// Whether the manager has accepted this session into its map and announced
+    /// it. Until then nothing about this session may be published: a session
+    /// spawned and then thrown away (a duplicate id) was never in anyone's
+    /// list, and an event naming its id would be read as being about the *live*
+    /// session it collided with.
+    announced: AtomicBool,
+    /// Whether [`SessionEvent::Removed`] has already gone out. Several paths
+    /// converge on "this session has left the list" — an explicit kill, the
+    /// poller reaping an exited shell, `shutdown_all` — and the list may only
+    /// lose it once.
+    removal_announced: AtomicBool,
 }
 
 impl Shared {
@@ -68,7 +82,45 @@ impl Shared {
     fn publish_status(&self) {
         let status = self.scanner.lock().unwrap().build_status();
         *self.status.lock().unwrap() = status.clone();
+        // The same object, to the clients watching the whole daemon rather
+        // than this one session — but only built when one of them exists. A
+        // status is a deep clone, and every transition of every session makes
+        // one; a daemon nobody has opened an events connection to should not
+        // pay for a copy it will hand to nobody.
+        if self.wants_events() {
+            self.publish_event(SessionEvent::Status(status.clone()));
+        }
         fanout(&self.subscribers, &TerminalMessage::Status(status));
+    }
+
+    /// Publish to the manager-wide bus, unless this session was never accepted.
+    ///
+    /// Never called while holding a lock the event's construction needs, so the
+    /// bus can't participate in a lock cycle with `status`, `size`, or
+    /// `subscribers`.
+    fn publish_event(&self, event: SessionEvent) {
+        if self.wants_events() {
+            self.events.publish(event);
+        }
+    }
+
+    /// Whether an event published now would reach anyone: this session is
+    /// announced, and something is watching the bus. Checked before *building*
+    /// an event that costs a clone — [`Self::publish_event`] takes an owned one.
+    fn wants_events(&self) -> bool {
+        self.announced.load(Ordering::SeqCst) && self.events.has_subscribers()
+    }
+
+    /// Announce that this session has left the list — at most once, whichever
+    /// path gets there first.
+    fn announce_removed(&self) {
+        if self.announced.load(Ordering::SeqCst)
+            && !self.removal_announced.swap(true, Ordering::SeqCst)
+        {
+            self.events.publish(SessionEvent::Removed {
+                id: self.id.clone(),
+            });
+        }
     }
 }
 
@@ -102,7 +154,11 @@ impl Session {
     ///
     /// The reader thread runs one internal [`OutputSink`] — the VT-thread
     /// forwarder that feeds the content-peek grid.
-    pub fn spawn(spec: SessionSpec) -> Result<Self> {
+    ///
+    /// `events` is the manager-wide bus, but a freshly spawned session is
+    /// **silent** on it until [`Session::announce_started`]: whoever spawned it
+    /// may still reject it, and a rejected session was never in the list.
+    pub fn spawn(spec: SessionSpec, events: EventBus) -> Result<Self> {
         let SessionSpec {
             terminal_id: id,
             repo_path,
@@ -194,6 +250,9 @@ impl Session {
             exited: AtomicBool::new(false),
             exit_code: Mutex::new(None),
             child: Mutex::new(child),
+            events,
+            announced: AtomicBool::new(false),
+            removal_announced: AtomicBool::new(false),
         });
 
         let reader_handle = spawn_reader_thread(Arc::clone(&shared), reader, sinks);
@@ -218,9 +277,32 @@ impl Session {
         &self.repo_path
     }
 
+    /// Take this session out of its silent state: publish it to the
+    /// manager-wide bus and start publishing everything that happens to it.
+    ///
+    /// Called once, by the manager, after the session is in the map — so a
+    /// subscriber that reacts by re-listing already finds it there. The
+    /// summary is built *before* arming, since the bus must not be reachable
+    /// from inside a lock the summary needs.
+    pub(crate) fn announce_started(&self) {
+        let summary = self.summary();
+        self.shared
+            .events
+            .publish(SessionEvent::Started(Box::new(summary)));
+        self.shared.announced.store(true, Ordering::SeqCst);
+    }
+
     /// Move this session to another workspace, or to none.
     pub fn assign_workspace(&self, workspace_id: Option<String>) {
-        *self.workspace_id.lock().unwrap() = workspace_id;
+        *self.workspace_id.lock().unwrap() = workspace_id.clone();
+        // Unconditional, including a re-assignment to the workspace it is
+        // already in: `AssignWorkspace` is an explicit act by some client, and
+        // every consumer of this applies it idempotently. Nothing is gained by
+        // making the daemon compare strings to suppress it.
+        self.shared.publish_event(SessionEvent::WorkspaceAssigned {
+            id: self.shared.id.clone(),
+            workspace_id,
+        });
     }
 
     /// Whether the child has exited (EOF reached).
@@ -358,18 +440,43 @@ impl Session {
             vt.send_resize(cols, rows);
         }
         // Tell every attached client: they all share this one grid, and any of
-        // them rendering at the old size is now rendering wrong.
+        // them rendering at the old size is now rendering wrong. The bus hears
+        // it too, for the clients that are watching the daemon rather than this
+        // one session — and only for a real change, same as the fan-out.
         fanout(
             &self.shared.subscribers,
             &TerminalMessage::Resized { cols, rows },
         );
+        self.shared.publish_event(SessionEvent::Resized {
+            id: self.shared.id.clone(),
+            cols,
+            rows,
+        });
         Ok(())
     }
 
     /// A fresh plain-text screen snapshot from the VT actor, or `None` if
     /// unavailable (actor timed out, or the session has been torn down).
-    pub fn peek(&self) -> Option<String> {
-        self.vt.lock().unwrap().as_ref().and_then(VtThread::peek)
+    ///
+    /// `scrollback` is how many rows of history above the visible screen to
+    /// include; `0` is the visible screen alone.
+    pub fn peek(&self, scrollback: u32) -> Option<String> {
+        self.vt
+            .lock()
+            .unwrap()
+            .as_ref()
+            .and_then(|vt| vt.peek(scrollback))
+    }
+
+    /// [`Self::peek`] without the wait — see [`VtThread::request_peek`]. What a
+    /// caller rendering several sessions uses to get every actor working before
+    /// it waits on any of them.
+    pub fn request_peek(&self, scrollback: u32) -> Option<PendingPeek> {
+        self.vt
+            .lock()
+            .unwrap()
+            .as_ref()
+            .and_then(|vt| vt.request_peek(scrollback))
     }
 
     /// Terminate the child and join the reader thread. Idempotent.
@@ -387,6 +494,10 @@ impl Session {
         if let Some(vt) = self.vt.lock().unwrap().take() {
             vt.shutdown_and_join();
         }
+        // Normally the reader thread already said this on its way out (the
+        // join above waited for it). The backstop is for the paths where it
+        // cannot have: a second kill, or a session whose reader never ran.
+        self.shared.announce_removed();
         Ok(())
     }
 }
@@ -481,6 +592,14 @@ fn spawn_reader_thread(
                 sink.on_exit();
             }
             fanout(&shared.subscribers, &TerminalMessage::Exit(code));
+            // `SessionManager::list` hides an exited session from this moment
+            // — the poller's later reap only frees it — so exiting is also
+            // leaving the list, and the bus has to say both.
+            shared.publish_event(SessionEvent::Exited {
+                id: shared.id.clone(),
+                exit_code: code,
+            });
+            shared.announce_removed();
         })
         .expect("failed to spawn terminal reader thread")
 }

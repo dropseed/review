@@ -3,25 +3,40 @@
 //! These are thin proxies onto the `review-daemon` process, which owns the one
 //! `SessionManager` and therefore the PTYs — that is what lets sessions
 //! survive quitting or crashing this app. Each command is one control request
-//! over the daemon's Unix socket ([`DaemonClient`]); live PTY output arrives on
-//! a second, per-session connection and is re-emitted as Tauri events (see
-//! [`ensure_drain`]).
+//! over the daemon's Unix socket ([`DaemonClient`]).
+//!
+//! Two kinds of connection carry what the frontend cannot ask for:
+//!
+//! - **One events drain per app** ([`spawn_events_drain`]), opened the moment
+//!   the control client is established. It carries every session's lifecycle —
+//!   including sessions this app never started, which is the whole reason it
+//!   exists: a shell begun from the phone, the CLI, or another window is a
+//!   thing the app used to learn about only by polling `Op::List`.
+//! - **A per-session drain** ([`ensure_drain`]) for each *mounted* pane, which
+//!   carries what is addressed to that pane: raw PTY output, its geometry, and
+//!   its own exit. An unmounted session costs no connection at all now — the
+//!   status-only drains the sidebar used to need are the events channel's job.
+//!
+//! The two never emit the same event ([`drain_stream`] has the reasoning): a
+//! transition the frontend reads as "somebody else did this to me" must arrive
+//! exactly once, by exactly one route.
 //!
 //! The command signatures and emitted event/payload shapes are fixed by the
 //! project's canonical wire contract (all JSON `camelCase`) and are unchanged
 //! from when the manager ran in-process — the frontend cannot tell the
 //! difference.
 
-use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use base64::Engine as _;
 use log::{error, info, warn};
-use review::daemon::{DaemonClient, Op, ReplayPayload, StreamFrame, StreamHandle, B64};
+use review::daemon::{
+    DaemonClient, Event, EventsHandle, Op, ReplayPayload, StreamFrame, StreamHandle, B64,
+};
 use review::terminal::{SessionStatus, TerminalSummary};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
@@ -32,6 +47,20 @@ use super::daemon;
 /// The panel gates itself off via `terminals_available`, so this is a backstop
 /// rather than something a user should normally see.
 const DAEMON_UNAVAILABLE: &str = "The terminal daemon is not running. Restart Review to try again.";
+
+/// "Everything you know about the session list may be stale — list again."
+/// Emitted on every (re)connect of the events drain and on a `lagged` frame,
+/// which are precisely the two moments the channel's ordering guarantee does
+/// not hold.
+const SESSIONS_INVALIDATED: &str = "terminal:sessions-invalidated";
+
+/// First gap before re-dialing the events channel after it ends, and the
+/// ceiling the gap doubles up to. The channel is the app's only push
+/// notification about sessions, so it is worth re-dialing indefinitely — a
+/// socket connect every few seconds is nothing, and giving up would leave a
+/// window that survived a blip showing a session list that stopped moving.
+const EVENTS_RETRY_MIN: Duration = Duration::from_millis(100);
+const EVENTS_RETRY_MAX: Duration = Duration::from_secs(5);
 
 /// Tauri-managed handle to the terminal daemon, shared by all windows.
 pub struct TerminalState {
@@ -46,14 +75,26 @@ pub struct TerminalState {
     /// is deliberately not reconnected to — its sessions died with it, so a
     /// relaunch is the honest recovery.
     client: tokio::sync::Mutex<Option<DaemonClient>>,
-    /// Sessions with a live drain task, so a re-mount or a repeated
+    /// Whether the one events drain has been started. Set once, by whichever
+    /// command first established the client; the task itself owns its
+    /// reconnects from then on.
+    events_drain: AtomicBool,
+    /// Sessions with a live output drain, so a re-mount or a repeated
     /// `terminal_replay` cannot start a second stream for the same session.
     ///
-    /// The flag is whether the drain forwards raw output. `terminal_list`
-    /// opens status-only drains (`false`) so sidebar dots and titles stay live
-    /// for sessions whose pane was never mounted; opening a pane upgrades the
-    /// drain in place (`terminal_start`/`terminal_replay` pass `true`).
-    drains: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
+    /// Only *mounted* panes appear here. Sidebar dots and titles used to need
+    /// a status-only drain per listed session; they ride the events channel
+    /// now, so a session nobody is looking at holds no connection at all.
+    drains: Arc<Mutex<HashSet<String>>>,
+    /// The workspace ids the queue held the last time anything read it — what
+    /// [`needs_routing`] answers a `started` frame from without touching the
+    /// filesystem. Refreshed by every [`terminal_list`], which reads the queue
+    /// anyway.
+    ///
+    /// Empty means *unpopulated*, never "there are no workspaces": nothing has
+    /// read the queue yet, or the read failed. Both are "don't know", which
+    /// routes.
+    known_workspaces: KnownWorkspaces,
 }
 
 impl Default for TerminalState {
@@ -67,15 +108,29 @@ impl TerminalState {
     pub fn new() -> Self {
         Self {
             client: tokio::sync::Mutex::new(None),
-            drains: Arc::new(Mutex::new(HashMap::new())),
+            events_drain: AtomicBool::new(false),
+            drains: Arc::new(Mutex::new(HashSet::new())),
+            known_workspaces: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
     /// A cloned control client, attaching to (or spawning) the daemon the first
     /// time one is asked for. Cloning is an `Arc` bump and keeps command futures
     /// free of borrows from Tauri state.
+    ///
+    /// Also where the app's one events drain is born: the connection existing
+    /// is exactly the condition for watching it, and starting the drain here
+    /// means no command has to remember to.
     async fn client(&self, app: &AppHandle) -> Result<DaemonClient, String> {
-        self.establish(|| daemon::ensure_daemon(app)).await
+        let client = self.establish(|| daemon::ensure_daemon(app)).await?;
+        if !self.events_drain.swap(true, Ordering::Relaxed) {
+            spawn_events_drain(
+                app.clone(),
+                client.clone(),
+                Arc::clone(&self.known_workspaces),
+            );
+        }
+        Ok(client)
     }
 
     /// The control client if one has already been established — never spawning
@@ -127,12 +182,31 @@ pub struct TerminalOutputPayload {
     seq: u64,
 }
 
-/// `terminal:exit:{id}` payload — the child's exit code (`null` if unknown).
+/// The child's exit code (`null` if unknown), under both names it goes out
+/// as: `terminal:exit:{id}` for the mounted pane, off that pane's own stream,
+/// and `terminal:exited` for the global roll-up, off the events drain. One
+/// shape, two audiences — never both for the same listener.
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct TerminalExitPayload {
     id: String,
     exit_code: Option<i32>,
+}
+
+/// `terminal:workspace-assigned` payload — a session moved to another
+/// workspace card, or off every card (`null`).
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalWorkspaceAssignedPayload {
+    id: String,
+    workspace_id: Option<String>,
+}
+
+/// `terminal:removed` payload — the daemon has stopped listing this session.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalRemovedPayload {
+    id: String,
 }
 
 /// `terminal:resized:{id}` payload — the PTY's new size, after any client
@@ -163,18 +237,19 @@ async fn request<T: serde::de::DeserializeOwned>(
     client.request_as(op).await.map_err(|e| format!("{e:#}"))
 }
 
-/// The per-session drain registry: session id → "forward raw output" flag.
-type Drains = Mutex<HashMap<String, Arc<AtomicBool>>>;
+/// The registry of sessions with a live output drain.
+type Drains = Mutex<HashSet<String>>;
 
-/// Ensure exactly one task is pumping this session's daemon stream into Tauri
-/// events.
+/// Workspace ids last seen in the queue — see [`TerminalState::known_workspaces`].
+type KnownWorkspaces = Arc<Mutex<HashSet<String>>>;
+
+/// Ensure exactly one task is pumping this session's PTY output into
+/// `terminal:output:{id}` events.
 ///
-/// Idempotent: a second call for a session that is already being drained
-/// starts no second stream, so a hot re-mount or a repeated `terminal_replay`
-/// cannot double-emit — but if it asks for output on a status-only drain, the
-/// existing drain is upgraded in place. The slot is released when the stream
-/// ends, which lets a later call re-establish the pump if the connection
-/// dropped.
+/// Idempotent: a second call for a session that is already being drained starts
+/// no second stream, so a hot re-mount or a repeated `terminal_replay` cannot
+/// double-emit. The slot is released when the stream ends, which lets a later
+/// call re-establish the pump if the connection dropped.
 ///
 /// The subscription is established *before* the calling command returns. The
 /// daemon discards a fresh subscription's scrollback (clients are expected to
@@ -188,9 +263,8 @@ async fn ensure_drain(
     state: &TerminalState,
     client: &DaemonClient,
     terminal_id: String,
-    output: bool,
 ) {
-    if upgrade_drain(&state.drains, &terminal_id, output) {
+    if is_draining(&state.drains, &terminal_id) {
         return;
     }
 
@@ -201,50 +275,33 @@ async fn ensure_drain(
             return;
         }
     };
-    let Some(emit_output) = claim_drain(&state.drains, &terminal_id, output) else {
-        // Another call won the race while we were connecting (claim_drain
-        // already applied any upgrade to the winner); drop this connection,
-        // which drops its daemon-side subscription.
+    if !claim_drain(&state.drains, &terminal_id) {
+        // Another call won the race while we were connecting; drop this
+        // connection, which drops its daemon-side subscription.
         return;
-    };
+    }
 
     let drains = Arc::clone(&state.drains);
     tokio::spawn(async move {
-        drain_stream(app, stream, &terminal_id, &emit_output).await;
+        drain_stream(app, stream, &terminal_id).await;
         release_drain(&drains, &terminal_id);
     });
 }
 
-/// If a task already holds this session's drain slot, note it — upgrading the
-/// drain to forward output when asked to — and return `true`.
-fn upgrade_drain(drains: &Drains, id: &str, output: bool) -> bool {
-    match drains.lock().expect("terminal drains poisoned").get(id) {
-        Some(emit_output) => {
-            if output {
-                emit_output.store(true, Ordering::Relaxed);
-            }
-            true
-        }
-        None => false,
-    }
-}
-
-/// Take the drain slot for a session, returning its output flag; `None` if a
-/// task already holds it (upgraded, as in [`upgrade_drain`]).
-fn claim_drain(drains: &Drains, id: &str, output: bool) -> Option<Arc<AtomicBool>> {
-    match drains
+/// Whether a task already holds this session's drain slot.
+fn is_draining(drains: &Drains, id: &str) -> bool {
+    drains
         .lock()
         .expect("terminal drains poisoned")
-        .entry(id.to_owned())
-    {
-        Entry::Occupied(existing) => {
-            if output {
-                existing.get().store(true, Ordering::Relaxed);
-            }
-            None
-        }
-        Entry::Vacant(slot) => Some(Arc::clone(slot.insert(Arc::new(AtomicBool::new(output))))),
-    }
+        .contains(id)
+}
+
+/// Take the drain slot for a session; `false` if a task already holds it.
+fn claim_drain(drains: &Drains, id: &str) -> bool {
+    drains
+        .lock()
+        .expect("terminal drains poisoned")
+        .insert(id.to_owned())
 }
 
 /// Give the drain slot back once the stream has ended.
@@ -252,30 +309,31 @@ fn release_drain(drains: &Drains, id: &str) {
     drains.lock().expect("terminal drains poisoned").remove(id);
 }
 
-/// Pump one session's stream connection into Tauri events until it ends.
+/// Pump one mounted pane's stream into Tauri events until it ends.
 ///
-/// A dumb pump by design: the slow-consumer re-subscribe that used to live here
-/// is now the daemon's job, so this task only translates frames to events.
-/// Output frames are dropped while `emit_output` is false (a status-only drain
-/// for a session no pane has attached to) — the pane that eventually attaches
-/// replays scrollback and dedups by `seq`, so nothing is lost by skipping.
-async fn drain_stream(
-    app: AppHandle,
-    mut stream: StreamHandle,
-    id: &str,
-    emit_output: &AtomicBool,
-) {
+/// **What this emits and what the events drain emits is a split by audience,
+/// not by frame type, and the two must not overlap.** Everything here is
+/// addressed to *this pane* — `terminal:output:{id}`, `terminal:resized:{id}`,
+/// `terminal:exit:{id}` — and the pane reads them as its own stream's history:
+/// the registry treats the first resize on the stream as the opening size
+/// announcement and every later one as "somebody else resized me", which is
+/// what raises the "sized elsewhere" badge. A second copy of a resize arriving
+/// from the app-wide drain would badge a pane for its own resize. So geometry
+/// and the per-session exit stay here, sourced from the one connection whose
+/// ordering the pane is entitled to reason about.
+///
+/// Status is the exception that proves the rule: it is dropped here because it
+/// is not pane-scoped in that sense — the frontend treats each status as a
+/// fresh snapshot — and the events drain carries `terminal:status-changed` for
+/// every session rather than only mounted ones.
+async fn drain_stream(app: AppHandle, mut stream: StreamHandle, id: &str) {
     let output_evt = format!("terminal:output:{id}");
-    let status_evt = format!("terminal:status:{id}");
     let resized_evt = format!("terminal:resized:{id}");
     let exit_evt = format!("terminal:exit:{id}");
 
     while let Some(frame) = stream.recv().await {
         match frame {
             StreamFrame::Output { seq, data } => {
-                if !emit_output.load(Ordering::Relaxed) {
-                    continue;
-                }
                 // The wire keeps output raw for speed; the Tauri event stays
                 // base64 so the frontend contract is untouched.
                 let payload = TerminalOutputPayload {
@@ -285,22 +343,7 @@ async fn drain_stream(
                 };
                 let _ = app.emit(&output_evt, &payload);
             }
-            StreamFrame::Status(raw) => {
-                // Retyping the status restores the exact event shape the
-                // frontend saw when the manager was in-process. A decode failure
-                // means daemon/app protocol skew, which the version check at
-                // startup already rules out — drop it rather than emit garbage.
-                match serde_json::from_value::<SessionStatus>(raw) {
-                    Ok(status) => {
-                        // Per-session listeners plus a global roll-up for badges.
-                        let _ = app.emit(&status_evt, &status);
-                        let _ = app.emit("terminal:status-changed", &status);
-                    }
-                    Err(e) => warn!("[terminal] malformed status for {id}: {e}"),
-                }
-            }
-            // Not gated on `emit_output`: a status-only drain still carries
-            // geometry, so a pane that mounts later starts at the right grid.
+            StreamFrame::Status(_) => {}
             StreamFrame::Resized { cols, rows } => {
                 let _ = app.emit(
                     &resized_evt,
@@ -324,6 +367,139 @@ async fn drain_stream(
             StreamFrame::Error { message } => {
                 warn!("[terminal] daemon closed the stream for {id}: {message}");
                 return;
+            }
+        }
+    }
+}
+
+/// Start the app's one events drain: every session's lifecycle, re-emitted as
+/// the Tauri events the frontend already listens for.
+///
+/// Runs for the life of the app, re-dialing whenever the connection ends. Each
+/// successful open — the first one included — announces
+/// [`SESSIONS_INVALIDATED`] first, because the channel's guarantee is only
+/// "the list you took *after* opening this, plus every frame since". A list
+/// taken before this connection existed, or while it was down, is exactly the
+/// list that guarantee does not cover.
+fn spawn_events_drain(app: AppHandle, client: DaemonClient, known: KnownWorkspaces) {
+    tokio::spawn(async move {
+        let mut gap = EVENTS_RETRY_MIN;
+        loop {
+            match client.open_events().await {
+                Ok(events) => {
+                    gap = EVENTS_RETRY_MIN;
+                    let _ = app.emit(SESSIONS_INVALIDATED, ());
+                    drain_events(&app, &client, &known, events).await;
+                    warn!("[terminal] the daemon's event channel ended; re-dialing");
+                }
+                Err(e) => warn!("[terminal] could not watch the daemon's events: {e:#}"),
+            }
+            tokio::time::sleep(gap).await;
+            gap = (gap * 2).min(EVENTS_RETRY_MAX);
+        }
+    });
+}
+
+/// Translate one events connection into Tauri events until it ends.
+///
+/// One session's frame must never delay another's, so nothing in this loop
+/// waits on anything slower than an `emit`. The routing a stray `started`
+/// needs — a filesystem walk and a `git` invocation — goes onto its own task
+/// for exactly that reason.
+async fn drain_events(
+    app: &AppHandle,
+    client: &DaemonClient,
+    known: &KnownWorkspaces,
+    mut events: EventsHandle,
+) {
+    while let Some(event) = events.recv().await {
+        match event {
+            Event::Started { session } => {
+                let mut summary: TerminalSummary = match serde_json::from_value(session) {
+                    Ok(summary) => summary,
+                    Err(e) => {
+                        warn!("[terminal] malformed started event: {e}");
+                        continue;
+                    }
+                };
+                let _ = app.emit("terminal:started", &summary);
+
+                // A session can be born anywhere — the CLI, the phone, a raw
+                // daemon client — and name a workspace this queue never heard
+                // of, which is a terminal the sidebar cannot draw. Settling
+                // that costs a filesystem walk and a `git` invocation, so it
+                // rides its own task: awaited here it would hold up every
+                // other session's events behind one shell's routing.
+                //
+                // Nothing is lost by going out first. The routing's own
+                // `AssignWorkspace` comes back as a `workspaceAssigned` frame,
+                // which the frontend applies to the session it already has.
+                //
+                // And the far commoner case skips the task entirely: this
+                // app's own starts route *before* they ask the daemon, so
+                // their summary already names a workspace the queue holds.
+                if needs_routing(&summary, known) {
+                    let client = client.clone();
+                    tokio::spawn(async move { reroute_stray(&client, &mut summary).await });
+                }
+            }
+            Event::Status { status } => {
+                // Retyping the status restores the exact event shape the
+                // frontend saw when the manager was in-process. A decode
+                // failure means daemon/app skew, which the version check at
+                // startup already rules out — drop it rather than emit garbage.
+                match serde_json::from_value::<SessionStatus>(status) {
+                    Ok(status) => {
+                        // One route, app-wide. Status is not pane-scoped —
+                        // every listener treats it as a fresh snapshot keyed by
+                        // `status.id` — so a second per-session copy of the
+                        // same frame would only be two ways to hear one thing.
+                        let _ = app.emit("terminal:status-changed", &status);
+                    }
+                    Err(e) => warn!("[terminal] malformed status event: {e}"),
+                }
+            }
+            // Deliberately not forwarded: geometry is pane-scoped, and the
+            // mounted pane already has it from its own stream. See the split
+            // documented on `drain_stream` — a second copy here would badge a
+            // pane "sized elsewhere" for a resize it performed itself.
+            Event::Resized { .. } => {}
+            Event::WorkspaceAssigned {
+                terminal_id,
+                workspace_id,
+            } => {
+                let _ = app.emit(
+                    "terminal:workspace-assigned",
+                    &TerminalWorkspaceAssignedPayload {
+                        id: terminal_id,
+                        workspace_id,
+                    },
+                );
+            }
+            // The global roll-up only. `terminal:exit:{id}` is the mounted
+            // pane's own event and comes off its own stream, which is also the
+            // connection that has the last of its output ahead of the exit.
+            Event::Exited {
+                terminal_id,
+                exit_code,
+            } => {
+                let _ = app.emit(
+                    "terminal:exited",
+                    &TerminalExitPayload {
+                        id: terminal_id,
+                        exit_code,
+                    },
+                );
+            }
+            Event::Removed { terminal_id } => {
+                let _ = app.emit(
+                    "terminal:removed",
+                    &TerminalRemovedPayload { id: terminal_id },
+                );
+            }
+            Event::Lagged => {
+                warn!("[terminal] fell behind the daemon's events; re-listing");
+                let _ = app.emit(SESSIONS_INVALIDATED, ());
             }
         }
     }
@@ -422,7 +598,7 @@ pub async fn terminal_start(
 
     // Subscribe after start (the session now exists); the fresh session's replay
     // is empty, so the drain just carries live output.
-    ensure_drain(app, &state, &client, terminal_id.clone(), true).await;
+    ensure_drain(app, &state, &client, terminal_id.clone()).await;
 
     info!(
         "[terminal_start] {terminal_id} in {} in {:?}",
@@ -522,13 +698,18 @@ pub async fn terminal_kill(
     request(&client, Op::Kill { terminal_id }).await
 }
 
-/// List sessions — and make sure each one has at least a status-only drain, so
-/// sidebar phase dots and titles keep updating for sessions whose pane was
-/// never opened in this app run. Restored sessions otherwise only ever show
-/// the snapshot taken here.
+/// List sessions.
 ///
-/// Also the app's reconciler: anything that arrives without a workspace it can
-/// be shown under is routed here, before the frontend ever sees it.
+/// Opens no connections of its own any more: phase dots and titles for
+/// sessions whose pane was never mounted come from the events drain, which
+/// covers every session for the price of one connection instead of one each.
+///
+/// Still the app's reconciler, though: anything that arrives without a
+/// workspace it can be shown under is routed here, before the frontend ever
+/// sees it. The events drain does the same for each `started` frame, which
+/// makes this the backstop for the ways attribution goes stale with nothing
+/// starting — a workspace removed by hand, a cleanup sweep while this app was
+/// not looking.
 #[tauri::command]
 pub async fn terminal_list(
     app: AppHandle,
@@ -537,11 +718,26 @@ pub async fn terminal_list(
 ) -> Result<Vec<TerminalSummary>, String> {
     let client = state.client(&app).await?;
     let mut summaries: Vec<TerminalSummary> = request(&client, Op::List { repo_path }).await?;
-    reroute_strays(&client, &mut summaries).await;
-    for summary in &summaries {
-        ensure_drain(app.clone(), &state, &client, summary.id.to_string(), false).await;
-    }
+    reroute_strays(&client, &mut summaries, Some(&state.known_workspaces)).await;
     Ok(summaries)
+}
+
+/// Whether a freshly started session has to be routed before the sidebar can
+/// draw it — answered from [`TerminalState::known_workspaces`], so the common
+/// case costs no queue read at all.
+///
+/// Wrong in the safe direction only. A cache that has gone stale can say
+/// "route" about a session that needs none, which costs one task that finds
+/// nothing to do; it cannot say "don't route" about a genuine stray, because
+/// an id it has never seen is not in the set, and an unpopulated set (nothing
+/// has read the queue, or the read failed) is "don't know" rather than "there
+/// are no workspaces".
+fn needs_routing(summary: &TerminalSummary, known: &KnownWorkspaces) -> bool {
+    let Some(workspace_id) = summary.workspace_id.as_ref() else {
+        return true;
+    };
+    let known = known.lock().expect("known workspaces poisoned");
+    known.is_empty() || !known.contains(workspace_id)
 }
 
 /// Give every session a workspace the queue can actually show it under.
@@ -567,7 +763,11 @@ pub async fn terminal_list(
 /// next list. Nothing downstream can undo that; only not asking can.
 ///
 /// [`land`]: review::work::router::land
-async fn reroute_strays(client: &DaemonClient, summaries: &mut [TerminalSummary]) {
+async fn reroute_strays(
+    client: &DaemonClient,
+    summaries: &mut [TerminalSummary],
+    known: Option<&KnownWorkspaces>,
+) {
     // One blocking hop for the whole reconcile, not one per stray. The first
     // list on a fresh build is exactly the case where *every* session is a
     // stray — attribution is younger than the sessions — so the K-stray path
@@ -583,14 +783,36 @@ async fn reroute_strays(client: &DaemonClient, summaries: &mut [TerminalSummary]
         })
         .collect();
 
+    let landed = route_strays(listed, known).await;
+    apply_landings(client, summaries, landed).await;
+}
+
+/// [`reroute_strays`] for one session, which is what the events drain has: a
+/// `started` frame carries a single summary, and the routing question it asks
+/// is the same one, so it asks it the same way rather than in a second copy.
+async fn reroute_stray(client: &DaemonClient, summary: &mut TerminalSummary) {
+    // Refreshes no cache: this runs off a `started` frame, one session at a
+    // time and often concurrently, and the queue read it makes covers only
+    // whatever moment that one session happened to ask in. `terminal_list`
+    // owns the cache, because a list is the read that saw the whole queue.
+    reroute_strays(client, std::slice::from_mut(summary), None).await;
+}
+
+/// Decide a workspace for each `(id, workspace_id, cwd)` the queue cannot
+/// already show, off-thread. Returns only the sessions that need moving.
+async fn route_strays(
+    listed: Vec<(String, Option<String>, String)>,
+    cache: Option<&KnownWorkspaces>,
+) -> HashMap<String, String> {
     let routed = tokio::task::spawn_blocking(move || {
         let known: HashSet<String> = match review::work::list() {
             Ok(state) => state.workspaces.into_iter().map(|ws| ws.id).collect(),
             Err(e) => {
                 // Unreadable queue: every session would look like a stray, so
-                // routing them all would be maximally wrong. Do nothing.
+                // routing them all would be maximally wrong. Do nothing — and
+                // report an empty set, which the cache reads as "don't know".
                 warn!("[terminal] could not read the work queue: {e}");
-                return HashMap::new();
+                return (HashSet::new(), HashMap::new());
             }
         };
 
@@ -617,19 +839,38 @@ async fn reroute_strays(client: &DaemonClient, summaries: &mut [TerminalSummary]
                 Err(e) => warn!("[terminal] could not route {id}: {e}"),
             }
         }
-        landed
+        (known, landed)
     })
     .await;
 
-    let landed = match routed {
-        Ok(landed) => landed,
+    match routed {
+        Ok((known, landed)) => {
+            if let Some(cache) = cache {
+                // The queue as this read saw it, plus whatever `land` minted
+                // afterwards — `known` was taken before the routing loop, so
+                // the new workspaces are not in it, and leaving them out would
+                // make the next `started` re-route a session that just landed.
+                let mut cache = cache.lock().expect("known workspaces poisoned");
+                *cache = known;
+                cache.extend(landed.values().cloned());
+            }
+            landed
+        }
         Err(e) => {
             warn!("[terminal] routing panicked: {e}");
-            return;
+            HashMap::new()
         }
-    };
+    }
+}
 
-    // Already only the strays — see the filter above.
+/// Tell the daemon where each stray landed, and patch the summaries so the
+/// caller's copy agrees without a second `Op::List`.
+async fn apply_landings(
+    client: &DaemonClient,
+    summaries: &mut [TerminalSummary],
+    landed: HashMap<String, String>,
+) {
+    // Already only the strays — see the filter in `route_strays`.
     let assignments = summaries
         .iter()
         .filter_map(|summary| {
@@ -681,10 +922,11 @@ pub async fn terminal_replay(
     let status: SessionStatus = serde_json::from_value(payload.status)
         .map_err(|e| format!("unexpected daemon response: {e}"))?;
 
-    // A replay is a cold reattach (new window, or the app reopened onto a daemon
-    // that kept running). If `terminal_list` already opened a status-only drain
-    // for this session, this upgrades it to carry output.
-    ensure_drain(app, &state, &client, terminal_id, true).await;
+    // A replay is a pane mounting — a cold reattach (new window, or the app
+    // reopened onto a daemon that kept running), or a re-mount. It is the one
+    // moment a session needs its own connection: nothing else this app does
+    // wants raw PTY bytes.
+    ensure_drain(app, &state, &client, terminal_id).await;
 
     Ok(TerminalReplay {
         data_b64: payload.data_b64,
@@ -693,14 +935,25 @@ pub async fn terminal_replay(
     })
 }
 
+/// Every named session's visible screen, in one round trip.
+///
+/// What the terminal overview polls, and the only peek this app makes: a grid
+/// of N cards was N single-session peeks every two seconds, N control round
+/// trips and N renders, for a screen that shows them side by side. Ids the
+/// daemon does not know are absent from the map rather than an error — a card
+/// whose session has just gone is a missing entry, not a failed poll for every
+/// other card on screen.
 #[tauri::command]
-pub async fn terminal_peek(
+pub async fn terminal_peek_many(
     app: AppHandle,
     state: tauri::State<'_, TerminalState>,
-    terminal_id: String,
-) -> Result<String, String> {
+    terminal_ids: Vec<String>,
+) -> Result<HashMap<String, String>, String> {
     let client = state.client(&app).await?;
-    request(&client, Op::Peek { terminal_id }).await
+    client
+        .peek_many(&terminal_ids)
+        .await
+        .map_err(|e| format!("{e:#}"))
 }
 
 /// Kill every live session across every repo/window, but keep the daemon
@@ -725,6 +978,49 @@ mod tests {
     /// never touches the client.
     fn detached_state() -> TerminalState {
         TerminalState::new()
+    }
+
+    /// The `started` fast path: a session already sitting in a workspace the
+    /// queue holds is drawn where it says it is, and nothing walks a filesystem
+    /// to confirm it. Everything else routes — including when the cache has
+    /// never been filled, which is "don't know" rather than "no workspaces".
+    #[test]
+    fn only_a_session_the_queue_can_already_show_skips_routing() {
+        // Through the wire shape, which is how a real one arrives.
+        fn summary(workspace_id: Option<&str>) -> TerminalSummary {
+            serde_json::from_value(serde_json::json!({
+                "id": "t1",
+                "repoPath": "/repo",
+                "workspaceId": workspace_id,
+                "cwd": "/repo",
+                "title": null,
+                "cols": 80,
+                "rows": 24,
+                "status": {
+                    "id": "t1",
+                    "phase": "idle",
+                    "attentionMessage": null,
+                    "runningCommand": null,
+                    "lastExitCode": null,
+                    "cwd": null,
+                    "title": null,
+                    "enteredStateAt": 0,
+                    "shellIntegrationActive": false,
+                },
+            }))
+            .expect("a summary in its wire shape")
+        }
+
+        let known: KnownWorkspaces = Arc::new(Mutex::new(HashSet::new()));
+        assert!(
+            needs_routing(&summary(Some("aaaa1111")), &known),
+            "an unpopulated cache knows nothing, so it cannot vouch for anything"
+        );
+
+        known.lock().unwrap().insert("aaaa1111".to_owned());
+        assert!(!needs_routing(&summary(Some("aaaa1111")), &known));
+        assert!(needs_routing(&summary(Some("bbbb2222")), &known));
+        assert!(needs_routing(&summary(None), &known));
     }
 
     #[test]
@@ -800,6 +1096,24 @@ mod tests {
         assert_eq!(attempts, 2, "a failure must not poison the slot");
     }
 
+    #[test]
+    fn workspace_and_removed_payloads_serialize_camel_case() {
+        let assigned = serde_json::to_value(TerminalWorkspaceAssignedPayload {
+            id: "t1".into(),
+            workspace_id: None,
+        })
+        .unwrap();
+        assert_eq!(assigned["id"], "t1");
+        assert!(
+            assigned["workspaceId"].is_null(),
+            "off every card is null, not a missing key"
+        );
+        assert!(assigned.get("workspace_id").is_none());
+
+        let removed = serde_json::to_value(TerminalRemovedPayload { id: "t2".into() }).unwrap();
+        assert_eq!(removed["id"], "t2");
+    }
+
     /// A second `ensure_drain` for a session already being pumped must not start
     /// a second stream — that is what would double-emit output on a hot re-mount
     /// or a repeated `terminal_replay`.
@@ -807,16 +1121,13 @@ mod tests {
     fn a_session_can_only_be_claimed_once_at_a_time() {
         let state = detached_state();
 
+        assert!(claim_drain(&state.drains, "t1"), "first claim wins");
         assert!(
-            claim_drain(&state.drains, "t1", true).is_some(),
-            "first claim wins"
-        );
-        assert!(
-            claim_drain(&state.drains, "t1", true).is_none(),
+            !claim_drain(&state.drains, "t1"),
             "a second claim for the same session is refused"
         );
         assert!(
-            claim_drain(&state.drains, "t2", true).is_some(),
+            claim_drain(&state.drains, "t2"),
             "a different session claims independently"
         );
     }
@@ -827,16 +1138,10 @@ mod tests {
     fn a_released_session_can_be_claimed_again() {
         let state = detached_state();
 
-        assert!(claim_drain(&state.drains, "t1", true).is_some());
+        assert!(claim_drain(&state.drains, "t1"));
         release_drain(&state.drains, "t1");
-        assert!(
-            !upgrade_drain(&state.drains, "t1", false),
-            "no longer draining"
-        );
-        assert!(
-            claim_drain(&state.drains, "t1", true).is_some(),
-            "released, so claimable"
-        );
+        assert!(!is_draining(&state.drains, "t1"), "no longer draining");
+        assert!(claim_drain(&state.drains, "t1"), "released, so claimable");
     }
 
     /// `ensure_drain`'s fast path: a session already being pumped is recognized
@@ -845,52 +1150,26 @@ mod tests {
     fn a_claimed_session_reports_as_draining() {
         let state = detached_state();
 
-        assert!(!upgrade_drain(&state.drains, "t1", false));
-        assert!(claim_drain(&state.drains, "t1", true).is_some());
-        assert!(upgrade_drain(&state.drains, "t1", false));
-        assert!(
-            !upgrade_drain(&state.drains, "t2", false),
-            "only the claimed one"
-        );
+        assert!(!is_draining(&state.drains, "t1"));
+        assert!(claim_drain(&state.drains, "t1"));
+        assert!(is_draining(&state.drains, "t1"));
+        assert!(!is_draining(&state.drains, "t2"), "only the claimed one");
     }
 
-    /// A status-only drain (opened by `terminal_list`) starts with output off,
-    /// and a later output claim for the same session — a pane attaching —
-    /// flips the *existing* drain's flag rather than starting a second stream.
+    /// The events drain is started once and only once, however many commands
+    /// race to establish the client — a second one would double every status,
+    /// exit and start event the frontend sees.
     #[test]
-    fn an_output_claim_upgrades_a_status_only_drain() {
+    fn the_events_drain_is_claimed_once() {
         let state = detached_state();
 
-        let flag = claim_drain(&state.drains, "t1", false).expect("first claim wins");
         assert!(
-            !flag.load(Ordering::Relaxed),
-            "status-only until a pane attaches"
+            !state.events_drain.swap(true, Ordering::Relaxed),
+            "the first caller starts it"
         );
-
-        assert!(claim_drain(&state.drains, "t1", true).is_none());
         assert!(
-            flag.load(Ordering::Relaxed),
-            "racing claim upgraded the holder"
+            state.events_drain.swap(true, Ordering::Relaxed),
+            "every later caller finds it already running"
         );
-    }
-
-    /// The fast path applies the same upgrade: asking for output on an existing
-    /// status-only drain flips it, while a status-only ask leaves it alone.
-    #[test]
-    fn the_fast_path_upgrades_but_never_downgrades() {
-        let state = detached_state();
-
-        let flag = claim_drain(&state.drains, "t1", false).unwrap();
-        assert!(upgrade_drain(&state.drains, "t1", false));
-        assert!(
-            !flag.load(Ordering::Relaxed),
-            "status-only ask changes nothing"
-        );
-
-        assert!(upgrade_drain(&state.drains, "t1", true));
-        assert!(flag.load(Ordering::Relaxed), "output ask upgrades");
-
-        assert!(upgrade_drain(&state.drains, "t1", false));
-        assert!(flag.load(Ordering::Relaxed), "and never downgrades");
     }
 }
