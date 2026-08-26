@@ -66,7 +66,7 @@ const EMPTY_HUNKS: DiffHunk[] = [];
  * readable in less room than two columns, but not while giving a fixed strip
  * away.
  */
-const MINIMAP_MIN_PANE_REM = 34;
+const MINIMAP_MIN_PANE_REM = 30;
 
 /** Recursively search the file tree for an entry with the given path and status. */
 function hasFileStatus(
