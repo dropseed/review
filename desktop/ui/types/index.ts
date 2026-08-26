@@ -741,6 +741,12 @@ export interface Attachment {
   path: string;
   /** A view hint — the branch being looked at. Never part of the identity. */
   refName: string | null;
+  /**
+   * Whether the path is a git repository, derived backend-side on every read —
+   * so `git init` in an attached directory flips it with no write to
+   * `work.json`.
+   */
+  isGitRepo: boolean;
 }
 
 // One workspace: a unit of intent in the work queue. Stored in
@@ -1139,6 +1145,20 @@ export interface TerminalSessionInfo {
 }
 
 /**
+ * Where routing a repo+branch landed — the answer ⌘K's Enter acts on.
+ *
+ * `workspaces` is the whole queue as the route left it, the same way
+ * `work_attach` answers, so a landing needs no second read to show its own
+ * result: the workspace it picked may be one the frontend's list has never
+ * held, and the route may have attached to one it has.
+ */
+export interface RouteLanding {
+  workspace: Workspace;
+  created: boolean;
+  workspaces: Workspace[];
+}
+
+/**
  * What starting a terminal answers with: the session, and the workspace the
  * backend routed it into.
  *
@@ -1146,17 +1166,6 @@ export interface TerminalSessionInfo {
  * a session whose workspace the queue has not listed yet has nowhere to appear;
  * `created` is what tells the caller to re-read the queue.
  */
-/**
- * Where routing a repo+branch landed — the answer ⌘K's Enter acts on.
- *
- * `created` is what tells the queue to re-read: a workspace the router just
- * invented is one the frontend's list has never held.
- */
-export interface RouteLanding {
-  workspace: Workspace;
-  created: boolean;
-}
-
 export interface TerminalStarted {
   session: TerminalSessionInfo;
   workspace: {

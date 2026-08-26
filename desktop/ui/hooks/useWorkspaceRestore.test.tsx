@@ -34,7 +34,11 @@ function workspace(id: string, paths: string[] = []): Workspace {
     id,
     title: null,
     displayTitle: id,
-    attachments: paths.map((path) => ({ path, refName: "main" })),
+    attachments: paths.map((path) => ({
+      path,
+      refName: "main",
+      isGitRepo: true,
+    })),
     parentId: null,
     depth: 0,
     ancestors: [],
@@ -151,10 +155,27 @@ describe("useWorkspaceRestore", () => {
     );
   });
 
-  it("stays off a repo opened in browse mode", () => {
-    // Browse and standalone mode open a repo and no comparison at all, so the
-    // stage is claimed without `activeReviewKey` saying so.
+  /**
+   * Browse and standalone mode open a repo and no comparison at all, and
+   * derivation reads the repo either way — so the launch has already landed
+   * inside the workspace showing it and there is nothing to restore.
+   */
+  it("leaves a browse-mode launch in the workspace it derived", () => {
     seed({ repoPath: "/repo/a" });
+
+    renderHook(() => useWorkspaceRestore("found"));
+
+    expect(focusWorkspace).not.toHaveBeenCalled();
+    expect(useReviewStore.getState().focusedWorkspaceId).toBeNull();
+  });
+
+  /**
+   * The same launch onto a repo nothing in the queue shows: derivation has no
+   * answer, so the focus is the part that was missing — and the screen the
+   * launch asked for is still the screen it keeps.
+   */
+  it("takes only the focus back when nothing derives the browsed repo", () => {
+    seed({ repoPath: "/elsewhere" });
 
     renderHook(() => useWorkspaceRestore("found"));
 

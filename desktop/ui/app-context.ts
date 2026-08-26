@@ -15,7 +15,6 @@ export interface AppContext {
   comparisonReady: number;
   handleOpenRepo: () => Promise<void>;
   handleCloseRepo: () => void;
-  handleSelectRepo: (path: string) => Promise<void>;
   handleNewReview: (path: string, target: ReviewTarget) => Promise<void>;
   handleStartReview: (path: string, target: ReviewTarget) => Promise<void>;
 }

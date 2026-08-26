@@ -230,6 +230,21 @@ export const createWorkspaceSlice: SliceCreatorWithClient<WorkspaceSlice> =
       return get().workspaces.find((item) => item.id === id);
     }
 
+    /**
+     * Take a queue the backend just handed back, keeping the **old array** when
+     * it is the same list.
+     *
+     * A fresh reference re-renders every subscriber and busts the caches keyed
+     * on this array's identity (`workspaceCommands`, `useFocusedWorkspace`), so
+     * the reads that usually change nothing must not produce one. That is the
+     * watcher and the focus refresh — and now routing, which lands on a
+     * workspace that already holds the repo on every page refresh.
+     */
+    function takeWorkspaces(items: Workspace[]): void {
+      const prev = get().workspaces;
+      set({ workspaces: jsonEqual(prev, items) ? prev : items });
+    }
+
     return {
       workspaces: [],
       focusedWorkspaceId: null,
@@ -245,10 +260,10 @@ export const createWorkspaceSlice: SliceCreatorWithClient<WorkspaceSlice> =
             ref,
             workspaceId,
           );
-          // The response carries one workspace, not the list, so the queue is
-          // re-read rather than patched — a landing can also mint an entry this
-          // list has never held.
-          await get().loadWorkspaces();
+          // The response carries the whole queue, so there is no second read:
+          // this used to await `loadWorkspaces`, which is one more round trip
+          // on the path every CLI landing and every page refresh now takes.
+          takeWorkspaces(landing.workspaces);
           return landing.workspace;
         } catch (err) {
           console.error("Failed to open branch:", err);
@@ -264,14 +279,9 @@ export const createWorkspaceSlice: SliceCreatorWithClient<WorkspaceSlice> =
 
       loadWorkspaces: async () => {
         try {
-          // An unchanged list keeps the old array: the watcher and focus
-          // refreshes usually change nothing, and a fresh reference re-renders
-          // every subscriber for no reason.
           // The focus goes with the read: this is the call that cleans up,
           // and a workspace being read on the stage must survive it.
-          const items = await client.listWorkspaces(get().focusedWorkspaceId);
-          const prev = get().workspaces;
-          set({ workspaces: jsonEqual(prev, items) ? prev : items });
+          takeWorkspaces(await client.listWorkspaces(get().focusedWorkspaceId));
         } catch (err) {
           console.error("Failed to load workspaces:", err);
         }

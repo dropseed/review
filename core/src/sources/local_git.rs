@@ -288,7 +288,10 @@ pub struct LocalGitSource {
 
 impl LocalGitSource {
     pub fn new(repo_path: PathBuf) -> Result<Self, LocalGitError> {
-        if !repo_path.join(".git").exists() {
+        // The same predicate the registry uses, not a second copy of it: "the
+        // index took this" and "this can be diffed" have to name one set, or a
+        // repo gets a sidebar row it cannot open.
+        if !crate::review::central::is_working_tree(&repo_path) {
             return Err(LocalGitError::NotARepo);
         }
         Ok(Self {

@@ -9,7 +9,7 @@ import {
   findTab,
   terminalDockPresent,
 } from "../../stores/slices/terminalSlice";
-import { focusedWorkspace } from "../../stores/selectors/workspaceData";
+import { focusedWorkspaceIn } from "../../stores/selectors/workspaceData";
 
 /**
  * The terminal answers "is a terminal focused?" for the command context.
@@ -116,13 +116,7 @@ export const TERMINAL_COMMANDS: readonly Command[] = [
     allowInTerminal: true,
     isVisible: supported,
     run: ({ store }) => {
-      void openTerminalTab(
-        focusedWorkspace(
-          store.workspaces,
-          store.focusedWorkspaceId,
-          store.activeReviewKey,
-        ),
-      );
+      void openTerminalTab(focusedWorkspaceIn(store));
     },
   },
   {

@@ -1,5 +1,8 @@
 import { useReviewStore } from "../../stores";
-import type { ReviewTarget } from "../../stores/selectors/workspaceData";
+import {
+  CHECKOUT_REF,
+  type ReviewTarget,
+} from "../../stores/selectors/workspaceData";
 import type { Attachment, Workspace } from "../../types";
 
 /**
@@ -120,7 +123,7 @@ export function activeTabTarget(
       (attachment) => attachment.path === activePath,
     ) ?? workspace.attachments[0];
   if (!active) return null;
-  return { repoPath: active.path, ref: active.refName ?? "" };
+  return { repoPath: active.path, ref: active.refName ?? CHECKOUT_REF };
 }
 
 /**

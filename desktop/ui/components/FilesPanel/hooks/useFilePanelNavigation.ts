@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useReviewStore } from "../../../stores";
 import { useHasAnyHunks } from "../../../stores/selectors/hunks";
 import { headIsWorkingTree } from "../../../stores/selectors/checkout";
+import { refLabel } from "../refLabel";
 import type { FilesPanelTab, ProcessedFileEntry } from "../types";
 
 interface UseFilePanelNavigationOptions {
@@ -42,10 +43,31 @@ function directoryExistsInTree(
  * Shared with the panel's collapsed rail, which offers the same tabs and so has
  * to answer this the same way.
  */
-export function useGitTab(): { gitEnabled: boolean; gitChangeCount: number } {
+export interface GitTab {
+  gitEnabled: boolean;
+  gitChangeCount: number;
+  /** Why it is off — the tooltip, since a disabled tab can't say it otherwise. */
+  disabledReason: string | undefined;
+}
+
+export function useGitTab(): GitTab {
   const gitStatus = useReviewStore((s) => s.gitStatus);
   const hasWorkingTree = useReviewStore(headIsWorkingTree);
+  const isStandalone = useReviewStore((s) => s.isStandaloneFile);
+  const comparison = useReviewStore((s) => s.comparison);
   const gitEnabled = gitStatus !== null && hasWorkingTree;
+
+  // The reason belongs here rather than with the tab table: this is where the
+  // condition is decided, and only here is it known *which* way it failed. A
+  // folder that is not a repo has the same shape as an unreachable working tree
+  // and needs different words — "nothing here is checked out" invites someone
+  // to go and check something out, which there is nothing to do.
+  let disabledReason: string | undefined;
+  if (gitEnabled) disabledReason = undefined;
+  else if (isStandalone) disabledReason = "This folder isn't a git repository";
+  else if (comparison)
+    disabledReason = `${refLabel(comparison.head)} isn't checked out`;
+  else disabledReason = "Nothing here is checked out";
 
   // Files, not entries: git lists a path under both staged and unstaged when
   // it has changes of each kind, and "2" for one edited file would be a lie.
@@ -58,7 +80,7 @@ export function useGitTab(): { gitEnabled: boolean; gitChangeCount: number } {
     ]).size;
   }, [gitStatus]);
 
-  return { gitEnabled, gitChangeCount };
+  return { gitEnabled, gitChangeCount, disabledReason };
 }
 
 /**
@@ -120,7 +142,8 @@ export function useFilePanelNavigation({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasHunks, autoSelectFilesPanelTab]);
 
-  const { gitEnabled, gitChangeCount } = useGitTab();
+  const gitTab = useGitTab();
+  const { gitEnabled, gitChangeCount } = gitTab;
 
   // Auto-switch away from git tab when it is no longer applicable
   useEffect(() => {
@@ -260,6 +283,7 @@ export function useFilePanelNavigation({
   return {
     selectedFile,
     viewMode,
+    gitTab,
     gitEnabled,
     gitChangeCount,
     hasHunks,

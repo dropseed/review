@@ -1068,6 +1068,7 @@ struct WorkRouteRequest {
 struct RouteLanding {
     workspace: WorkspaceView,
     created: bool,
+    workspaces: Vec<WorkspaceView>,
 }
 
 #[derive(Deserialize)]
@@ -1196,9 +1197,11 @@ async fn work_route(Json(req): Json<WorkRouteRequest>) -> ApiResult<RouteLanding
         let location =
             work::router::location_of_ref(std::path::Path::new(&req.repo_path), &req.r#ref);
         let landing = work::router::land(&location, req.workspace_id.as_deref())?;
+        let queue = work::list()?.workspaces;
         Ok(RouteLanding {
-            workspace: work::view_of(&work::list()?.workspaces, landing.workspace),
+            workspace: work::view_of(&queue, landing.workspace),
             created: landing.created,
+            workspaces: work::views(queue),
         })
     })
     .await

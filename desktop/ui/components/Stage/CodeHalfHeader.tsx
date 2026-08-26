@@ -1,7 +1,10 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { clsx } from "clsx";
 import { useReviewStore } from "../../stores";
-import { useFocusedWorkspace } from "../../stores/selectors/workspaces";
+import {
+  repoOnScreen,
+  useFocusedWorkspace,
+} from "../../stores/selectors/workspaces";
 import { useTerminalDockPresent } from "../../stores/selectors/terminals";
 import { FocusToggle } from "./FocusToggle";
 import { CompactMenuButton } from "./CompactNav";
@@ -101,6 +104,7 @@ export function CodeHalfHeader({
 function RepoTabs({ workspace }: { workspace: Workspace }): ReactNode {
   const ctx = useWorkspaceContext();
   const activeReviewKey = useReviewStore((s) => s.activeReviewKey);
+  const repoPath = useReviewStore((s) => s.repoPath);
   const detachWorkspace = useReviewStore((s) => s.detachWorkspace);
 
   const repos = useMemo(
@@ -110,7 +114,12 @@ function RepoTabs({ workspace }: { workspace: Workspace }): ReactNode {
   // By repo, not by review key: the tab stays the tab while you walk that
   // repo's branches, because the ref an attachment carries is a hint about
   // where it was pointed, not the identity of the tab.
-  const activePath = activeReviewKey?.repoPath ?? null;
+  //
+  // Falling back to `repoPath` for the same reason `repoOnScreen` exists: a
+  // folder opened as a folder has no comparison to name it, and a tab that
+  // isn't marked active while you are reading its files says the strip has lost
+  // track of you.
+  const activePath = repoOnScreen({ activeReviewKey, repoPath });
 
   /**
    * Close a tab. The neighbour takes over when the closed tab was the one on

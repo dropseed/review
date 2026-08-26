@@ -35,6 +35,17 @@ export interface ProvidedCommandUi {
    * that lives under a row other than the one being viewed.
    */
   activateReviewKey(repoPath: string, ref: string): void;
+  /**
+   * Show a path on the code side with no comparison: the repo's files at
+   * whatever is checked out, or a plain directory's.
+   *
+   * The answer for everything that names a place rather than a diff — a repo
+   * too new to have a branch anyone has heard of, and a directory that was
+   * never a repo at all. Which of the two it is is settled here, by asking git,
+   * rather than by the caller: an attachment's `isGitRepo` is a snapshot from
+   * the last queue read, and `git init` happens between reads.
+   */
+  openPath(path: string): void;
 }
 
 /**

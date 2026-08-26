@@ -1,6 +1,11 @@
 import { useReviewStore } from "../stores";
 import { findSidebarRow, getSidebarTree } from "../stores/selectors/sidebar";
-import type { ReviewTarget } from "../stores/selectors/workspaceData";
+import {
+  CHECKOUT_REF,
+  hasRef,
+  isCheckoutTarget,
+  type ReviewTarget,
+} from "../stores/selectors/workspaceData";
 import { ackAttention } from "../utils/attention";
 import { makeReviewKey, refFromReviewKey } from "../utils/review-key";
 import type { SidebarRow } from "../utils/sidebar-tree";
@@ -17,14 +22,25 @@ import type { Command } from "./types";
 export const SHORTCUT_LIMIT = 9;
 
 /**
- * Open one comparison — a repo tab, the menu's "Open", a ⌘K branch row.
+ * Open one target — a repo tab, the menu's "Open", a ⌘K branch row.
  *
- * Resolves to whether it opened anything. A ref nothing represents — the branch
- * was deleted, or its repo isn't registered here — deliberately opens no
- * review: showing a diff of something that isn't there is worse than showing
- * nothing. The caller is what decides what "nothing" looks like.
+ * Resolves to whether it opened anything. A **named** ref nothing represents —
+ * the branch was deleted, or its repo isn't registered here — deliberately
+ * opens no review: showing a diff of something that isn't there is worse than
+ * showing nothing. The caller is what decides what "nothing" looks like.
+ *
+ * A checkout target names no ref, so there is nothing for that gate to be about
+ * and it doesn't apply: the path is the whole of what was asked for, and it is
+ * always openable as itself. That is what keeps a repo the sidebar has no row
+ * for — one `git init`-ed a moment ago, with no commit to build a row out of —
+ * from falling through to the empty state.
  */
 export function activateReviewTarget(target: ReviewTarget): boolean {
+  if (isCheckoutTarget(target)) {
+    getCommandUi().openPath(target.repoPath);
+    return true;
+  }
+
   const key = makeReviewKey(target.repoPath, target.ref);
   if (!findSidebarRow(useReviewStore.getState(), key)) return false;
 
@@ -33,19 +49,36 @@ export function activateReviewTarget(target: ReviewTarget): boolean {
 }
 
 /**
- * The comparison a repo tab opens.
+ * What a repo tab opens.
  *
  * A tab that names a ref opens that ref or nothing — falling back to whatever
  * the repo has checked out would put another branch's diff under a label that
- * says "· feature". A tab with no ref names only the repo, and there the
+ * says "· feature". A tab with no ref names only the path, and there the
  * checkout *is* the honest answer: that is what a repo picked without a branch
  * means.
+ *
+ * Which is why an unknown path still resolves. The sidebar tree is a list of
+ * repos with history worth listing, and there are two ordinary ways to attach
+ * something that isn't in it — a repo created seconds ago, and a directory that
+ * is not a repo at all. Neither has a branch to name and both have files to
+ * show, so both resolve to their own path and let `activateReviewTarget` open
+ * it. A directory says so up front, before the ref is even consulted: a plain
+ * folder has no branches, so a stale `refName` on one names nothing.
+ *
+ * Still nullable, and null still means the one thing it always meant: a branch
+ * this tab names and nothing on this machine has.
  */
 export function targetForAttachment(
   attachment: Attachment,
 ): ReviewTarget | null {
   const state = useReviewStore.getState();
-  if (attachment.refName) {
+  const checkout: ReviewTarget = {
+    repoPath: attachment.path,
+    ref: CHECKOUT_REF,
+  };
+  if (!attachment.isGitRepo) return checkout;
+
+  if (hasRef(attachment)) {
     const key = makeReviewKey(attachment.path, attachment.refName);
     return findSidebarRow(state, key)
       ? { repoPath: attachment.path, ref: attachment.refName }
@@ -54,7 +87,7 @@ export function targetForAttachment(
   const head = getSidebarTree(state).find(
     (node) => node.repoPath === attachment.path,
   )?.head;
-  return head ? { repoPath: head.repoPath, ref: head.ref } : null;
+  return head ? { repoPath: head.repoPath, ref: head.ref } : checkout;
 }
 
 /** Open an attachment's tab on the code side. See [`targetForAttachment`]. */
@@ -64,22 +97,17 @@ export function activateAttachment(attachment: Attachment): boolean {
 }
 
 /**
- * Point the stage at a workspace: both halves swap to it at once.
+ * Make a workspace the one the stage is in, without deciding what it shows.
  *
- * The one implementation, shared by the queue, the collapsed rail's number, ⌘K
- * and ⌘1–9, so every route into a workspace lands in the same place. The focus
- * id is what the stage reads; the comparison and the terminal tab follow from
- * it, which is why they are set here rather than derived by two components that
- * would each have to re-answer "which repo".
- *
- * A workspace with no attachment — or one whose repo nothing on this machine
- * represents — has no comparison, so the code half goes to the workspace's
- * empty state instead of leaving the last workspace's diff on screen under this
- * one's name.
+ * The half every landing shares. Both public verbs are this plus their own
+ * ending — `focusWorkspace` opens a comparison after it, `landWorkspace` routes
+ * before it and leaves the screen to its caller — and pulling it out is what
+ * stops them drifting: `landWorkspace` had already lost the overview reset
+ * below, so a CLI landing while the terminal overview was up went to a
+ * workspace you could not see.
  */
-export function focusWorkspace(
+function takeFocus(
   workspace: Workspace,
-  target?: ReviewTarget,
   options: { acknowledge?: boolean } = {},
 ): void {
   const store = useReviewStore.getState();
@@ -109,6 +137,30 @@ export function focusWorkspace(
     // already opened never reaches your phone a minute later.
     ackAttention(workspace.id);
   }
+  store.selectWorkspaceTab(workspace.id);
+}
+
+/**
+ * Point the stage at a workspace: both halves swap to it at once.
+ *
+ * The one implementation, shared by the queue, the collapsed rail's number, ⌘K
+ * and ⌘1–9, so every route into a workspace lands in the same place. The focus
+ * id is what the stage reads; the comparison and the terminal tab follow from
+ * it, which is why they are set here rather than derived by two components that
+ * would each have to re-answer "which repo".
+ *
+ * A workspace with no attachment has nothing to show, so the code half goes to
+ * the workspace's empty state instead of leaving the last workspace's diff on
+ * screen under this one's name. So does one whose only tab names a branch that
+ * is gone — but not one whose repo is merely unknown here, which now opens as
+ * the folder it is. See [`targetForAttachment`].
+ */
+export function focusWorkspace(
+  workspace: Workspace,
+  target?: ReviewTarget,
+  options: { acknowledge?: boolean } = {},
+): void {
+  takeFocus(workspace, options);
 
   // `target` is the caller naming which comparison to open — a ⌘K row names a
   // branch, not just a workspace, and on a multi-repo workspace that is
@@ -118,11 +170,9 @@ export function focusWorkspace(
   const opening = target ?? (first ? targetForAttachment(first) : null);
 
   // The empty state is also where a workspace lands when its tab can't be
-  // opened — an unregistered repo, a deleted branch — because the alternative
-  // is a header naming this workspace over the last one's diff.
+  // opened — a deleted branch — because the alternative is a header naming this
+  // workspace over the last one's diff.
   if (!opening || !activateReviewTarget(opening)) getCommandUi().navigate("/");
-
-  store.selectWorkspaceTab(workspace.id);
 }
 
 /**
@@ -157,6 +207,35 @@ export async function openRowInWorkspace(
   // On the branch that was named, not on whichever repo the workspace happens
   // to list first.
   if (options.withTerminal) void openTerminalTab(workspace, target);
+  return workspace;
+}
+
+/**
+ * Land something from *outside* the app in a workspace: the `review` CLI, the
+ * `review://` deep link, Finder's "Open with", the directory the app was
+ * launched from.
+ *
+ * The third landing verb, beside [`focusWorkspace`] and [`openRowInWorkspace`],
+ * and the one that takes **the focus and not the screen**: its callers own the
+ * comparison. It must be called *before* they open it, and both halves of that
+ * are load-bearing — see `landReview` in `hooks/useRepositoryInit.ts`, which is
+ * where the reasoning lives and where every caller goes through.
+ *
+ * A null `ref` lands on `CHECKOUT_REF`, which the backend reads as a bare path
+ * attachment. Resolves to the workspace, or null when routing failed.
+ */
+export async function landWorkspace(
+  repoPath: string,
+  ref: string | null,
+): Promise<Workspace | null> {
+  const workspace = await useReviewStore
+    .getState()
+    .routeWorkspace(repoPath, ref ?? CHECKOUT_REF);
+  if (!workspace) return null;
+
+  // Typing `review` is a person doing something, so it acknowledges the card's
+  // attention signal exactly as clicking that card would.
+  takeFocus(workspace);
   return workspace;
 }
 

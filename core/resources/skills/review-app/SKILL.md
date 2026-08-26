@@ -397,9 +397,14 @@ review workspace resolve [DIR] [--json]            # what DIR routes to
 ```
 
 `--json` is global to the subcommand (either side of it) and gives you
-`{id, title, displayTitle, attachments: [{path, refName}], parentId, depth,
-ancestors: [{id, displayTitle}], createdAt}` per workspace. Ids accept unique
-prefixes. `PATH` defaults to the directory you're running in.
+`{id, title, displayTitle, attachments: [{path, refName, isGitRepo}], parentId,
+depth, ancestors: [{id, displayTitle}], createdAt}` per workspace. Ids accept
+unique prefixes. `PATH` defaults to the directory you're running in.
+
+An attachment can be any path. `isGitRepo` is read off the filesystem each time
+you ask, and it is false for a plain directory — one the app browses but has no
+diff, comparison or review state for. Attaching a repository also registers it,
+so it appears in the app's repo list without anyone opening it there first.
 
 **Workspaces nest.** One that is really a subtask of a larger one says so with
 `nest`, to any depth. The list stays flat and stays in priority order — a

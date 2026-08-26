@@ -1,19 +1,30 @@
 import { vi, describe, it, expect, afterEach } from "vitest";
-import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+import {
+  render,
+  screen,
+  cleanup,
+  fireEvent,
+  waitFor,
+} from "@testing-library/react";
 import { repoChoiceKey, type RepoChoice } from "./repo-choices";
 
-const { choices, status, inUse, removeWorktreeAt } = vi.hoisted(() => ({
-  choices: { current: [] as never[] },
-  status: { current: new Map<string, unknown>() },
-  inUse: { current: false },
-  removeWorktreeAt: vi.fn(async () => true),
-}));
+const { choices, status, inUse, removeWorktreeAt, chooseFolder } = vi.hoisted(
+  () => ({
+    choices: { current: [] as never[] },
+    status: { current: new Map<string, unknown>() },
+    inUse: { current: false },
+    removeWorktreeAt: vi.fn(async () => true),
+    chooseFolder: vi.fn(),
+  }),
+);
 
 // The picker's job is the search, the ordering and the keyboard; where the
-// repos come from is the sidebar tree's, and it has its own tests.
+// repos come from is the sidebar tree's, and it has its own tests. The folder
+// dialog is the OS's, and there is none in jsdom.
 vi.mock("./repo-choices", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./repo-choices")>()),
   useRepoChoices: () => choices.current,
+  chooseFolder: () => chooseFolder(),
 }));
 
 // The two halves of a worktree row's facts: what git says about the checkout,
@@ -103,11 +114,16 @@ function input(): HTMLInputElement {
   return screen.getByLabelText("Find a repo") as HTMLInputElement;
 }
 
+function folderRow(): HTMLElement {
+  return screen.getByText("Open folder…").closest("button") as HTMLElement;
+}
+
 afterEach(() => {
   cleanup();
   choices.current = [];
   status.current = new Map();
   inUse.current = false;
+  chooseFolder.mockReset();
   vi.clearAllMocks();
 });
 
@@ -260,6 +276,77 @@ describe("picking one by keyboard", () => {
 
     fireEvent.keyDown(input(), { key: "Escape" });
     expect(document.activeElement).not.toBe(input());
+  });
+});
+
+describe("opening a folder the app has never seen", () => {
+  const picked: RepoChoice = {
+    path: "/tmp/brand-new",
+    name: "brand-new",
+    refName: null,
+    worktreePath: null,
+  };
+
+  /** A folder arrives as an ordinary choice, so both front doors open it the
+   * same way they open a row. */
+  it("hands the pick to onPick like any other row", async () => {
+    seed([repo("/src/review", "review", "main")]);
+    chooseFolder.mockResolvedValue(picked);
+    const onPick = vi.fn();
+    render(<RepoPicker attached={new Set()} onPick={onPick} />);
+
+    fireEvent.click(folderRow());
+
+    await waitFor(() => expect(onPick).toHaveBeenCalledWith(picked));
+  });
+
+  it("does nothing when the dialog is cancelled", async () => {
+    seed([repo("/src/review", "review", "main")]);
+    chooseFolder.mockResolvedValue(null);
+    const onPick = vi.fn();
+    render(<RepoPicker attached={new Set()} onPick={onPick} />);
+
+    fireEvent.click(folderRow());
+
+    await waitFor(() => expect(chooseFolder).toHaveBeenCalled());
+    expect(onPick).not.toHaveBeenCalled();
+  });
+
+  /**
+   * "No repos yet." was a dead end — the one state where the only thing worth
+   * offering is the folder dialog is the state with nothing to list.
+   */
+  it("is what Enter does with an empty list", async () => {
+    seed([]);
+    chooseFolder.mockResolvedValue(picked);
+    render(<RepoPicker attached={new Set()} onPick={() => {}} />);
+
+    fireEvent.keyDown(input(), { key: "Enter" });
+
+    await waitFor(() => expect(chooseFolder).toHaveBeenCalled());
+  });
+
+  /** It is the last row, so ↓ past the repos reaches it. */
+  it("sits below the rows in the arrow order", async () => {
+    seed([repo("/src/review", "review", "main")]);
+    chooseFolder.mockResolvedValue(picked);
+    const onPick = vi.fn();
+    render(<RepoPicker attached={new Set()} onPick={onPick} />);
+
+    fireEvent.keyDown(input(), { key: "ArrowDown" });
+    fireEvent.keyDown(input(), { key: "Enter" });
+
+    // One ArrowDown past the single repo row is the folder row, so Enter opened
+    // the dialog rather than the repo.
+    await waitFor(() => expect(onPick).toHaveBeenCalledWith(picked));
+  });
+
+  /** It is not one of the repos, so it is not one of the listed rows. */
+  it("stays out of the list itself", () => {
+    seed([repo("/src/review", "review", "main")]);
+    render(<RepoPicker attached={new Set()} onPick={() => {}} />);
+
+    expect(rows()).toEqual(["reviewmain"]);
   });
 });
 

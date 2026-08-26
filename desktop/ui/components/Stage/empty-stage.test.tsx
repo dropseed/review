@@ -9,7 +9,11 @@ vi.mock("../../api", () => ({
 }));
 
 vi.mock("../../commands/host", () => ({
-  getCommandUi: () => ({ activateReviewKey: vi.fn(), navigate: vi.fn() }),
+  getCommandUi: () => ({
+    activateReviewKey: vi.fn(),
+    openPath: vi.fn(),
+    navigate: vi.fn(),
+  }),
 }));
 
 import { EmptyStage } from "./EmptyStage";
@@ -44,6 +48,18 @@ describe("a workspace with nothing in it", () => {
     expect(screen.getByText("Start a terminal")).toBeDefined();
     expect(screen.getByText("Open a repo")).toBeDefined();
     expect(screen.getByLabelText("Find a repo")).toBeDefined();
+  });
+
+  /**
+   * The list is what the app already knows about, and a first launch knows
+   * nothing — so the half whose whole job is "open a repo" has to carry the way
+   * to one it has never seen.
+   */
+  it("offers a folder the app has never seen", () => {
+    focus();
+    render(<EmptyStage />);
+
+    expect(screen.getByText("Open folder…")).toBeDefined();
   });
 
   /** No repo yet, so the shell's directory can only be named in the general. */

@@ -206,18 +206,51 @@ impl Workspace {
     }
 }
 
-/// A workspace as a surface renders it: everything stored, plus the title to
-/// show.
+/// An attachment as a surface renders it: what is stored, plus what the
+/// filesystem says about it right now.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachmentView {
+    #[serde(flatten)]
+    pub attachment: Attachment,
+    /// Whether the path is a repository working tree. **Not stored** — it is a
+    /// fact about the filesystem, like `display_title` is a fact about the
+    /// queue, and `git init` in an attached directory must change it with no
+    /// write to `work.json`.
+    ///
+    /// This is what tells a surface which half of itself to draw: everything
+    /// built on a diff — comparisons, hunks, review state, the branch picker —
+    /// has nothing to say about a plain directory, which is browsable and
+    /// nothing more. It is the same test the registry applies (see
+    /// [`central::is_working_tree`]), so an attachment that reads `true` here is
+    /// exactly one the sidebar has an activity row for.
+    pub is_git_repo: bool,
+}
+
+/// A workspace as a surface renders it: everything stored, plus everything that
+/// has to be derived.
 ///
-/// `display_title` is not stored because its lower rungs move underneath it —
-/// attach a repo and the derived title changes with no write. Sending both this
-/// and the raw `title` is what lets a rename field prefill with what the human
+/// Nothing here is stored, and all of it for the same reason: the ground under
+/// it moves with no write to the workspace. Attach a repo and `display_title`
+/// changes; rename a parent and `ancestors` does; `git init` an attached
+/// directory and its `is_git_repo` does. Sending the derived title beside the
+/// raw `title` is also what lets a rename field prefill with what the human
 /// typed rather than with what was derived for them.
+///
+/// The stored fields are spelled out rather than flattened because the view
+/// re-states `attachments` in [`AttachmentView`]'s richer shape, and a flattened
+/// `Workspace` would emit that key twice. A field added to [`Workspace`] has to
+/// be added here too; `serializes_with_the_frontend_contract` asserts the whole
+/// object, so forgetting fails a test rather than quietly dropping off the wire.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceView {
-    #[serde(flatten)]
-    pub workspace: Workspace,
+    pub id: String,
+    pub title: Option<String>,
+    pub attachments: Vec<AttachmentView>,
+    pub parent_id: Option<String>,
+    pub auto_created: bool,
+    pub created_at: String,
     pub display_title: String,
     /// How many workspaces this one sits under — what a card indents by, and
     /// what makes the flat array readable as a tree without walking it again.
@@ -243,8 +276,21 @@ pub struct Ancestor {
 pub fn view_of(queue: &[Workspace], workspace: Workspace) -> WorkspaceView {
     let ancestors = ancestors_of(queue, &workspace);
     let display_title = workspace.display_title();
+    let attachments = workspace
+        .attachments
+        .into_iter()
+        .map(|attachment| AttachmentView {
+            is_git_repo: central::is_working_tree(std::path::Path::new(&attachment.path)),
+            attachment,
+        })
+        .collect();
     WorkspaceView {
-        workspace,
+        id: workspace.id,
+        title: workspace.title,
+        attachments,
+        parent_id: workspace.parent_id,
+        auto_created: workspace.auto_created,
+        created_at: workspace.created_at,
         display_title,
         depth: ancestors.len(),
         ancestors,
@@ -638,7 +684,7 @@ pub fn add(
     attachments: Vec<Attachment>,
 ) -> Result<(WorkState, Workspace), WorkError> {
     let title = title.map(str::trim).map(ToOwned::to_owned);
-    mutate(move |state| {
+    let (state, workspace) = mutate(move |state| {
         let mut resolved: Vec<Attachment> = Vec::new();
         for attachment in &attachments {
             push_unique(&mut resolved, attachment.normalized());
@@ -646,7 +692,11 @@ pub fn add(
         // A workspace the human asked for is theirs from birth; only the
         // router's `push_new` call opts out.
         Ok((push_new(state, title.clone(), resolved, false), true))
-    })
+    })?;
+    // After the write, not inside it: `mutate` retries its closure, and
+    // registering is filesystem work with nothing to roll back.
+    register_attachments(&workspace.attachments);
+    Ok((state, workspace))
 }
 
 /// Attach `attachment` unless its path is already there, in which case the
@@ -658,6 +708,33 @@ fn push_unique(attachments: &mut Vec<Attachment>, attachment: Attachment) {
     {
         Some(index) => attachments[index].ref_name = attachment.ref_name,
         None => attachments.push(attachment),
+    }
+}
+
+/// Put attached paths into the repo index, so everything reading the registry
+/// has a row for them.
+///
+/// Attaching is the gesture that says "show me this", and it used to say so only
+/// to the queue. The sidebar's tree is built from the *registered* repos
+/// (`central::list_registered_repos` → `activity_cache::snapshot_all`), so a
+/// workspace could hold an attachment whose repo had no activity row and whose
+/// code side therefore had nothing to open. Doing it here rather than at each
+/// surface is what makes the app, the CLI and the router agree.
+///
+/// Non-git paths are deliberately left out: the index is the *git* registry and
+/// every reader of it needs a `LocalGitSource`. That a plain directory is
+/// attached is carried by the attachment itself — see
+/// [`AttachmentView::is_git_repo`], which asks the same question this does.
+///
+/// Best-effort: a failure costs a sidebar row rather than the attachment.
+/// [`central::ensure_registered`] decides what counts as a repo and skips one it
+/// already holds, so this is the loop and nothing else.
+fn register_attachments(attachments: &[Attachment]) {
+    for attachment in attachments {
+        let path = std::path::Path::new(&attachment.path);
+        if let Err(e) = central::ensure_registered(path) {
+            log::warn!("[work] could not register {}: {e}", attachment.path);
+        }
     }
 }
 
@@ -867,14 +944,20 @@ pub fn move_workspace(
 /// workspace already showing the path only updates its ref hint.
 pub fn attach(id: &str, attachment: Attachment) -> Result<(WorkState, Workspace), WorkError> {
     let attachment = attachment.normalized();
-    mutate(move |state| {
+    let registered = attachment.clone();
+    let result = mutate(move |state| {
         let index = resolve_index(state, id)?;
         let before = state.workspaces[index].attachments.clone();
         push_unique(&mut state.workspaces[index].attachments, attachment.clone());
         let changed = state.workspaces[index].attachments != before;
         let adopted = adopt_at(state, index);
         Ok((state.workspaces[index].clone(), changed || adopted))
-    })
+    })?;
+    // Unconditionally, even when the queue write was a no-op: re-attaching a
+    // path the workspace already shows is exactly how someone whose repo went
+    // missing from the sidebar would try to get it back.
+    register_attachments(&[registered]);
+    Ok(result)
 }
 
 /// Stop showing a path. Detaching one the workspace doesn't show is a no-op.
@@ -1221,17 +1304,98 @@ mod tests {
             })
         );
 
-        // The wire adds the derived title beside the stored one, so a rename
-        // field can prefill with what the human typed — and the workspace's
-        // place in the tree, so a surface can indent it without walking the
-        // list.
+        // The view is the stored shape plus what has to be derived: the title
+        // to show beside the raw one (so a rename field prefills with what the
+        // human typed), the place in the tree (so a surface can indent without
+        // walking the list), and per attachment whether the path is a repo at
+        // all. Asserted whole, because the view spells its stored fields out
+        // rather than flattening them — a field added to `Workspace` and not
+        // here would otherwise drop off the wire in silence.
         let view = serde_json::to_value(view_of(&[], workspace)).unwrap();
-        assert_eq!(view["title"], "Ship it");
-        assert_eq!(view["displayTitle"], "Ship it");
-        assert_eq!(view["id"], "0a1b2c3d");
-        assert_eq!(view["parentId"], serde_json::Value::Null);
-        assert_eq!(view["depth"], 0);
-        assert_eq!(view["ancestors"], serde_json::json!([]));
+        assert_eq!(
+            view,
+            serde_json::json!({
+                "id": "0a1b2c3d",
+                "title": "Ship it",
+                "attachments": [
+                    // Neither temp path exists, so neither is a repository —
+                    // the fact is the filesystem's, read at serialization time.
+                    { "path": "/repos/review", "refName": "feature/x", "isGitRepo": false },
+                    { "path": "/repos/django", "refName": null, "isGitRepo": false },
+                ],
+                "parentId": null,
+                "autoCreated": false,
+                "createdAt": "2026-08-12T00:00:00.000Z",
+                "displayTitle": "Ship it",
+                "depth": 0,
+                "ancestors": [],
+            })
+        );
+    }
+
+    /// The queue is where attachments are made, so it is where the repo index
+    /// has to hear about them — otherwise the sidebar has no activity row for a
+    /// repo a card is showing, and its code side has nothing to open.
+    #[test]
+    fn attaching_a_repo_registers_it() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _home, repo) = setup_test();
+        std::fs::create_dir_all(repo.path().join(".git")).unwrap();
+        let canonical = normalize_repo_path(repo.path());
+
+        assert!(
+            !central::is_registered(repo.path()).unwrap(),
+            "the test needs an unregistered repo"
+        );
+
+        // Every surface that persists an attachment goes through one of these
+        // three, so all three have to register.
+        let ws = add(Some("by add"), vec![Attachment::new(repo.path(), None)])
+            .unwrap()
+            .1;
+        assert!(central::is_registered(repo.path()).unwrap());
+        assert!(central::list_registered_repos()
+            .unwrap()
+            .iter()
+            .any(|entry| entry.path == canonical));
+
+        central::unregister_repo(repo.path()).unwrap();
+        attach(
+            &ws.id,
+            Attachment::new(repo.path(), Some("main".to_owned())),
+        )
+        .unwrap();
+        assert!(central::is_registered(repo.path()).unwrap());
+
+        central::unregister_repo(repo.path()).unwrap();
+        router::route_to(repo.path(), None).unwrap();
+        assert!(central::is_registered(repo.path()).unwrap());
+    }
+
+    /// A plain directory attaches exactly like a repo, and the *only* thing
+    /// that differs is what the view says about it — the git registry never
+    /// hears about it, because everything downstream of the registry needs a
+    /// `LocalGitSource`.
+    #[test]
+    fn a_plain_directory_attaches_but_is_not_registered() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _home, plain) = setup_test();
+        let canonical = normalize_repo_path(plain.path());
+
+        let (state, ws) = add(Some("scratch"), vec![Attachment::new(plain.path(), None)]).unwrap();
+        assert_eq!(ws.attachments[0].path, canonical);
+        assert!(
+            central::list_registered_repos().unwrap().is_empty(),
+            "the index is the git registry; a directory has no place in it"
+        );
+
+        let view = view_of(&state.workspaces, ws);
+        assert!(!view.attachments[0].is_git_repo);
+
+        // …and `git init` in it flips the answer with no write to the queue.
+        std::fs::create_dir_all(plain.path().join(".git")).unwrap();
+        let view = view_of(&state.workspaces, state.workspaces[0].clone());
+        assert!(view.attachments[0].is_git_repo);
     }
 
     #[test]

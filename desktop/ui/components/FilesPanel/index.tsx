@@ -101,7 +101,7 @@ export function FilesPanel() {
   const {
     selectedFile,
     viewMode,
-    gitEnabled,
+    gitTab,
     gitChangeCount,
     hasHunks,
     setFilesPanelTab,
@@ -137,7 +137,7 @@ export function FilesPanel() {
 
   // One table, rendered here and by the collapsed rail — so the rail can't
   // offer a tab this strip doesn't have.
-  const visibleTabs = visibleFilesPanelTabs(comparison, gitEnabled);
+  const visibleTabs = visibleFilesPanelTabs(comparison, gitTab);
 
   // What the Review tab has waiting, for its badge. Taken from the panel's own
   // stats rather than a store-wide count: the badge labels these sections, so
