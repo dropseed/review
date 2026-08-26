@@ -4,7 +4,6 @@ import type { Workspace } from "../../types";
 
 vi.mock("../../api", () => ({
   getApiClient: () => ({
-    terminalPeek: vi.fn().mockResolvedValue(""),
     listWorkspaces: vi.fn().mockResolvedValue([]),
   }),
 }));

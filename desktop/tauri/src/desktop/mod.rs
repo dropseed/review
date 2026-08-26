@@ -784,7 +784,7 @@ pub fn run() {
             terminal_commands::terminal_kill,
             terminal_commands::terminal_list,
             terminal_commands::terminal_replay,
-            terminal_commands::terminal_peek,
+            terminal_commands::terminal_peek_many,
             terminal_commands::terminal_shutdown_all_background,
         ])
         .build(tauri::generate_context!())

@@ -237,3 +237,84 @@ export function terminalSession(
     ...overrides,
   };
 }
+
+/**
+ * A minimal WebSocket double, driven from the "server" side.
+ *
+ * Both web-mode sockets are one lifecycle over different frames (see
+ * `api/reconnecting-socket.ts`), so they are tested against one double. Each
+ * suite had grown its own, and the two had already drifted apart.
+ */
+export class FakeWebSocket {
+  static instances: FakeWebSocket[] = [];
+  static reset(): void {
+    FakeWebSocket.instances = [];
+  }
+  static last(): FakeWebSocket {
+    const ws = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+    if (!ws) throw new Error("no FakeWebSocket instance");
+    return ws;
+  }
+
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSING = 2;
+  static readonly CLOSED = 3;
+
+  url: string;
+  binaryType = "blob";
+  readyState = FakeWebSocket.CONNECTING;
+  onopen: ((ev?: unknown) => void) | null = null;
+  onmessage: ((ev: { data: unknown }) => void) | null = null;
+  onclose: ((ev: { code: number }) => void) | null = null;
+  onerror: ((ev?: unknown) => void) | null = null;
+  sent: Array<string | Uint8Array | ArrayBuffer> = [];
+
+  constructor(url: string) {
+    this.url = url;
+    FakeWebSocket.instances.push(this);
+  }
+
+  send(data: string | Uint8Array | ArrayBuffer): void {
+    this.sent.push(data);
+  }
+
+  close(): void {
+    this.readyState = FakeWebSocket.CLOSED;
+  }
+
+  // ----- server-side drivers -----
+
+  simulateOpen(): void {
+    this.readyState = FakeWebSocket.OPEN;
+    this.onopen?.();
+  }
+
+  /** Emit a Binary frame: an 8-byte big-endian `seq` header + `bytes`. */
+  emitBinary(bytes: Uint8Array, seq = 0): void {
+    const buf = new ArrayBuffer(8 + bytes.byteLength);
+    new DataView(buf).setBigUint64(0, BigInt(seq), false);
+    new Uint8Array(buf, 8).set(bytes);
+    this.onmessage?.({ data: buf });
+  }
+
+  /** Emit a raw Binary frame verbatim (for malformed-frame tests). */
+  emitRawBinary(buf: ArrayBuffer): void {
+    this.onmessage?.({ data: buf });
+  }
+
+  /** Emit a Text frame: an object is serialized, a string sent verbatim. */
+  emitText(frame: unknown): void {
+    this.onmessage?.({
+      data: typeof frame === "string" ? frame : JSON.stringify(frame),
+    });
+  }
+
+  serverClose(code = 1006): void {
+    this.readyState = FakeWebSocket.CLOSED;
+    this.onclose?.({ code });
+  }
+}
+
+/** `FakeWebSocket` typed as the global it stands in for. */
+export const fakeWebSocketImpl = FakeWebSocket as unknown as typeof WebSocket;

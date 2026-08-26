@@ -24,12 +24,19 @@ use tokio::net::UnixStream;
 use tokio::sync::{mpsc, oneshot};
 
 use super::codec::{read_frame, write_frame};
-use super::protocol::{Hello, Op, OpResult, Request, Response, StreamFrame, VersionInfo, B64};
+use super::protocol::{
+    Event, Hello, Op, OpResult, Request, Response, StreamFrame, VersionInfo, B64,
+};
 
 /// Buffered [`StreamFrame`]s per open stream before the reader task blocks.
 /// Matches the daemon-side subscriber bound, so back-pressure surfaces there
 /// (where re-subscribe recovery lives) rather than here.
 const STREAM_CHANNEL_CAPACITY: usize = 1024;
+
+/// Buffered [`Event`]s before the events reader task blocks. Smaller than a
+/// stream's: these are per-daemon lifecycle transitions, not PTY output, and a
+/// consumer this far behind is one the daemon will shortly call lagged anyway.
+const EVENTS_CHANNEL_CAPACITY: usize = 256;
 
 // The three ways the *transport* dies, as they appear in an error chain.
 //
@@ -266,10 +273,38 @@ impl DaemonClient {
         self.request_as(Op::List { repo_path: None }).await
     }
 
-    /// Who the daemon is and what wire it speaks — the desktop compares both
-    /// against its own to decide between attaching and respawning.
+    /// Who the daemon is, what wire it speaks, and which named capabilities it
+    /// serves — the desktop weighs all three to decide between attaching and
+    /// respawning. See [`VersionInfo::has_features`].
+    ///
+    /// [`VersionInfo::has_features`]: super::protocol::VersionInfo::has_features
     pub async fn version(&self) -> Result<VersionInfo> {
         VersionInfo::from_payload(self.request(Op::Version).await?)
+    }
+
+    /// One session's visible screen, as its VT engine renders it.
+    ///
+    /// `scrollback` is how many rows of history to include above the visible
+    /// screen: `0` is the screen alone, `u32::MAX` everything the daemon still
+    /// holds. Needs the `peek-scrollback` feature for anything but `0` — an
+    /// older daemon parses the request and ignores the field, answering with
+    /// the viewport.
+    pub async fn peek_with(&self, terminal_id: &str, scrollback: u32) -> Result<String> {
+        self.request_as(Op::Peek {
+            terminal_id: terminal_id.to_owned(),
+            scrollback,
+        })
+        .await
+    }
+
+    /// Many sessions' visible screens in one round trip, keyed by id. Ids the
+    /// daemon does not know are absent from the map rather than an error.
+    /// Needs the `peek-many` feature.
+    pub async fn peek_many(&self, terminal_ids: &[String]) -> Result<HashMap<String, String>> {
+        self.request_as(Op::PeekMany {
+            terminal_ids: terminal_ids.to_vec(),
+        })
+        .await
     }
 
     /// Open a second connection carrying one session's live output.
@@ -278,61 +313,103 @@ impl DaemonClient {
     /// it yields `None`. Dropping it closes the connection, which drops the
     /// daemon-side subscription — it never kills the session.
     pub async fn open_stream(&self, terminal_id: &str) -> Result<StreamHandle> {
+        self.open_channel(
+            Hello::Stream {
+                terminal_id: terminal_id.to_owned(),
+            },
+            STREAM_CHANNEL_CAPACITY,
+            StreamFrame::decode,
+        )
+        .await
+    }
+
+    /// Open a second connection carrying every session's lifecycle.
+    ///
+    /// One of these per client is enough — it covers every session, including
+    /// ones this client never started. Pair it with an [`Op::List`] taken
+    /// *after* it opens and the two are always the current list; an
+    /// [`Event::Lagged`] says that guarantee lapsed and to list again.
+    ///
+    /// Needs the daemon to serve the `events` feature; against one that does
+    /// not, the hello frame is simply not understood and the connection ends
+    /// without frames.
+    pub async fn open_events(&self) -> Result<EventsHandle> {
+        self.open_channel(Hello::Events, EVENTS_CHANNEL_CAPACITY, Event::decode)
+            .await
+    }
+
+    /// Dial a second connection, claim a one-way role with `hello`, and pump
+    /// its decoded frames into a [`Channel`].
+    ///
+    /// Both one-way roles are this same pump, so both invariants live here
+    /// once: the write half is **held open** for the connection's lifetime
+    /// (the daemon watches it for EOF to notice a detached client), and an
+    /// undecodable frame is **skipped, not fatal** — the length prefix has
+    /// already resynced us to the next frame, and a frame this build cannot
+    /// read is most likely a newer daemon's, so ending the connection over one
+    /// would turn every protocol addition into a hard break for old clients.
+    async fn open_channel<T: Send + 'static>(
+        &self,
+        hello: Hello,
+        capacity: usize,
+        decode: fn(&[u8]) -> Result<T>,
+    ) -> Result<Channel<T>> {
         let socket = &self.inner.socket;
         let stream = UnixStream::connect(socket)
             .await
             .with_context(|| format!("{ERR_CONNECTING} at {}", socket.display()))?;
         let (mut read_half, mut write_half) = stream.into_split();
 
-        let hello = serde_json::to_vec(&Hello::Stream {
-            terminal_id: terminal_id.to_owned(),
-        })?;
+        let hello = serde_json::to_vec(&hello)?;
         write_frame(&mut write_half, &hello).await?;
 
-        let (tx, frames) = mpsc::channel(STREAM_CHANNEL_CAPACITY);
+        let (tx, rx) = mpsc::channel(capacity);
         let task = tokio::spawn(async move {
-            // Hold the write half open for the connection's lifetime; the daemon
-            // watches it for EOF to notice a detached client.
+            // Held, not dropped — see this function's docs.
             let _write_half = write_half;
             while let Ok(Some(body)) = read_frame(&mut read_half).await {
-                match StreamFrame::decode(&body) {
+                match decode(&body) {
                     Ok(frame) => {
                         if tx.send(frame).await.is_err() {
                             return; // consumer went away
                         }
                     }
-                    Err(e) => {
-                        // Skip, don't die: the length prefix already resynced
-                        // us to the next frame, and an unknown tag is most
-                        // likely a newer daemon speaking a frame this build
-                        // predates — ending the stream over it turns every
-                        // protocol addition into a hard break for old clients.
-                        log::warn!("[daemon client] skipping malformed stream frame: {e}");
-                    }
+                    Err(e) => log::warn!("[daemon client] skipping malformed frame: {e}"),
                 }
             }
         });
 
-        Ok(StreamHandle { frames, task })
+        Ok(Channel { rx, task })
     }
 }
 
+/// A live stream of every session's [`Event`]s.
+pub type EventsHandle = Channel<Event>;
+
 /// A live stream of one session's [`StreamFrame`]s.
+pub type StreamHandle = Channel<StreamFrame>;
+
+/// One of the daemon's one-way channels: a receiver fed by a reader task that
+/// owns the connection. Dropping it closes the connection.
 #[derive(Debug)]
-pub struct StreamHandle {
-    frames: mpsc::Receiver<StreamFrame>,
+pub struct Channel<T> {
+    rx: mpsc::Receiver<T>,
     task: tokio::task::JoinHandle<()>,
 }
 
-impl StreamHandle {
-    /// The next frame, or `None` once the daemon closed the stream (after an
-    /// [`StreamFrame::Exit`] or [`StreamFrame::Error`]) or the connection died.
-    pub async fn recv(&mut self) -> Option<StreamFrame> {
-        self.frames.recv().await
+impl<T> Channel<T> {
+    /// The next frame, or `None` once the connection ended.
+    ///
+    /// For a [`StreamHandle`] that means the daemon closed the stream (after a
+    /// [`StreamFrame::Exit`] or [`StreamFrame::Error`]) or the connection
+    /// died; for an [`EventsHandle`], only that the daemon went away, since
+    /// nothing on that channel is terminal — reconnect, then re-list.
+    pub async fn recv(&mut self) -> Option<T> {
+        self.rx.recv().await
     }
 }
 
-impl Drop for StreamHandle {
+impl<T> Drop for Channel<T> {
     fn drop(&mut self) {
         // Abort the reader so the socket closes now rather than whenever the
         // next frame happens to arrive.

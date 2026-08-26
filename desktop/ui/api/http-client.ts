@@ -14,6 +14,7 @@ import type {
 } from "./client";
 import { terminalStartPayload } from "./client";
 import { TerminalSocket } from "./terminal-socket";
+import { TerminalEventsSocket } from "./terminal-events-socket";
 import type {
   BranchList,
   ClassifyResponse,
@@ -66,6 +67,8 @@ import type {
   TerminalExit,
   TerminalResized,
   TerminalReplay,
+  TerminalWorkspaceAssigned,
+  TerminalRemoved,
 } from "../types";
 
 export class HttpClient implements ApiClient {
@@ -93,10 +96,6 @@ export class HttpClient implements ApiClient {
     string,
     Set<(output: TerminalOutput) => void>
   >();
-  private terminalStatusCallbacks = new Map<
-    string,
-    Set<(status: TerminalStatus) => void>
-  >();
   private terminalExitCallbacks = new Map<
     string,
     Set<(exit: TerminalExit) => void>
@@ -108,6 +107,21 @@ export class HttpClient implements ApiClient {
   private terminalStatusChangedCallbacks = new Set<
     (status: TerminalStatus) => void
   >();
+
+  // ----- Terminal announcements (one WebSocket per client) -----
+
+  private terminalEventsSocket: TerminalEventsSocket | null = null;
+  private terminalStartedCallbacks = new Set<
+    (session: TerminalSessionInfo) => void
+  >();
+  private terminalExitedCallbacks = new Set<(exit: TerminalExit) => void>();
+  private terminalWorkspaceAssignedCallbacks = new Set<
+    (assignment: TerminalWorkspaceAssigned) => void
+  >();
+  private terminalRemovedCallbacks = new Set<
+    (removal: TerminalRemoved) => void
+  >();
+  private terminalSessionsInvalidatedCallbacks = new Set<() => void>();
 
   // ----- Private helpers -----
 
@@ -1054,8 +1068,14 @@ export class HttpClient implements ApiClient {
           if (cbs) for (const cb of cbs) cb({ id: terminalId, data, seq });
         },
         onStatus: (status) => {
-          const cbs = this.terminalStatusCallbacks.get(status.id);
-          if (cbs) for (const cb of cbs) cb(status);
+          // Into the roll-up, which is where status goes now — a mounted pane
+          // is not a special case of it. This socket and the announcement
+          // channel both carry the frame, and `applyTerminalStatus` is written
+          // to expect exactly that: it tests the attention edge against the
+          // phase being replaced, then drops a status equal to the one already
+          // stored. Reading it here costs that one comparison and is what keeps
+          // a streaming pane's status arriving while the announcement channel
+          // is down.
           for (const cb of this.terminalStatusChangedCallbacks) cb(status);
         },
         onExit: (exitCode) => {
@@ -1068,6 +1088,54 @@ export class HttpClient implements ApiClient {
         },
       });
       this.terminalSockets.set(terminalId, socket);
+    }
+    socket.connect();
+    return socket;
+  }
+
+  /**
+   * Get (creating if needed) the one announcement socket and make sure it is
+   * connecting. Opened by every global subscribe, because a global subscriber
+   * is the only reason it exists — a client with no interest in other windows'
+   * sessions never opens it.
+   *
+   * Resize is dropped outright for the reason given at its handler.
+   */
+  private ensureTerminalEventsSocket(): TerminalEventsSocket {
+    let socket = this.terminalEventsSocket;
+    if (!socket) {
+      socket = new TerminalEventsSocket({
+        onStarted: (session) => {
+          for (const cb of this.terminalStartedCallbacks) cb(session);
+        },
+        onStatus: (status) => {
+          for (const cb of this.terminalStatusChangedCallbacks) cb(status);
+        },
+        onResized: () => {
+          // Deliberately dropped. The only consumer of a resize is a mounted
+          // pane, whose xterm buffer has to reflow with the PTY — and a mounted
+          // pane has its own socket already carrying it. Delivering it twice
+          // would be worse than not at all: the pane reads the FIRST report as
+          // the stream's opening announcement and every later one as a size
+          // someone else asked for, so the echo would badge a pane that had
+          // just sized the grid itself as "sized elsewhere".
+        },
+        onWorkspaceAssigned: (assignment) => {
+          for (const cb of this.terminalWorkspaceAssignedCallbacks) {
+            cb(assignment);
+          }
+        },
+        onExited: (exit) => {
+          for (const cb of this.terminalExitedCallbacks) cb(exit);
+        },
+        onRemoved: (removal) => {
+          for (const cb of this.terminalRemovedCallbacks) cb(removal);
+        },
+        onInvalidated: () => {
+          for (const cb of this.terminalSessionsInvalidatedCallbacks) cb();
+        },
+      });
+      this.terminalEventsSocket = socket;
     }
     socket.connect();
     return socket;
@@ -1146,13 +1214,15 @@ export class HttpClient implements ApiClient {
     return this.post("/api/terminal/replay", { terminalId });
   }
 
-  async terminalPeek(terminalId: string): Promise<string> {
-    return this.post("/api/terminal/peek", { terminalId });
+  async terminalPeekMany(
+    terminalIds: string[],
+  ): Promise<Record<string, string>> {
+    return this.post("/api/terminal/peek-many", { terminalIds });
   }
 
   /**
    * Add `callback` to a per-session callback registry, returning an
-   * unsubscribe that removes it. Shared by the output/status/exit subscribers.
+   * unsubscribe that removes it. Shared by the output/resize/exit subscribers.
    */
   private registerTerminalCallback<T>(
     registry: Map<string, Set<(payload: T) => void>>,
@@ -1185,28 +1255,6 @@ export class HttpClient implements ApiClient {
     return unsubscribe;
   }
 
-  onTerminalStatus(
-    terminalId: string,
-    callback: (status: TerminalStatus) => void,
-  ): () => void {
-    // Registration only — the socket is opened by start/output, never by a bare
-    // subscribe (which the slice does BEFORE the session exists).
-    return this.registerTerminalCallback(
-      this.terminalStatusCallbacks,
-      terminalId,
-      callback,
-    );
-  }
-
-  onTerminalStatusChanged(
-    callback: (status: TerminalStatus) => void,
-  ): () => void {
-    this.terminalStatusChangedCallbacks.add(callback);
-    return () => {
-      this.terminalStatusChangedCallbacks.delete(callback);
-    };
-  }
-
   onTerminalResized(
     terminalId: string,
     callback: (resized: TerminalResized) => void,
@@ -1226,6 +1274,71 @@ export class HttpClient implements ApiClient {
     return this.registerTerminalCallback(
       this.terminalExitCallbacks,
       terminalId,
+      callback,
+    );
+  }
+
+  /**
+   * Add `callback` to a global registry and make sure the announcement socket
+   * is up, returning an unsubscribe. The socket is deliberately NOT closed when
+   * the last subscriber leaves: these are app-lifetime subscriptions, and a
+   * close/reopen cycle would cost a re-list for nothing.
+   */
+  private registerGlobalTerminalCallback<T>(
+    registry: Set<T>,
+    callback: T,
+  ): () => void {
+    registry.add(callback);
+    this.ensureTerminalEventsSocket();
+    return () => {
+      registry.delete(callback);
+    };
+  }
+
+  onTerminalStatusChanged(
+    callback: (status: TerminalStatus) => void,
+  ): () => void {
+    return this.registerGlobalTerminalCallback(
+      this.terminalStatusChangedCallbacks,
+      callback,
+    );
+  }
+
+  onTerminalStarted(
+    callback: (session: TerminalSessionInfo) => void,
+  ): () => void {
+    return this.registerGlobalTerminalCallback(
+      this.terminalStartedCallbacks,
+      callback,
+    );
+  }
+
+  onTerminalExited(callback: (exit: TerminalExit) => void): () => void {
+    return this.registerGlobalTerminalCallback(
+      this.terminalExitedCallbacks,
+      callback,
+    );
+  }
+
+  onTerminalWorkspaceAssigned(
+    callback: (assignment: TerminalWorkspaceAssigned) => void,
+  ): () => void {
+    return this.registerGlobalTerminalCallback(
+      this.terminalWorkspaceAssignedCallbacks,
+      callback,
+    );
+  }
+
+  onTerminalRemoved(callback: (removal: TerminalRemoved) => void): () => void {
+    return this.registerGlobalTerminalCallback(
+      this.terminalRemovedCallbacks,
+      callback,
+    );
+  }
+
+  onTerminalSessionsInvalidated(callback: () => void): () => void {
+    return this.registerGlobalTerminalCallback(
+      this.terminalSessionsInvalidatedCallbacks,
       callback,
     );
   }

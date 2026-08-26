@@ -27,7 +27,6 @@ vi.mock("../../api", () => ({
     detachWorkspace,
     attachWorkspace,
     terminalStart,
-    onTerminalStatus: () => () => {},
     onTerminalOutput: () => () => {},
     onTerminalExit: () => () => {},
   }),

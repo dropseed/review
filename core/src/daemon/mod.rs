@@ -92,12 +92,14 @@ mod server;
 pub(crate) mod test_support;
 
 pub use protocol::{
-    Hello, Op, OpResult, ReplayPayload, Request, Response, StreamFrame, VersionInfo, B64,
-    PROTOCOL_VERSION,
+    features, Event, Hello, Op, OpResult, ReplayPayload, Request, Response, StreamFrame,
+    VersionInfo, B64, PROTOCOL_VERSION,
 };
 
 #[cfg(feature = "daemon-client")]
-pub use client::{DaemonClient, StreamHandle, ERR_CLOSED, ERR_CONNECTING, ERR_SENDING};
+pub use client::{
+    DaemonClient, EventsHandle, StreamHandle, ERR_CLOSED, ERR_CONNECTING, ERR_SENDING,
+};
 #[cfg(feature = "daemon")]
 pub use server::serve;
 

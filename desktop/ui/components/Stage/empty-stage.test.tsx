@@ -4,7 +4,6 @@ import { render, screen, cleanup } from "@testing-library/react";
 vi.mock("../../api", () => ({
   getApiClient: () => ({
     listWorkspaces: vi.fn().mockResolvedValue([]),
-    terminalPeek: vi.fn().mockResolvedValue(""),
   }),
 }));
 

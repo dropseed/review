@@ -640,7 +640,6 @@ describe("slice actions", () => {
     terminalAssignWorkspace: async (id: string, ws: string | null) => {
       assigned.push([id, ws]);
     },
-    onTerminalStatus: () => () => {},
     onTerminalExit: () => () => {},
     terminalWrite: async () => {},
   });
@@ -650,7 +649,6 @@ describe("slice actions", () => {
     terminalAssignWorkspace: async (id: string, ws: string | null) => {
       assigned.push([id, ws]);
     },
-    onTerminalStatus: () => () => {},
     onTerminalExit: () => () => {},
   });
 
@@ -671,6 +669,46 @@ describe("slice actions", () => {
     // Born routed: the session carries the workspace it belongs to, and that
     // is the only record of it this window keeps.
     expect(get().terminalSessions.a.workspaceId).toBe("one");
+  });
+
+  it("startTerminal places the session itself, whoever announced it first", async () => {
+    let requested: string | null = null;
+    let settle: ((value: unknown) => void) | null = null;
+    const answered = new Promise((resolve) => {
+      settle = resolve;
+    });
+    const { get } = makeSlice({
+      terminalStart: async (req: { terminalId: string }) => {
+        requested = req.terminalId;
+        return answered;
+      },
+      onTerminalExit: () => () => {},
+      terminalWrite: async () => {},
+    });
+
+    const start = get().startTerminal("/r", "/r", 80, 24);
+    await Promise.resolve();
+    const id = requested!;
+
+    // The daemon's `started` frame, arriving before the start's own response.
+    get().ingestTerminalList([session(id, "/r", { workspaceId: "one" })]);
+    expect(get().terminalTabs).toEqual([]);
+
+    settle!({
+      session: session(id, "/r", { workspaceId: "one" }),
+      workspace: { id: "one", title: "routed", created: false },
+    });
+    await start;
+
+    // Exactly one tab, and it is the start path's own.
+    expect(get().terminalTabs).toHaveLength(1);
+    expect(collectLeafIds(get().terminalTabs[0].root)).toEqual([id]);
+    expect(get().activeTabId).toBe(get().terminalTabs[0].id);
+
+    // And the claim is released: a later list places it as usual.
+    get().removeTerminal(id);
+    get().ingestTerminalList([session(id, "/r", { workspaceId: "one" })]);
+    expect(get().terminalTabs).toHaveLength(1);
   });
 
   it("startTerminal re-reads the queue when the router invented a workspace", async () => {
@@ -843,7 +881,6 @@ describe("slice actions", () => {
       terminalAssignWorkspace: async (id: string, ws: string | null) => {
         assigned.push([id, ws]);
       },
-      onTerminalStatus: () => () => {},
       onTerminalExit: () => () => {},
       terminalWrite: async () => {},
     });
@@ -1056,6 +1093,21 @@ describe("ingestTabs", () => {
       ["b"],
     ]);
     expect(next.activeTabId).toBe("a");
+  });
+
+  // The events channel announces a birth to the window that asked for it too,
+  // and that frame routinely beats `terminalStart`'s own response back. The
+  // start path claims the id before it asks, so the announcement finds it
+  // already spoken for — two tabs for one shell is not self-healing, since
+  // every later ingest sees both holding a live session and keeps them.
+  it("leaves a session this window is placing tab-less", () => {
+    const next = ingestTabs(
+      emptyTabState(),
+      [session("a", "/r")],
+      new Set(["a"]),
+    );
+    expect(next.terminalTabs).toEqual([]);
+    expect(next.activeTabId).toBeNull();
   });
 
   it("does not duplicate a session already placed in a tab", () => {

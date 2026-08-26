@@ -69,6 +69,8 @@ import type {
   TerminalExit,
   TerminalResized,
   TerminalReplay,
+  TerminalWorkspaceAssigned,
+  TerminalRemoved,
 } from "../types";
 
 /** Event names emitted by the Rust watcher. Must match constants in watchers.rs. */
@@ -931,8 +933,12 @@ export class TauriClient implements ApiClient {
     return invoke<TerminalReplay>("terminal_replay", { terminalId });
   }
 
-  async terminalPeek(terminalId: string): Promise<string> {
-    return invoke<string>("terminal_peek", { terminalId });
+  async terminalPeekMany(
+    terminalIds: string[],
+  ): Promise<Record<string, string>> {
+    return invoke<Record<string, string>>("terminal_peek_many", {
+      terminalIds,
+    });
   }
 
   onTerminalOutput(
@@ -949,19 +955,6 @@ export class TauriClient implements ApiClient {
     );
   }
 
-  onTerminalStatus(
-    terminalId: string,
-    callback: (status: TerminalStatus) => void,
-  ): () => void {
-    return this.listenForEvent(`terminal:status:${terminalId}`, callback);
-  }
-
-  onTerminalStatusChanged(
-    callback: (status: TerminalStatus) => void,
-  ): () => void {
-    return this.listenForEvent("terminal:status-changed", callback);
-  }
-
   onTerminalResized(
     terminalId: string,
     callback: (resized: TerminalResized) => void,
@@ -974,5 +967,44 @@ export class TauriClient implements ApiClient {
     callback: (exit: TerminalExit) => void,
   ): () => void {
     return this.listenForEvent(`terminal:exit:${terminalId}`, callback);
+  }
+
+  // The six global terminal events. Rust runs ONE events drain against the
+  // daemon and re-emits its frames under these names, so a window that has
+  // never heard of a session still hears about it being born, moved, or
+  // finished — status included, which is why there is no per-session status
+  // event any more.
+
+  onTerminalStatusChanged(
+    callback: (status: TerminalStatus) => void,
+  ): () => void {
+    return this.listenForEvent("terminal:status-changed", callback);
+  }
+
+  onTerminalStarted(
+    callback: (session: TerminalSessionInfo) => void,
+  ): () => void {
+    return this.listenForEvent("terminal:started", callback);
+  }
+
+  onTerminalExited(callback: (exit: TerminalExit) => void): () => void {
+    return this.listenForEvent("terminal:exited", callback);
+  }
+
+  onTerminalWorkspaceAssigned(
+    callback: (assignment: TerminalWorkspaceAssigned) => void,
+  ): () => void {
+    return this.listenForEvent("terminal:workspace-assigned", callback);
+  }
+
+  onTerminalRemoved(callback: (removal: TerminalRemoved) => void): () => void {
+    return this.listenForEvent("terminal:removed", callback);
+  }
+
+  onTerminalSessionsInvalidated(callback: () => void): () => void {
+    // Payload-free: the event says only that the list may be stale.
+    return this.listenForEvent("terminal:sessions-invalidated", () =>
+      callback(),
+    );
   }
 }

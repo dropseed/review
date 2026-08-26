@@ -9,6 +9,9 @@
 //! - `{"kind":"stream","terminalId":"…"}` — a one-way daemon→client firehose of
 //!   [`StreamFrame`]s for one session. Closing a stream connection never kills
 //!   the session.
+//! - `{"kind":"events"}` — a one-way daemon→client firehose of [`Event`]s about
+//!   *every* session: the channel a client watches instead of polling
+//!   [`Op::List`]. One per client is enough.
 //!
 //! All JSON is `camelCase`, matching the project's canonical wire contract.
 //!
@@ -33,13 +36,39 @@ pub const B64: base64::engine::general_purpose::GeneralPurpose =
 ///
 /// The desktop app attaches to a daemon whose protocol matches even when its
 /// build identity differs — that is what lets sessions survive an app update.
-/// The compatibility contract is therefore this number, not the binary:
-/// **bump it whenever anything on this wire changes** — an op added, removed,
-/// or reshaped; a payload or stream frame changed; a semantic an existing op
-/// relies on. An unbumped change means an updated app silently driving a
-/// daemon that disagrees about the wire.
-/// History: 2 added [`StreamFrame::Resized`].
-pub const PROTOCOL_VERSION: u32 = 2;
+///
+/// **From v3 on, do not bump this for an addition.** A client says what it
+/// needs by *name*, in [`features`], and attaches to any daemon at protocol
+/// `>= 3` that reports every name it requires ([`VersionInfo::features`]).
+/// Bumping the integer instead would make every older daemon unattachable —
+/// which means killing its running sessions — for a change most clients do not
+/// even use. The integer is now reserved for a change that genuinely breaks
+/// the frames themselves (a reshaped envelope, a different codec); the honest
+/// way to express anything else is a new feature name that old daemons simply
+/// do not list.
+///
+/// History: 2 added [`StreamFrame::Resized`]. 3 added the [`Hello::Events`]
+/// channel, `scrollback` on [`Op::Peek`], [`Op::PeekMany`], and
+/// [`VersionInfo::features`] — and with it the feature-name rule above.
+pub const PROTOCOL_VERSION: u32 = 3;
+
+/// The capability names a daemon reports in [`VersionInfo::features`], and the
+/// vocabulary a client uses to say what it needs.
+///
+/// One name per capability, added alongside it and never removed or reused: a
+/// name that has ever meant something must keep meaning it, because an old
+/// client's whole attach decision is whether the daemon still lists it.
+pub mod features {
+    /// The [`Hello::Events`] channel: session lifecycle pushed, not polled.
+    pub const EVENTS: &str = "events";
+    /// [`Op::Peek`] honours its `scrollback` field (history above the viewport).
+    pub const PEEK_SCROLLBACK: &str = "peek-scrollback";
+    /// [`Op::PeekMany`]: one round trip for many sessions' screens.
+    pub const PEEK_MANY: &str = "peek-many";
+
+    /// Everything this build serves — what a daemon reports.
+    pub const ALL: &[&str] = &[EVENTS, PEEK_SCROLLBACK, PEEK_MANY];
+}
 
 // ============================================================
 // Hello
@@ -57,6 +86,8 @@ pub enum Hello {
     Control,
     /// Live output stream for one terminal session.
     Stream { terminal_id: String },
+    /// Live [`Event`] stream for *every* session on this daemon.
+    Events,
 }
 
 // ============================================================
@@ -118,8 +149,29 @@ pub enum Op {
     List { repo_path: Option<String> },
     /// Cold-reattach scrollback. Ok payload: `{dataB64, cursor, status}`.
     Replay { terminal_id: String },
-    /// Plain-text screen snapshot. Ok payload: a string.
-    Peek { terminal_id: String },
+    /// Plain-text screen snapshot, rendered by the session's VT engine. Ok
+    /// payload: a string.
+    ///
+    /// `scrollback` is how many rows of history immediately *above* the
+    /// viewport to prepend: `0` is the visible screen alone (what every daemon
+    /// has always answered), and `u32::MAX` is everything the engine still
+    /// retains. It is `#[serde(default)]` so a v2 client's
+    /// `{"op":"peek","terminalId":"…"}` still parses — absent is `0`, which
+    /// means what it always did.
+    Peek {
+        terminal_id: String,
+        #[serde(default)]
+        scrollback: u32,
+    },
+    /// Many sessions' visible screens in one round trip — what a grid of
+    /// terminal cards polls instead of one [`Op::Peek`] per card. Ok payload:
+    /// `{"<id>": "<screen>"}`.
+    ///
+    /// An id this daemon does not know (or cannot render right now) is simply
+    /// absent from the map rather than failing the whole request: the caller is
+    /// asking about a *set* of sessions, and one of them having just exited is
+    /// the normal case, not an error.
+    PeekMany { terminal_ids: Vec<String> },
     /// Capability probe. Ok payload: `true`.
     Available,
     /// Who the daemon is and what wire it speaks, for the desktop's
@@ -159,6 +211,12 @@ pub struct VersionInfo {
     /// daemon from before the protocol was versioned — which is itself a
     /// protocol mismatch.
     pub protocol: Option<u32>,
+    /// The capability names this daemon serves — see [`features`] and the
+    /// attach rule on [`PROTOCOL_VERSION`]. Empty for any daemon built before
+    /// v3, which is exactly right: it lists nothing, so it satisfies no
+    /// requirement.
+    #[serde(default)]
+    pub features: Vec<String>,
 }
 
 impl VersionInfo {
@@ -169,9 +227,114 @@ impl VersionInfo {
             Value::String(identity) => Ok(Self {
                 identity,
                 protocol: None,
+                features: Vec::new(),
             }),
             other => serde_json::from_value(other).context("unexpected version payload"),
         }
+    }
+
+    /// Which of `required` this daemon does *not* serve, in the order asked —
+    /// what a client names when it explains why it will not attach.
+    pub fn missing_features<'a>(&self, required: &[&'a str]) -> Vec<&'a str> {
+        required
+            .iter()
+            .filter(|name| !self.features.iter().any(|served| served == *name))
+            .copied()
+            .collect()
+    }
+
+    /// Whether this daemon serves every name in `required` — the feature half
+    /// of a client's attach decision. Vacuously true for an empty requirement.
+    pub fn has_features(&self, required: &[&str]) -> bool {
+        self.missing_features(required).is_empty()
+    }
+
+    /// How to name this daemon's wire in a sentence: "protocol 3", or "an
+    /// unversioned protocol" for one from before [`Self::protocol`] existed.
+    pub fn describe_protocol(&self) -> String {
+        match self.protocol {
+            Some(version) => format!("protocol {version}"),
+            None => "an unversioned protocol".to_owned(),
+        }
+    }
+}
+
+// ============================================================
+// Events channel
+// ============================================================
+
+/// A daemon→client frame on the [`Hello::Events`] connection: something
+/// happened to *some* session.
+///
+/// **The invariant this channel exists to provide:** a client that takes one
+/// [`Op::List`] *after* opening its events connection, and then applies every
+/// frame in order, holds exactly the list `Op::List` would return at any later
+/// moment. So everything the daemon does that changes the list — or a listed
+/// session's status, size, or workspace — emits here.
+///
+/// One JSON object per frame, length-prefixed by [`super::codec`] like
+/// everything else. No tag byte: unlike [`StreamFrame`] there is no hot path to
+/// keep out of a JSON encoder, and being plain JSON is what lets the Axum
+/// bridge forward each frame to a browser verbatim.
+///
+/// The same decoupling rule as [`StreamFrame::Status`] applies: payloads that
+/// are `crate::terminal` types travel as [`Value`] so this module stays free of
+/// the PTY half of the crate.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    tag = "event",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum Event {
+    /// A session was started — by this client or any other. The payload is a
+    /// `TerminalSummary`, the same object [`Op::List`] returns.
+    Started { session: Value },
+    /// A session's status changed. The payload is a `SessionStatus` — the same
+    /// object that session's own [`StreamFrame::Status`] carries.
+    Status { status: Value },
+    /// A session's PTY was resized. Only real changes: a resize to the size the
+    /// PTY already has is a no-op everywhere, including here.
+    Resized {
+        terminal_id: String,
+        cols: u16,
+        rows: u16,
+    },
+    /// A session was moved to another workspace, or off every workspace.
+    WorkspaceAssigned {
+        terminal_id: String,
+        workspace_id: Option<String>,
+    },
+    /// A session's child exited. Always followed by [`Event::Removed`] for the
+    /// same id: `Op::List` hides an exited session from the moment it exits,
+    /// well before the poller reaps it, so exiting *is* leaving the list.
+    Exited {
+        terminal_id: String,
+        exit_code: Option<i32>,
+    },
+    /// A session is no longer listed by [`Op::List`] — killed, shut down with
+    /// the rest, or exited on its own.
+    Removed { terminal_id: String },
+    /// **This subscriber** fell behind and the daemon dropped events for it, so
+    /// the invariant above no longer holds: re-take [`Op::List`]. The connection
+    /// stays open and keeps delivering — a client that is merely slow for a
+    /// moment should resync, not reconnect.
+    Lagged,
+}
+
+impl Event {
+    /// Encode this event's body (the length prefix is added by the codec).
+    ///
+    /// Serialization of these bodies cannot fail, so a failure degrades to an
+    /// empty body — which [`Event::decode`] rejects — rather than taking the
+    /// daemon's event pump down with it.
+    pub fn encode(&self) -> Vec<u8> {
+        serde_json::to_vec(self).unwrap_or_default()
+    }
+
+    /// Decode a frame body produced by [`Event::encode`].
+    pub fn decode(body: &[u8]) -> Result<Self> {
+        serde_json::from_slice(body).context("bad event frame")
     }
 }
 
@@ -368,6 +531,13 @@ mod tests {
         .unwrap();
         assert_eq!(stream, json!({"kind": "stream", "terminalId": "t1"}));
 
+        let events = serde_json::to_value(Hello::Events).unwrap();
+        assert_eq!(events, json!({"kind": "events"}));
+        assert_eq!(
+            serde_json::from_value::<Hello>(events).unwrap(),
+            Hello::Events
+        );
+
         // And both parse back.
         assert_eq!(
             serde_json::from_value::<Hello>(stream).unwrap(),
@@ -474,12 +644,172 @@ mod tests {
         .unwrap();
         assert_eq!(current.identity, "0.0.130+aabbccdd00112233");
         assert_eq!(current.protocol, Some(1));
+        // A daemon from before feature names lists none, so it satisfies no
+        // requirement — which is the answer that keeps the attach rule honest.
+        assert!(current.features.is_empty());
+        assert!(!current.has_features(&[features::EVENTS]));
+
+        assert_eq!(current.describe_protocol(), "protocol 1");
 
         let legacy = VersionInfo::from_payload(json!("0.0.124+deadbeef00000000")).unwrap();
         assert_eq!(legacy.identity, "0.0.124+deadbeef00000000");
         assert_eq!(legacy.protocol, None);
+        assert_eq!(legacy.describe_protocol(), "an unversioned protocol");
 
         assert!(VersionInfo::from_payload(json!(42)).is_err());
+    }
+
+    #[test]
+    fn version_payload_carries_feature_names() {
+        let served = VersionInfo {
+            identity: "0.0.163+aabbccdd00112233".into(),
+            protocol: Some(PROTOCOL_VERSION),
+            features: features::ALL.iter().map(|s| (*s).to_owned()).collect(),
+        };
+        let value = serde_json::to_value(&served).unwrap();
+        assert_eq!(
+            value["features"],
+            json!(["events", "peek-scrollback", "peek-many"])
+        );
+
+        let parsed = VersionInfo::from_payload(value).unwrap();
+        assert_eq!(parsed, served);
+        assert!(parsed.has_features(&[features::EVENTS, features::PEEK_MANY]));
+        assert!(parsed.has_features(&[]), "no requirement is satisfiable");
+        assert!(!parsed.has_features(&["time-travel"]));
+
+        // What is missing comes back in the order asked, so a client can name
+        // exactly the capabilities it wanted and did not get.
+        assert!(parsed.missing_features(&[features::EVENTS]).is_empty());
+        assert_eq!(
+            parsed.missing_features(&["time-travel", features::EVENTS, "telepathy"]),
+            vec!["time-travel", "telepathy"]
+        );
+    }
+
+    /// A v2 client sends `peek` with no `scrollback` key at all; that has to
+    /// keep meaning "the visible screen", not fail to parse.
+    #[test]
+    fn peek_scrollback_defaults_to_the_viewport() {
+        let legacy: Request =
+            serde_json::from_str(r#"{"id":1,"op":"peek","terminalId":"t1"}"#).unwrap();
+        assert_eq!(
+            legacy.op,
+            Op::Peek {
+                terminal_id: "t1".into(),
+                scrollback: 0,
+            }
+        );
+
+        let with_history = Request {
+            id: 2,
+            op: Op::Peek {
+                terminal_id: "t1".into(),
+                scrollback: 500,
+            },
+        };
+        let value = serde_json::to_value(&with_history).unwrap();
+        assert_eq!(value["scrollback"], 500);
+        assert_eq!(
+            serde_json::from_value::<Request>(value).unwrap(),
+            with_history
+        );
+    }
+
+    #[test]
+    fn peek_many_carries_a_list_of_ids() {
+        let request = Request {
+            id: 3,
+            op: Op::PeekMany {
+                terminal_ids: vec!["t1".into(), "t2".into()],
+            },
+        };
+        let value = serde_json::to_value(&request).unwrap();
+        assert_eq!(value["op"], "peek_many");
+        assert_eq!(value["terminalIds"], json!(["t1", "t2"]));
+        assert_eq!(serde_json::from_value::<Request>(value).unwrap(), request);
+    }
+
+    /// Encode then decode, asserting the event survives — and that its JSON is
+    /// the documented shape, since the Axum bridge forwards these bytes to a
+    /// browser verbatim.
+    fn assert_event_round_trips(event: &Event, expected: Value) {
+        let encoded = event.encode();
+        assert_eq!(
+            serde_json::from_slice::<Value>(&encoded).unwrap(),
+            expected,
+            "event JSON drifted from the documented shape"
+        );
+        assert_eq!(&Event::decode(&encoded).unwrap(), event);
+    }
+
+    #[test]
+    fn events_round_trip_in_their_documented_shapes() {
+        assert_event_round_trips(
+            &Event::Started {
+                session: json!({"id": "t1", "repoPath": "/repo"}),
+            },
+            json!({"event": "started", "session": {"id": "t1", "repoPath": "/repo"}}),
+        );
+        assert_event_round_trips(
+            &Event::Status {
+                status: json!({"id": "t1", "phase": "idle"}),
+            },
+            json!({"event": "status", "status": {"id": "t1", "phase": "idle"}}),
+        );
+        assert_event_round_trips(
+            &Event::Resized {
+                terminal_id: "t1".into(),
+                cols: 141,
+                rows: 52,
+            },
+            json!({"event": "resized", "terminalId": "t1", "cols": 141, "rows": 52}),
+        );
+        assert_event_round_trips(
+            &Event::WorkspaceAssigned {
+                terminal_id: "t1".into(),
+                workspace_id: Some("0a1b2c3d".into()),
+            },
+            json!({"event": "workspaceAssigned", "terminalId": "t1", "workspaceId": "0a1b2c3d"}),
+        );
+        assert_event_round_trips(
+            &Event::WorkspaceAssigned {
+                terminal_id: "t1".into(),
+                workspace_id: None,
+            },
+            json!({"event": "workspaceAssigned", "terminalId": "t1", "workspaceId": null}),
+        );
+        assert_event_round_trips(
+            &Event::Exited {
+                terminal_id: "t1".into(),
+                exit_code: Some(3),
+            },
+            json!({"event": "exited", "terminalId": "t1", "exitCode": 3}),
+        );
+        assert_event_round_trips(
+            &Event::Exited {
+                terminal_id: "t1".into(),
+                exit_code: None,
+            },
+            json!({"event": "exited", "terminalId": "t1", "exitCode": null}),
+        );
+        assert_event_round_trips(
+            &Event::Removed {
+                terminal_id: "t1".into(),
+            },
+            json!({"event": "removed", "terminalId": "t1"}),
+        );
+        assert_event_round_trips(&Event::Lagged, json!({"event": "lagged"}));
+    }
+
+    #[test]
+    fn malformed_event_frames_error() {
+        assert!(Event::decode(&[]).is_err(), "empty frame");
+        assert!(Event::decode(b"{").is_err(), "invalid JSON body");
+        assert!(
+            Event::decode(br#"{"event":"teleported"}"#).is_err(),
+            "unknown event name"
+        );
     }
 
     /// Encode then decode, asserting the frame survives byte-for-byte.

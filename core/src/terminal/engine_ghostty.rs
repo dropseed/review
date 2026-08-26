@@ -20,8 +20,9 @@
 
 use libghostty_vt::error::Result;
 use libghostty_vt::fmt::{Format, Formatter, FormatterOptions};
+use libghostty_vt::screen::GridRef;
 use libghostty_vt::selection::Selection;
-use libghostty_vt::terminal::{Options, Point, PointCoordinate, Terminal};
+use libghostty_vt::terminal::{Options, Point, PointCoordinate, PointSpace, Terminal};
 
 use super::vt::ScreenEngine;
 
@@ -66,21 +67,23 @@ impl GhosttyEngine {
         }
     }
 
-    /// Render the visible viewport to plain text.
+    /// Render the visible viewport to plain text, preceded by up to
+    /// `scrollback` rows of the history immediately above it.
     ///
     /// Scoped with a selection because the formatter otherwise renders the
-    /// whole screen *including scrollback*, which the caller would immediately
-    /// throw away — and pays for: on a full 120x40 grid that is ~13x the time
-    /// and ~14x the bytes of the viewport-scoped render.
-    fn render_viewport(&self) -> Result<String> {
+    /// whole screen *including all scrollback*, which the caller would
+    /// immediately throw away — and pays for: on a full 120x40 grid that is
+    /// ~13x the time and ~14x the bytes of the viewport-scoped render. That
+    /// cost is exactly what a caller asking for `n` rows of history is choosing
+    /// to pay, in the amount it chose.
+    fn render(&self, scrollback: u32) -> Result<String> {
         let cols = self.term.cols()?;
         let rows = self.term.rows()?;
-        let viewport = |x, y| Point::Viewport(PointCoordinate { x, y });
-        let start = self.term.grid_ref(viewport(0, 0))?;
-        let end = self.term.grid_ref(viewport(
-            cols.saturating_sub(1),
-            u32::from(rows.saturating_sub(1)),
-        ))?;
+        let start = self.start_ref(scrollback)?;
+        let end = self.term.grid_ref(Point::Viewport(PointCoordinate {
+            x: cols.saturating_sub(1),
+            y: u32::from(rows.saturating_sub(1)),
+        }))?;
 
         let selection = Selection::new(start, end, false);
         let options = FormatterOptions::new()
@@ -96,6 +99,36 @@ impl GhosttyEngine {
         // Borrowed for valid UTF-8, so this is the single unavoidable copy:
         // `bytes` is freed by Ghostty's allocator when it drops.
         Ok(String::from_utf8_lossy(&bytes).into_owned())
+    }
+
+    /// The top-left cell a render starts at: the viewport's own first row, or
+    /// `scrollback` rows above it.
+    ///
+    /// History has no viewport coordinate — that space only covers what is
+    /// visible — so this crosses into *screen* space, which numbers every row
+    /// the grid still holds from the oldest scrollback row down. Asking the
+    /// viewport's first row for its screen coordinate is asking how many rows
+    /// of history exist, and subtracting saturates: `u32::MAX` means "all of
+    /// it" for free, and a shallower history than requested yields all of that.
+    ///
+    /// `scrollback == 0` never touches any of this. It resolves the same
+    /// viewport point the peek has always used, so the visible-screen render
+    /// stays byte-for-byte what it was.
+    fn start_ref(&self, scrollback: u32) -> Result<GridRef<'_>> {
+        let viewport_top = Point::Viewport(PointCoordinate { x: 0, y: 0 });
+        if scrollback == 0 {
+            return self.term.grid_ref(viewport_top);
+        }
+        let top = self.term.grid_ref(viewport_top)?;
+        // A viewport row is always representable in screen space; treat the
+        // impossible `None` as "no history to show" rather than an error.
+        let Some(on_screen) = self.term.point_from_grid_ref(&top, PointSpace::Screen)? else {
+            return self.term.grid_ref(viewport_top);
+        };
+        self.term.grid_ref(Point::Screen(PointCoordinate {
+            x: 0,
+            y: on_screen.y.saturating_sub(scrollback),
+        }))
     }
 }
 
@@ -115,11 +148,11 @@ impl ScreenEngine for GhosttyEngine {
         }
     }
 
-    fn screen_text(&mut self) -> String {
+    fn screen_text(&mut self, scrollback: u32) -> String {
         // A failed render yields an empty peek rather than a stalled one — but
         // say so, or an empty peek is indistinguishable from a blank screen.
-        self.render_viewport().unwrap_or_else(|error| {
-            log::debug!("[peek] render failed: {error:?}");
+        self.render(scrollback).unwrap_or_else(|error| {
+            log::debug!("[peek] render of {scrollback} scrollback rows failed: {error:?}");
             String::new()
         })
     }
@@ -135,7 +168,7 @@ mod tests {
         // A yes/no prompt with a color SGR and a cursor move mixed in.
         engine.feed(b"\x1b[32mDo you want to proceed? (y/n)\x1b[0m\r\n");
         engine.feed(b"\x1b[1;1H"); // move cursor home — must not corrupt text
-        let screen = engine.screen_text();
+        let screen = engine.screen_text(0);
         assert!(
             screen.contains("Do you want to proceed? (y/n)"),
             "prompt text missing from screen: {screen:?}"
@@ -156,7 +189,7 @@ mod tests {
         engine.feed(b"first line\r\nsecond line");
         // Carriage return to line start, overwrite "second".
         engine.feed(b"\rSECOND");
-        let screen = engine.screen_text();
+        let screen = engine.screen_text(0);
         assert!(screen.contains("first line"));
         assert!(screen.contains("SECOND line"));
         assert!(!screen.contains("second line"));
@@ -169,7 +202,7 @@ mod tests {
         engine.resize(20, 10);
         engine.resize(120, 40);
         engine.resize(1, 1); // extreme, but must be clamped and safe
-        let _ = engine.screen_text();
+        let _ = engine.screen_text(0);
     }
 
     /// The reason this engine exists. A naive cell-by-cell walk of a grid drops
@@ -182,7 +215,7 @@ mod tests {
         engine
             .feed("\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467} \u{1F44B}\u{1F3FD}\r\n".as_bytes());
         engine.feed("e\u{0301}gale\u{0301} a\u{0308}o\u{0308}u\u{0308}\r\n".as_bytes());
-        let screen = engine.screen_text();
+        let screen = engine.screen_text(0);
 
         // Wide characters are not split by spacer cells.
         assert!(
@@ -210,7 +243,7 @@ mod tests {
         for i in 1..=12 {
             engine.feed(format!("line {i}\r\n").as_bytes());
         }
-        let screen = engine.screen_text();
+        let screen = engine.screen_text(0);
         assert!(
             !screen.contains("line 1\n"),
             "scrolled-off rows leaked into the peek: {screen:?}"
@@ -223,5 +256,51 @@ mod tests {
             screen.lines().count() <= 5,
             "peek exceeded the visible grid: {screen:?}"
         );
+    }
+
+    /// The sibling of the test above: asked for history, the same grid gives up
+    /// the rows that scrolled off — in order, above the viewport, and only as
+    /// many as were asked for.
+    #[test]
+    fn renders_history_above_the_viewport_on_request() {
+        let mut engine = GhosttyEngine::new(30, 5);
+        for i in 1..=12 {
+            engine.feed(format!("line {i}\r\n").as_bytes());
+        }
+
+        // Three rows of history, then the visible screen.
+        let some = engine.screen_text(3);
+        assert!(
+            some.contains("line 12"),
+            "the visible screen must still be there: {some:?}"
+        );
+        assert!(
+            !some.contains("line 4\n"),
+            "reached further back than asked: {some:?}"
+        );
+        assert_eq!(
+            some.lines().count(),
+            engine.screen_text(0).lines().count() + 3,
+            "asked for 3 rows of history and got something else: {some:?}"
+        );
+
+        // Everything the grid still holds, oldest first.
+        let all = engine.screen_text(u32::MAX);
+        assert!(
+            all.contains("line 1\n") && all.contains("line 12"),
+            "the full history is missing rows: {all:?}"
+        );
+        let first = all.lines().next().unwrap_or_default();
+        assert_eq!(
+            first.trim(),
+            "line 1",
+            "history came back out of order: {all:?}"
+        );
+
+        // A grid with nothing scrolled off answers the viewport, whatever it
+        // is asked for — no error, no invented blank rows.
+        let mut fresh = GhosttyEngine::new(30, 5);
+        fresh.feed(b"only line\r\n");
+        assert_eq!(fresh.screen_text(u32::MAX), fresh.screen_text(0));
     }
 }

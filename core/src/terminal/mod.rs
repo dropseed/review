@@ -50,6 +50,8 @@ pub fn trim_trailing_blank_lines(text: &mut String) {
 #[cfg(feature = "terminal")]
 mod engine_ghostty;
 #[cfg(feature = "terminal")]
+mod events;
+#[cfg(feature = "terminal")]
 mod manager;
 #[cfg(feature = "terminal")]
 mod poll;
@@ -64,6 +66,10 @@ mod status;
 #[cfg(feature = "terminal")]
 mod vt;
 
+// `EventBus` is the manager's own half of the bus and stays inside this module;
+// what leaves it is what the daemon's transport needs to carry the events out.
+#[cfg(feature = "terminal")]
+pub use events::{EventSubscription, SessionEvent, EVENT_CHANNEL_CAPACITY};
 #[cfg(feature = "terminal")]
 pub use manager::{SessionManager, Subscription, SUBSCRIBER_CHANNEL_CAPACITY};
 #[cfg(feature = "terminal")]
