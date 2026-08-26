@@ -35,7 +35,7 @@ use crate::daemon::{features, socket_path, DaemonClient, Op, StreamFrame, Versio
 use crate::terminal::{Phase, SessionStatus, TerminalSummary, TERMINAL_ID_ENV};
 use crate::work::{self, router};
 
-use super::common::{new_id_suffix, print_json, resolve_cwd_arg};
+use super::common::{new_id_suffix, print_json, read_path_or_stdin, resolve_cwd_arg};
 
 /// Message shown when the control socket can't be reached. The daemon is
 /// spawned by the desktop app (and outlives it); the CLI only ever attaches.
@@ -166,7 +166,8 @@ pub struct SendArgs {
     /// Text to type into the session, sent verbatim (no newline)
     pub text: Option<String>,
     /// Read the text from PATH instead (`-` for stdin) — for prompts too long
-    /// or too quoted to put on a command line
+    /// or too quoted to put on a command line. The file's bytes go out
+    /// unmodified, a trailing newline included
     #[arg(long, value_name = "PATH", conflicts_with = "text")]
     pub file: Option<String>,
     /// Wrap the text in bracketed-paste markers so a TUI takes it as one
@@ -650,7 +651,8 @@ const PASTE_END: &[u8] = b"\x1b[201~";
 /// The payload `send` writes in its first write: text (optionally wrapped as a
 /// paste), then named keys, then a trailing Enter for `--enter`.
 fn send_payload(args: &SendArgs, text: Option<&[u8]>) -> Result<Vec<u8>, String> {
-    let mut bytes = Vec::new();
+    let mut bytes =
+        Vec::with_capacity(text.map_or(0, |t| t.len()) + PASTE_BEGIN.len() + PASTE_END.len());
     if let Some(text) = text {
         if args.paste {
             bytes.extend_from_slice(PASTE_BEGIN);
@@ -675,21 +677,14 @@ fn send_payload(args: &SendArgs, text: Option<&[u8]>) -> Result<Vec<u8>, String>
 /// The text `send` was given: the TEXT argument, or `--file PATH` (`-` reads
 /// stdin) as bytes, sent as they are.
 fn send_text(args: &SendArgs) -> Result<Option<Vec<u8>>, String> {
-    use std::io::Read as _;
-    match (&args.text, &args.file) {
-        (Some(text), _) => Ok(Some(text.as_bytes().to_vec())),
-        (None, Some(path)) if path == "-" => {
-            let mut buf = Vec::new();
-            std::io::stdin()
-                .read_to_end(&mut buf)
-                .map_err(|e| format!("Could not read stdin: {e}"))?;
-            Ok(Some(buf))
-        }
-        (None, Some(path)) => std::fs::read(path)
-            .map(Some)
-            .map_err(|e| format!("Could not read {path}: {e}")),
-        (None, None) => Ok(None),
+    // clap already rules out TEXT and --file together.
+    if let Some(text) = &args.text {
+        return Ok(Some(text.as_bytes().to_vec()));
     }
+    args.file
+        .as_deref()
+        .map(|path| read_path_or_stdin(path, "text"))
+        .transpose()
 }
 
 async fn run_send(client: &DaemonClient, args: SendArgs) -> Result<(), String> {

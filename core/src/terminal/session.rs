@@ -612,32 +612,28 @@ fn spawn_reader_thread(
         .expect("failed to spawn terminal reader thread")
 }
 
-/// The largest single write the PTY master ever sees.
+/// The largest single write the PTY master ever sees, and the gap between two
+/// of them within one `write`.
 ///
 /// The kernel tty queue hands a raw-mode reader a 1024-byte burst first and the
 /// rest in a second `read()`, so one large write reaches the foreground program
-/// as two: a TUI with a paste heuristic (Claude Code) takes the first burst as a
-/// paste and only the tail as typed text. Nothing is lost by the kernel, but
-/// the head goes somewhere the sender did not mean. Writing well under that
-/// boundary, one flushed chunk at a time with a breath between them (see
-/// [`PTY_WRITE_PAUSE`]), lands every sender's payload as plain typed input. In
-/// canonical mode (a shell at its prompt) the line discipline still drops
-/// everything past its 1024-byte input limit — that is the shell's own rule,
-/// and no chunking helps it.
-pub const PTY_WRITE_CHUNK: usize = 512;
-
-/// The gap between two chunks of one write. Chunks written back to back are
-/// coalesced by the kernel into the same 1024-byte read, so the size alone
-/// changes nothing; the pause is what makes the reader see them separately.
-/// Only multi-chunk writes pay it, and `write` runs on a blocking thread.
-pub const PTY_WRITE_PAUSE: std::time::Duration = std::time::Duration::from_millis(10);
+/// as two — and a TUI with a paste heuristic (Claude Code) takes the first
+/// burst as a paste and only the tail as typed text. Chunks written back to
+/// back are coalesced into that same first read, so the size alone changes
+/// nothing; the pause is what makes the reader see them separately. The cost
+/// is proportional to the payload and paid under the writer lock, so a very
+/// large paste serializes other writers to that session for its duration.
+/// Canonical mode (a shell at its prompt) still drops everything past its
+/// 1024-byte input limit — the line discipline's rule, which no chunking helps.
+const PTY_WRITE_CHUNK: usize = 512;
+const PTY_WRITE_PAUSE: std::time::Duration = std::time::Duration::from_millis(10);
 
 /// Split a PTY write into flush-sized chunks (see [`PTY_WRITE_CHUNK`]).
 ///
 /// Boundary-aware: a chunk never ends inside an escape sequence or a
 /// multi-byte UTF-8 character, because the pause after it would be read as
 /// part of the input — a bare ESC followed by silence is the Escape key to
-/// Ink and Claude Code (which cancels a `--paste` mid-marker), and a torn
+/// Ink and Claude Code (which cancels a bracketed paste mid-marker), and a torn
 /// UTF-8 sequence is two garbage bytes. The cut moves back to just before
 /// the ESC or lead byte; only a single sequence longer than the chunk size
 /// is cut hard.
@@ -767,10 +763,6 @@ mod tests {
         assert_eq!(chunks[0].len(), 509, "cut lands just before the ESC");
         assert!(chunks[1].starts_with(b"\x1b[200~"));
         assert_eq!(chunks.concat(), data);
-        // No chunk ends with an unfinished sequence.
-        for c in &chunks {
-            assert!(!c.contains(&0x1b) || c.ends_with(b"~") || c.len() > 6);
-        }
         // Same for a marker that starts exactly at the boundary minus one.
         let mut data = vec![b'a'; 511];
         data.extend_from_slice(b"\x1b[201~xyz");

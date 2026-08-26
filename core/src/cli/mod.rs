@@ -571,16 +571,7 @@ fn resolve_patch_review(repo_path: &Path, patch_src: &str) -> Result<ResolvedRev
 
 /// Read a patch from a file path, or from stdin when `src` is "-".
 fn read_patch_input(src: &str) -> Result<String, String> {
-    if src == "-" {
-        use std::io::Read;
-        let mut buf = String::new();
-        std::io::stdin()
-            .read_to_string(&mut buf)
-            .map_err(|e| format!("Could not read patch from stdin: {e}"))?;
-        Ok(buf)
-    } else {
-        std::fs::read_to_string(src).map_err(|e| format!("Could not read patch '{src}': {e}"))
-    }
+    common::read_path_or_stdin_text(src, "patch")
 }
 
 /// Launch the Review desktop app for the given repo, optionally with a review ref and/or focused file.

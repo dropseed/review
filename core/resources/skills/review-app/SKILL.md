@@ -365,11 +365,12 @@ review terminal peek agent-1                       # confirm it took the input
 
 `--settle-ms` only delays the Enter; it does nothing for the text itself.
 
-**Send a long prompt to a TUI** — add `--paste`. It wraps the text in
-bracketed-paste markers so the app takes it as one paste; without it, Claude
-Code's paste heuristic can fold the first burst of a long send into a hidden
-`[Pasted text #N]` and show only the tail as typed. `--file PATH` (or
-`--file -` for stdin) reads the text from a file instead of the command line:
+**Send a long or multi-line prompt to a TUI** — `--file PATH` (or `--file -`
+for stdin) reads the text from a file instead of the command line, bytes
+unmodified (a trailing newline is an Enter). Add `--paste` to wrap it in
+bracketed-paste markers so the app takes it as one paste — no per-line submit,
+no autoindent — instead of keystrokes. Only for a program with paste mode on
+(Claude Code, most editors); a plain shell would show the markers as text:
 
 ```
 review terminal send agent-1 --file prompt.md --paste --submit

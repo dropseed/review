@@ -82,6 +82,26 @@ pub fn parse_hunk_target(arg: &str) -> HunkTarget {
 /// A unique ID suffix: [`unique_id_seed`] behind a `t`, which keeps
 /// `parse_hunk_target`'s all-hex heuristic from mistaking a store-assigned ID
 /// for a hunk hash.
+/// Read a CLI input argument as bytes: the file at `path`, or stdin when
+/// `path` is `-`. `what` names the input in the error ("patch", "comments").
+pub fn read_path_or_stdin(path: &str, what: &str) -> Result<Vec<u8>, String> {
+    use std::io::Read as _;
+    if path == "-" {
+        let mut buf = Vec::new();
+        std::io::stdin()
+            .read_to_end(&mut buf)
+            .map_err(|e| format!("Could not read {what} from stdin: {e}"))?;
+        return Ok(buf);
+    }
+    std::fs::read(path).map_err(|e| format!("Could not read {what} '{path}': {e}"))
+}
+
+/// [`read_path_or_stdin`] as UTF-8 text.
+pub fn read_path_or_stdin_text(path: &str, what: &str) -> Result<String, String> {
+    String::from_utf8(read_path_or_stdin(path, what)?)
+        .map_err(|e| format!("{what} '{path}' is not valid UTF-8: {e}"))
+}
+
 pub fn new_id_suffix() -> String {
     format!("t{}", unique_id_seed())
 }

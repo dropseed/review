@@ -7,7 +7,6 @@
 //! comments can coexist in the same review.
 
 use std::cell::Cell;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -502,18 +501,7 @@ fn validate_comment_input(input: &CommentInput) -> Result<(), String> {
 }
 
 fn read_stdin_or_file(file: Option<&str>) -> Result<String, String> {
-    match file {
-        None | Some("-") => {
-            let mut buf = String::new();
-            std::io::stdin()
-                .read_to_string(&mut buf)
-                .map_err(|e| format!("Could not read comments from stdin: {e}"))?;
-            Ok(buf)
-        }
-        Some(path) => {
-            std::fs::read_to_string(path).map_err(|e| format!("Could not read '{path}': {e}"))
-        }
-    }
+    super::common::read_path_or_stdin_text(file.unwrap_or("-"), "comments")
 }
 
 /// `review comment edit` — replace the content of an existing comment.
