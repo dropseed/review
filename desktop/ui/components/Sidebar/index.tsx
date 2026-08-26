@@ -106,6 +106,37 @@ function SidebarHeader({
         Working on
       </span>
       <span className="flex shrink-0 items-center gap-1">
+        {/* Drawer only: the palette's front door. At a desk it is ⌘K and a
+            button restating it would be furniture; a phone has no chord to
+            press, and `go` — workspaces, branches, running terminals — is
+            exactly what someone opens this drawer looking for when the queue
+            doesn't already show it. */}
+        {drawer && (
+          <button
+            type="button"
+            onClick={() => {
+              onToggle();
+              useReviewStore.getState().openPalette("go");
+            }}
+            className="tap tap-target flex size-9 items-center justify-center
+                       rounded-md text-fg-muted active:bg-surface-raised"
+            aria-label="Search"
+          >
+            <svg
+              className="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="11" cy="11" r="7" />
+              <path d="M20 20l-3.5-3.5" />
+            </svg>
+          </button>
+        )}
         {terminalsSupported && (
           <button
             type="button"

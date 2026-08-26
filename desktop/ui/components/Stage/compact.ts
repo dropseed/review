@@ -1,29 +1,12 @@
-import type { ContentFocus } from "../../stores/slices/terminalSlice";
 import { SIDEBAR_LIMITS } from "../../utils/resize";
-import type { StageHalf } from "./FocusToggle";
 
 /**
- * Which half a phone-width stage shows.
- *
- * `contentFocus` has three values and a narrow window can honour two of them,
- * so "split" has to resolve to one half. It resolves to the terminal: the
- * reason to open this app on a phone is almost always an agent that has been
- * left running, and the code half at 390px is a diff read four words at a time.
- * A workspace with no terminal dock has no such half to show, so it resolves
- * to the code regardless.
- *
- * Nothing here writes to the store. `contentFocus` keeps whatever the desktop
- * chose, and widening the window restores it untouched — the rule
- * `useResponsiveDiffViewMode` already follows for a split diff in a narrow
- * pane.
+ * Which half a phone-width stage shows is `push-nav`'s `codePushed`: the
+ * terminal is the screen, and the code half is pushed over it. "split" resolves
+ * to the terminal, because the reason to open this app on a phone is almost
+ * always an agent that has been left running, and a diff at 390px is read four
+ * words at a time.
  */
-export function compactStageHalf(
-  focus: ContentFocus,
-  docked: boolean,
-): StageHalf {
-  if (!docked) return "code";
-  return focus === "code" ? "code" : "terminal";
-}
 
 /**
  * The narrowest the diff may get before the files column stops being worth its

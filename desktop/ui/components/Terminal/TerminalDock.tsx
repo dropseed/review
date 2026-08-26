@@ -18,7 +18,7 @@ import {
 import { useTerminalDockPresent } from "../../stores/selectors/terminals";
 import { useIsCompact } from "../../hooks/useIsCompact";
 import { useElementWidth } from "../../hooks/useElementWidth";
-import { compactStageHalf } from "../Stage/compact";
+import { CompactStage } from "../Stage/CompactStage";
 
 /**
  * The terminal's place in the window: a resizable pane on the left of whatever
@@ -43,7 +43,6 @@ export function TerminalDock({ children }: { children: ReactNode }): ReactNode {
   // anything — the strip's own "+" is how a shell gets started in it.
   const docked = useTerminalDockPresent();
   const compact = useIsCompact();
-  const compactHalf = compactStageHalf(contentFocus, docked);
   const focus = docked ? contentFocus : "code";
   const terminalFocused = focus === "terminal";
   // Focusing the code still leaves the terminal on its dock edge — as a
@@ -156,40 +155,17 @@ export function TerminalDock({ children }: { children: ReactNode }): ReactNode {
   );
 
   // At phone width the row has room for one half, so it draws one half: no
-  // rail, no divider, no second column at 40px. Which one is `compactStageHalf`
-  // (see Stage/compact.ts) reading the same `contentFocus` the desktop reads —
-  // the layout degrades, it does not switch modes, and nothing is written back.
+  // rail, no divider, no second column at 40px. Which one, and how you get
+  // between them, is `Stage/CompactStage` — a navigation stack with the
+  // terminal at the bottom of it, reading the same `contentFocus` the desktop
+  // reads. The layout degrades; it does not switch modes.
   //
-  // The other half stays mounted and hidden for exactly the reason `contentRail`
-  // keeps the content mounted: a shell you can't currently see is still running,
-  // and unmounting the review would drop its watchers and its scroll position
-  // every time a thumb hit the other tab.
+  // Both halves stay mounted for exactly the reason `contentRail` keeps the
+  // content mounted: a shell you can't currently see is still running, and
+  // unmounting the review would drop its watchers and its scroll position
+  // every time the code half was pushed.
   if (compact && !terminalOverview) {
-    return (
-      <div
-        ref={setContentRow}
-        className="relative flex flex-1 flex-row overflow-hidden bg-surface"
-      >
-        {docked && (
-          <div
-            className={clsx(
-              "min-w-0 flex-1 overflow-hidden p-2",
-              compactHalf !== "terminal" && "hidden",
-            )}
-          >
-            <TerminalPanel />
-          </div>
-        )}
-        <div
-          className={clsx(
-            "flex min-w-0 flex-1 flex-col overflow-hidden",
-            compactHalf !== "code" && "hidden",
-          )}
-        >
-          {children}
-        </div>
-      </div>
-    );
+    return <CompactStage docked={docked}>{children}</CompactStage>;
   }
 
   // The overview takes the whole row and the panel does not render at all —

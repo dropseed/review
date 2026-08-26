@@ -34,6 +34,7 @@ import { ActivityBar } from "./ActivityBar";
 import { CompareRefDeletedNotice } from "./CompareRefDeletedNotice";
 import { useElementWidth } from "../hooks/useElementWidth";
 import { codeHalfIsNarrow } from "./Stage/compact";
+import { useIsCompact } from "../hooks/useIsCompact";
 import { rootFontSize } from "../utils/resize";
 
 const DebugModal = lazy(() =>
@@ -157,6 +158,8 @@ export function ReviewView({ comparisonReady }: ReviewViewProps): ReactNode {
     checkoutAction,
     "checkout worktree",
   );
+
+  const compact = useIsCompact();
 
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -287,23 +290,29 @@ export function ReviewView({ comparisonReady }: ReviewViewProps): ReactNode {
 
             {/* Checkout prompt — shown for reviews without a worktree.
             Skipped when on the current branch, since the main working tree
-            already matches the branch being reviewed (LSP works correctly). */}
-            {!readOnlyPreview && !worktreePath && !isOnCurrentBranch && (
-              <div className="flex items-center gap-2 border-b border-edge px-4 py-1.5">
-                <span className="text-xs text-fg-faint flex-1">
-                  Check out to enable LSP features (hover, go-to-definition)
-                </span>
-                <button
-                  type="button"
-                  onClick={handleCheckoutClick}
-                  disabled={checkingOut}
-                  className="text-xs font-medium text-fg-muted hover:text-fg-secondary
+            already matches the branch being reviewed (LSP works correctly),
+            and skipped at phone width: hover and go-to-definition are things
+            a pointer does, so on a phone this is a row of chrome offering to
+            do work for a feature that screen cannot use. */}
+            {!readOnlyPreview &&
+              !worktreePath &&
+              !isOnCurrentBranch &&
+              !compact && (
+                <div className="flex items-center gap-2 border-b border-edge px-4 py-1.5">
+                  <span className="text-xs text-fg-faint flex-1">
+                    Check out to enable LSP features (hover, go-to-definition)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleCheckoutClick}
+                    disabled={checkingOut}
+                    className="text-xs font-medium text-fg-muted hover:text-fg-secondary
                          disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
-                >
-                  {checkingOut ? "Checking out..." : "Check out"}
-                </button>
-              </div>
-            )}
+                  >
+                    {checkingOut ? "Checking out..." : "Check out"}
+                  </button>
+                </div>
+              )}
           </>
         )}
 

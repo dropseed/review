@@ -668,6 +668,35 @@ html, body {
   }
 }
 
+/* The compact navigation stack — the code half pushed over the terminal, and
+   the terminal parallaxing behind it. See `Stage/CompactStage`.
+
+   The curve is UIKit's own: nearly all of the distance is covered in the first
+   third of the time, so the screen has arrived well before the animation
+   technically ends. The positions themselves are inline transforms set from
+   `push-nav`'s `pushTransforms`, which is what lets a finger take the screen
+   over mid-transition and hand it back without a seam — only the duration and
+   the curve are here, because a drag has neither. */
+.nav-push {
+  transition: transform 350ms cubic-bezier(0.32, 0.72, 0, 1);
+  will-change: transform;
+}
+
+.nav-push-scrim {
+  transition: opacity 350ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Asked for no motion, the push is a crossfade instead of a slide. The
+   duration is `!important` because the blanket reduced-motion rule above sets
+   `transition-duration: 0.01ms !important` on everything — which is right for
+   decoration and wrong for the one transition that is telling you a screen
+   changed. A class beats `*` on specificity, so this wins. */
+@media (prefers-reduced-motion: reduce) {
+  .nav-crossfade {
+    transition: opacity 150ms linear !important;
+  }
+}
+
 /* The phone uses the system face, the way every other app on it does — SF, at
    the weights and optical sizes iOS renders natively. Inter stays on the
    desktop, and monospace stays monospace everywhere: `--code-font-family` is

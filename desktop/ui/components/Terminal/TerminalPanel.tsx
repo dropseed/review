@@ -1,4 +1,10 @@
-import { type ReactElement, type ReactNode, useMemo } from "react";
+import {
+  type ReactElement,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import { clsx } from "clsx";
 import { useReviewStore } from "../../stores";
 import { CompactMenuButton } from "../Stage/CompactNav";
@@ -34,7 +40,7 @@ import { openTerminalTab } from "./newTab";
 import { StartTerminal } from "./StartTerminal";
 import { ComposeBar } from "./ComposeBar";
 import { SoftKeys } from "./SoftKeys";
-import { TerminalTextSize } from "./TerminalTextSize";
+import { TerminalOverflowSheet } from "./TerminalOverflowSheet";
 import { PaneTree } from "./PaneTree";
 import { FocusToggle } from "../Stage/FocusToggle";
 import { WarningIcon } from "../ui/icons";
@@ -54,6 +60,7 @@ export function TerminalPanel(): ReactNode {
   const activeTabId = useReviewStore((s) => s.activeTabId);
 
   const setActiveTab = useReviewStore((s) => s.setActiveTab);
+  const setContentFocus = useReviewStore((s) => s.setContentFocus);
   const moveTab = useReviewStore((s) => s.moveTab);
   const setFocusedTerminalPane = useReviewStore(
     (s) => s.setFocusedTerminalPane,
@@ -111,6 +118,24 @@ export function TerminalPanel(): ReactNode {
   // The pane the key bar types into: whichever one the showing tab has focused.
   const showingPaneId = showingTabId ? (activeTab?.focused ?? null) : null;
 
+  // A snapping pill row only reads as one if the pill you are on is the one in
+  // the middle of it — otherwise switching sessions from the queue drawer, or
+  // starting one, leaves the strip showing a tab that isn't the screen. Only at
+  // phone width: the desktop strip divides its width between every tab, so
+  // there is never anything off it to scroll to.
+  const stripRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!compact || !showingTabId) return;
+    const el = stripRef.current?.querySelector<HTMLElement>(
+      `[data-strip-tab="${cssEscape(showingTabId)}"]`,
+    );
+    el?.scrollIntoView?.({
+      inline: "center",
+      block: "nearest",
+      behavior: "smooth",
+    });
+  }, [compact, showingTabId]);
+
   // Offered only for a pane that has somewhere to leave: the sole pane of a tab
   // already is its own tab, and a slot that did nothing would still read as an
   // invitation.
@@ -159,7 +184,19 @@ export function TerminalPanel(): ReactNode {
             chrome. Each tab keeps a floor wide enough for its marker and a few
             characters; past the point where they all fit at that floor the row
             scrolls, which is the same bargain every browser makes. */}
-        <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto scrollbar-thin">
+        <div
+          ref={stripRef}
+          className={clsx(
+            "flex min-w-0 flex-1 items-center overflow-x-auto",
+            // A phone scrolls this with a thumb: pills that size to their own
+            // titles rather than dividing a 390px row into slivers, snapping so
+            // a flick lands on a session instead of between two, and no
+            // scrollbar — there is nothing here to grab one with.
+            compact
+              ? "snap-x snap-mandatory gap-1.5 scrollbar-none"
+              : "gap-0.5 scrollbar-thin",
+          )}
+        >
           {stripTabs.map((tab) => {
             // The strip shows one workspace's tabs, but a reorder moves a tab
             // within the whole list — so the index that travels with the drag
@@ -264,9 +301,12 @@ export function TerminalPanel(): ReactNode {
                       setTabDropTarget(null);
                     }}
                     className={clsx(
-                      `group tap tap-target-y relative flex min-w-[5.5rem]
-                       max-w-[13rem] flex-1 basis-0 items-center rounded-md px-2
-                       py-1 text-xs`,
+                      "group tap tap-target-y relative flex items-center",
+                      compact
+                        ? `min-h-9 max-w-[12rem] shrink-0 snap-center
+                           rounded-full px-3 text-[15px]`
+                        : `min-w-[5.5rem] max-w-[13rem] flex-1 basis-0
+                           rounded-md px-2 py-1 text-xs`,
                       // Lifted off the terminal surface, not recessed into it —
                       // the strip now sits on surface-inset itself.
                       isActive
@@ -413,21 +453,59 @@ export function TerminalPanel(): ReactNode {
             aria-label="New terminal tab"
             title="New terminal tab (⌘T)"
             onClick={handleNewTab}
-            className="tap tap-target-y shrink-0 rounded-md px-2 py-1 text-sm
-                       leading-none text-fg-muted hover:bg-fg/[0.06]
-                       hover:text-fg-secondary"
+            className={clsx(
+              `tap shrink-0 leading-none text-fg-muted hover:bg-fg/[0.06]
+               hover:text-fg-secondary`,
+              compact
+                ? `tap-target flex size-9 snap-center items-center
+                   justify-center rounded-full text-lg`
+                : "tap-target-y rounded-md px-2 py-1 text-sm",
+            )}
           >
             +
           </button>
         </div>
 
-        {/* This half's own focus toggle, at the far end — and, on a phone,
-            the text-size steps that have no settings panel to live in. */}
-        <div className="ml-2 flex shrink-0 items-center">
-          {compact && showingPaneId && (
-            <TerminalTextSize paneId={showingPaneId} />
+        {/* The far end of the strip. At a desk that is this half's focus
+            toggle; on a phone it is the two things a thumb reaches for that
+            aren't a session — over to the code, and everything else. */}
+        <div className="ml-1 flex shrink-0 items-center gap-0.5">
+          {compact ? (
+            <>
+              {/* The one way into the code half at phone width. It pushes a
+                  screen rather than switching a tab — see Stage/CompactStage —
+                  which is why it is a plain button here and not half of a
+                  segmented control: there is nothing to switch back to from,
+                  the pushed screen carries its own way out. */}
+              <button
+                type="button"
+                aria-label="Code"
+                onClick={() => setContentFocus("code")}
+                className="tap tap-target flex size-9 shrink-0 items-center
+                           justify-center rounded-md text-fg-muted
+                           active:bg-surface-raised"
+              >
+                <svg
+                  className="size-5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M16 18l4-6-4-6" />
+                  <path d="M8 6l-4 6 4 6" />
+                </svg>
+              </button>
+              {showingPaneId && (
+                <TerminalOverflowSheet paneId={showingPaneId} />
+              )}
+            </>
+          ) : (
+            <FocusToggle half="terminal" />
           )}
-          <FocusToggle half="terminal" />
         </div>
       </div>
 
@@ -473,6 +551,17 @@ export function TerminalPanel(): ReactNode {
       {touchPrimary && showingPaneId && <SoftKeys terminalId={showingPaneId} />}
     </div>
   );
+}
+
+/**
+ * Quote an id for an attribute selector.
+ *
+ * `CSS.escape` where there is one — jsdom has no `CSS` at all, and the ids here
+ * are the store's own, so the fallback is only ever the identity of a string
+ * that never needed escaping.
+ */
+function cssEscape(value: string): string {
+  return typeof CSS !== "undefined" && CSS.escape ? CSS.escape(value) : value;
 }
 
 /**

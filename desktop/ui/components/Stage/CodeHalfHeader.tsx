@@ -6,6 +6,7 @@ import {
   useFocusedWorkspace,
 } from "../../stores/selectors/workspaces";
 import { useTerminalDockPresent } from "../../stores/selectors/terminals";
+import { useIsCompact } from "../../hooks/useIsCompact";
 import { FocusToggle } from "./FocusToggle";
 import { CompactMenuButton } from "./CompactNav";
 import { activateAttachment } from "../../commands/workspaceCommands";
@@ -45,6 +46,16 @@ export function CodeHalfHeader({
   // Nothing to take the stage from when the terminal half isn't there.
   const docked = useTerminalDockPresent();
   const selectedFile = useReviewStore((s) => s.selectedFile);
+  const setContentFocus = useReviewStore((s) => s.setContentFocus);
+  const compact = useIsCompact();
+
+  // At phone width this half is a *pushed* screen over the terminal (see
+  // Stage/CompactStage), so this row is its navigation bar and the first thing
+  // in it is the way back. Not the hamburger: the queue is reached from the
+  // screen underneath, and a nav bar shows the one level it can pop, the way
+  // every stack on the platform does. With no terminal half there is nothing
+  // to pop to, and the hamburger stays.
+  const stacked = compact && docked;
 
   // In a narrow half the files column and the file are the same space (see
   // ReviewView), so an open file needs a way back to the list — the header is
@@ -54,28 +65,18 @@ export function CodeHalfHeader({
   if (narrow && selectedFile !== null) {
     return (
       <div className="flex shrink-0 select-none items-center gap-1 border-b border-edge/60 px-1.5 py-1">
-        <CompactMenuButton />
-        <button
-          type="button"
+        {!stacked && <CompactMenuButton />}
+        <NavBack
+          label="Files"
+          large={compact}
           onClick={() => useReviewStore.setState({ selectedFile: null })}
-          className="tap tap-target-y flex min-h-9 shrink-0 items-center gap-1
-                     rounded-md px-2 text-xs text-fg-muted active:bg-surface-raised"
+        />
+        <span
+          className={clsx(
+            "min-w-0 flex-1 truncate text-right text-fg-secondary",
+            compact ? "text-[15px]" : "text-xs",
+          )}
         >
-          <svg
-            className="size-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M15 18l-6-6 6-6" />
-          </svg>
-          Files
-        </button>
-        <span className="min-w-0 flex-1 truncate text-right text-xs text-fg-secondary">
           {selectedFile.split("/").pop()}
         </span>
       </div>
@@ -84,15 +85,27 @@ export function CodeHalfHeader({
 
   return (
     <div className="group/bar flex shrink-0 select-none items-center gap-1 border-b border-edge/60 px-1.5 py-1">
-      {/* Phone only: out to the workspace queue. See Stage/CompactNav. */}
-      <CompactMenuButton />
-      {workspace && <RepoTabs workspace={workspace} />}
+      {/* Phone only: back down the stack to the terminal, or — with no terminal
+          under this screen — out to the workspace queue. See Stage/CompactNav. */}
+      {stacked ? (
+        <NavBack
+          label="Terminal"
+          large
+          onClick={() => setContentFocus("split")}
+        />
+      ) : (
+        <CompactMenuButton />
+      )}
+      {workspace && <RepoTabs workspace={workspace} compact={compact} />}
       {/* Kept even in a narrow half. The terminal's own rail deliberately
           carries no toggle — its exit is meant to be this one — so hiding it
           here left a window between the phone bar's breakpoint and a
           comfortable split with no on-screen way back to the terminal at all,
-          only ⌘`. It costs 24px; a hidden exit costs the way out. */}
-      {docked && (
+          only ⌘`. It costs 24px; a hidden exit costs the way out.
+
+          Not at phone width, where the back button above says the same thing
+          in words and a hover-revealed control has no hover to reveal it. */}
+      {docked && !compact && (
         <div className="ml-auto flex shrink-0 items-center pl-1">
           <FocusToggle half="code" />
         </div>
@@ -101,7 +114,58 @@ export function CodeHalfHeader({
   );
 }
 
-function RepoTabs({ workspace }: { workspace: Workspace }): ReactNode {
+/**
+ * A navigation bar's back item: chevron, then the name of the screen it
+ * returns to.
+ *
+ * The name is the whole point — "‹ Terminal" says where the tap lands, which a
+ * bare chevron leaves you to remember. `large` is HIG's 17pt nav-bar size,
+ * used at phone width; a narrow *desktop* half is a column beside other
+ * columns and keeps the chrome size everything around it is drawn at.
+ */
+function NavBack({
+  label,
+  large = false,
+  onClick,
+}: {
+  label: string;
+  large?: boolean;
+  onClick: () => void;
+}): ReactNode {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={clsx(
+        `tap tap-target-y flex shrink-0 items-center gap-0.5 rounded-md pr-2
+         text-fg-muted active:bg-surface-raised`,
+        large ? "min-h-11 pl-1 text-[17px]" : "min-h-9 pl-2 text-xs",
+      )}
+    >
+      <svg
+        className={large ? "size-6" : "size-4"}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={large ? "1.75" : "2"}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M15 18l-6-6 6-6" />
+      </svg>
+      {label}
+    </button>
+  );
+}
+
+function RepoTabs({
+  workspace,
+  compact = false,
+}: {
+  workspace: Workspace;
+  compact?: boolean;
+}): ReactNode {
   const ctx = useWorkspaceContext();
   const activeReviewKey = useReviewStore((s) => s.activeReviewKey);
   const repoPath = useReviewStore((s) => s.repoPath);
@@ -138,14 +202,22 @@ function RepoTabs({ workspace }: { workspace: Workspace }): ReactNode {
   }
 
   return (
-    <div className="flex min-w-0 shrink items-center gap-0.5 overflow-x-auto scrollbar-thin">
+    <div
+      className={clsx(
+        "flex min-w-0 shrink items-center gap-0.5 overflow-x-auto",
+        // A phone scrolls this with a thumb, and a scrollbar drawn over a
+        // 44pt row is a line nobody can grab anyway.
+        compact ? "scrollbar-none" : "scrollbar-thin",
+      )}
+    >
       {repos.map((repo) => {
         const isActive = repo.attachment.path === activePath;
         return (
           <div
             key={repo.attachment.path}
             className={clsx(
-              "group relative flex shrink-0 items-center rounded-md text-xs",
+              "group relative flex shrink-0 items-center rounded-md",
+              compact ? "text-[15px]" : "text-xs",
               isActive
                 ? "bg-surface-raised text-fg-secondary"
                 : "text-fg-muted hover:bg-fg/[0.06]",

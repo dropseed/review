@@ -10,7 +10,6 @@ import {
 import { toast } from "sonner";
 import { Sidebar } from "./components/Sidebar";
 import { QueueDrawer } from "./components/Sidebar/QueueDrawer";
-import { CompactBar } from "./components/Stage/CompactBar";
 import { useKeyboardInset } from "./hooks/useKeyboardInset";
 import { CompactNavProvider } from "./components/Stage/CompactNav";
 import { ReviewView } from "./components/ReviewView";
@@ -296,11 +295,17 @@ function AppShell() {
             )}
 
             {/* The stage: one workspace, as its two halves and nothing above
-                them — the sidebar is where a workspace says what it is. The
-                terminal dock is what splits them; it is mounted here rather
-                than inside the review screen because tabs are global, so a
-                shell has to survive going back to the home screen, and its
-                xterms have to survive the route change. */}
+                or below them — the sidebar is where a workspace says what it
+                is. The terminal dock is what splits them; it is mounted here
+                rather than inside the review screen because tabs are global, so
+                a shell has to survive going back to the home screen, and its
+                xterms have to survive the route change.
+
+                There is no phone tab bar under it. At compact width the dock
+                becomes a navigation stack with the terminal at the bottom
+                (`Stage/CompactStage`), so the bottom of the screen is the
+                terminal's own compose box and key row — the two rows a thumb
+                actually uses — with the home indicator below them. */}
             <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
               <TerminalDock>
                 <Outlet
@@ -316,10 +321,6 @@ function AppShell() {
                   }}
                 />
               </TerminalDock>
-
-              {/* Which half is on screen. Leaving the workspace entirely is the
-                  hamburger's job, not a third tab beside these two. */}
-              {compact && <CompactBar />}
             </div>
           </div>
         )}

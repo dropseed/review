@@ -228,8 +228,9 @@ describe("what starting a terminal puts on screen", () => {
     await openTerminalTab(workspace([]));
 
     // Beside the code rather than instead of it. Phone width needs no branch
-    // here: `compactStageHalf` already draws "split" as the terminal half, and
-    // writing "terminal" instead would edit the layout the desktop chose.
+    // here: `codePushed` reads "split" as the code screen popped — the
+    // terminal, which is where a new shell belongs — and writing "terminal"
+    // instead would edit the layout the desktop chose.
     expect(useReviewStore.getState().contentFocus).toBe("split");
   });
 
