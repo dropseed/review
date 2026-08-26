@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useListContinuation } from "../../hooks";
+import { useAutoGrow, useListContinuation } from "../../hooks";
 import { useReviewStore } from "../../stores";
 import { CollapsibleSection } from "../ui/collapsible-section";
 import { MOD_SYMBOL as MOD_KEY_SYMBOL } from "../../commands";
@@ -166,13 +166,7 @@ export function CommitPanel(): ReactNode {
   }, [commitResult, clearCommitResult]);
 
   // Auto-resize textarea when commit message changes from streaming
-  useEffect(() => {
-    const ta = textareaRef.current;
-    if (ta) {
-      ta.style.height = "auto";
-      ta.style.height = `${Math.min(ta.scrollHeight, 144)}px`;
-    }
-  }, [commitMessage]);
+  useAutoGrow(textareaRef, 144, commitMessage);
 
   // `git commit -a` from a terminal stages nothing, so the panel has to open
   // on the lock alone — it is the only place the indicator lives.

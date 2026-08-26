@@ -20,6 +20,7 @@ import { getAllCommands } from "../../commands/registry";
 import { getPlatformServices } from "../../platform";
 import { findUrlAtOffset } from "../../utils/urlInText";
 import { buildXtermTheme } from "./xterm-theme";
+import { applyArmedModifiers } from "./soft-keys";
 import {
   encodeKittyKey,
   forgetKittyState,
@@ -495,8 +496,8 @@ function handleCustomKey(
 /** Wheel movement not yet worth a whole line, per terminal — see normalizeWheel. */
 const wheelCarry = new WeakMap<Terminal, number>();
 
-/** Measured cell height in CSS pixels, per terminal — see cellHeight. */
-const wheelCellHeight = new WeakMap<Terminal, number>();
+/** Measured cell size in CSS pixels, per terminal — see cellHeight/cellWidth. */
+const cellSize = new WeakMap<Terminal, { width?: number; height?: number }>();
 
 /**
  * How tall one row is, in CSS pixels.
@@ -507,51 +508,93 @@ const wheelCellHeight = new WeakMap<Terminal, number>();
  * answer except a resize or a font change, and both drop the entry.
  */
 function cellHeight(term: Terminal): number {
-  const cached = wheelCellHeight.get(term);
+  const cached = cellSize.get(term)?.height;
   if (cached !== undefined) return cached;
   const measured = (term.element?.clientHeight ?? 0) / term.rows;
   // A terminal that isn't rendered yet has nothing to measure; leave the cache
   // empty so the next event tries again rather than latching zero.
-  if (measured) wheelCellHeight.set(term, measured);
+  if (measured) remember(term, "height", measured);
   return measured;
 }
 
 /**
- * Drop the measurement, after anything that can change a row's height.
+ * How wide one column is, in the terminal's own unscaled CSS pixels.
+ *
+ * The horizontal half of the same measurement, cached the same way and dropped
+ * by the same events: a swipe across a terminal is counted in cells, and asking
+ * the DOM once per move event would flush layout on every frame of the gesture.
+ * Measured off `.xterm-screen` rather than the element, which carries padding
+ * and (on a scaled pane) a transform.
+ */
+export function cellWidth(term: Terminal): number {
+  const cached = cellSize.get(term)?.width;
+  if (cached !== undefined) return cached;
+  const screen = term.element?.querySelector<HTMLElement>(".xterm-screen");
+  const measured = term.cols > 0 ? (screen?.offsetWidth ?? 0) / term.cols : 0;
+  if (measured) remember(term, "width", measured);
+  return measured;
+}
+
+function remember(
+  term: Terminal,
+  axis: "width" | "height",
+  value: number,
+): void {
+  const entry = cellSize.get(term) ?? {};
+  entry[axis] = value;
+  cellSize.set(term, entry);
+}
+
+/**
+ * Drop the measurement, after anything that can change a cell's size.
  * Exported for tests; production calls come from resize and font changes.
  */
 export function forgetCellHeight(term: Terminal): void {
-  wheelCellHeight.delete(term);
-  // A carry is pixels measured against that row height; without the height it
+  cellSize.delete(term);
+  // A carry is pixels measured against that cell size; without the size it
   // was accumulated under, it would be divided by whatever comes next.
   wheelCarry.delete(term);
   dragCarry.delete(term);
 }
 
 /**
- * Whole rows of movement, keeping the remainder for next time.
+ * Whole steps of movement, keeping the remainder for next time.
  *
- * Both gestures that move a terminal — the wheel and a finger — arrive as
- * pixels smaller than a row, and both have to accumulate rather than round
- * away, so this is stated once and given the carry to accumulate in. A leftover
- * only stays meaningful while the gesture keeps its direction: added to a
- * reversal it would eat the first notch of the new direction instead of
- * contributing to it.
+ * Every gesture that moves a terminal — the wheel, a finger scrolling, a finger
+ * swiping sideways — arrives as pixels smaller than a cell, and all of them
+ * have to accumulate rather than round away, or a slow gesture sends nothing at
+ * all. A leftover only stays meaningful while the gesture keeps its direction:
+ * added to a reversal it would eat the first notch of the new direction
+ * instead of contributing to it.
  */
+export function takeSteps(
+  carry: number,
+  deltaPx: number,
+  stepPx: number,
+): { steps: number; carry: number } {
+  // A move event that reports no movement is not a reversal, and must not be
+  // read as one — that would drop everything accumulated so far. An
+  // unmeasurable cell would make every gesture Infinity steps.
+  if (deltaPx === 0 || !(stepPx > 0)) return { steps: 0, carry };
+  const carried =
+    carry === 0 || Math.sign(carry) === Math.sign(deltaPx)
+      ? carry + deltaPx
+      : deltaPx;
+  const steps = Math.trunc(carried / stepPx);
+  return { steps, carry: carried - steps * stepPx };
+}
+
+/** `takeSteps` against a per-terminal carry — what the wheel and a scroll drag
+ *  keep their remainder in. */
 function takeRows(
   carry: WeakMap<Terminal, number>,
   term: Terminal,
   deltaPx: number,
   rowHeight: number,
 ): number {
-  const prior = carry.get(term) ?? 0;
-  const carried =
-    prior === 0 || Math.sign(prior) === Math.sign(deltaPx)
-      ? prior + deltaPx
-      : deltaPx;
-  const rows = Math.trunc(carried / rowHeight);
-  carry.set(term, carried - rows * rowHeight);
-  return rows;
+  const took = takeSteps(carry.get(term) ?? 0, deltaPx, rowHeight);
+  carry.set(term, took.carry);
+  return took.steps;
 }
 
 /**
@@ -611,12 +654,14 @@ const dragCarry = new WeakMap<Terminal, number>();
 /**
  * How many cursor keys one drag event may send a full-screen program.
  *
- * A flick measured against a small cell height can come out as dozens of rows,
- * and a TUI reads those as dozens of keypresses — a menu run off its end, a
- * history walked past what you meant. The wheel never produces a burst like
- * that because each notch is its own event; a finger can.
+ * A flick measured against a small cell can come out as dozens of cells, and a
+ * program reads those as dozens of keypresses — a menu run off its end, a
+ * history walked past what you meant, a line walked past its end. The wheel
+ * never produces a burst like that because each notch is its own event; a
+ * finger can, in either direction, which is why the pane's horizontal swipe
+ * uses this bound too.
  */
-const MAX_KEYS_PER_DRAG_EVENT = 8;
+export const MAX_KEYS_PER_DRAG_EVENT = 8;
 
 /** The final byte each cursor key ends with. */
 const CURSOR_FINAL = { up: "A", down: "B", right: "C", left: "D" } as const;
@@ -797,12 +842,18 @@ const EVENT_KEY: Record<SoftKeyName, string> = {
  * and only for the programs it matters most to. With the protocol off, the
  * encoder declines and the legacy bytes are sent, cursor keys honouring DECCKM
  * exactly as `cursorKey` does.
+ *
+ * `count` repeats the key: a swipe worth several cells is one encode and one
+ * write rather than one round trip per cell, the same shape `scrollByDrag`
+ * sends its own burst in.
  */
 export function sendKey(
   id: string,
   name: SoftKeyName,
-  opts: { shift?: boolean } = {},
+  opts: { shift?: boolean; count?: number } = {},
 ): void {
+  const count = opts.count ?? 1;
+  if (count < 1) return;
   const term = registry.get(id)?.term;
   const shift = opts.shift === true;
   const event = new KeyboardEvent("keydown", {
@@ -812,22 +863,46 @@ export function sendKey(
   const encoded = encodeKittyKey(event, kittyFlags(id), {
     applicationCursorKeys: term?.modes.applicationCursorKeysMode ?? false,
   });
-  if (encoded) {
-    writeToPty(id, encoded);
-    return;
-  }
-  // Shift+Tab is the one legacy sequence that isn't the plain key: `CSI Z` is
-  // what a shell and a TUI both read as "backwards", and Claude Code's mode
-  // switch is bound to it.
-  if (name === "Tab" && shift) {
-    writeToPty(id, "\x1b[Z");
-    return;
-  }
-  if (term && name in CURSOR_FINAL) {
-    writeToPty(id, cursorKey(term, name as keyof typeof CURSOR_FINAL));
-    return;
-  }
-  writeToPty(id, LEGACY_KEY[name]);
+  const seq =
+    encoded ??
+    // Shift+Tab is the one legacy sequence that isn't the plain key: `CSI Z` is
+    // what a shell and a TUI both read as "backwards", and Claude Code's mode
+    // switch is bound to it.
+    (name === "Tab" && shift
+      ? "\x1b[Z"
+      : term && name in CURSOR_FINAL
+        ? cursorKey(term, name as keyof typeof CURSOR_FINAL)
+        : LEGACY_KEY[name]);
+  writeToPty(id, count === 1 ? seq : seq.repeat(count));
+}
+
+/**
+ * Send one typed character to a session, applying whatever the key bar armed.
+ *
+ * The single door every keystroke from this client goes through: xterm's own
+ * `onData` (the pane), and the compose box's `beforeinput` — which is where the
+ * next character arrives instead when that box has focus. The modifier has to
+ * be consumed at both, or ⌃C typed from a phone with the box focused would put
+ * a "c" in the draft (see soft-keys.ts).
+ */
+export function sendChar(id: string, data: string): void {
+  writeToPty(id, applyArmedModifiers(data));
+}
+
+/**
+ * Draw one terminal at a font size, without saving it or telling anyone.
+ *
+ * What a pinch does while the fingers are still down: the preference setter
+ * writes localStorage and refits every owner terminal in the app, which is a
+ * hundred of both across one gesture. This touches the glyphs of the one
+ * instance being pinched; `applyTerminalFontSize` commits the answer once, at
+ * the end.
+ */
+export function previewFontSize(id: string, size: number): void {
+  const term = registry.get(id)?.term;
+  if (!term || term.options.fontSize === size) return;
+  forgetCellHeight(term);
+  term.options.fontSize = size;
 }
 
 function applyFontOptions(term: Terminal, opts: TerminalFontOptions): void {

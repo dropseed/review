@@ -4,26 +4,44 @@ import { getApiClient } from "../../api";
 import { useReviewStore } from "../../stores";
 import { useIsCompact } from "../../hooks/useIsCompact";
 import {
+  MAX_KEYS_PER_DRAG_EVENT,
   acquireTerminal,
   attachRenderer,
   beginTerminalReplay,
+  cellWidth,
   endDrag,
   onTerminalGrid,
   openLinkAt,
+  previewFontSize,
   requestFit,
   scrollByDrag,
+  sendChar,
+  sendKey,
   setFitAction,
   seedTerminalGridSize,
   setTerminalMountPolicy,
   setTerminalRemoteClaim,
   startTerminalOutput,
+  takeSteps,
   terminalGridSize,
   terminalRemoteClaim,
   terminalReplayInFlight,
 } from "./registry";
-import { applyArmedModifiers } from "./soft-keys";
 import { buildXtermTheme } from "./xterm-theme";
-import { TERMINAL_FONT_WEIGHT_BOLD } from "../../stores/slices/preferencesSlice";
+import {
+  TERMINAL_FONT_SIZE_STEP,
+  TERMINAL_FONT_WEIGHT_BOLD,
+} from "../../stores/slices/preferencesSlice";
+import {
+  applyTerminalFontSize,
+  clampTerminalFontSize,
+} from "./TerminalTextSize";
+import {
+  type GestureAxis,
+  lockAxis,
+  pinchSteps,
+  touchDistance,
+} from "./touch-gestures";
 import { decodeBase64 } from "./base64";
 import "@xterm/xterm/css/xterm.css";
 import "./terminal.css";
@@ -46,13 +64,27 @@ interface TerminalPaneProps {
 const RESIZE_DEBOUNCE_MS = 50;
 
 /**
- * How far a finger travels before the gesture is a scroll rather than a tap.
+ * How far a finger travels before the gesture is a drag rather than a tap —
+ * and, in the same moment, which axis that drag committed to.
  *
- * Below it nothing scrolls and nothing is cancelled, so the tap that focuses
+ * Below it nothing moves and nothing is cancelled, so the tap that focuses
  * the shell (and raises the keyboard) still lands with the small movement any
  * real thumb makes.
  */
 const TOUCH_SLOP_PX = 6;
+
+/**
+ * How long the live-output transport may be down before the pane admits it.
+ *
+ * A terminal that has lost its socket looks exactly like a terminal with
+ * nothing to say, and on a phone that has just been unlocked those are the two
+ * likeliest states — so the notice is the difference. It is deliberately only
+ * that: no retry button, since the socket is already dialling (see
+ * `TerminalSocket.wake`), and nothing at all in the healthy case. A session
+ * that has *exited* says nothing here either; the pane's own exit handling
+ * reports that, and two notices for one fact is one too many.
+ */
+const RECONNECT_GRACE_MS = 700;
 
 interface GridSize {
   cols: number;
@@ -102,6 +134,10 @@ export function TerminalPane({
   const scaleRef = useRef(1);
   /** Owner reclaim (fit + resize), reachable from render handlers. */
   const reclaimRef = useRef<(() => void) | null>(null);
+  /** Whether this client's live-output transport is currently down, and
+   *  whether it has been down long enough to be worth saying so. */
+  const [reconnecting, setReconnecting] = useState(false);
+  const [showReconnecting, setShowReconnecting] = useState(false);
 
   // Keep the latest options in refs so the setup effect (keyed only on id and
   // mode) reads current values without re-running and re-opening the terminal.
@@ -326,12 +362,10 @@ export function TerminalPane({
     // remotely-claimed grid is using the terminal *here*, which reclaims it.
     const onDataDisposable = term.onData((data) => {
       if (!isViewer && remoteSizeRef.current) doFit();
-      // The phone's key bar arms Control here rather than sending anything of
-      // its own: the key it modifies comes from the system keyboard, and this
-      // is where that keystroke passes (see soft-keys.ts).
-      client.terminalWrite(id, applyArmedModifiers(data)).catch((err) => {
-        console.error("[terminal] Write failed:", err);
-      });
+      // Through `sendChar` because the phone's key bar arms Control rather than
+      // sending anything of its own, and this is one of the two places the
+      // keystroke it modifies can arrive (see soft-keys.ts).
+      sendChar(id, data);
     });
 
     // The daemon's answer to "what size is the grid": every client's resizes
@@ -375,40 +409,147 @@ export function TerminalPane({
       scheduleScaledLayout();
     });
 
-    // ----- Touch: the drag that scrolls -----
+    // ----- Touch: the drag that scrolls, the swipe that moves the cursor,
+    //             and the pinch that sizes the text -----
     //
-    // Registered here rather than as React props because both of these have to
+    // Registered here rather than as React props because all of these have to
     // be able to cancel the browser's own gesture, and React's touch listeners
     // are passive — `preventDefault` inside one does nothing. The container
     // also carries `touch-none`, so iOS never claims the drag as a pan of the
     // page before the first move event arrives.
-    let dragY: number | null = null;
-    let dragTravel = 0;
+    //
+    // A gesture is one of three things and never two: a **drag**, which locks
+    // to an axis on its first real movement and keeps it (vertical scrolls, or
+    // walks a full-screen program's cursor; horizontal sends Left/Right, the
+    // keys a phone has no room for and an agent's prompt is edited with); a
+    // **pinch**, the moment a second finger lands, which sizes the text; or a
+    // **tap**, which is a drag that never left the slop. The axis is decided
+    // from where the finger started rather than from the last move, so a
+    // wobble cannot flip a scroll into a swipe halfway down the screen.
+
+    /** Live single-finger drag: where it began, where it was, what it became. */
+    let drag: {
+      startX: number;
+      startY: number;
+      lastX: number;
+      lastY: number;
+      axis: GestureAxis | null;
+      /** Horizontal only: sub-cell travel not yet worth a key. */
+      carryX: number;
+    } | null = null;
+
+    /** Live pinch, from the second finger landing to the last one leaving. */
+    let pinch: {
+      startDistance: number;
+      /** The font size the gesture started at — every step is measured from it. */
+      baseSize: number;
+      /** The size currently drawn, or null while nothing has changed — so a
+       *  rest of two fingers commits nothing. */
+      size: number | null;
+    } | null = null;
+
+    /** Two fingers on the glass, however they got there. */
+    const beginPinch = (event: TouchEvent) => {
+      drag = null;
+      endDrag(term);
+      pinch = {
+        startDistance: touchDistance(event.touches[0], event.touches[1]),
+        baseSize: useReviewStore.getState().terminalFontSize,
+        size: null,
+      };
+    };
+
+    /**
+     * The pinch's one write to anything but this terminal's own glyphs.
+     *
+     * Same act as the A−/A+ buttons and for the same reason: on a compact pane
+     * a bigger font on the same grid is drawn at a smaller scale and arrives
+     * the size it left, so bigger text has to mean fewer columns. Held to the
+     * gesture's end because storing the preference writes localStorage and
+     * refits every owner terminal in the app, and a fit resizes the PTY every
+     * client shares — one per move event would be a hundred of both.
+     */
+    const endPinch = () => {
+      const size = pinch?.size ?? null;
+      pinch = null;
+      if (size !== null) applyTerminalFontSize(id, size);
+    };
 
     const onTouchStart = (event: TouchEvent) => {
-      // Two fingers is a zoom or a system gesture, not ours.
-      if (event.touches.length !== 1) {
-        dragY = null;
+      if (event.touches.length >= 2) {
+        // Cancels whatever one finger had started: a pinch is never also a
+        // swipe, and never the tap that raises the keyboard.
+        beginPinch(event);
+        // Safari would otherwise take this as a page zoom.
+        event.preventDefault();
         return;
       }
-      dragY = event.touches[0].clientY;
-      dragTravel = 0;
+      // A finger landing while a pinch is still winding down is that pinch's,
+      // not the start of a drag.
+      if (pinch) return;
+      const touch = event.touches[0];
+      drag = {
+        startX: touch.clientX,
+        startY: touch.clientY,
+        lastX: touch.clientX,
+        lastY: touch.clientY,
+        axis: null,
+        carryX: 0,
+      };
     };
 
     const onTouchMove = (event: TouchEvent) => {
-      if (dragY === null || event.touches.length !== 1) return;
-      const y = event.touches[0].clientY;
+      if (pinch) {
+        if (event.touches.length < 2) return;
+        event.preventDefault();
+        const distance = touchDistance(event.touches[0], event.touches[1]);
+        const steps = pinchSteps(distance / pinch.startDistance);
+        const next = clampTerminalFontSize(
+          pinch.baseSize + steps * TERMINAL_FONT_SIZE_STEP,
+        );
+        if (next === (pinch.size ?? pinch.baseSize)) return;
+        // Live, so the text follows the fingers — but on this terminal's glyphs
+        // alone. `endPinch` is what makes it the preference and refits the grid.
+        pinch.size = next;
+        previewFontSize(id, next);
+        return;
+      }
+      if (!drag || event.touches.length !== 1) return;
+      const touch = event.touches[0];
+      // The drawing may be scaled down, and the grid is measured in its own
+      // unscaled pixels: a finger crossing a scaled pane crosses more cells
+      // than the distance it travelled on glass.
+      const scale = scaleRef.current || 1;
       // A finger moving up the screen pulls the text up with it, which is a
       // positive delta — the same sign a wheel uses for the same movement.
-      const delta = dragY - y;
-      dragY = y;
-      dragTravel += Math.abs(delta);
-      if (dragTravel < TOUCH_SLOP_PX) return;
+      const deltaY = drag.lastY - touch.clientY;
+      const deltaX = touch.clientX - drag.lastX;
+      drag.lastX = touch.clientX;
+      drag.lastY = touch.clientY;
+      if (drag.axis === null) {
+        drag.axis = lockAxis(
+          touch.clientX - drag.startX,
+          touch.clientY - drag.startY,
+          TOUCH_SLOP_PX,
+        );
+        if (drag.axis === null) return;
+      }
       event.preventDefault();
-      // The drawing may be scaled down, and the grid is measured in its own
-      // unscaled pixels: a finger crossing a scaled pane crosses more rows
-      // than the distance it travelled on glass.
-      scrollByDrag(id, term, delta / (scaleRef.current || 1));
+      if (drag.axis === "vertical") {
+        scrollByDrag(id, term, deltaY / scale);
+        return;
+      }
+      const took = takeSteps(drag.carryX, deltaX / scale, cellWidth(term));
+      drag.carryX = took.carry;
+      if (took.steps === 0) return;
+      // Through `sendKey` rather than an escape of our own: a program that has
+      // negotiated the kitty protocol reads `CSI 1 ; 1 C`, not `\x1b[C`, and
+      // Claude Code — the reason this gesture exists — is one of them. Capped
+      // for the same reason a scroll drag is: one flick is otherwise dozens of
+      // keypresses arriving as one event.
+      sendKey(id, took.steps > 0 ? "right" : "left", {
+        count: Math.min(Math.abs(took.steps), MAX_KEYS_PER_DRAG_EVENT),
+      });
     };
 
     /**
@@ -433,9 +574,16 @@ export function TerminalPane({
     };
 
     const onTouchEnd = (event: TouchEvent) => {
-      const tapped = dragY !== null && dragTravel < TOUCH_SLOP_PX;
+      if (pinch) {
+        // Below two fingers there is no spread left to read. The finger that
+        // may still be down is not a new drag — `drag` is null and only a
+        // fresh `touchstart` can make one.
+        if (event.touches.length < 2) endPinch();
+        return;
+      }
+      const tapped = drag !== null && drag.axis === null;
       const touch = event.changedTouches[0];
-      dragY = null;
+      drag = null;
       endDrag(term);
       if (!tapped || !touch) return;
       const cell = cellAt(touch.clientX, touch.clientY);
@@ -446,10 +594,38 @@ export function TerminalPane({
       event.preventDefault();
     };
 
-    container.addEventListener("touchstart", onTouchStart, { passive: true });
+    /**
+     * The system took the gesture (a call, the app switcher). A pinch still
+     * settles on the size the fingers had reached — the text they left on
+     * screen is the size they asked for — and a drag simply ends. Nothing here
+     * cancels an event, which is what lets this listener stay passive.
+     */
+    const onTouchCancel = () => {
+      if (pinch) {
+        endPinch();
+        return;
+      }
+      drag = null;
+      endDrag(term);
+    };
+
+    /**
+     * iOS Safari's own pinch-zoom, which `touch-action` does not reach: it is
+     * announced as a `gesture*` event and zooms the whole page, over a layout
+     * whose whole point is fitting one screen.
+     */
+    const onGesture = (event: Event) => event.preventDefault();
+
+    // touchstart is non-passive only so a second finger can cancel Safari's
+    // page zoom. A one-finger start still never calls preventDefault — that
+    // would swallow the synthesized click, and with it the tap that focuses
+    // the shell and raises the keyboard.
+    container.addEventListener("touchstart", onTouchStart, { passive: false });
     container.addEventListener("touchmove", onTouchMove, { passive: false });
     container.addEventListener("touchend", onTouchEnd, { passive: false });
-    container.addEventListener("touchcancel", onTouchEnd, { passive: true });
+    container.addEventListener("touchcancel", onTouchCancel);
+    container.addEventListener("gesturestart", onGesture);
+    container.addEventListener("gesturechange", onGesture);
 
     // Debounced reaction to container size changes: an owner refits; a viewer
     // — and an owner letterboxing a claimed grid — only rescales its drawing,
@@ -472,7 +648,9 @@ export function TerminalPane({
       container.removeEventListener("touchstart", onTouchStart);
       container.removeEventListener("touchmove", onTouchMove);
       container.removeEventListener("touchend", onTouchEnd);
-      container.removeEventListener("touchcancel", onTouchEnd);
+      container.removeEventListener("touchcancel", onTouchCancel);
+      container.removeEventListener("gesturestart", onGesture);
+      container.removeEventListener("gesturechange", onGesture);
       endDrag(term);
       onDataDisposable.dispose();
       unsubGrid();
@@ -493,6 +671,29 @@ export function TerminalPane({
   // refreshAllTerminalOptions, called from the preferencesSlice setters — no
   // per-pane effect needed here.
 
+  // The transport, for the notice below. Only web mode ever answers anything
+  // but `false` — the desktop's IPC has no socket to lose.
+  useEffect(
+    () => getApiClient().onTerminalConnection(id, setReconnecting),
+    [id],
+  );
+
+  // A gap only worth reporting once it lasts: every socket starts disconnected
+  // and an ordinary foreground reconnect finishes well inside the grace, so a
+  // badge on every glance would be noise. Starting `false` is also what keeps a
+  // pane from flashing one before the first callback arrives.
+  useEffect(() => {
+    if (!reconnecting) {
+      setShowReconnecting(false);
+      return;
+    }
+    const timer = setTimeout(
+      () => setShowReconnecting(true),
+      RECONNECT_GRACE_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [reconnecting]);
+
   // Refit when this pane becomes active (it may have been sized 0 while hidden).
   useEffect(() => {
     if (!active) return;
@@ -505,6 +706,14 @@ export function TerminalPane({
     });
     return () => cancelAnimationFrame(raf);
   }, [active]);
+
+  // Reconnecting wins: while the transport is down, the grid this pane is
+  // letterboxing is itself only what was last heard.
+  const notice = showReconnecting
+    ? "Reconnecting…"
+    : !isViewer && remoteSize
+      ? `${remoteSize.cols}×${remoteSize.rows} · sized elsewhere — click to fit`
+      : null;
 
   return (
     <div
@@ -526,15 +735,17 @@ export function TerminalPane({
         className="h-full w-full touch-none overflow-hidden"
       />
 
-      {/* An owner letterboxing a grid another client claimed says so, quietly.
-          Inert — the click it invites lands on the pane and reclaims. */}
-      {!isViewer && remoteSize && (
+      {/* What the pane has to say about itself, in one place: that the picture
+          is the past, or that the grid it is letterboxing belongs to someone
+          else. Inert — the click "click to fit" invites lands on the pane and
+          reclaims. */}
+      {notice && (
         <div className="pointer-events-none absolute inset-x-0 top-1.5 z-10 flex justify-center">
           <span
             className="rounded bg-surface-raised/90 px-2 py-0.5 text-xxs
                        text-fg-muted"
           >
-            {remoteSize.cols}×{remoteSize.rows} · sized elsewhere — click to fit
+            {notice}
           </span>
         </div>
       )}

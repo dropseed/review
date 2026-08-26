@@ -9,10 +9,12 @@
  *
  * Control is the odd one out. It is not a key that sends something, it is a
  * modifier on the *next* key, and the next key comes from the system keyboard
- * we cannot reach. So it is armed here and consumed in the pane's own `onData`,
- * where every keystroke already passes: tap ⌃, type `c`, and what leaves is
- * `\x03`. One key only — a modifier that stayed on would be a mode, and a mode
- * you cannot see the state of on a phone is a trap.
+ * we cannot reach. So it is armed here and consumed in `registry`'s `sendChar`,
+ * which is where a typed character leaves this client — from xterm's `onData`
+ * in the pane, or from the compose box's `beforeinput` when that box has focus
+ * instead. Tap ⌃, type `c`, and what leaves is `\x03`. One key only — a
+ * modifier that stayed on would be a mode, and a mode you cannot see the state
+ * of on a phone is a trap.
  */
 
 /** Whether the next character typed should be sent as a control code. */

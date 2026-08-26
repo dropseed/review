@@ -893,6 +893,34 @@ export interface ApiClient {
    * things, and the one call that repairs it.
    */
   onTerminalSessionsInvalidated(callback: () => void): () => void;
+
+  /**
+   * Subscribe to whether this client's live-output transport is down (returns
+   * unsubscribe fn); fires immediately with the current answer.
+   *
+   * Only web mode can ever answer `true` — the desktop's IPC has no socket to
+   * lose. A pane shows it so a phone whose PWA was backgrounded says
+   * "reconnecting" instead of presenting a stale frame as the present.
+   */
+  onTerminalConnection(
+    terminalId: string,
+    callback: (reconnecting: boolean) => void,
+  ): () => void;
+
+  /**
+   * Type a composed message and submit it, as two writes with a settle
+   * between — `review terminal send --submit`, for the phone's compose bar.
+   *
+   * A newline arriving in the same write as the text is ambiguous to a TUI with
+   * an open autocomplete popup (Claude Code's slash commands): it reads as
+   * accepting the highlighted entry rather than submitting what was typed.
+   *
+   * The delay belongs to whoever cannot be suspended halfway through it. In web
+   * mode that is the server, which holds the gap itself so a PWA backgrounded
+   * mid-send still gets its Enter; on the desktop it is this process, which
+   * nothing suspends.
+   */
+  terminalSubmit(terminalId: string, text: string): Promise<void>;
 }
 
 /**

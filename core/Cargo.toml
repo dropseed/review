@@ -139,11 +139,11 @@ terminal = ["terminal-types", "dep:portable-pty", "dep:vte", "dep:nix", "dep:byt
 # it (`scripts/build-cli`, `scripts/cli`) for `review notify`; a bare
 # `--features cli` build simply has no such subcommand.
 cli = ["clap", "daemon-client", "terminal-types"]
-# Web-mode HTTP backend. It pulls in `daemon-client`, not `terminal`: web mode
-# reaches PTYs the same way the desktop app does — as a thin client of the
-# `review-daemon` process — so it gets terminals without linking a PTY stack
-# (and therefore without needing Zig).
-server = ["axum", "tower", "tower-http", "tokio-stream", "notify", "notify-debouncer-mini", "env_logger", "daemon-client", "push"]
+# Web-mode HTTP backend. It pulls in `daemon-client` and the wire types, not
+# `terminal`: web mode reaches PTYs the same way the desktop app does — as a
+# thin client of the `review-daemon` process — so it gets terminals without
+# linking a PTY stack (and therefore without needing Zig).
+server = ["axum", "tower", "tower-http", "tokio-stream", "notify", "notify-debouncer-mini", "env_logger", "daemon-client", "terminal-types", "push"]
 # Web Push (`push.rs`): the VAPID identity, the subscription store, and the
 # HTTP send. The server needs it to register subscriptions (it is what serves
 # the service worker); the CLI adds it for `review notify`.

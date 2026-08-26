@@ -8,6 +8,11 @@
  * it so a late close can't schedule a retry for a socket nobody holds — is one
  * policy, and lives here.
  *
+ * Coming back from the background is here too, because it is the same policy:
+ * a suspended tab's timers were frozen alongside its sockets, so `wake()`
+ * throws away a backoff scheduled against a stopped clock and dials now. What
+ * counts as "still alive" is the one part a subclass may want a say in.
+ *
  * A subclass supplies its URL, reads its own frames, and says what a close
  * means. Nothing else.
  */
@@ -91,6 +96,49 @@ export abstract class ReconnectingSocket {
   }
 
   // ----- Lifecycle -----
+
+  /**
+   * True once this socket is finished for good — closed by the caller, or told
+   * the far end is gone. Both make connecting a no-op, and a subclass asking
+   * "is there anything left to do here?" is asking this.
+   */
+  protected get stopped(): boolean {
+    return this.closedByUser || this.gone;
+  }
+
+  /**
+   * The tab came back to the foreground (or the network did): make sure this
+   * socket is actually connected, now.
+   *
+   * iOS suspends a backgrounded PWA's sockets and freezes its timers with
+   * them, so a socket that closed while away is sitting on a backoff delay
+   * measured against a stopped clock and nothing is going to fire it soon. The
+   * default answer is to dial immediately when the socket is not open. A
+   * subclass that can tell a live socket from one that is open on paper and
+   * dead on the wire overrides this to ask first.
+   */
+  wake(): void {
+    if (this.stopped || this.isOpen()) return;
+    this.reconnectNow();
+  }
+
+  /**
+   * Reconnect right now, discarding any pending backoff and the attempt count
+   * behind it.
+   *
+   * The backoff exists to spare a server that is down; a tab returning to the
+   * foreground is not that case — the delay it is sitting on was scheduled
+   * against a clock iOS froze, and the user is looking at the pane.
+   */
+  protected reconnectNow(): void {
+    if (this.stopped) return;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.reconnectAttempts = 0;
+    this.open();
+  }
 
   /**
    * Open the socket if it isn't already connecting/open. Idempotent — safe to

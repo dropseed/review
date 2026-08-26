@@ -7,6 +7,31 @@ import {
 } from "../../stores/slices/preferencesSlice";
 import { requestFit } from "./registry";
 
+/** A font size the terminal will actually draw at. */
+export function clampTerminalFontSize(size: number): number {
+  return Math.min(
+    TERMINAL_FONT_SIZE_MAX,
+    Math.max(TERMINAL_FONT_SIZE_MIN, size),
+  );
+}
+
+/**
+ * Settle on a terminal text size: clamp it, store it, and refit the pane.
+ *
+ * The one place a chosen size becomes the preference, shared by the two taps
+ * below and by the end of a pinch — both are the same deliberate act, and both
+ * owe the pane the same resize. The rAF is why it is a function rather than
+ * three lines each: fitting before the paint that re-measures the glyphs
+ * computes the grid for the size we just left.
+ */
+export function applyTerminalFontSize(paneId: string, next: number): void {
+  const clamped = clampTerminalFontSize(next);
+  const store = useReviewStore.getState();
+  if (clamped === store.terminalFontSize) return;
+  store.setTerminalFontSize(clamped);
+  requestAnimationFrame(() => requestFit(paneId));
+}
+
 /**
  * The phone's text size: two taps, where the desktop has a settings panel.
  *
@@ -24,19 +49,8 @@ import { requestFit } from "./registry";
  */
 export function TerminalTextSize({ paneId }: { paneId: string }): ReactNode {
   const size = useReviewStore((s) => s.terminalFontSize);
-  const setSize = useReviewStore((s) => s.setTerminalFontSize);
 
-  const step = (delta: number) => {
-    const next = Math.min(
-      TERMINAL_FONT_SIZE_MAX,
-      Math.max(TERMINAL_FONT_SIZE_MIN, size + delta),
-    );
-    if (next === size) return;
-    setSize(next);
-    // After the paint that re-measures the glyphs: fitting against the old
-    // metrics would compute the grid for the size we just left.
-    requestAnimationFrame(() => requestFit(paneId));
-  };
+  const step = (delta: number) => applyTerminalFontSize(paneId, size + delta);
 
   return (
     <div className="flex shrink-0 items-center">

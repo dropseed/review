@@ -42,6 +42,7 @@ export { useReviewFreshness } from "./useReviewFreshness";
 export { useFileHunkStatusMap } from "./useFileHunkStatusMap";
 export { useIsFocusedHunk } from "./useIsFocusedHunk";
 export { useListContinuation } from "./useListContinuation";
+export { useAutoGrow } from "./useAutoGrow";
 export { suppressScrollTracking, suppressScrollForNav } from "./scrollState";
 export { useWordHighlight } from "./useWordHighlight";
 export { useLspClient } from "./useLspClient";

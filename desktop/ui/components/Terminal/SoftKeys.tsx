@@ -64,42 +64,66 @@ export function SoftKeys({ terminalId }: { terminalId: string }): ReactNode {
  * One key. Thumb-sized by the row rather than by its glyph, and repeatable —
  * `onPointerDown` rather than `onClick`, so holding an arrow through a menu
  * feels like a key and not like a form control.
+ *
+ * Exported because the compose box's Send sits in the same thumb zone and has
+ * to make the same bargain with focus; `variant: "accent"` is the one that
+ * commits something rather than sending a keystroke, and is sized by its label
+ * instead of sharing the row's width.
  */
-function Key({
+export function Key({
   label,
   title,
+  ariaLabel,
   pressed,
+  disabled,
+  variant = "key",
   onPress,
 }: {
   label: string;
   title?: string;
+  /** When the accessible name differs from the tooltip. Defaults to the tooltip. */
+  ariaLabel?: string;
   pressed?: boolean;
+  disabled?: boolean;
+  variant?: "key" | "accent";
   onPress: () => void;
 }): ReactNode {
+  const press = () => {
+    if (!disabled) onPress();
+  };
   return (
     <button
       type="button"
       title={title ?? label}
-      aria-label={title ?? label}
+      aria-label={ariaLabel ?? title ?? label}
       aria-pressed={pressed}
+      disabled={disabled}
       onPointerDown={(e) => {
         // Keep the shell focused: the keyboard must not drop out from under a
         // key that exists to be used alongside it.
         e.preventDefault();
-        onPress();
+        press();
       }}
       // A pointer never gets here — its default was prevented above, so no
       // click follows. This is the keyboard's way in (`detail` is 0 for a
       // click synthesized from Enter or Space).
       onClick={(e) => {
-        if (e.detail === 0) onPress();
+        if (e.detail === 0) press();
       }}
       className={clsx(
-        `min-h-9 flex-1 rounded-md font-mono text-sm leading-none
-         transition-colors select-none`,
-        pressed
-          ? "bg-fg/20 text-fg"
-          : "bg-fg/[0.06] text-fg-muted active:bg-fg/[0.14]",
+        // 44px tall outright rather than bought with slop: these sit in a row
+        // whose keys are each other's neighbours, so there is nowhere to spill.
+        "tap min-h-11 rounded-md text-sm leading-none select-none",
+        variant === "accent"
+          ? "shrink-0 px-3 font-semibold"
+          : "flex-1 font-mono",
+        disabled
+          ? "bg-fg/[0.06] text-fg-faint"
+          : variant === "accent"
+            ? "bg-sage-500 text-surface active:bg-sage-600"
+            : pressed
+              ? "bg-fg/20 text-fg"
+              : "bg-fg/[0.06] text-fg-muted active:bg-fg/[0.14]",
       )}
     >
       {label}

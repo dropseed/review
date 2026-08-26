@@ -27,6 +27,22 @@ pub use wire::{Phase, SessionStatus, TerminalId, TerminalSummary};
 /// agree on the spelling, and only one of them links a PTY stack.
 pub const TERMINAL_ID_ENV: &str = "REVIEW_TERMINAL_ID";
 
+/// How long to wait between typing a message and pressing Enter on it.
+///
+/// A newline arriving in the same write as the text is ambiguous to a TUI with
+/// an open autocomplete popup (Claude Code's slash commands): it reads as
+/// accepting the highlighted entry rather than submitting what was typed.
+/// Letting the UI settle first disambiguates the two.
+///
+/// One number for every surface that submits — the CLI's `--settle-ms` default
+/// and the web server's `/api/terminal/submit` — because it is the same
+/// ambiguity being resolved and a phone should not behave differently from a
+/// shell. Unconditional for the same reason the wire types are: neither of
+/// those halves links a PTY stack. The frontend keeps a documented copy in
+/// `desktop/ui/components/Terminal/compose-send.ts`, there being no mechanism
+/// for sharing a constant across the two languages.
+pub const SUBMIT_SETTLE_MS: u64 = 500;
+
 /// Drop `text`'s trailing blank lines in place, leaving no trailing newline.
 ///
 /// The empty rows below the last thing written are padding rather than content,

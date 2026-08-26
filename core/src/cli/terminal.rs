@@ -188,7 +188,12 @@ pub struct SendArgs {
     #[arg(long, conflicts_with = "enter")]
     pub submit: bool,
     /// How long `--submit` waits before pressing Enter
-    #[arg(long, value_name = "MS", default_value_t = 500, requires = "submit")]
+    #[arg(
+        long,
+        value_name = "MS",
+        default_value_t = crate::terminal::SUBMIT_SETTLE_MS,
+        requires = "submit"
+    )]
     pub settle_ms: u64,
 }
 

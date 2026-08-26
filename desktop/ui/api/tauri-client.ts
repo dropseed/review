@@ -9,6 +9,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import { decodeBase64 } from "../components/Terminal/base64";
+import { SUBMIT_SETTLE_MS } from "../components/Terminal/compose-send";
 import type {
   ApiClient,
   GitChangedPayload,
@@ -1006,5 +1007,26 @@ export class TauriClient implements ApiClient {
     return this.listenForEvent("terminal:sessions-invalidated", () =>
       callback(),
     );
+  }
+
+  onTerminalConnection(
+    _terminalId: string,
+    callback: (reconnecting: boolean) => void,
+  ): () => void {
+    // Tauri IPC is in-process: there is no transport that can be down while
+    // the app is up, so the answer is "connected" once and never again.
+    callback(false);
+    return () => {};
+  }
+
+  /**
+   * The settle is held here rather than on the daemon, because the thing it
+   * has to outlive is a *suspended client* — and a desktop app is never one.
+   * Web mode's `/api/terminal/submit` exists for the half that is.
+   */
+  async terminalSubmit(terminalId: string, text: string): Promise<void> {
+    await this.terminalWrite(terminalId, text);
+    await new Promise((resolve) => setTimeout(resolve, SUBMIT_SETTLE_MS));
+    await this.terminalWrite(terminalId, "\r");
   }
 }

@@ -76,6 +76,7 @@ const {
   forgetCellHeight,
   openLinkAt,
   sendKey,
+  takeSteps,
   normalizeWheel,
   scrollByDrag,
   onTerminalGrid,
@@ -448,6 +449,42 @@ describe("normalizeWheel", () => {
     forgetCellHeight(term);
     expect(notch(term, 5)).toBeNull();
     expect(notch(term, 5)).toBe(1);
+  });
+
+  it("keeps movement smaller than a cell instead of rounding it away", () => {
+    // The scalar the wheel, the scroll drag and the pane's sideways swipe all
+    // count in. A slow gesture arrives a few pixels at a time.
+    let carry = 0;
+    let sent = 0;
+    for (let i = 0; i < 3; i += 1) {
+      const took = takeSteps(carry, 3, 8);
+      carry = took.carry;
+      sent += took.steps;
+    }
+    expect(sent).toBe(1);
+    expect(carry).toBeCloseTo(1);
+  });
+
+  it("counts whole cells and carries the rest, in either direction", () => {
+    expect(takeSteps(0, 20, 8)).toEqual({ steps: 2, carry: 4 });
+    expect(takeSteps(0, -20, 8)).toEqual({ steps: -2, carry: -4 });
+  });
+
+  it("drops the remainder when the gesture reverses", () => {
+    // 4px of rightward travel left over must not eat into the leftward swipe
+    // that follows it.
+    expect(takeSteps(4, -10, 8)).toEqual({ steps: -1, carry: -2 });
+  });
+
+  it("holds the remainder through a move event that reported nothing", () => {
+    // Math.sign(0) is 0, which would read as a reversal and discard the carry.
+    expect(takeSteps(4, 0, 8)).toEqual({ steps: 0, carry: 4 });
+  });
+
+  it("sends nothing when the cell size is unmeasurable", () => {
+    // A terminal that hasn't rendered yet — divide by it and every gesture is
+    // Infinity steps.
+    expect(takeSteps(0, 100, 0)).toEqual({ steps: 0, carry: 0 });
   });
 
   it("cancels swallowed sub-row events on the alternate screen only", () => {

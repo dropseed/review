@@ -15,8 +15,10 @@
 //!   The wire is fixed by `desktop/ui/api/terminal-socket.ts`: server→client
 //!   binary frames are `[8-byte BE u64 seq][raw PTY bytes]`, text frames are
 //!   `{"t":"status",…}` / `{"t":"resize","cols":N,"rows":N}` (another client
-//!   resized the shared PTY) / `{"t":"exit","exitCode":…}`; client→server
-//!   binary is stdin and text is `{"t":"resize","cols":N,"rows":N}`.
+//!   resized the shared PTY) / `{"t":"exit","exitCode":…}` / `{"t":"pong"}`;
+//!   client→server binary is stdin and text is
+//!   `{"t":"resize","cols":N,"rows":N}` or `{"t":"ping"}` (see [`Inbound::Ping`]
+//!   for why a browser needs an application-level probe).
 //! - **One WebSocket per tab** (`/api/terminal/events`) carrying the daemon's
 //!   whole-daemon [`Event`] firehose, which is where the Tauri path emits
 //!   `terminal:started` and friends instead. Frames are the daemon's own JSON
@@ -49,6 +51,7 @@ use crate::daemon::{
     DaemonClient, Event, EventsHandle, Op, StreamFrame, StreamHandle, ERR_CLOSED, ERR_CONNECTING,
     ERR_SENDING,
 };
+use crate::terminal::SUBMIT_SETTLE_MS;
 
 /// Close code meaning "this session no longer exists" — the one close the
 /// frontend must not retry (`SESSION_GONE_CODE` in `terminal-socket.ts`).
@@ -257,6 +260,7 @@ pub(super) fn router(bridge: TerminalBridge) -> Router {
         .route("/api/terminal/start", post(start))
         .route("/api/terminal/assign-workspace", post(assign_workspace))
         .route("/api/terminal/write", post(write_stdin))
+        .route("/api/terminal/submit", post(submit))
         .route("/api/terminal/resize", post(resize))
         .route("/api/terminal/kill", post(kill))
         .route("/api/terminal/list", post(list))
@@ -459,6 +463,40 @@ async fn write_stdin(
         .with_client(|client| {
             let (id, data) = (terminal_id.clone(), data.clone());
             async move { client.write(&id, data.as_bytes()).await }
+        })
+        .await
+        .map_err(internal_err)?;
+    Ok(Json(Value::Null))
+}
+
+/// Type a composed message and submit it: the text, a settle, then Enter.
+///
+/// The same two writes `review terminal send --submit` makes, held here rather
+/// than in the browser because the browser in question is a phone. iOS freezes
+/// a backgrounded PWA's timers, so a compose bar that slept between its own two
+/// writes would leave the message typed and never submitted the moment the app
+/// switcher opened mid-send. This process is not suspended, so the gap is
+/// honoured whatever the client does next — including going away entirely.
+async fn submit(
+    State(bridge): State<TerminalBridge>,
+    Json(request): Json<WriteRequest>,
+) -> ApiResult<Value> {
+    let WriteRequest { terminal_id, data } = request;
+    // Two calls rather than one closure: `with_client` retries a whole call
+    // against a fresh connection, and a retry that re-ran both writes would
+    // type the message twice.
+    bridge
+        .with_client(|client| {
+            let (id, data) = (terminal_id.clone(), data.clone());
+            async move { client.write(&id, data.as_bytes()).await }
+        })
+        .await
+        .map_err(internal_err)?;
+    tokio::time::sleep(Duration::from_millis(SUBMIT_SETTLE_MS)).await;
+    bridge
+        .with_client(|client| {
+            let id = terminal_id.clone();
+            async move { client.write(&id, b"\r").await }
         })
         .await
         .map_err(internal_err)?;
@@ -699,6 +737,11 @@ async fn pump(mut socket: WebSocket, client: DaemonClient, mut stream: StreamHan
                             }
                         }
                     }
+                    Inbound::Ping => {
+                        if socket.send(Message::text(r#"{"t":"pong"}"#)).await.is_err() {
+                            return; // client went away
+                        }
+                    }
                     Inbound::Close => return,
                     Inbound::Ignore => {}
                 }
@@ -775,29 +818,37 @@ enum Inbound<'a> {
         cols: u16,
         rows: u16,
     },
+    /// An application-level liveness probe: answer `{"t":"pong"}`.
+    ///
+    /// A browser cannot send a protocol-level WebSocket ping (the JS API has no
+    /// such call) and cannot observe the ones this server sends. iOS suspends a
+    /// backgrounded PWA's socket without closing it, so a foregrounded tab
+    /// routinely holds a `readyState === OPEN` socket that is already dead.
+    /// This is the only way it can find out before its next keystroke vanishes.
+    Ping,
     /// Unknown text, a ping, or a pong — nothing to do.
     Ignore,
     Close,
 }
 
-/// The resize the frontend sends; anything else on a text frame is ignored.
+/// The text frames the frontend sends. Tagged by `t`, so a payload-less frame
+/// (`{"t":"ping"}`) and one with fields parse in the same pass; anything else,
+/// a malformed resize included, falls through to [`Inbound::Ignore`].
 #[derive(Deserialize)]
-struct ResizeFrame {
-    t: String,
-    cols: u16,
-    rows: u16,
+#[serde(tag = "t", rename_all = "lowercase")]
+enum TextFrame {
+    Resize { cols: u16, rows: u16 },
+    Ping,
 }
 
 /// Browser frame → daemon action.
 fn translate_inbound(message: &Message) -> Inbound<'_> {
     match message {
         Message::Binary(data) => Inbound::Input(data),
-        Message::Text(text) => match serde_json::from_str::<ResizeFrame>(text) {
-            Ok(frame) if frame.t == "resize" => Inbound::Resize {
-                cols: frame.cols,
-                rows: frame.rows,
-            },
-            _ => Inbound::Ignore,
+        Message::Text(text) => match serde_json::from_str::<TextFrame>(text) {
+            Ok(TextFrame::Resize { cols, rows }) => Inbound::Resize { cols, rows },
+            Ok(TextFrame::Ping) => Inbound::Ping,
+            Err(_) => Inbound::Ignore,
         },
         Message::Close(_) => Inbound::Close,
         // axum answers pings itself.
@@ -1077,6 +1128,16 @@ mod tests {
         );
     }
 
+    /// A liveness probe carries no payload, so the tag has to be read on its
+    /// own — parsed as a resize it would fail for want of `cols`/`rows`.
+    #[test]
+    fn ping_frames_are_a_liveness_probe() {
+        assert_eq!(
+            translate_inbound(&Message::text(r#"{"t":"ping"}"#)),
+            Inbound::Ping
+        );
+    }
+
     /// Anything else on a text frame is ignored rather than fatal: the wire is
     /// allowed to grow tags this server does not know yet.
     #[test]
@@ -1325,6 +1386,25 @@ mod daemon_tests {
             .await
             .unwrap();
 
+        // The liveness probe a foregrounded PWA sends: an answer proves the
+        // socket is really still there, which `readyState` alone does not.
+        socket
+            .send(WsMessage::text(r#"{"t":"ping"}"#))
+            .await
+            .unwrap();
+        tokio::time::timeout(TIMEOUT, async {
+            while let Some(Ok(message)) = socket.next().await {
+                if let WsMessage::Text(text) = message {
+                    if text.contains(r#""pong""#) {
+                        return;
+                    }
+                }
+            }
+            panic!("the socket closed before answering the probe");
+        })
+        .await
+        .expect("a ping should be answered with a pong");
+
         let (status, listed) = served.post("/api/terminal/list", json!({})).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(listed.as_array().map(Vec::len), Some(1), "{listed}");
@@ -1518,6 +1598,83 @@ mod daemon_tests {
             .await;
         assert_eq!(status, StatusCode::OK);
         assert!(peeked.is_string(), "{peeked}");
+    }
+
+    /// `/api/terminal/submit` is the compose bar's send, and its whole reason
+    /// for being on this side of the wire is the gap in the middle: the client
+    /// asking for it is a phone whose timers iOS freezes the moment it is
+    /// backgrounded, so the settle has to be held by something that cannot be
+    /// suspended. The request therefore does not return until the Enter has
+    /// gone out.
+    #[tokio::test]
+    #[allow(
+        clippy::await_holding_lock,
+        reason = "serialises $REVIEW_HOME for the test body; single-threaded runtime"
+    )]
+    async fn submitting_types_the_text_then_enter_after_the_settle() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _home = isolated_home();
+
+        let harness = Harness::start().await;
+        let served = Served::start(&harness).await;
+
+        let cwd = harness.dir.path().to_string_lossy().into_owned();
+        let (status, started) = served
+            .post(
+                "/api/terminal/start",
+                json!({
+                    "terminalId": "web-submit",
+                    "repoPath": cwd,
+                    "cwd": cwd,
+                    "cols": 80,
+                    "rows": 24,
+                    "shell": "/bin/sh",
+                }),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "start failed: {started}");
+
+        let (mut socket, _) = tokio_tungstenite::connect_async(served.ws_url("web-submit"))
+            .await
+            .expect("the socket attaches to a live session");
+
+        // No trailing newline: the Enter is the endpoint's to add, separately.
+        // Quoted so the shell's *echo* of the line and the line's *output* are
+        // different strings — only a `\r` that actually landed produces the
+        // second one.
+        let began = Instant::now();
+        let (status, _) = served
+            .post(
+                "/api/terminal/submit",
+                json!({"terminalId": "web-submit", "data": r#"echo "submit""ted-ok""#}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            began.elapsed() >= Duration::from_millis(SUBMIT_SETTLE_MS),
+            "the settle is held by the server, not by whoever called it"
+        );
+
+        // The shell ran it, which only happens if the `\r` followed the text.
+        tokio::time::timeout(TIMEOUT, async {
+            let mut seen = Vec::new();
+            while let Some(Ok(message)) = socket.next().await {
+                if let WsMessage::Binary(bytes) = message {
+                    seen.extend_from_slice(&bytes[8..]);
+                    if String::from_utf8_lossy(&seen).contains("submitted-ok") {
+                        return;
+                    }
+                }
+            }
+            panic!("the socket closed before the shell ran it: {seen:?}");
+        })
+        .await
+        .expect("the submitted line should be run, not just typed");
+
+        let (status, _) = served
+            .post("/api/terminal/kill", json!({"terminalId": "web-submit"}))
+            .await;
+        assert_eq!(status, StatusCode::OK);
     }
 
     /// A socket for a session the daemon never heard of must close 4404, so the

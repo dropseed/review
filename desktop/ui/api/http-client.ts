@@ -15,6 +15,8 @@ import type {
 import { terminalStartPayload } from "./client";
 import { TerminalSocket } from "./terminal-socket";
 import { TerminalEventsSocket } from "./terminal-events-socket";
+import { onForeground } from "./foreground";
+import { decodeBase64 } from "../components/Terminal/base64";
 import type {
   BranchList,
   ClassifyResponse,
@@ -92,6 +94,9 @@ export class HttpClient implements ApiClient {
   // ----- Terminal transport (one WebSocket per session) -----
 
   private terminalSockets = new Map<string, TerminalSocket>();
+  /** Installed with the first socket, and never removed — holding it is the
+   *  install guard. See `ensureTerminalSocket`. */
+  private stopWaking: (() => void) | null = null;
   private terminalOutputCallbacks = new Map<
     string,
     Set<(output: TerminalOutput) => void>
@@ -1062,31 +1067,51 @@ export class HttpClient implements ApiClient {
   private ensureTerminalSocket(terminalId: string): TerminalSocket {
     let socket = this.terminalSockets.get(terminalId);
     if (!socket) {
-      socket = new TerminalSocket(terminalId, {
-        onOutput: (data, seq) => {
-          const cbs = this.terminalOutputCallbacks.get(terminalId);
-          if (cbs) for (const cb of cbs) cb({ id: terminalId, data, seq });
+      // One set of DOM listeners for every socket this client holds, installed
+      // the first time there is one for them to wake. A backgrounded PWA's
+      // sockets are all suspended together, so they all come back together —
+      // the announcement channel among them, or a returning tab would go on
+      // listening to a corpse for news of every session it does not have open.
+      this.stopWaking ??= onForeground(() => this.wakeSockets());
+      socket = new TerminalSocket(
+        terminalId,
+        {
+          onOutput: (data, seq) => {
+            const cbs = this.terminalOutputCallbacks.get(terminalId);
+            if (cbs) for (const cb of cbs) cb({ id: terminalId, data, seq });
+          },
+          onStatus: (status) => {
+            // Into the roll-up, which is where status goes now — a mounted
+            // pane is not a special case of it. This socket and the
+            // announcement channel both carry the frame, and
+            // `applyTerminalStatus` is written to expect exactly that: it
+            // tests the attention edge against the phase being replaced, then
+            // drops a status equal to the one already stored. Reading it here
+            // costs that one comparison and is what keeps a streaming pane's
+            // status arriving while the announcement channel is down.
+            for (const cb of this.terminalStatusChangedCallbacks) cb(status);
+          },
+          onExit: (exitCode) => {
+            const cbs = this.terminalExitCallbacks.get(terminalId);
+            if (cbs) for (const cb of cbs) cb({ id: terminalId, exitCode });
+          },
+          onResize: (cols, rows) => {
+            const cbs = this.terminalResizedCallbacks.get(terminalId);
+            if (cbs) for (const cb of cbs) cb({ id: terminalId, cols, rows });
+          },
         },
-        onStatus: (status) => {
-          // Into the roll-up, which is where status goes now — a mounted pane
-          // is not a special case of it. This socket and the announcement
-          // channel both carry the frame, and `applyTerminalStatus` is written
-          // to expect exactly that: it tests the attention edge against the
-          // phase being replaced, then drops a status equal to the one already
-          // stored. Reading it here costs that one comparison and is what keeps
-          // a streaming pane's status arriving while the announcement channel
-          // is down.
-          for (const cb of this.terminalStatusChangedCallbacks) cb(status);
+        {
+          // How the socket catches up on what printed while it was down: the
+          // same snapshot a cold reattach fetches, sliced to the gap.
+          fetchReplay: async (id) => {
+            const { dataB64, cursor } = await this.terminalReplay(id);
+            return {
+              data: dataB64 ? decodeBase64(dataB64) : new Uint8Array(),
+              cursor,
+            };
+          },
         },
-        onExit: (exitCode) => {
-          const cbs = this.terminalExitCallbacks.get(terminalId);
-          if (cbs) for (const cb of cbs) cb({ id: terminalId, exitCode });
-        },
-        onResize: (cols, rows) => {
-          const cbs = this.terminalResizedCallbacks.get(terminalId);
-          if (cbs) for (const cb of cbs) cb({ id: terminalId, cols, rows });
-        },
-      });
+      );
       this.terminalSockets.set(terminalId, socket);
     }
     socket.connect();
@@ -1139,6 +1164,12 @@ export class HttpClient implements ApiClient {
     }
     socket.connect();
     return socket;
+  }
+
+  /** Every socket this client holds, told to prove it is still connected. */
+  private wakeSockets(): void {
+    for (const open of this.terminalSockets.values()) open.wake();
+    this.terminalEventsSocket?.wake();
   }
 
   async terminalsAvailable(): Promise<boolean> {
@@ -1211,7 +1242,14 @@ export class HttpClient implements ApiClient {
 
   /** Web-mode replay: a one-shot POST returning the ring buffer plus status. */
   async terminalReplay(terminalId: string): Promise<TerminalReplay> {
-    return this.post("/api/terminal/replay", { terminalId });
+    const replay = await this.post<TerminalReplay>("/api/terminal/replay", {
+      terminalId,
+    });
+    // A pane's cold reattach fetches this before a single live byte has
+    // arrived; telling the socket where that snapshot ended is what lets a
+    // reconnect five minutes later know what it missed.
+    this.terminalSockets.get(terminalId)?.noteCursor(replay.cursor);
+    return replay;
   }
 
   async terminalPeekMany(
@@ -1341,5 +1379,19 @@ export class HttpClient implements ApiClient {
       this.terminalSessionsInvalidatedCallbacks,
       callback,
     );
+  }
+
+  onTerminalConnection(
+    terminalId: string,
+    callback: (reconnecting: boolean) => void,
+  ): () => void {
+    // Subscribed from a mounted pane, which is a place the session exists —
+    // the same condition `onTerminalOutput` opens a socket under.
+    return this.ensureTerminalSocket(terminalId).onState(callback);
+  }
+
+  /** The settle happens on the server, where nothing suspends it. */
+  async terminalSubmit(terminalId: string, text: string): Promise<void> {
+    await this.post("/api/terminal/submit", { terminalId, data: text });
   }
 }

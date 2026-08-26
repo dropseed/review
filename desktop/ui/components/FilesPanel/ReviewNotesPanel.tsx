@@ -5,7 +5,11 @@ import {
   useEffect,
   useCallback,
 } from "react";
-import { useFeedbackPanel, useListContinuation } from "../../hooks";
+import {
+  useAutoGrow,
+  useFeedbackPanel,
+  useListContinuation,
+} from "../../hooks";
 import { CollapsibleSection } from "../ui/collapsible-section";
 import { DropdownMenuItem } from "../ui/dropdown-menu";
 
@@ -45,13 +49,7 @@ export function ReviewNotesPanel(): ReactNode {
 
   const handleListKeyDown = useListContinuation(textareaRef, setReviewNotes);
 
-  useEffect(() => {
-    const ta = textareaRef.current;
-    if (ta) {
-      ta.style.height = "auto";
-      ta.style.height = `${Math.min(ta.scrollHeight, 120)}px`;
-    }
-  }, [notes]);
+  useAutoGrow(textareaRef, 120, notes);
 
   const confirmClear = useCallback(() => {
     clearFeedback();

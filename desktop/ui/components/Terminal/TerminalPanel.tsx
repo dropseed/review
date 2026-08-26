@@ -32,6 +32,7 @@ import {
 import { closeTerminalPane, closeTerminalTab } from "./close";
 import { openTerminalTab } from "./newTab";
 import { StartTerminal } from "./StartTerminal";
+import { ComposeBar } from "./ComposeBar";
 import { SoftKeys } from "./SoftKeys";
 import { TerminalTextSize } from "./TerminalTextSize";
 import { PaneTree } from "./PaneTree";
@@ -263,8 +264,9 @@ export function TerminalPanel(): ReactNode {
                       setTabDropTarget(null);
                     }}
                     className={clsx(
-                      `group relative flex min-w-[5.5rem] max-w-[13rem] flex-1
-                       basis-0 items-center rounded-md px-2 py-1 text-xs`,
+                      `group tap tap-target-y relative flex min-w-[5.5rem]
+                       max-w-[13rem] flex-1 basis-0 items-center rounded-md px-2
+                       py-1 text-xs`,
                       // Lifted off the terminal surface, not recessed into it —
                       // the strip now sits on surface-inset itself.
                       isActive
@@ -389,7 +391,8 @@ export function TerminalPanel(): ReactNode {
                 movePaneToNewTab(pane);
               }}
               className={clsx(
-                "flex shrink-0 items-center gap-1 rounded-md border border-dashed px-2 py-1 text-xs",
+                `tap tap-target-y flex shrink-0 items-center gap-1 rounded-md
+                 border border-dashed px-2 py-1 text-xs`,
                 tabDropTarget?.kind === "new-tab"
                   ? "border-focus-ring bg-fg/[0.06] text-fg-secondary"
                   : "border-edge text-fg-faint",
@@ -410,8 +413,9 @@ export function TerminalPanel(): ReactNode {
             aria-label="New terminal tab"
             title="New terminal tab (⌘T)"
             onClick={handleNewTab}
-            className="shrink-0 rounded-md px-2 py-1 text-sm leading-none text-fg-muted
-                       hover:bg-fg/[0.06] hover:text-fg-secondary"
+            className="tap tap-target-y shrink-0 rounded-md px-2 py-1 text-sm
+                       leading-none text-fg-muted hover:bg-fg/[0.06]
+                       hover:text-fg-secondary"
           >
             +
           </button>
@@ -458,7 +462,14 @@ export function TerminalPanel(): ReactNode {
         )}
       </div>
 
-      {/* The keys a software keyboard doesn't have, for the pane on screen. */}
+      {/* The phone's input, for the pane on screen: a real text field to say
+          something in, and under it the keys a software keyboard doesn't have.
+          In that order, because the box is where the sentence is written and
+          the keys are what punctuate it — and because the row nearest the
+          keyboard should be the one your thumb reaches for mid-typing. */}
+      {touchPrimary && showingPaneId && (
+        <ComposeBar terminalId={showingPaneId} />
+      )}
       {touchPrimary && showingPaneId && <SoftKeys terminalId={showingPaneId} />}
     </div>
   );
