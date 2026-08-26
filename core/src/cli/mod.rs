@@ -1,3 +1,4 @@
+use crate::review::central;
 use crate::review::state::HunkStatus;
 use crate::review::storage;
 use crate::service::targets::{self, BaseReason, ResolvedReview};
@@ -582,35 +583,30 @@ fn read_patch_input(src: &str) -> Result<String, String> {
     }
 }
 
-/// Path to the signal file used to communicate a repo path to the running app.
-/// On macOS, `open -a` silently drops `--args` when the app is already running.
-/// The CLI writes the requested repo path here, and the app reads it on
-/// reactivation. Home-scoped in core so `--home`/`$REVIEW_HOME` instances and
-/// the default app can't steer each other.
-fn open_request_path() -> PathBuf {
-    crate::review::central::open_request_path()
-}
-
 /// Launch the Review desktop app for the given repo, optionally with a review ref and/or focused file.
 fn open_app(
     repo_path: &str,
     review_ref: Option<&str>,
     focused_file: Option<&str>,
 ) -> Result<(), String> {
-    // Write a signal file with a timestamp, repo path, optional review ref, and optional focused file.
-    // Always write all 4 lines, using empty strings for missing optional values.
-    // This is the reliable channel for the already-running case where
-    // `open -a` activates the app but drops `--args`.
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    let signal_content = format!(
-        "{now}\n{repo_path}\n{}\n{}",
-        review_ref.unwrap_or(""),
-        focused_file.unwrap_or("")
-    );
-    let _ = std::fs::write(open_request_path(), signal_content);
+    // The reliable channel for the already-running case, where `open -a`
+    // activates the app but drops `--args`. Not `let _ =`: a write that failed
+    // and went unreported is the case where the app comes to the front showing
+    // whatever it was showing before and the CLI still says "Opened Review app
+    // for ..." — the exact report that sends someone looking in the wrong place.
+    central::write_open_request(&central::OpenRequest {
+        repo_path: repo_path.to_owned(),
+        ref_name: review_ref.map(ToOwned::to_owned),
+        focused_file: focused_file.map(ToOwned::to_owned),
+        // The CLI has no hunk to focus; the app's own deep links do.
+        focused_hunk_hash: None,
+    })
+    .map_err(|e| {
+        format!(
+            "Could not write the open request '{}': {e}",
+            central::open_request_path().display()
+        )
+    })?;
 
     #[cfg(target_os = "macos")]
     {

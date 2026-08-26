@@ -32,6 +32,7 @@ import {
   useComparisonLoader,
   useWindowTitle,
   useFileRouteSync,
+  useMenuEvents,
   useMenuState,
   useRepoActivitySync,
   useWorkspaceSync,
@@ -94,8 +95,8 @@ function AppShell() {
     comparisonReady,
     setInitialLoading,
     handleOpenRepo,
+    openPath,
     handleCloseRepo,
-    handleSelectRepo,
     handleActivateReview,
     handleActivateLocalBranch,
     handleNewReview,
@@ -125,6 +126,8 @@ function AppShell() {
   // Stable refs so the effect doesn't re-register on every render
   const handleOpenRepoRef = useRef(handleOpenRepo);
   handleOpenRepoRef.current = handleOpenRepo;
+  const openPathRef = useRef(openPath);
+  openPathRef.current = openPath;
   const activateReviewRef = useRef(handleActivateReview);
   activateReviewRef.current = handleActivateReview;
   const activateLocalBranchRef = useRef(handleActivateLocalBranch);
@@ -166,6 +169,16 @@ function AppShell() {
     useMemo(
       () => ({
         openRepo: () => handleOpenRepoRef.current(),
+        // A tab naming a path rather than a comparison — see `openPath` in
+        // `useRepositoryInit`. Fire-and-forget like every other action here,
+        // but it can genuinely fail (a folder that has been moved or
+        // unmounted), and nothing has navigated by then.
+        openPath: (path: string) => {
+          void openPathRef.current(path).catch((err) => {
+            console.error("Failed to open folder:", err);
+            toast.error(`Couldn't open ${path}: ${getErrorMessage(err)}`);
+          });
+        },
         closeTab: () => void handleClose(),
         navigate: (to: string) => navigate(to),
         // Activate by key the way the sidebar would: find the row and use its
@@ -203,6 +216,14 @@ function AppShell() {
     ),
   );
   useCommandDispatch();
+  // Beside the dispatcher and the menu's own enabled-state sync, and for the
+  // same reason both of those are here: the native menu is a second entrance to
+  // the app's commands, so it has to answer wherever a command does — which is
+  // everywhere, not only the three repo routes `ReviewView` is drawn on. An
+  // *enabled* macOS item swallows its key equivalent before the webview sees
+  // it, so mounting this any deeper does not degrade to the shortcut still
+  // working; see `useMenuState`, and `menuParity.test.ts` for the guard.
+  useMenuEvents();
 
   useMenuState();
   useReviewFreshness();
@@ -274,7 +295,6 @@ function AppShell() {
                     comparisonReady,
                     handleOpenRepo,
                     handleCloseRepo,
-                    handleSelectRepo,
                     handleNewReview,
                     handleStartReview,
                   }}

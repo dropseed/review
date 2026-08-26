@@ -26,7 +26,7 @@
 
 use std::path::{Path, PathBuf};
 
-use super::{mutate, push_new, Attachment, WorkError, WorkState, Workspace};
+use super::{mutate, push_new, register_attachments, Attachment, WorkError, WorkState, Workspace};
 use crate::review::central;
 use crate::sources::local_git::current_branch_or_head;
 
@@ -185,6 +185,16 @@ pub fn land(location: &Location, explicit: Option<&str>) -> Result<Landing, Work
             ))
         }
     })?;
+    // A shell opened in a repository nobody has opened in the app is the most
+    // common way one arrives at all, so the workspace it routes to has to come
+    // with an activity row — otherwise its own card has nothing to show. Also
+    // on a *join*, and cheaply (an already-registered path costs one stat):
+    // that is what heals a queue written before attaching registered anything.
+    //
+    // Not on the `explicit` path above, which returns before this: naming a
+    // workspace attaches nothing, so no card shows the repository and nothing
+    // needs a row for it.
+    register_attachments(&[location.attachment()]);
     Ok(landing)
 }
 

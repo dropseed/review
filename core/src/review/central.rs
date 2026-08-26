@@ -31,7 +31,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::{LazyLock, RwLock};
+use std::time::{Duration, SystemTime};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -65,6 +65,16 @@ pub fn sanitize_path_component(name: &str) -> String {
     name.replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_")
 }
 
+/// The central storage root when nothing overrides it: `~/.review/`.
+///
+/// Its own function because two questions need it — "where do I store things?"
+/// and "am I the default instance?" ([`open_request_name`]) — and a second
+/// spelling of `.review` is a second answer waiting to drift.
+pub fn default_central_root() -> Result<PathBuf, CentralError> {
+    let home = dirs::home_dir().ok_or(CentralError::Home)?;
+    Ok(home.join(".review"))
+}
+
 /// Return the central storage root.
 ///
 /// Uses `$REVIEW_HOME` if set, otherwise `~/.review/`.
@@ -72,8 +82,7 @@ pub fn get_central_root() -> Result<PathBuf, CentralError> {
     if let Ok(review_home) = std::env::var("REVIEW_HOME") {
         return Ok(PathBuf::from(review_home));
     }
-    let home = dirs::home_dir().ok_or(CentralError::Home)?;
-    Ok(home.join(".review"))
+    default_central_root()
 }
 
 /// The central storage root as the filesystem reports it — what a watcher must
@@ -92,6 +101,9 @@ pub fn canonical_central_root() -> Result<PathBuf, CentralError> {
     Ok(canonical_path(&get_central_root()?))
 }
 
+/// The file name both sides of the signal use for the default review home.
+const OPEN_REQUEST_NAME: &str = "review-open-request";
+
 /// The CLI→app "open this repo" signal file.
 ///
 /// Scoped per review home: a `$REVIEW_HOME` dev instance and the released app
@@ -100,16 +112,133 @@ pub fn canonical_central_root() -> Result<PathBuf, CentralError> {
 /// on both sides of the file already agree on it.
 pub fn open_request_path() -> PathBuf {
     let tmp = std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_owned());
-    let name = match std::env::var("REVIEW_HOME") {
-        Ok(home) if !home.is_empty() => {
-            let mut hasher = Sha256::new();
-            hasher.update(home.as_bytes());
-            let digest = hex::encode(hasher.finalize());
-            format!("review-open-request-{}", &digest[..8])
-        }
-        _ => "review-open-request".to_owned(),
+    PathBuf::from(tmp).join(open_request_name())
+}
+
+/// What one side is asking the other to open.
+///
+/// The payload of the only IPC these two processes have, so it lives beside the
+/// path rather than being spelled out at each end — the CLI wrote four lines and
+/// the desktop five, agreeing only because the reader happened to treat a
+/// missing line as absent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenRequest {
+    pub repo_path: String,
+    pub ref_name: Option<String>,
+    pub focused_file: Option<String>,
+    pub focused_hunk_hash: Option<String>,
+}
+
+/// How long a request stays worth acting on.
+///
+/// The file is a doorbell, not a queue: it is written immediately before the
+/// app is asked to come forward, so anything older than this is the leftover of
+/// a run that crashed or never reached the app, and opening whatever it names
+/// would yank the human off what they are doing now.
+const OPEN_REQUEST_TTL: Duration = Duration::from_secs(30);
+
+/// Write the signal file. Five lines — a timestamp and all four fields, empty
+/// for the ones that are absent — because [`read_open_request`] locates a field
+/// by its line.
+///
+/// The error is returned rather than swallowed: on macOS `open -a` drops
+/// `--args` for an app that is already running, so this file *is* the channel in
+/// the common case, and a caller that reported success over a failed write would
+/// send someone looking for a repo the app never heard about.
+pub fn write_open_request(request: &OpenRequest) -> io::Result<()> {
+    let now = SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let content = format!(
+        "{now}\n{}\n{}\n{}\n{}",
+        request.repo_path,
+        request.ref_name.as_deref().unwrap_or(""),
+        request.focused_file.as_deref().unwrap_or(""),
+        request.focused_hunk_hash.as_deref().unwrap_or(""),
+    );
+    fs::write(open_request_path(), content)
+}
+
+/// Read and delete the signal file, if it holds a request worth acting on.
+///
+/// Deleting on read — before the staleness check, and whatever the outcome — is
+/// what keeps one ring from being answered twice, and what stops a malformed or
+/// expired file sitting in `$TMPDIR` being re-examined on every activation.
+///
+/// Tolerant of a short file: a build that wrote fewer lines than this one reads
+/// is missing fields, not unreadable.
+pub fn read_open_request() -> Option<OpenRequest> {
+    let path = open_request_path();
+    let content = fs::read_to_string(&path).ok()?;
+    let _ = fs::remove_file(&path);
+
+    let mut lines = content.lines();
+    let timestamp: u64 = lines.next()?.parse().ok()?;
+    let repo_path = lines.next()?.trim().to_owned();
+    let mut next_optional = || {
+        lines
+            .next()
+            .map(|line| line.trim().to_owned())
+            .filter(|line| !line.is_empty())
     };
-    PathBuf::from(tmp).join(name)
+    let request = OpenRequest {
+        repo_path,
+        ref_name: next_optional(),
+        focused_file: next_optional(),
+        focused_hunk_hash: next_optional(),
+    };
+
+    let age = SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+        .saturating_sub(timestamp);
+    if age > OPEN_REQUEST_TTL.as_secs() || request.repo_path.is_empty() {
+        return None;
+    }
+    Some(request)
+}
+
+/// Which name this process writes and reads, keyed on the **resolved** review
+/// home rather than on whether `REVIEW_HOME` happens to be set.
+///
+/// That distinction is the whole of it, and getting it wrong broke `review .`
+/// outright: the app pins `REVIEW_HOME=~/.review` on the daemon it spawns and
+/// every PTY inherits it, so a shell *inside* the app has the variable set to
+/// the default home. Keyed on "is it set", that shell wrote a hashed name while
+/// Review.app — launched from Finder with no environment at all — went on
+/// reading the bare one. Two processes pointed at one directory, passing on
+/// different channels.
+///
+/// Both halves of the comparison run through [`canonical_path`] for the reason
+/// [`canonical_central_root`] documents: `$REVIEW_HOME=/tmp/review-dev` is the
+/// documented dev setup, and on macOS that is the same directory as
+/// `/private/tmp/review-dev`. Spelling a home two ways must not hand its two
+/// processes two channels either — which also means the hashed name is derived
+/// from the resolved path, so a dev instance's name moves once, on the build
+/// that fixes this.
+///
+/// The default home keeping the unhashed name is a **compatibility
+/// concession**, not a claim that it is special: hashing it too would be the
+/// cleaner rule, but it would break every installed CLI/app pair for as long as
+/// one half is upgraded and the other isn't — and that is the pair almost
+/// everybody has. There is nothing to say for the bare name beyond "released
+/// binaries already agree on it", which is enough.
+fn open_request_name() -> String {
+    let Ok(root) = get_central_root() else {
+        // No home to resolve is not a reason to invent a private channel; the
+        // bare name is what every other process without one is using.
+        return OPEN_REQUEST_NAME.to_owned();
+    };
+    let root = canonical_path(&root);
+    if default_central_root().is_ok_and(|default| canonical_path(&default) == root) {
+        return OPEN_REQUEST_NAME.to_owned();
+    }
+    let mut hasher = Sha256::new();
+    hasher.update(root.to_string_lossy().as_bytes());
+    let digest = hex::encode(hasher.finalize());
+    format!("{OPEN_REQUEST_NAME}-{}", &digest[..8])
 }
 
 /// Resolve the canonical path, falling back to the original if canonicalization fails.
@@ -262,13 +391,6 @@ pub fn get_worktree_base_dir(repo_path: &Path) -> Result<PathBuf, CentralError> 
     Ok(root.join("worktrees").join(repo_id))
 }
 
-/// In-memory cache of the repo index keyed by central_root. The cache is
-/// populated on first `load_index` call and updated on every `save_index` so
-/// we don't re-read `index.json` on every watcher event. Keying by root makes
-/// tests that swap `REVIEW_HOME` (tempdirs) isolated from each other.
-static INDEX_CACHE: LazyLock<RwLock<HashMap<PathBuf, RepoIndex>>> =
-    LazyLock::new(|| RwLock::new(HashMap::new()));
-
 /// Drop stale duplicate entries that point at the same path under different
 /// repo IDs — left behind when the repo-ID scheme changes (e.g. the move to
 /// common-dir-based IDs re-registered repos without removing the old entry).
@@ -294,25 +416,21 @@ fn prune_duplicate_paths(index: &mut RepoIndex) -> bool {
     index.repos.len() != before
 }
 
-/// Load the global repo index (cached in memory).
+/// Load the global repo index, straight off disk.
+///
+/// Deliberately uncached. `~/.review/` is written by the app, the CLI and the
+/// daemon at once, so any in-memory copy has to be checked against the file
+/// before it can be trusted — and once you are stat-ing on every call, the cache
+/// is only saving the parse of a small JSON document. Worse, a copy that went
+/// unchecked would not merely serve a stale read: the next `save_index` would
+/// write it back over whatever another process had registered in between.
 fn load_index() -> Result<RepoIndex, CentralError> {
-    let root = get_central_root()?;
-
-    if let Some(cached) = INDEX_CACHE
-        .read()
-        .expect("INDEX_CACHE poisoned")
-        .get(&root)
-        .cloned()
-    {
-        return Ok(cached);
-    }
-
-    let index_path = root.join("index.json");
-    let mut index: RepoIndex = if !index_path.exists() {
-        RepoIndex::default()
-    } else {
-        let content = fs::read_to_string(&index_path)?;
-        serde_json::from_str(&content)?
+    let index_path = get_central_root()?.join("index.json");
+    let mut index: RepoIndex = match fs::read_to_string(&index_path) {
+        Ok(content) => serde_json::from_str(&content)?,
+        // Nothing registered yet is the empty index, not an error.
+        Err(e) if e.kind() == io::ErrorKind::NotFound => RepoIndex::default(),
+        Err(e) => return Err(e.into()),
     };
     // Heal-on-read, mirroring review-file migration: prune stale duplicates
     // and persist so it only happens once. A failed write still leaves the
@@ -321,17 +439,11 @@ fn load_index() -> Result<RepoIndex, CentralError> {
         if let Err(e) = save_index(&index) {
             log::warn!("[central] failed to persist pruned repo index: {e}");
         }
-        return Ok(index);
     }
-    INDEX_CACHE
-        .write()
-        .expect("INDEX_CACHE poisoned")
-        .insert(root, index.clone());
     Ok(index)
 }
 
-/// Save the global repo index (atomic: write tmp + rename). Updates the
-/// in-memory cache so subsequent `load_index` calls see the new contents.
+/// Save the global repo index (atomic: write tmp + rename).
 fn save_index(index: &RepoIndex) -> Result<(), CentralError> {
     let root = get_central_root()?;
     fs::create_dir_all(&root)?;
@@ -341,18 +453,53 @@ fn save_index(index: &RepoIndex) -> Result<(), CentralError> {
     let content = serde_json::to_string_pretty(index)?;
     fs::write(&tmp_path, &content)?;
     fs::rename(&tmp_path, &index_path)?;
-
-    INDEX_CACHE
-        .write()
-        .expect("INDEX_CACHE poisoned")
-        .insert(root, index.clone());
     Ok(())
 }
 
 /// Register (upsert) a repo in the index and create its storage directory.
+///
+/// An upsert, so it refreshes `last_accessed` — which is the order
+/// [`list_registered_repos`] returns, and so the order the sidebar reads. That
+/// is right for "the human opened this repo" and wrong for "a workspace happens
+/// to hold it"; see [`ensure_registered`].
 pub fn register_repo(repo_path: &Path) -> Result<(), CentralError> {
     let repo_id = compute_repo_id(repo_path)?;
-    let repo_dir = get_repo_storage_dir(repo_path)?;
+    let index = load_index()?;
+    write_registration(repo_path, repo_id, index)
+}
+
+/// Put a repo in the index if it isn't there already, reporting whether that
+/// wrote anything.
+///
+/// The "make sure this is on the list" call, as against [`register_repo`]'s
+/// "put it on the list, now": a repo that arrived because a workspace attached
+/// it has not been *used*, so it takes its place without pushing anything else
+/// down the recency order, and re-attaching one already listed writes nothing at
+/// all.
+///
+/// A path that is not a working tree is simply not registered — the index is the
+/// git registry, and every reader of it needs a `LocalGitSource`.
+pub fn ensure_registered(repo_path: &Path) -> Result<bool, CentralError> {
+    if !is_working_tree(repo_path) {
+        return Ok(false);
+    }
+    let repo_id = compute_repo_id(repo_path)?;
+    let index = load_index()?;
+    if index.repos.contains_key(&repo_id) {
+        return Ok(false);
+    }
+    write_registration(repo_path, repo_id, index)?;
+    Ok(true)
+}
+
+/// The write both of the above end in, taking the repo id and the index already
+/// in hand so that neither is resolved a second time.
+fn write_registration(
+    repo_path: &Path,
+    repo_id: String,
+    mut index: RepoIndex,
+) -> Result<(), CentralError> {
+    let repo_dir = get_central_root()?.join("repos").join(&repo_id);
     fs::create_dir_all(repo_dir.join("reviews"))?;
 
     // Register under the repo's main working tree, not the (possibly worktree)
@@ -371,8 +518,6 @@ pub fn register_repo(repo_path: &Path) -> Result<(), CentralError> {
         serde_json::to_string_pretty(&repo_json)?,
     )?;
 
-    // Update the index
-    let mut index = load_index()?;
     index.repos.insert(
         repo_id.clone(),
         RepoIndexEntry {
@@ -415,10 +560,23 @@ pub fn unregister_repo(repo_path: &Path) -> Result<(), CentralError> {
     Ok(())
 }
 
+/// Whether `repo_path` is itself a working tree — the exact test
+/// [`register_repo_if_valid`] applies, shared so "the index took this" and "a
+/// surface calls this a repo" can never disagree.
+///
+/// A `.git` entry rather than `git rev-parse`, for two reasons: this is asked
+/// per attachment on every read of the work queue, and the paths it is asked
+/// about are already [`repo_root`]-normalized, so the cheap answer and the
+/// honest one are the same one. `LocalGitSource::new` draws the line in the same
+/// place, which is what makes "registered" and "diffable" the same set.
+pub fn is_working_tree(repo_path: &Path) -> bool {
+    repo_path.join(".git").exists()
+}
+
 /// Register a repo only if the given path is a valid git repository.
 /// Returns Ok(true) if registered, Ok(false) if not a git repo.
 pub fn register_repo_if_valid(repo_path: &Path) -> Result<bool, CentralError> {
-    if !repo_path.join(".git").exists() {
+    if !is_working_tree(repo_path) {
         return Ok(false);
     }
     register_repo(repo_path)?;
@@ -453,6 +611,99 @@ pub(crate) mod tests {
         std::env::set_var("REVIEW_HOME", review_home.path());
         let repo_dir = TempDir::new().unwrap();
         (EnvGuard, review_home, repo_dir)
+    }
+
+    /// The CLI and the app find each other through a file in `$TMPDIR`, so they
+    /// have to agree on its name from two very different environments: a shell
+    /// inside the app (which inherits `REVIEW_HOME=~/.review` from the daemon
+    /// the app spawned) and Review.app launched from Finder (which inherits
+    /// nothing). Same home, same channel — whatever the environment says.
+    #[test]
+    fn the_open_request_name_is_keyed_on_the_resolved_home() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let default_home = dirs::home_dir().unwrap().join(".review");
+
+        // Finder's Review.app: no REVIEW_HOME at all.
+        std::env::remove_var("REVIEW_HOME");
+        let bare = open_request_name();
+        assert_eq!(bare, OPEN_REQUEST_NAME);
+
+        // A shell inside the app: REVIEW_HOME set, but set to the *default*
+        // home. Keying on "is it set" gave this one a private channel and broke
+        // `review .` for everybody.
+        std::env::set_var("REVIEW_HOME", &default_home);
+        let _guard = EnvGuard;
+        assert_eq!(
+            open_request_name(),
+            bare,
+            "the default home spelled out is still the default home"
+        );
+
+        // A genuinely separate instance keeps its own channel, which is what
+        // the hashing is for.
+        let dev = TempDir::new().unwrap();
+        std::env::set_var("REVIEW_HOME", dev.path());
+        let dev_name = open_request_name();
+        assert_ne!(dev_name, bare);
+        assert!(dev_name.starts_with(OPEN_REQUEST_NAME));
+
+        // …and two spellings of that one home are one channel. On macOS every
+        // temp path has two (`/var` is a symlink to `/private/var`), and
+        // `$REVIEW_HOME=/tmp/review-dev` is the documented dev setup, so a CLI
+        // and an app that spelled it differently would otherwise never meet.
+        let canonical = dev.path().canonicalize().unwrap();
+        assert_ne!(canonical, dev.path(), "the test needs two spellings");
+        std::env::set_var("REVIEW_HOME", &canonical);
+        assert_eq!(open_request_name(), dev_name);
+    }
+
+    /// The CLI writes this file and the app reads it, so the format has exactly
+    /// one test worth writing: what one end put in comes out at the other.
+    ///
+    /// Isolated by `REVIEW_HOME` rather than by `TMPDIR`: a custom home hashes
+    /// into the file name (see [`open_request_name`]), which is enough to keep
+    /// the test clear of any real instance, and `TMPDIR` is read by every
+    /// `TempDir::new` in the suite — including in tests that take no lock.
+    #[test]
+    fn an_open_request_round_trips_and_is_consumed_once() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _home, _repo) = setup_test();
+        assert_ne!(
+            open_request_path().file_name().unwrap(),
+            OPEN_REQUEST_NAME,
+            "the test must be on its own channel, not the default one"
+        );
+
+        let sent = OpenRequest {
+            repo_path: "/repos/review".to_owned(),
+            ref_name: Some("feature/x".to_owned()),
+            // A request that names a file but no hunk: the blank line has to
+            // survive as an absent field rather than shifting the ones after it.
+            focused_file: Some("core/src/lib.rs".to_owned()),
+            focused_hunk_hash: None,
+        };
+        write_open_request(&sent).unwrap();
+        assert_eq!(read_open_request(), Some(sent));
+
+        // The doorbell is answered once — the read deletes it, so a second
+        // activation doesn't reopen what the first one already handled.
+        assert_eq!(read_open_request(), None);
+
+        // And a request older than the TTL is a crashed run's leftover, not an
+        // instruction: acted on, it would yank the human off what they are
+        // doing now.
+        let stale = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            - OPEN_REQUEST_TTL.as_secs()
+            - 1;
+        fs::write(open_request_path(), format!("{stale}\n/repos/review\n\n\n")).unwrap();
+        assert_eq!(read_open_request(), None);
+        assert!(
+            !open_request_path().exists(),
+            "and it is cleared either way"
+        );
     }
 
     #[test]

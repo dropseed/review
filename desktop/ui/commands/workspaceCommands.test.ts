@@ -1,16 +1,29 @@
 import { vi, describe, it, expect, afterEach } from "vitest";
 
+// `routeWorkspace` is the backend's router (`work_route`); what it decides has
+// its own tests on both sides. Here it only has to answer, so the landing can
+// be checked against it.
+const { routeWorkspace, listWorkspaces } = vi.hoisted(() => ({
+  routeWorkspace: vi.fn(),
+  listWorkspaces: vi.fn(),
+}));
+
 vi.mock("../api", () => ({
-  getApiClient: () => ({ listWorkspaces: vi.fn().mockResolvedValue([]) }),
+  getApiClient: () => ({ listWorkspaces, routeWorkspace }),
 }));
 
 const activateReviewKey = vi.fn();
+const openPath = vi.fn();
 const navigate = vi.fn();
 vi.mock("./host", () => ({
-  getCommandUi: () => ({ activateReviewKey, navigate }),
+  getCommandUi: () => ({ activateReviewKey, openPath, navigate }),
 }));
 
-import { focusWorkspace, workspaceCommands } from "./workspaceCommands";
+import {
+  focusWorkspace,
+  landWorkspace,
+  workspaceCommands,
+} from "./workspaceCommands";
 import { useReviewStore } from "../stores";
 import { toAccelerator } from "./shortcuts";
 import { attachment, workspace } from "../test/fixtures";
@@ -71,6 +84,100 @@ afterEach(() => {
     activeReviewKey: null,
   });
   vi.clearAllMocks();
+  routeWorkspace.mockReset();
+  listWorkspaces.mockReset();
+});
+
+/** A landing from outside the app. See the `land*` wrappers in
+ *  `hooks/useRepositoryInit.ts` for what this is for and why it routes first. */
+describe("landing something from outside the app", () => {
+  const landed = item("cli", { attachments: [attachment(REPO, "feature")] });
+
+  function routesTo(workspace: Workspace): void {
+    // The route answers with the whole queue, so the landing needs no second
+    // read — `listWorkspaces` staying unmocked is part of what these assert.
+    routeWorkspace.mockResolvedValue({
+      workspace,
+      created: false,
+      workspaces: [workspace],
+    });
+  }
+
+  it("routes by the repo and ref, and focuses where it landed", async () => {
+    seed([]);
+    routesTo(landed);
+
+    expect(await landWorkspace(REPO, "feature")).toBe(landed);
+
+    expect(routeWorkspace).toHaveBeenCalledWith(REPO, "feature", undefined);
+    expect(useReviewStore.getState().focusedWorkspaceId).toBe("cli");
+  });
+
+  /**
+   * `review <path>` names no branch. The empty ref is `CHECKOUT_REF`, which the
+   * backend reads as a bare path attachment.
+   */
+  it("lands a path with no ref on the checkout", async () => {
+    seed([]);
+    routesTo(landed);
+
+    await landWorkspace(REPO, null);
+
+    expect(routeWorkspace).toHaveBeenCalledWith(REPO, "", undefined);
+  });
+
+  /**
+   * It takes the focus and not the screen: the caller owns the comparison,
+   * because it carries `ensureReviewExists`, the session record and the
+   * deep-link ordering that a generic activate does not.
+   */
+  it("opens no comparison of its own", async () => {
+    seed([]);
+    routesTo(landed);
+
+    await landWorkspace(REPO, "feature");
+
+    expect(activateReviewKey).not.toHaveBeenCalled();
+    expect(openPath).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The queue comes back on the response, so the landing costs one round trip.
+   * It used to re-read, which is a second one on the path every CLI landing and
+   * every page refresh now takes.
+   */
+  it("takes the queue off the response without a second read", async () => {
+    seed([]);
+    routesTo(landed);
+
+    await landWorkspace(REPO, "feature");
+
+    expect(useReviewStore.getState().workspaces).toEqual([landed]);
+    expect(listWorkspaces).not.toHaveBeenCalled();
+  });
+
+  /** An unchanged list keeps its array: the caches key on that identity. */
+  it("keeps the old array when the route changed nothing", async () => {
+    const before = [landed];
+    seed(before);
+    // A distinct but equal object, the way a fresh deserialization arrives.
+    routesTo(item("cli", { attachments: [attachment(REPO, "feature")] }));
+
+    await landWorkspace(REPO, "feature");
+
+    expect(useReviewStore.getState().workspaces).toBe(before);
+  });
+
+  /** Routing is the one thing that can fail, and it costs the focus only. */
+  it("leaves the focus alone when routing fails", async () => {
+    seed([item("a")]);
+    useReviewStore.setState({ focusedWorkspaceId: "a" });
+    routeWorkspace.mockRejectedValue(new Error("no daemon"));
+
+    expect(await landWorkspace(REPO, "feature")).toBeNull();
+    expect(useReviewStore.getState().focusedWorkspaceId).toBe("a");
+  });
 });
 
 describe("⌘1–9 over the workspace queue", () => {
@@ -122,13 +229,42 @@ describe("⌘1–9 over the workspace queue", () => {
     expect(navigate).toHaveBeenCalledWith("/");
   });
 
-  /** An attachment with no ref names no branch, so there is no comparison. */
-  it("sends a ref-less workspace to its empty state", () => {
+  /**
+   * An attachment with no ref names no branch, so there is no comparison — but
+   * there is still a folder, and that is what opens. The empty state is for a
+   * workspace with nothing attached at all.
+   */
+  it("opens a ref-less attachment as the folder it is", () => {
     const only = { attachments: [attachment("/tmp/scratch")] };
     seed([item("a", only)]);
     focusWorkspace(item("a", only));
     expect(activateReviewKey).not.toHaveBeenCalled();
-    expect(navigate).toHaveBeenCalledWith("/");
+    expect(openPath).toHaveBeenCalledWith("/tmp/scratch");
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The freshly `git init`-ed repo: attached, real, full of files, and with no
+   * commit for the sidebar to build a row out of. It used to fall through to
+   * the empty state, which read as the attach having silently failed.
+   */
+  it("opens a repo the sidebar hasn't heard of yet", () => {
+    const only = { attachments: [attachment("/new/repo")] };
+    seed([item("a", only)]);
+    focusWorkspace(item("a", only));
+    expect(openPath).toHaveBeenCalledWith("/new/repo");
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  /** A plain directory has no branches, so a ref on one names nothing. */
+  it("opens a directory as a folder even when a ref is stored on it", () => {
+    const only = {
+      attachments: [{ ...attachment("/tmp/notes", "main"), isGitRepo: false }],
+    };
+    seed([item("a", only)]);
+    focusWorkspace(item("a", only));
+    expect(activateReviewKey).not.toHaveBeenCalled();
+    expect(openPath).toHaveBeenCalledWith("/tmp/notes");
   });
 
   /**

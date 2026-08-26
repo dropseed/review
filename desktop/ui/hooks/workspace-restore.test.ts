@@ -7,7 +7,11 @@ function workspace(id: string, paths: string[] = []): Workspace {
     id,
     title: null,
     displayTitle: id,
-    attachments: paths.map((path) => ({ path, refName: "main" })),
+    attachments: paths.map((path) => ({
+      path,
+      refName: "main",
+      isGitRepo: true,
+    })),
     parentId: null,
     depth: 0,
     ancestors: [],

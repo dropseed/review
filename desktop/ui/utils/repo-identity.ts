@@ -90,10 +90,21 @@ export async function resolveRepoIdentity(repoPath: string): Promise<{
   } catch {
     // Fall through to local fallback
   }
-  const dirname = repoPath.replace(/\/+$/, "").split("/").pop() || "repo";
+  const dirname = repoDirname(repoPath);
   return {
     routePrefix: `local/${dirname}`,
     repoName: dirname,
     browseUrl: null,
   };
+}
+
+/**
+ * The last segment of a path, as a repo or folder would be named on a tab.
+ *
+ * The fallback whenever nothing has told us what this checkout is called —
+ * a repo the backend has no identity for, and a folder just picked out of a
+ * dialog, which by definition the app has never seen.
+ */
+export function repoDirname(path: string): string {
+  return path.replace(/\/+$/, "").split("/").pop() || "repo";
 }

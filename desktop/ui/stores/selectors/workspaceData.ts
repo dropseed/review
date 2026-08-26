@@ -15,8 +15,48 @@ export interface ReviewTarget {
   ref: string;
 }
 
-/** Whether an attachment names a branch; a bare directory tab doesn't. */
-export function hasRef(attachment: Attachment): boolean {
+/**
+ * The ref of a target that names only a path: open what is there.
+ *
+ * The empty string rather than `HEAD` or a null, because it is already the
+ * convention every caller with no branch in hand uses — `openRepoIn` hands
+ * `choice.refName ?? ""` to a terminal, and the router's fallback passes `""`
+ * for a base it doesn't know. A checkout target is the honest answer for a
+ * plain directory (no branches exist) and for a repo the sidebar has no row
+ * for yet (a fresh `git init` has no commits to make one from).
+ */
+export const CHECKOUT_REF = "";
+
+/** Whether a target names a path to open rather than a comparison to diff. */
+export function isCheckoutTarget(target: ReviewTarget): boolean {
+  return target.ref === CHECKOUT_REF;
+}
+
+/**
+ * The repo the code half is showing, whichever way it is showing it.
+ *
+ * A comparison names its repo in `activeReviewKey`; browse and standalone mode
+ * have no comparison at all and name it in `repoPath` alone. Both are "the repo
+ * on screen", and everything joining a workspace to what is being shown has to
+ * accept either — otherwise opening a folder makes the stage forget which
+ * workspace it is in.
+ */
+export function repoOnScreen(state: {
+  activeReviewKey: { repoPath: string } | null;
+  repoPath: string | null;
+}): string | null {
+  return state.activeReviewKey?.repoPath ?? state.repoPath;
+}
+
+/**
+ * Whether an attachment names a branch; a bare directory tab doesn't.
+ *
+ * A type predicate, so the callers that go on to *use* the ref get it as a
+ * string rather than re-asserting what this just checked.
+ */
+export function hasRef(
+  attachment: Attachment,
+): attachment is Attachment & { refName: string } {
   return !!attachment.refName;
 }
 
@@ -51,7 +91,7 @@ export function comparisonTarget(
 ): ReviewTarget | null {
   const attachment = workspace?.attachments.find(hasRef);
   return attachment
-    ? { repoPath: attachment.path, ref: attachment.refName! }
+    ? { repoPath: attachment.path, ref: attachment.refName }
     : null;
 }
 
@@ -75,16 +115,39 @@ export function attachmentIndex(workspace: Workspace, path: string): number {
  * has the same answer here as the router's. `focusedId` is only consulted for
  * the workspaces derivation cannot reach — one with no attachment, or one whose
  * repo nothing on screen names.
+ *
+ * `repoOnScreen` rather than the comparison's repo, because a folder opened as
+ * a folder — browse mode, or a plain directory — has no comparison to derive
+ * from and is still a repo tab someone is looking at.
  */
 export function focusedWorkspace(
   workspaces: readonly Workspace[],
   focusedId: string | null,
-  activeReviewKey: { repoPath: string; ref: string } | null,
+  repoOnScreen: string | null,
 ): Workspace | null {
   const explicit = workspaces.find((workspace) => workspace.id === focusedId);
   if (explicit) return explicit;
-  if (!activeReviewKey) return null;
-  return showingRepo(workspaces, activeReviewKey.repoPath);
+  if (!repoOnScreen) return null;
+  return showingRepo(workspaces, repoOnScreen);
+}
+
+/**
+ * [`focusedWorkspace`] against the store's own shape — the form every caller
+ * actually has, since all of them are holding state rather than three
+ * arguments. Keeping the positional version underneath is what lets the tests
+ * state the three inputs directly.
+ */
+export function focusedWorkspaceIn(state: {
+  workspaces: readonly Workspace[];
+  focusedWorkspaceId: string | null;
+  activeReviewKey: { repoPath: string } | null;
+  repoPath: string | null;
+}): Workspace | null {
+  return focusedWorkspace(
+    state.workspaces,
+    state.focusedWorkspaceId,
+    repoOnScreen(state),
+  );
 }
 
 export type RoutePreview =

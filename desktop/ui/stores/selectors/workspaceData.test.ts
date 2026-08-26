@@ -6,6 +6,7 @@ import {
   hasRef,
   previewRoute,
   repoHosts,
+  repoOnScreen,
 } from "./workspaceData";
 import { routePreviewLabel } from "../../components/palette/route-preview";
 import { attachment, workspace } from "../../test/fixtures";
@@ -113,22 +114,37 @@ describe("focusedWorkspace", () => {
   const queue = [explicit, showing];
 
   it("prefers the explicit pick", () => {
-    expect(focusedWorkspace(queue, "a", { repoPath: REPO, ref: "main" })).toBe(
-      explicit,
-    );
+    expect(focusedWorkspace(queue, "a", REPO)).toBe(explicit);
   });
 
   /** By repo, not by ref: walking a repo's branches never leaves its tab. */
   it("derives from the repo on screen, whatever the branch", () => {
-    expect(
-      focusedWorkspace(queue, null, { repoPath: REPO, ref: "other" }),
-    ).toBe(showing);
+    expect(focusedWorkspace(queue, null, REPO)).toBe(showing);
   });
 
   it("is null when nothing shows the repo on screen", () => {
-    expect(
-      focusedWorkspace(queue, null, { repoPath: "/nowhere", ref: "main" }),
-    ).toBeNull();
+    expect(focusedWorkspace(queue, null, "/nowhere")).toBeNull();
     expect(focusedWorkspace(queue, null, null)).toBeNull();
+  });
+});
+
+describe("repoOnScreen", () => {
+  it("names the comparison's repo when there is one", () => {
+    expect(
+      repoOnScreen({
+        activeReviewKey: { repoPath: REPO },
+        repoPath: "/stale",
+      }),
+    ).toBe(REPO);
+  });
+
+  /**
+   * Browse and standalone mode have no comparison at all, and are still a repo
+   * somebody is looking at — which is the whole reason the focus can't be
+   * derived from the comparison alone.
+   */
+  it("falls back to the path when nothing is being compared", () => {
+    expect(repoOnScreen({ activeReviewKey: null, repoPath: REPO })).toBe(REPO);
+    expect(repoOnScreen({ activeReviewKey: null, repoPath: null })).toBeNull();
   });
 });

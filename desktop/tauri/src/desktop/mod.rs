@@ -42,66 +42,11 @@ pub struct MenuItems(pub std::collections::HashMap<String, MenuItem<tauri::Wry>>
 /// share this flag via `Arc`.
 pub struct SentryConsent(pub Arc<AtomicBool>);
 
-/// Path to the signal file used by the CLI to request opening a repo.
-/// Matches the path the CLI writes — one review-home-scoped implementation in
-/// core, so a `$REVIEW_HOME` dev instance and the released app can't read each
-/// other's open requests.
+/// The CLI↔app signal file's payload, format and staleness rule all live in
+/// core, beside the path they are written to — this app is one of its two ends,
+/// not its owner.
 #[cfg(desktop)]
-fn open_request_path() -> std::path::PathBuf {
-    review::review::central::open_request_path()
-}
-
-/// Parsed signal-file payload. The 5th `focused_hunk_hash` line is optional;
-/// older callers (the CLI) only write 4 lines and leave it implicitly absent.
-#[cfg(desktop)]
-pub struct OpenRequest {
-    pub repo_path: String,
-    pub ref_name: Option<String>,
-    pub focused_file: Option<String>,
-    pub focused_hunk_hash: Option<String>,
-}
-
-/// Read and delete the signal file. Returns the parsed payload if the file
-/// exists and was written recently (within 30 seconds).
-#[cfg(desktop)]
-fn read_open_request() -> Option<OpenRequest> {
-    let path = open_request_path();
-    let content = std::fs::read_to_string(&path).ok()?;
-    let _ = std::fs::remove_file(&path);
-
-    let mut lines = content.lines();
-    let timestamp: u64 = lines.next()?.parse().ok()?;
-    let repo_path = lines.next()?.trim().to_owned();
-    let take_optional = |lines: &mut std::str::Lines<'_>| {
-        lines
-            .next()
-            .map(|s| s.trim().to_owned())
-            .filter(|s| !s.is_empty())
-    };
-    let ref_name = take_optional(&mut lines);
-    let focused_file = take_optional(&mut lines);
-    let focused_hunk_hash = take_optional(&mut lines);
-
-    // Ignore stale requests (e.g. from a crashed CLI run)
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    if now.saturating_sub(timestamp) > 30 {
-        return None;
-    }
-
-    if repo_path.is_empty() {
-        None
-    } else {
-        Some(OpenRequest {
-            repo_path,
-            ref_name,
-            focused_file,
-            focused_hunk_hash,
-        })
-    }
-}
+pub use review::review::central::{read_open_request, OpenRequest};
 
 /// The app's one window, as declared in `tauri.conf.json`.
 ///
@@ -409,7 +354,7 @@ fn setup_app(
 fn handle_second_instance(app: &tauri::AppHandle, argv: Vec<String>) {
     // Clean up signal file — the CLI may have written one before this
     // second process was intercepted by the single-instance plugin.
-    let _ = std::fs::remove_file(open_request_path());
+    let _ = std::fs::remove_file(review::review::central::open_request_path());
 
     // If the second instance was launched with a review:// URL
     // (e.g. clicking a link in another app), the deep-link plugin
@@ -612,9 +557,12 @@ fn handle_deep_link(app: &tauri::AppHandle, raw: &str) {
     );
 }
 
-/// Write the signal file used by `read_open_request`. Always writes 5
-/// lines (timestamp + 4 fields, blank for missing) for forward
-/// compatibility with older readers that only consumed 4.
+/// Leave a request for the app's own next activation to pick up — the deep-link
+/// path, where the window may not be ready to be told directly yet.
+///
+/// Unlike the CLI's write, a failure here has nowhere to be reported: nobody is
+/// waiting on a return value, and the same payload is emitted directly straight
+/// afterwards. Logged rather than surfaced.
 #[cfg(desktop)]
 fn write_open_request(
     repo_path: &str,
@@ -622,17 +570,15 @@ fn write_open_request(
     focused_file: Option<&str>,
     focused_hunk_hash: Option<&str>,
 ) {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    let content = format!(
-        "{now}\n{repo_path}\n{}\n{}\n{}",
-        ref_name.unwrap_or(""),
-        focused_file.unwrap_or(""),
-        focused_hunk_hash.unwrap_or(""),
-    );
-    let _ = std::fs::write(open_request_path(), content);
+    let request = review::review::central::OpenRequest {
+        repo_path: repo_path.to_owned(),
+        ref_name: ref_name.map(ToOwned::to_owned),
+        focused_file: focused_file.map(ToOwned::to_owned),
+        focused_hunk_hash: focused_hunk_hash.map(ToOwned::to_owned),
+    };
+    if let Err(e) = review::review::central::write_open_request(&request) {
+        log::warn!("[desktop] could not write the open request: {e}");
+    }
 }
 
 /// Run the Tauri desktop application.

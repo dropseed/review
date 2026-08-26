@@ -22,9 +22,10 @@ export function FilesRail(): ReactNode {
   const setFilesPanelTab = useReviewStore((s) => s.setFilesPanelTab);
   const activeTab = useReviewStore((s) => s.filesPanelTab);
   const comparison = useReviewStore((s) => s.comparison);
-  const { gitEnabled, gitChangeCount } = useGitTab();
+  const gitTab = useGitTab();
+  const { gitChangeCount } = gitTab;
 
-  const tabs = visibleFilesPanelTabs(comparison, gitEnabled);
+  const tabs = visibleFilesPanelTabs(comparison, gitTab);
 
   return (
     <Rail className="w-9 shrink-0 border-l border-edge bg-surface">

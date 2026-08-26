@@ -3,6 +3,7 @@ import { clsx } from "clsx";
 import { rankCandidates } from "../../lib/fuzzy";
 import type { WorktreeStatus } from "../../types";
 import {
+  chooseFolder,
   repoChoiceKey,
   shortPath,
   useRepoChoices,
@@ -37,6 +38,12 @@ const MAX_ROWS = 10;
  * facts on a row are the ones a git client would show — the branch, whether it
  * holds uncommitted work, whether Review made it, and whether anything in the
  * app is currently pointed at it.
+ *
+ * And it ends in "Open folder…", which is the same reason again: the list is
+ * every checkout the app knows about, so the one gesture it cannot offer as a
+ * row is the one that adds to it. `onPick` is how it leaves — the folder
+ * arrives as an ordinary `RepoChoice`, so both front doors open it exactly as
+ * they open a row.
  */
 export function RepoPicker({
   attached,
@@ -100,7 +107,17 @@ export function RepoPicker({
     return names;
   }, [shown]);
 
-  const at = Math.min(highlight, Math.max(shown.length - 1, 0));
+  // The folder row is the last row, always: it is what you reach for when
+  // nothing in the list is the answer, which includes the list being empty.
+  const rowCount = shown.length + 1;
+  const at = Math.min(highlight, rowCount - 1);
+  const folderRowAt = shown.length;
+
+  function openFolder(): void {
+    void chooseFolder().then((choice) => {
+      if (choice) onPick(choice);
+    });
+  }
 
   function handleKeyDown(event: React.KeyboardEvent): void {
     // Escape unwinds one step at a time: the query, then the focus — so the
@@ -121,12 +138,13 @@ export function RepoPicker({
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       const next = at + (event.key === "ArrowDown" ? 1 : -1);
-      if (next >= 0 && next < shown.length) setHighlight(next);
+      if (next >= 0 && next < rowCount) setHighlight(next);
       return;
     }
-    if (event.key === "Enter" && shown[at]) {
+    if (event.key === "Enter") {
       event.preventDefault();
-      onPick(shown[at]);
+      if (at === folderRowAt) openFolder();
+      else if (shown[at]) onPick(shown[at]);
     }
   }
 
@@ -274,6 +292,29 @@ export function RepoPicker({
           })
         )}
       </div>
+
+      {/* Outside the list, because it is not one of the repos: the list is what
+          the app already knows about, and this is how something it has never
+          seen gets in. Shown on every platform — the web build's picker is a
+          prompt for a path, which is the right question when the server is the
+          machine holding the folder. */}
+      <button
+        type="button"
+        onClick={openFolder}
+        onMouseMove={() => setHighlight(folderRowAt)}
+        className={clsx(
+          `mt-1 flex shrink-0 items-baseline gap-2 rounded-md border-t border-edge/60
+           px-2.5 py-1.5 text-left text-sm text-fg-muted outline-none
+           hover:bg-fg/[0.06] hover:text-fg-secondary
+           focus-visible:ring-1 focus-visible:ring-focus-ring/70`,
+          at === folderRowAt && "bg-fg/[0.06]",
+        )}
+      >
+        Open folder…
+        <span className="min-w-0 flex-1 truncate text-xs text-fg-faint">
+          any directory, repo or not
+        </span>
+      </button>
     </div>
   );
 }

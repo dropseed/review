@@ -11,6 +11,8 @@ import { isTauriEnvironment } from "../api/client";
 import { getPlatformServices } from "../platform";
 import { useReviewStore } from "../stores";
 import { makeReviewKey } from "../stores/slices/groupingSlice";
+import { openFolderInFocusedWorkspace } from "../components/Stage/repo-choices";
+import { landWorkspace } from "../commands/workspaceCommands";
 
 // Session storage key for the local repo path
 const REPO_PATH_KEY = "repoPath";
@@ -155,6 +157,19 @@ async function validateGitRepo(path: string): Promise<boolean> {
 export type RepoStatus =
   "loading" | "found" | "not_found" | "welcome" | "error";
 
+interface InitRepoOptions {
+  clearLogFile?: boolean;
+  /** Default true; the page-refresh path already has the record it read. */
+  storeInSession?: boolean;
+  /**
+   * Whether this is the app coming up (default) or a landing into an app that
+   * is already running. It decides history: a boot replaces the entry it is
+   * booting into and keeps a location already inside the review; a warm landing
+   * pushes a new one at the review root.
+   */
+  boot?: boolean;
+}
+
 interface UseRepositoryInitReturn {
   repoStatus: RepoStatus;
   repoError: string | null;
@@ -162,8 +177,8 @@ interface UseRepositoryInitReturn {
   initialLoading: boolean;
   setInitialLoading: (loading: boolean) => void;
   handleOpenRepo: () => Promise<void>;
+  openPath: (path: string) => Promise<void>;
   handleCloseRepo: () => void;
-  handleSelectRepo: (path: string) => Promise<void>;
   handleActivateReview: (review: GlobalReviewSummary) => Promise<void>;
   handleNewReview: (path: string, target: ReviewTarget) => Promise<void>;
   handleStartReview: (path: string, target: ReviewTarget) => Promise<void>;
@@ -219,6 +234,11 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       },
     ): Promise<void> => {
       setRepoPath(path);
+      // Explicitly, because `setRepoPath` resets it only when the path
+      // *changes*: `git init` in a folder already open as a plain directory
+      // reopens the same path as a repo, and is the one way in here that would
+      // otherwise keep drawing the standalone reader over a real checkout.
+      useReviewStore.setState({ isStandaloneFile: false });
       if (options?.clearLogFile) clearLog();
       setRepoStatus("found");
       setRepoError(null);
@@ -237,27 +257,33 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     },
   );
 
-  /** Enter standalone mode for a non-git path (file or directory). */
-  async function enterStandaloneMode(
+  /**
+   * Where the standalone reader lands for a raw path: the directory it shows,
+   * and the route that shows it.
+   *
+   * Split out because two callers need the *root* before the screen opens —
+   * a landing routes the workspace by it, and the attachment is the directory
+   * even when the path names a file inside it. One `pathIsFile` per landing.
+   */
+  async function standaloneTarget(
     rawPath: string,
-    options?: { clearLogFile?: boolean; replace?: boolean },
-  ): Promise<void> {
-    const apiClient = getApiClient();
-    const isFile = await apiClient.pathIsFile(rawPath);
-
-    let displayRoot: string;
-    let route: string;
-
-    if (isFile) {
-      const lastSlash = rawPath.lastIndexOf("/");
-      displayRoot = lastSlash > 0 ? rawPath.slice(0, lastSlash) : rawPath;
-      const fileName = lastSlash >= 0 ? rawPath.slice(lastSlash + 1) : rawPath;
-      route = `/standalone/browse/file/${fileName}`;
-    } else {
-      displayRoot = rawPath;
-      route = `/standalone/browse`;
+  ): Promise<{ displayRoot: string; route: string }> {
+    if (!(await getApiClient().pathIsFile(rawPath))) {
+      return { displayRoot: rawPath, route: "/standalone/browse" };
     }
+    const lastSlash = rawPath.lastIndexOf("/");
+    const fileName = lastSlash >= 0 ? rawPath.slice(lastSlash + 1) : rawPath;
+    return {
+      displayRoot: lastSlash > 0 ? rawPath.slice(0, lastSlash) : rawPath,
+      route: `/standalone/browse/file/${fileName}`,
+    };
+  }
 
+  /** Show a non-git path in the standalone reader. See [`standaloneTarget`]. */
+  function enterStandaloneMode(
+    { displayRoot, route }: { displayRoot: string; route: string },
+    options?: { clearLogFile?: boolean; replace?: boolean },
+  ): void {
     setRepoPath(displayRoot);
     useReviewStore.setState({ isStandaloneFile: true });
     if (options?.clearLogFile) clearLog();
@@ -268,46 +294,122 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     navigateRef.current(route, { replace: options?.replace });
   }
 
+  /**
+   * Switch to a repo+review, navigate, and mark the comparison ready.
+   *
+   * Cross-repo goes through `switchReview`, which resets every per-repo slice
+   * atomically; a comparison change *within* the repo is `setComparison`, so
+   * walking to another branch of the repo you are in doesn't throw away its
+   * search results, git status and symbols. A cold start is always the first
+   * case, `repoPath` being null.
+   */
+  async function initRepo(
+    path: string,
+    resolved: ResolvedReview,
+    options?: InitRepoOptions,
+  ): Promise<void> {
+    const crossRepo = path !== useReviewStore.getState().repoPath;
+    if (crossRepo) {
+      switchReview(path, resolved);
+      addRecentRepository(path);
+      if (options?.storeInSession !== false) storeRepoPath(path);
+    } else {
+      setComparison(resolved);
+    }
+    if (options?.clearLogFile) clearLog();
+    setRepoStatus("found");
+    setRepoError(null);
+
+    setActiveReviewKey({ repoPath: path, ref: resolved.ref });
+    await ensureReviewExists(path, resolved.ref, resolved.baseOverride);
+
+    const { routePrefix } = await resolveRepoIdentity(path);
+    const canonical = reviewUrl(routePrefix, resolved.ref);
+    // A boot canonicalizes the *review*, not the whole location: a URL already
+    // inside this review — `/…/review/master/file/src/main.rs` — is not a route
+    // to clean up, it is where the link pointed. Replacing it with the bare
+    // review URL is what made opening a link to a file land on the file list,
+    // which the desktop app hid by restoring its own last repo instead of
+    // booting from a URL. An installed PWA has nothing else to boot from. And
+    // it *replaces*, because the entry being booted into is this one.
+    //
+    // A warm landing is a navigation instead: it pushes, so Back returns to
+    // wherever the person was, and it goes to the review root rather than
+    // keeping the previous location's file segment — it carries its own focused
+    // file through `setPendingDeepLinkFocus`, and the two would disagree.
+    const boot = options?.boot !== false;
+    const here = window.location.pathname;
+    const inside = boot && here.startsWith(`${canonical}/`);
+    navigateRef.current(inside ? here : canonical, { replace: boot });
+
+    setComparisonReady((c) => c + 1);
+    setInitialLoading(true);
+    loadGlobalReviews();
+  }
+
+  // The three landings, and the only way in for anything arriving from outside
+  // the app: the `review` CLI (cold and warm, which the `review://` deep link
+  // and Finder's "Open with" share), the URL deep link, the launch directory,
+  // and a page refresh. Each routes the workspace and *then* opens the screen.
+  //
+  // Both halves of that are load-bearing. **Route**, because these used to
+  // write only the legacy repo state, so the code half swapped while the repo
+  // tab strip went on showing another workspace's tabs — or none. **First**,
+  // because the launch claims the stage the moment `repoPath` is set, and a
+  // focus still in flight then lets `useWorkspaceRestore` read a claimed stage
+  // that derivation cannot place and take the focus to `lastWorkspaceId`,
+  // drawing its tabs over this landing's diff for a round trip; it is also what
+  // puts the attachment in place before `setActiveReviewKey` checks for it.
+  //
+  // The screen stays the caller's rather than `focusWorkspace`'s: these carry
+  // `ensureReviewExists`, the session record and the deep-link focus ordering,
+  // and on a cold start `activateReviewKey` finds no sidebar row (that load
+  // hasn't run) and falls through to the local-branch handler, which reads
+  // read-only preview off an empty `localActivity` — every CLI landing would
+  // open read-only.
+  //
+  // A tab click reaches `openBrowseMode`/`enterStandaloneMode` through
+  // `openPath` instead, with no routing: it is already in a workspace, and
+  // routing there would move the focus.
+
+  /** Land a comparison. */
+  async function landReview(
+    path: string,
+    resolved: ResolvedReview,
+    options?: InitRepoOptions,
+  ): Promise<void> {
+    await landWorkspace(path, resolved.ref);
+    await initRepo(path, resolved, options);
+  }
+
+  /** Land a repo with no comparison: its files at whatever is checked out. */
+  async function landBrowse(
+    path: string,
+    options?: {
+      clearLogFile?: boolean;
+      replace?: boolean;
+      focusedFile?: string | null;
+    },
+  ): Promise<void> {
+    await landWorkspace(path, null);
+    await openBrowseModeRef.current(path, options);
+  }
+
+  /** Land a non-git path. The workspace attaches the *directory*, not a file. */
+  async function landStandalone(
+    rawPath: string,
+    options?: { clearLogFile?: boolean; replace?: boolean },
+  ): Promise<void> {
+    const target = await standaloneTarget(rawPath);
+    await landWorkspace(target.displayRoot, null);
+    enterStandaloneMode(target, options);
+  }
+
   // Initialize repo path from URL or API, then navigate to clean route.
   // Each branch determines the comparison FIRST, then calls switchReview().
   useEffect(() => {
     if (hasInitializedRef.current) return;
     hasInitializedRef.current = true;
-
-    /** Shared activation: switch to a repo+review, navigate, and mark ready. */
-    async function initRepo(
-      path: string,
-      resolved: ResolvedReview,
-      options?: { clearLogFile?: boolean; storeInSession?: boolean },
-    ): Promise<void> {
-      switchReview(path, resolved);
-      if (options?.clearLogFile) clearLog();
-      setRepoStatus("found");
-      addRecentRepository(path);
-      if (options?.storeInSession) storeRepoPath(path);
-
-      setActiveReviewKey({
-        repoPath: path,
-        ref: resolved.ref,
-      });
-      await ensureReviewExists(path, resolved.ref, resolved.baseOverride);
-
-      const { routePrefix } = await resolveRepoIdentity(path);
-      // Canonicalize the *review*, not the whole location: a URL already
-      // inside this review — `/…/review/master/file/src/main.rs` — is not a
-      // route to clean up, it is where the link pointed. Replacing it with the
-      // bare review URL is what made opening a link to a file land on the file
-      // list, which the desktop app hid by restoring its own last repo instead
-      // of booting from a URL. An installed PWA has nothing else to boot from.
-      const canonical = reviewUrl(routePrefix, resolved.ref);
-      const here = window.location.pathname;
-      const destination = here.startsWith(`${canonical}/`) ? here : canonical;
-      navigateRef.current(destination, { replace: true });
-
-      setComparisonReady((c) => c + 1);
-      setInitialLoading(true);
-      loadGlobalReviews();
-    }
 
     const init = async () => {
       // In browser mode, try to resolve a repo from the URL path (e.g. /owner/repo/...)
@@ -316,15 +418,12 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         const urlRef = refFromReviewPath(window.location.pathname);
 
         if (window.location.pathname.includes("/browse")) {
-          await openBrowseModeRef.current(urlRepoPath_, { replace: true });
+          await landBrowse(urlRepoPath_, { replace: true });
           return;
         }
 
         const resolved = await resolveTarget(urlRepoPath_, urlRef);
-        await initRepo(urlRepoPath_, resolved, {
-          clearLogFile: true,
-          storeInSession: true,
-        });
+        await landReview(urlRepoPath_, resolved, { clearLogFile: true });
         return;
       }
 
@@ -339,7 +438,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
           const isRepo = await apiClient.isGitRepo(cliRequest.repoPath);
 
           if (!isRepo) {
-            await enterStandaloneMode(cliRequest.repoPath, {
+            await landStandalone(cliRequest.repoPath, {
               clearLogFile: true,
               replace: true,
             });
@@ -358,13 +457,15 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
                 hunkHash: cliRequest.focusedHunkHash,
               });
             }
-            await initRepo(cliRequest.repoPath, resolved, {
+            // `resolved.ref`, not the spec as typed: that is what the tab ends
+            // up pointed at, so the attachment's hint and the comparison on
+            // screen say the same thing.
+            await landReview(cliRequest.repoPath, resolved, {
               clearLogFile: true,
-              storeInSession: true,
             });
           } else {
             // review <path> — open in browse mode
-            await openBrowseModeRef.current(cliRequest.repoPath, {
+            await landBrowse(cliRequest.repoPath, {
               clearLogFile: true,
               replace: true,
               focusedFile: cliRequest.focusedFile,
@@ -387,6 +488,13 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
           return;
         }
 
+        // A refresh lands like anything else. It looks like it shouldn't have
+        // to — the workspace was made when this repo was first opened — but a
+        // router-made one is `autoCreated`, so `work::cleanup` reaps it a
+        // minute later if no terminal was started in it, and the reload after
+        // that finds the repo belonging to nobody. Routing is idempotent when
+        // one does still hold it.
+
         // Check if we were in standalone mode (non-git file/directory)
         if (window.location.pathname.startsWith("/standalone/browse")) {
           const fileMatch = window.location.pathname.match(
@@ -395,20 +503,22 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
           const rawPath = fileMatch
             ? `${storedPath}/${decodeURIComponent(fileMatch[1])}`
             : storedPath;
-          await enterStandaloneMode(rawPath, { replace: true });
+          // The stored root, not `rawPath`: a deep-linked file is inside the
+          // directory, and the attachment is the directory.
+          await landStandalone(rawPath, { replace: true });
           return;
         }
 
         // Check if we were in browse mode
         if (window.location.pathname.includes("/browse")) {
-          await openBrowseModeRef.current(storedPath, { replace: true });
+          await landBrowse(storedPath, { replace: true });
           return;
         }
 
         // Try to recover the review ref from the current URL path
         const urlRef = refFromReviewPath(window.location.pathname);
         const resolved = await resolveTarget(storedPath, urlRef);
-        await initRepo(storedPath, resolved);
+        await landReview(storedPath, resolved, { storeInSession: false });
         return;
       }
 
@@ -417,10 +527,8 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       try {
         const path = await apiClient.getCurrentRepo();
         const resolved = await resolveTarget(path, null);
-        await initRepo(path, resolved, {
-          clearLogFile: true,
-          storeInSession: true,
-        });
+        // The directory the app was launched from is a landing like any other.
+        await landReview(path, resolved, { clearLogFile: true });
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
         if (
@@ -438,9 +546,9 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     };
 
     init();
-    // `enterStandaloneMode` is a plain function declared in the hook body, so
-    // it is a new value every render — listing it here would turn a one-shot
-    // init into an every-render one. Everything else in this list is a stable
+    // The three landings are plain functions declared in the hook body, so each
+    // is a new value every render — listing them here would turn a one-shot
+    // init into an every-render one. Everything in this list is a stable
     // Zustand action, which is what keeps the effect one-shot.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -473,15 +581,13 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         const apiClient = getApiClient();
         const isRepo = await apiClient.isGitRepo(repoPath);
         if (!isRepo) {
-          await enterStandaloneMode(repoPath);
+          await landStandalone(repoPath);
           return;
         }
 
         if (!ref) {
           // No ref — open in browse mode
-          await openBrowseModeRef.current(repoPath, {
-            focusedFile: data?.focusedFile,
-          });
+          await landBrowse(repoPath, { focusedFile: data?.focusedFile });
           return;
         }
 
@@ -492,39 +598,15 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
           });
         }
 
-        const resolved = await resolveTarget(repoPath, ref);
-
-        const state = useReviewStore.getState();
-        const { routePrefix } = await resolveRepoIdentity(repoPath);
-
-        setActiveReviewKey({
-          repoPath,
-          ref: resolved.ref,
+        await landReview(repoPath, await resolveTarget(repoPath, ref), {
+          boot: false,
         });
-        await ensureReviewExists(repoPath, resolved.ref, resolved.baseOverride);
-
-        if (repoPath !== state.repoPath) {
-          // Cross-repo switch — atomic update
-          switchReview(repoPath, resolved);
-          setRepoStatus("found");
-          setRepoError(null);
-          addRecentRepository(repoPath);
-          storeRepoPath(repoPath);
-        } else {
-          // Same repo — just switch review
-          setComparison(resolved);
-        }
-
-        setComparisonReady((c) => c + 1);
-        setInitialLoading(true);
-        navigateRef.current(reviewUrl(routePrefix, resolved.ref));
-        loadGlobalReviews();
       },
     );
 
     return unlisten;
-    // Same as above: `enterStandaloneMode` is re-created each render, and this
-    // effect registers a listener that must be registered once.
+    // Same as above: the landings are re-created each render, and this effect
+    // registers a listener that must be registered once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     switchReview,
@@ -545,25 +627,36 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     navigateRef.current("/");
   }, [setRepoPath]);
 
-  // Handle selecting a repo (from welcome page recent list or tab rail)
-  const handleSelectRepo = useCallback(async (path: string) => {
-    if (!(await validateGitRepo(path))) return;
-    await openBrowseModeRef.current(path);
-  }, []);
+  /**
+   * Show a path with no comparison — the code half's answer to "open this
+   * folder", whatever the folder turns out to be.
+   *
+   * git decides, not the caller: a repo browses its files at the checkout, and
+   * anything else degrades to the standalone reader. Neither leaves the
+   * workspace — both set `repoPath` to the same path the attachment names,
+   * which is what `repoOnScreen` derives the focus from.
+   */
+  async function openPath(path: string): Promise<void> {
+    if (await getApiClient().isGitRepo(path)) {
+      await openBrowseModeRef.current(path);
+      return;
+    }
+    enterStandaloneMode(await standaloneTarget(path));
+  }
 
-  // Open a repository in browse mode (standard Cmd+O behavior)
+  // ⌘O: pick a folder and open it in the focused workspace.
+  //
+  // It used to validate the pick as a git repository and land in browse mode
+  // outside the workspace model, which made the app's oldest shortcut the one
+  // gesture that produced a screen no card in the queue stood for. It is the
+  // repo picker's "Open folder…" now, reached by keystroke — same dialog, same
+  // attach, same landing — and it no longer refuses a plain directory, because
+  // the code half can show one.
   const handleOpenRepo = useCallback(async () => {
-    const platform = getPlatformServices();
     try {
-      const selected = await platform.dialogs.openDirectory({
-        title: "Open Repository",
-      });
-      if (selected) {
-        if (!(await validateGitRepo(selected))) return;
-        await openBrowseModeRef.current(selected);
-      }
+      await openFolderInFocusedWorkspace();
     } catch (err) {
-      console.error("Failed to open repository:", err);
+      console.error("Failed to open folder:", err);
     }
   }, []);
 
@@ -755,8 +848,8 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     initialLoading,
     setInitialLoading,
     handleOpenRepo,
+    openPath,
     handleCloseRepo,
-    handleSelectRepo,
     handleActivateReview,
     handleNewReview,
     handleStartReview,

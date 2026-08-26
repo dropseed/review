@@ -16,7 +16,6 @@ import { ephemeralView } from "../stores/selectors/viewpoint";
 import { StartReviewButton } from "./StartReviewButton";
 import { getApiClient } from "../api";
 import {
-  useMenuEvents,
   useFileWatcher,
   useKeyboardNavigation,
   useMouseNavigation,
@@ -202,8 +201,6 @@ export function ReviewView({ comparisonReady }: ReviewViewProps): ReactNode {
   // Hold deep-link focus until the diff is real again — consuming it against the
   // all-deleted diff behind the notice would drop the requested hunk.
   useDeepLinkFocus(!compareRefMissing);
-
-  useMenuEvents();
 
   useFileWatcher(comparisonReady);
   useLspClient();

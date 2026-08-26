@@ -1,8 +1,18 @@
 import { describe, it, expect } from "vitest";
 import { makeComparison } from "../../types";
 import { visibleFilesPanelTabs } from "./tabs";
+import type { GitTab } from "./hooks/useFilePanelNavigation";
 
 const ids = (tabs: { id: string }[]) => tabs.map((t) => t.id);
+
+/**
+ * What `useGitTab` would have answered. Which condition failed — and so which
+ * words the tooltip gets — is decided there; this file only checks that the
+ * table renders the answer it is handed.
+ */
+function git(gitEnabled: boolean, disabledReason?: string): GitTab {
+  return { gitEnabled, gitChangeCount: 0, disabledReason };
+}
 
 describe("the files panel's tabs", () => {
   it("keeps Git in the row and greys it out instead of dropping it", () => {
@@ -10,29 +20,32 @@ describe("the files panel's tabs", () => {
     // cursor and leaves no way to tell "nothing to stage" from "gone".
     const tabs = visibleFilesPanelTabs(
       makeComparison("main", "refs/review/pr/7"),
-      false,
+      git(false, "#7 isn't checked out"),
     );
     expect(ids(tabs)).toEqual(["git", "changes", "browse"]);
 
-    const git = tabs.find((t) => t.id === "git")!;
-    expect(git.disabled).toBe(true);
-    // The reason is one hover away, said in the words of what is on screen —
-    // nobody calls a PR `refs/review/pr/7` out loud.
-    expect(git.disabledReason).toBe("#7 isn't checked out");
+    const tab = tabs.find((t) => t.id === "git")!;
+    expect(tab.disabled).toBe(true);
+    // Whatever `useGitTab` decided, verbatim — the words are its business, and
+    // `git-tab.test.tsx` is where each of them is checked.
+    expect(tab.disabledReason).toBe("#7 isn't checked out");
   });
 
   it("enables Git when the head on screen is the working tree", () => {
-    const git = visibleFilesPanelTabs(
+    const tab = visibleFilesPanelTabs(
       makeComparison("main", "feature"),
-      true,
+      git(true),
     ).find((t) => t.id === "git")!;
-    expect(git.disabled).toBe(false);
-    expect(git.disabledReason).toBeUndefined();
+    expect(tab.disabled).toBe(false);
+    expect(tab.disabledReason).toBeUndefined();
   });
 
   /** Review is the one still withheld: with nothing to compare it isn't
    *  empty, it is meaningless. */
   it("withholds Review only when there is no comparison at all", () => {
-    expect(ids(visibleFilesPanelTabs(null, false))).toEqual(["git", "browse"]);
+    expect(ids(visibleFilesPanelTabs(null, git(false)))).toEqual([
+      "git",
+      "browse",
+    ]);
   });
 });

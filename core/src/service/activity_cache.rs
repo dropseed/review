@@ -310,3 +310,46 @@ pub fn invalidate(repo_path: &Path) {
         });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::review::central::register_repo;
+    use crate::review::central::tests::{setup_test, ENV_LOCK};
+    use crate::test_git::git;
+
+    /// A repository with no commits is a repository. Everything above this
+    /// reads the sidebar's tree out of `snapshot_all`, so a repo that produced
+    /// no activity would show no rows — and an attachment pointing at it would
+    /// have nothing to open, which is precisely the state a freshly
+    /// `git init`-ed directory is in.
+    #[test]
+    fn a_repo_with_no_commits_still_has_a_row() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _home, repo) = setup_test();
+        git(repo.path(), &["init", "-q", "-b", "trunk"]);
+        // Something to review: the working tree is all an unborn branch has.
+        std::fs::write(repo.path().join("a.txt"), "one\n").unwrap();
+        register_repo(repo.path()).unwrap();
+
+        let snapshot = snapshot_all().unwrap();
+        let activity = snapshot
+            .iter()
+            .find(|a| a.repo_name == repo.path().file_name().unwrap().to_string_lossy())
+            .expect("the registered repo is in the snapshot");
+
+        // The unborn branch names itself rather than falling back to "HEAD" or
+        // to the "main" default `build_activity` uses when it cannot ask.
+        assert_eq!(activity.default_branch, "trunk");
+        let branch = activity
+            .branches
+            .iter()
+            .find(|b| b.name == "trunk")
+            .expect("the unborn branch is listed");
+        assert!(branch.is_current);
+        assert!(
+            branch.has_working_tree_changes,
+            "the untracked file is what there is to review"
+        );
+    }
+}

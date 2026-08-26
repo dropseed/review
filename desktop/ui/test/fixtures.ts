@@ -73,12 +73,13 @@ function derivedTitle(attachments: Attachment[]): string {
   return first ? attachmentLabel(first) : "Untitled";
 }
 
-/** One repo tab. */
+/** One repo tab. A git repo unless the case is about a plain directory. */
 export function attachment(
   path: string,
   refName: string | null = null,
+  isGitRepo = true,
 ): Attachment {
-  return { path, refName };
+  return { path, refName, isGitRepo };
 }
 
 /** A local branch, quiet unless overridden. */

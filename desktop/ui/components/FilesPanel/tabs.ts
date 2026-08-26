@@ -1,7 +1,7 @@
 import type { ComponentType } from "react";
 import { BranchIcon, DiffIcon, FileIcon, type IconProps } from "../ui/icons";
 import type { Comparison } from "../../types";
-import { refLabel } from "./refLabel";
+import type { GitTab } from "./hooks/useFilePanelNavigation";
 import type { FilesPanelTab } from "./types";
 
 /**
@@ -61,22 +61,19 @@ export interface FilesPanelTabState extends FilesPanelTabSpec {
  * leaves no way to tell "nothing to stage" from "where did that go". Review is
  * the one that is still withheld, because with no comparison at all it is not
  * empty, it is meaningless.
+ *
+ * Whether Git applies, and why it doesn't, are both `useGitTab`'s answer — it
+ * is where the condition is decided. This only renders it.
  */
 export function visibleFilesPanelTabs(
   comparison: Comparison | null,
-  gitEnabled: boolean,
+  git: GitTab,
 ): FilesPanelTabState[] {
   return FILES_PANEL_TABS.filter(
     (tab) => tab.id !== "changes" || comparison,
   ).map((tab) =>
-    tab.id === "git" && !gitEnabled
-      ? {
-          ...tab,
-          disabled: true,
-          disabledReason: comparison
-            ? `${refLabel(comparison.head)} isn't checked out`
-            : "Nothing here is checked out",
-        }
+    tab.id === "git" && !git.gitEnabled
+      ? { ...tab, disabled: true, disabledReason: git.disabledReason }
       : { ...tab, disabled: false },
   );
 }

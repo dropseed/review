@@ -184,4 +184,28 @@ describe("native menu parity", () => {
     const ids = STATIC_COMMANDS.map((c) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
+
+  /**
+   * The listener has to be mounted where the app always is, not where a review
+   * is — see the call site in `router.tsx` for why a deeper mount does not
+   * degrade to "the shortcut still works".
+   *
+   * Read off the source for the same reason the rest of this file is: the thing
+   * being asserted is *where a hook is called*, which no rendered test of either
+   * component can see.
+   */
+  it("mounts the menu listener at the shell, not inside the review", () => {
+    const called = (file: string) =>
+      /^\s*useMenuEvents\(\);/m.test(
+        readFileSync(resolve(process.cwd(), "ui", file), "utf8"),
+      );
+
+    expect(called("router.tsx"), "router.tsx must call useMenuEvents()").toBe(
+      true,
+    );
+    expect(
+      called("components/ReviewView.tsx"),
+      "ReviewView must not: the router only draws it on the repo routes",
+    ).toBe(false);
+  });
 });

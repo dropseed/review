@@ -211,14 +211,9 @@ fn run_list(json: bool) -> Result<(), String> {
     // `reorder` takes — with the indent saying which workspace sits under which.
     for (i, view) in views.iter().enumerate() {
         let indent = "  ".repeat(view.depth);
-        println!(
-            "{}. {indent}{}  {}",
-            i + 1,
-            view.display_title,
-            view.workspace.id
-        );
-        for attachment in &view.workspace.attachments {
-            println!("     {indent}{}", attachment.label());
+        println!("{}. {indent}{}  {}", i + 1, view.display_title, view.id);
+        for attachment in &view.attachments {
+            println!("     {indent}{}", attachment.attachment.label());
         }
     }
     Ok(())

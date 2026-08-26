@@ -159,6 +159,31 @@ Only the `terminal` feature needs this, so only `review-daemon` (and `cargo test
 - **Workspace**: One thing the user is working on — an optional title and an ordered list of **attachments**. It is a container that becomes whatever is put in it. Everything live (terminals, PRs, review state) is derived and joined against its attachments, or against the workspace id the daemon stamps on a session.
 - **Attachment**: `{path, refName?}` — a repository (or a plain directory) the workspace shows, plus an optional view hint. **Not exclusive**: any number of workspaces may attach the same path, and a workspace shows a path at most once. Nothing here conflicts.
 
+## An attachment is a path, not a promise of a repo
+
+A workspace attaches whatever it is pointed at. A repository with no commits is
+one (the git layer already names an unborn branch and diffs it against the empty
+tree), and so is a directory that is not a repository at all — browsable, and
+nothing more. Two derived facts carry the difference, neither of them stored:
+
+- **`isGitRepo`** rides on each attachment in `WorkspaceView` (the wire shape
+  every surface reads the queue through) and is read at serialization time, so
+  `git init` in an attached directory flips it with no write to `work.json`. It
+  is what tells a surface which half of itself to draw: everything built on a
+  diff — comparisons, hunks, review state, the branch picker — has nothing to
+  say about a plain directory, which gets a file listing
+  (`list_directory_plain`) instead.
+- **Registration.** The sidebar's tree is built from the _registered_ repos
+  (`central::list_registered_repos` → `activity_cache::snapshot_all`), so
+  attaching now registers: `work::add`, `work::attach` and the router's
+  auto-attach all call `work::register_attachments`, and a repo a card shows
+  therefore has an activity row without anyone opening it first. It goes through
+  `central::ensure_registered` rather than `register_repo`, because a repo that
+  arrived by being attached has not been _used_ and must not reorder the
+  recency-sorted list. It is the git registry, so plain directories stay out of
+  it — everything reading it needs a `LocalGitSource`, and `is_working_tree` is
+  the one predicate the registry, `LocalGitSource::new` and `isGitRepo` all ask.
+
 ## Workspaces nest
 
 A workspace may sit under another (`parentId`), to any depth — how one that is
@@ -241,7 +266,7 @@ The **guide** is an agent-authored grouping of a comparison's hunks into a theme
 - `review workspace add ["title"]` — the title is optional; adds always append
 - `review workspace reorder <id> <position>` (1-based, `--keep-parent` to stay in the group) · `review workspace rename <id> ["title"]` (no title clears it) · `review workspace remove <id> [--recursive]`
 - `review workspace nest <id> --under <id>` · `review workspace unnest <id>` — a workspace may sit under another, to any depth; `list` indents to show it and `--json` carries `parentId`, `depth` and `ancestors`
-- `review workspace attach <id> [PATH] [--ref REF]` · `review workspace detach <id> [PATH]` — PATH defaults to the current directory
+- `review workspace attach <id> [PATH] [--ref REF]` · `review workspace detach <id> [PATH]` — PATH defaults to the current directory; a repository is registered on attach, and a plain directory attaches just the same (`--json` carries `isGitRepo` per attachment)
 - `review workspace resolve [DIR]` — preview a route without writing
 - `<id>` accepts unique prefixes
 

@@ -627,9 +627,15 @@ pub fn work_detach(id: String, path: String) -> Result<Vec<WorkspaceView>, Strin
 #[serde(rename_all = "camelCase")]
 pub struct RouteLanding {
     workspace: WorkspaceView,
-    /// Whether getting here minted the workspace — a queue entry the frontend
-    /// does not have yet, and the reason it re-reads the list.
+    /// Whether getting here minted the workspace.
     created: bool,
+    /// The whole queue as it now stands — the same thing `work_add` and
+    /// `work_attach` return, and for the same reason. Routing can add a
+    /// workspace, so the caller needs the new list; it already had to be read
+    /// here to resolve `workspace`'s ancestry, and handing it back is what
+    /// spares the frontend a second round trip for a list this call was holding
+    /// anyway.
+    workspaces: Vec<WorkspaceView>,
 }
 
 /// Route a repo+branch to its workspace and commit that — the front door ⌘K
@@ -668,12 +674,11 @@ pub async fn work_route(
         landing.created,
         t0.elapsed()
     );
+    let queue = review::work::list().map_err(|e| e.to_string())?.workspaces;
     Ok(RouteLanding {
-        workspace: review::work::view_of(
-            &review::work::list().map_err(|e| e.to_string())?.workspaces,
-            landing.workspace,
-        ),
+        workspace: review::work::view_of(&queue, landing.workspace),
         created: landing.created,
+        workspaces: review::work::views(queue),
     })
 }
 

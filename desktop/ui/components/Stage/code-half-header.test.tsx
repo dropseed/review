@@ -139,6 +139,20 @@ describe("the repo tab bar", () => {
     expect(tabs()[1].getAttribute("aria-current")).toBeNull();
   });
 
+  /**
+   * A folder opened as a folder has no comparison to name it, and it is still
+   * the tab you are reading — an unmarked strip there says the app has lost
+   * track of where you are.
+   */
+  it("marks the tab of a repo opened with no comparison", () => {
+    seed();
+    useReviewStore.setState({ activeReviewKey: null, repoPath: B });
+    render(<CodeHalfHeader />);
+
+    expect(tabs()[0].getAttribute("aria-current")).toBeNull();
+    expect(tabs()[1].getAttribute("aria-current")).toBe("true");
+  });
+
   it("opens the attachment's comparison when its tab is clicked", () => {
     seed();
     render(<CodeHalfHeader />);
