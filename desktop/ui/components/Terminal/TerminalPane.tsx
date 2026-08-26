@@ -1,8 +1,15 @@
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { Terminal } from "@xterm/xterm";
 import { getApiClient } from "../../api";
 import { useReviewStore } from "../../stores";
 import { useIsCompact } from "../../hooks/useIsCompact";
+import { useIsTouchPrimary } from "../../hooks/useIsTouchPrimary";
 import {
   MAX_KEYS_PER_DRAG_EVENT,
   acquireTerminal,
@@ -42,6 +49,12 @@ import {
   pinchSteps,
   touchDistance,
 } from "./touch-gestures";
+import { createLongPress } from "./long-press";
+import { snapshotRows } from "./selection-text";
+import {
+  type SelectionLayout,
+  TerminalSelectionOverlay,
+} from "./TerminalSelectionOverlay";
 import { decodeBase64 } from "./base64";
 import "@xterm/xterm/css/xterm.css";
 import "./terminal.css";
@@ -115,6 +128,12 @@ export function TerminalPane({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const compact = useIsCompact();
+  // Selecting is gated on the device rather than the width, like the key bar
+  // and for the same reason: a canvas has no selection handles on any
+  // touchscreen, and an iPad in landscape is wide and still has only fingers.
+  const touchPrimary = useIsTouchPrimary();
+  const touchPrimaryRef = useRef(touchPrimary);
+  touchPrimaryRef.current = touchPrimary;
   // Compact degrades to a viewer and writes nothing back — a phone visit must
   // not reflow the session out from under a desktop that is still sized to it.
   const isViewer = viewer || compact;
@@ -127,11 +146,27 @@ export function TerminalPane({
   /** Owner only: the grid another client claimed, or null when this pane's. */
   const [remoteSize, setRemoteSize] = useState<GridSize | null>(null);
   const remoteSizeRef = useRef<GridSize | null>(null);
-  /** Viewer only: the scale the grid is drawn at (1 = fits naturally). */
-  const [viewScale, setViewScale] = useState(1);
-  /** The same number, readable from the touch handlers without re-binding
+  /**
+   * Where the drawing sits in this pane and what it is scaled by — null until
+   * the first layout. One answer for two readers: the "Fit to screen" button
+   * appears only below scale 1, and the selection overlay has to be positioned
+   * on exactly these numbers rather than measuring the canvas a second time.
+   */
+  const [layout, setLayout] = useState<SelectionLayout | null>(null);
+  const viewScale = layout?.scale ?? 1;
+  /** The same scale, readable from the touch handlers without re-binding
    *  them every time the drawing rescales. */
   const scaleRef = useRef(1);
+  /**
+   * Select mode: the frozen screen a long press put on top of the terminal,
+   * and the cell it was pressed on. Null the rest of the time, which is nearly
+   * always — see TerminalSelectionOverlay.
+   */
+  const [selecting, setSelecting] = useState<{
+    rows: string[];
+    at: { row: number; col: number } | null;
+  } | null>(null);
+  const exitSelect = useCallback(() => setSelecting(null), []);
   /** Owner reclaim (fit + resize), reachable from render handlers. */
   const reclaimRef = useRef<(() => void) | null>(null);
   /** Whether this client's live-output transport is currently down, and
@@ -166,7 +201,8 @@ export function TerminalPane({
     remoteSizeRef.current = null;
     setRemoteSize(null);
     scaleRef.current = 1;
-    setViewScale(1);
+    setLayout(null);
+    setSelecting(null);
 
     // Consume the "fresh" flag before acquiring — a freshly created session has
     // no scrollback to replay.
@@ -207,6 +243,33 @@ export function TerminalPane({
 
     // ----- Layout: one grid, drawn at scale or fitted -----
 
+    /** Publish the drawing's box, for the two readers that need it. */
+    const publishLayout = (next: SelectionLayout | null) => {
+      setLayout((cur) => (sameLayout(cur, next) ? cur : next));
+    };
+
+    /**
+     * The unscaled case: the drawing is wherever normal flow put it. Measured
+     * rather than derived, because that is the only way to ask — and only on
+     * the paths that just laid the terminal out, never per frame.
+     */
+    const publishFlowLayout = () => {
+      const screen = term.element?.querySelector<HTMLElement>(".xterm-screen");
+      if (!screen?.offsetWidth || !screen.offsetHeight) {
+        publishLayout(null);
+        return;
+      }
+      const box = screen.getBoundingClientRect();
+      const host = container.getBoundingClientRect();
+      publishLayout({
+        left: box.left - host.left,
+        top: box.top - host.top,
+        width: screen.offsetWidth,
+        height: screen.offsetHeight,
+        scale: 1,
+      });
+    };
+
     /**
      * Draw the grid at its true size, scaled down (never up) to fit the
      * container and centered. The element gets its natural size explicitly so
@@ -217,6 +280,9 @@ export function TerminalPane({
      * bounding rect by unscaled cell sizes, so click-to-select and
      * mouse-reporting land cells off. Scaled panes are glance surfaces —
      * reading and typing are exact; precise mouse work happens at scale 1.
+     * Selecting text is the exception, and the reason the numbers below are
+     * published rather than kept: a long press draws its own DOM text at
+     * exactly this box, which is right at any scale (see `selecting`).
      */
     const applyScaledLayout = () => {
       const el = term.element;
@@ -229,12 +295,12 @@ export function TerminalPane({
       const ch = container.clientHeight;
       if (!w || !h || !cw || !ch) return;
       const s = Math.min(1, cw / w, ch / h);
+      const left = Math.max(0, (cw - w * s) / 2);
+      const top = Math.max(0, (ch - h * s) / 2);
       el.style.width = `${w}px`;
       el.style.height = `${h}px`;
       el.style.transformOrigin = "top left";
-      el.style.transform =
-        `translate(${Math.max(0, (cw - w * s) / 2)}px, ` +
-        `${Math.max(0, (ch - h * s) / 2)}px) scale(${s})`;
+      el.style.transform = `translate(${left}px, ${top}px) scale(${s})`;
       // Nothing here changed the grid, so xterm doesn't know to repaint — but
       // the pane may have just become visible (compact navigation re-parents
       // it), and a renderer that skipped painting while hidden stays blank
@@ -245,7 +311,7 @@ export function TerminalPane({
         /* disposed mid-layout */
       }
       scaleRef.current = s;
-      setViewScale(s);
+      publishLayout({ left, top, width: w, height: h, scale: s });
     };
 
     /** Back to normal flow — the element is the container's again. */
@@ -257,6 +323,7 @@ export function TerminalPane({
       el.style.height = "";
       el.style.transform = "";
       el.style.transformOrigin = "";
+      publishFlowLayout();
     };
 
     const scheduleScaledLayout = () => requestAnimationFrame(applyScaledLayout);
@@ -264,7 +331,11 @@ export function TerminalPane({
     /** Match the local xterm grid to the PTY's. Rendering raw PTY bytes at any
      *  other width draws garbage, not a smaller screen. */
     const regrid = ({ cols, rows }: GridSize) => {
-      if (term.cols !== cols || term.rows !== rows) term.resize(cols, rows);
+      if (term.cols === cols && term.rows === rows) return;
+      // A reflowed buffer is a different screen, and the snapshot lying on top
+      // of it is of the old one — its rows no longer line up with anything.
+      setSelecting(null);
+      term.resize(cols, rows);
     };
 
     /** The size this pane last asked the PTY for — how its own confirmation
@@ -287,6 +358,7 @@ export function TerminalPane({
         return;
       }
       lastSent = { cols: term.cols, rows: term.rows };
+      publishFlowLayout();
       client
         .terminalResize(id, term.cols, term.rows)
         .catch((err) => console.error("[terminal] Resize failed:", err));
@@ -410,7 +482,7 @@ export function TerminalPane({
     });
 
     // ----- Touch: the drag that scrolls, the swipe that moves the cursor,
-    //             and the pinch that sizes the text -----
+    //             the pinch that sizes the text, and the press that selects --
     //
     // Registered here rather than as React props because all of these have to
     // be able to cancel the browser's own gesture, and React's touch listeners
@@ -418,14 +490,17 @@ export function TerminalPane({
     // also carries `touch-none`, so iOS never claims the drag as a pan of the
     // page before the first move event arrives.
     //
-    // A gesture is one of three things and never two: a **drag**, which locks
+    // A gesture is one of four things and never two: a **drag**, which locks
     // to an axis on its first real movement and keeps it (vertical scrolls, or
     // walks a full-screen program's cursor; horizontal sends Left/Right, the
     // keys a phone has no room for and an agent's prompt is edited with); a
-    // **pinch**, the moment a second finger lands, which sizes the text; or a
-    // **tap**, which is a drag that never left the slop. The axis is decided
-    // from where the finger started rather than from the last move, so a
-    // wobble cannot flip a scroll into a swipe halfway down the screen.
+    // **pinch**, the moment a second finger lands, which sizes the text; a
+    // **press**, one finger held still past `LONG_PRESS_MS`, which opens the
+    // screen as selectable text; or a **tap**, which is a drag that never left
+    // the slop and never lasted. The axis is decided from where the finger
+    // started rather than from the last move, so a wobble cannot flip a scroll
+    // into a swipe halfway down the screen — and the press is cancelled by
+    // that same slop, so no travel is both.
 
     /** Live single-finger drag: where it began, where it was, what it became. */
     let drag: {
@@ -448,9 +523,33 @@ export function TerminalPane({
       size: number | null;
     } | null = null;
 
+    /**
+     * The fifth gesture: one finger, still, for long enough to have meant
+     * neither a tap nor a drag — which is the only way it can be told from
+     * them, since all of those start identically.
+     *
+     * Firing takes the terminal's visible screen as it stands and hands it to
+     * the overlay, where it is text a phone can select. The drag this press
+     * was still nominally part of is dropped in the same breath, so the lift
+     * that follows is not also a tap on a link.
+     */
+    const longPress = createLongPress({
+      slopPx: TOUCH_SLOP_PX,
+      onFire: (x, y) => {
+        const cell = cellAt(x, y);
+        drag = null;
+        endDrag(term);
+        setSelecting({
+          rows: snapshotRows(term.buffer.active, term.rows),
+          at: cell,
+        });
+      },
+    });
+
     /** Two fingers on the glass, however they got there. */
     const beginPinch = (event: TouchEvent) => {
       drag = null;
+      longPress.cancel();
       endDrag(term);
       pinch = {
         startDistance: touchDistance(event.touches[0], event.touches[1]),
@@ -496,6 +595,11 @@ export function TerminalPane({
         axis: null,
         carryX: 0,
       };
+      // Only where fingers are the whole story. A mouse has a real selection
+      // already, and a trackpad that happened to send touches would start
+      // arming a mode nobody on that machine needs.
+      if (touchPrimaryRef.current)
+        longPress.start(touch.clientX, touch.clientY);
     };
 
     const onTouchMove = (event: TouchEvent) => {
@@ -516,6 +620,10 @@ export function TerminalPane({
       }
       if (!drag || event.touches.length !== 1) return;
       const touch = event.touches[0];
+      // Movement past the same slop that commits a drag is what says this was
+      // never a press — one threshold, so there is no band of travel that is
+      // both.
+      longPress.move(touch.clientX, touch.clientY);
       // The drawing may be scaled down, and the grid is measured in its own
       // unscaled pixels: a finger crossing a scaled pane crosses more cells
       // than the distance it travelled on glass.
@@ -574,6 +682,7 @@ export function TerminalPane({
     };
 
     const onTouchEnd = (event: TouchEvent) => {
+      longPress.cancel();
       if (pinch) {
         // Below two fingers there is no spread left to read. The finger that
         // may still be down is not a new drag — `drag` is null and only a
@@ -601,6 +710,7 @@ export function TerminalPane({
      * cancels an event, which is what lets this listener stay passive.
      */
     const onTouchCancel = () => {
+      longPress.cancel();
       if (pinch) {
         endPinch();
         return;
@@ -651,6 +761,7 @@ export function TerminalPane({
       container.removeEventListener("touchcancel", onTouchCancel);
       container.removeEventListener("gesturestart", onGesture);
       container.removeEventListener("gesturechange", onGesture);
+      longPress.cancel();
       endDrag(term);
       onDataDisposable.dispose();
       unsubGrid();
@@ -693,6 +804,32 @@ export function TerminalPane({
     );
     return () => clearTimeout(timer);
   }, [reconnecting]);
+
+  // A snapshot is out of date the moment the program prints anything, and
+  // there is no version of this that is right in both directions: refreshing
+  // under a live selection moves the text out from under the handles, which is
+  // worse than reading a screen that is a second old. So it catches up only
+  // while nothing is selected — putting the selection down is what makes it
+  // current again — and it does that no more often than the eye would notice.
+  const selectActive = selecting !== null;
+  useEffect(() => {
+    if (!selectActive) return;
+    const term = termRef.current;
+    if (!term) return;
+    let last = 0;
+    const sub = term.onRender(() => {
+      const now = Date.now();
+      if (now - last < SELECTION_REFRESH_MS) return;
+      const selection = window.getSelection();
+      if (selection && !selection.isCollapsed) return;
+      last = now;
+      const rows = snapshotRows(term.buffer.active, term.rows);
+      setSelecting((cur) =>
+        cur && !sameRows(cur.rows, rows) ? { ...cur, rows } : cur,
+      );
+    });
+    return () => sub.dispose();
+  }, [selectActive]);
 
   // Refit when this pane becomes active (it may have been sized 0 while hidden).
   useEffect(() => {
@@ -753,7 +890,7 @@ export function TerminalPane({
       {/* Compact's one way to change the shared grid, shown only while the
           drawing is actually scaled down. Deliberate by design: nothing on a
           phone resizes the PTY except this tap. */}
-      {compact && viewScale < 0.999 && (
+      {compact && viewScale < 0.999 && !selecting && (
         <button
           type="button"
           // Not a reason to focus the shell — the wrapper's mousedown would
@@ -768,6 +905,50 @@ export function TerminalPane({
           Fit to screen
         </button>
       )}
+
+      {/* What a long press put here: the visible screen as text, over the
+          canvas that cannot be selected. Mounted only while it is being used,
+          so nothing about the terminal's ordinary behaviour goes through it. */}
+      {selecting && layout && (
+        <TerminalSelectionOverlay
+          rows={selecting.rows}
+          at={selecting.at}
+          layout={layout}
+          font={{ fontFamily, fontSize, letterSpacing }}
+          onExit={exitSelect}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * How often a select-mode snapshot may catch up with the terminal under it.
+ *
+ * Only reached while nothing is selected, so this is not about correctness —
+ * it is about not rebuilding forty DOM rows on every frame of a program that
+ * is repainting continuously, which is what the terminals this app is for do.
+ */
+const SELECTION_REFRESH_MS = 250;
+
+/** Whether two snapshots say the same thing, so an idle screen re-renders
+ *  nothing. */
+function sameRows(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((row, i) => row === b[i]);
+}
+
+/** Whether the drawing's box has actually moved — a resize that lands on the
+ *  same numbers must not re-render the overlay sitting on them. */
+function sameLayout(
+  a: SelectionLayout | null,
+  b: SelectionLayout | null,
+): boolean {
+  if (a === null || b === null) return a === b;
+  return (
+    a.left === b.left &&
+    a.top === b.top &&
+    a.width === b.width &&
+    a.height === b.height &&
+    a.scale === b.scale
   );
 }
