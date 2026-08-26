@@ -61,9 +61,9 @@ pub mod cli;
 #[cfg(feature = "server")]
 pub mod server;
 
-// Web Push subscriptions and delivery. Gated with the server, which is what
-// serves the service worker that registers them.
-#[cfg(feature = "server")]
+// Web Push subscriptions and delivery. The server registers them; the CLI
+// (`review notify`, when built with `push`) sends to them.
+#[cfg(feature = "push")]
 pub mod push;
 
 // Re-export commonly used types

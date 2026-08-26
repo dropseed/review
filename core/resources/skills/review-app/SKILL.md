@@ -370,6 +370,19 @@ Kill the sessions you started (`review terminal kill <id>`), leave everyone
 else's alone, and tell the human what ran where — session ids included, so they
 can peek at the scrollback in the app.
 
+## Reaching the human's phone
+
+```
+review notify "Tests green on feature/x" --body "3 hunks still need you" --url /
+```
+
+Sends a push notification to every device the human has subscribed in the
+app's Settings → Push notifications. It always sends — no idle check — so use it
+for the moment they actually need to come back (a long run finished, you are
+blocked on a decision), not for progress chatter. `--tag` makes a later
+notification replace an earlier one with the same tag instead of stacking. It
+errors with a hint when no device is subscribed.
+
 ---
 
 # Part 3 — Workspaces

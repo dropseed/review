@@ -389,6 +389,16 @@ pub fn print_json<T: Serialize>(value: &T) {
     }
 }
 
+/// Run one future to completion from the synchronous CLI — a fresh
+/// current-thread runtime per call, which is all a one-shot command needs.
+pub(crate) fn block_on<F: std::future::Future>(fut: F) -> Result<F::Output, String> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| format!("Failed to start async runtime: {e}"))?;
+    Ok(runtime.block_on(fut))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

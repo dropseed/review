@@ -108,6 +108,10 @@ The origin gate needs no configuration for this — `tailscale serve` forwards t
 
 Serving the app over HTTPS on a real name is what makes it **installable**: a service worker needs a secure context, so a plain `http://100.x.x.x:7787` bind would show the site but never install it.
 
+### Push to the phone
+
+Web push rides on the tailnet PWA: the service worker (`desktop/public/sw.js`) subscribes against this instance's VAPID key, and `core/src/push.rs` keeps the key and every subscription in `~/.review/push.json` (same version-envelope write as `work.json`) and does the delivery. iOS only delivers to a PWA added to the Home Screen. Two senders: the desktop app's attention escalation (`desktop/tauri/src/desktop/notifications.rs`, which pushes only when you are away from the machine) and `review notify` (always). Both go straight to the file, so the CLI needs no app or server running. The whole thing sits behind the `push` cargo feature — implied by `server`, opt-in for `cli` because it pulls a TLS stack and a vendored OpenSSL into an otherwise light binary; `scripts/cli` and `scripts/build-cli` enable it.
+
 ## One PTY grid: owners and viewers
 
 A session's PTY has exactly one cols×rows, shared by every client — there is no
@@ -261,9 +265,11 @@ A workspace's terminals are the daemon's record, not the queue's: each session c
 - `review terminal wait <id> [--until <phase|exit>] [--match REGEX] [--new-only] [--timeout SECS]` — block until a status transition, output matching the regex, or exit; built client-side on the stream connection. Bare `wait <id>` means `--until waiting-for-input` ("what I sent has finished"), which is the call agents actually make; `prompt` is an accepted alias for that phase. `--match` tests the current screen first and then the stream, so a line printed a moment _before_ the wait started still answers — the failure mode that used to be a timeout. `--new-only` (only meaningful with `--match`) skips the screen for the rarer "wait for the _next_ occurrence". The screen and the phase snapshot are both taken after subscribing, so a line landing in between is matched twice at worst and never missed
 - `review terminal resize <id> --cols N --rows M` · `review terminal kill <id>...`
 
+**Push notifications** — `review notify "<title>" [--body TEXT] [--url URL] [--tag TAG] [--json]` sends a web push to every device subscribed through Settings → Push notifications. Unlike the app's own attention escalation, which only pushes once the human is away from the machine, a CLI send is an explicit act and always goes out. Exits non-zero when nothing was delivered; `--json` prints the `SendReport` (`subscriptions`, `sent`, `failed`, `pruned`). Only present in a CLI built with the `push` feature (see "Push to the phone").
+
 **Skills**: one bundled skill, `review-app`, covering all three surfaces an agent touches — reviewing a diff (hunks, trust, guide, comments), driving the app's terminals, and reading/feeding the work queue. The canonical source is `core/resources/skills/review-app/SKILL.md`, `include_str!`-embedded into the binary so the shipped CLI carries it. `review skill install` writes it into `~/.claude/skills/` and `$CODEX_HOME/skills/` (defaulting to `~/.codex/skills/`), and deletes the superseded `review-guide` / `review-terminals` skills it previously installed.
 
-Source layout: `mod.rs` (Cli, Commands enum, dispatch, comparison resolution shared with `review start`, `review use`); `common.rs` (`EffectiveStatus`, `mutate_review` retry, hunk-target parsing, spec-resolution precedence, `sync_classification`); `staging.rs`; `review_state.rs`; `comments.rs` (line-level comments / annotations + batch `comments submit`); `guide.rs` (guide grouping); `history.rs` (version history + undo); `skill.rs`; `terminal.rs` (daemon-backed terminal control); `workspace.rs` (the `review workspace` queue commands). Mutations use optimistic version-conflict retry against `~/.review/.../*.json`.
+Source layout: `mod.rs` (Cli, Commands enum, dispatch, comparison resolution shared with `review start`, `review use`); `common.rs` (`EffectiveStatus`, `mutate_review` retry, hunk-target parsing, spec-resolution precedence, `sync_classification`); `staging.rs`; `review_state.rs`; `comments.rs` (line-level comments / annotations + batch `comments submit`); `guide.rs` (guide grouping); `history.rs` (version history + undo); `notify.rs` (`review notify` web push); `skill.rs`; `terminal.rs` (daemon-backed terminal control); `workspace.rs` (the `review workspace` queue commands). Mutations use optimistic version-conflict retry against `~/.review/.../*.json`.
 
 ## Debugging / Traces
 

@@ -251,11 +251,7 @@ pub struct KillArgs {
 
 /// Entry point: bridge the synchronous CLI onto the async daemon client.
 pub fn run_terminal(args: TerminalArgs) -> Result<(), String> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|e| format!("Failed to start async runtime: {e}"))?;
-    runtime.block_on(dispatch(args.action))
+    super::common::block_on(dispatch(args.action))?
 }
 
 async fn dispatch(action: TerminalAction) -> Result<(), String> {

@@ -14,7 +14,7 @@ cd "$(dirname "$0")/.."
 # would make the sidecar build below resolve a different set from the test
 # build and recompile `review` a second time — the thing this list exists to
 # avoid.
-CORE_FEATURES="symbols-all,symbols-dev,cli,server,daemon,daemon-client,lsp,terminal-types"
+CORE_FEATURES="symbols-all,symbols-dev,cli,push,server,daemon,daemon-client,lsp,terminal-types"
 # cargo requires package-qualified features once more than one package is
 # selected. Same list, spelled the way that invocation needs it.
 WORKSPACE_FEATURES="review/${CORE_FEATURES//,/,review/}"

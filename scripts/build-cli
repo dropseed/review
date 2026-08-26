@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 TARGET="${TAURI_TARGET_TRIPLE:-$(rustc -vV | sed -n 's/host: //p')}"
 
 echo "Building review CLI for $TARGET..."
-cargo build --release --target "$TARGET" -p review --features "cli,symbols-all" --bin review
+cargo build --release --target "$TARGET" -p review --features "cli,push,symbols-all" --bin review
 
 mkdir -p desktop/tauri/binaries
 cp "target/$TARGET/release/review" "desktop/tauri/binaries/review-cli-$TARGET"

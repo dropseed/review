@@ -41,8 +41,7 @@ notify = { version = "7", optional = true }
 notify-debouncer-mini = { version = "0.5", optional = true }
 env_logger = { version = "0.11", optional = true }
 
-# Web Push (feature-gated with the server, which is the only thing that serves
-# a service worker to subscribe with).
+# Web Push — behind the `push` feature (see [features]).
 #
 # `default-features = false` drops the bundled clients: the isahc one links
 # libcurl, and the hyper one pins hyper 0.14 + native-tls (a second hyper
@@ -135,12 +134,20 @@ terminal-types = []
 terminal = ["terminal-types", "dep:portable-pty", "dep:vte", "dep:nix", "dep:bytes", "dep:libghostty-vt"]
 # The CLI drives the terminal daemon (`review terminal …`), so it pulls in the
 # connect-side client and the wire types — neither adds PTY dependencies.
+# `push` is deliberately not in here: it drags a TLS + crypto stack and a
+# vendored OpenSSL build into an otherwise light binary. The shipped CLI adds
+# it (`scripts/build-cli`, `scripts/cli`) for `review notify`; a bare
+# `--features cli` build simply has no such subcommand.
 cli = ["clap", "daemon-client", "terminal-types"]
 # Web-mode HTTP backend. It pulls in `daemon-client`, not `terminal`: web mode
 # reaches PTYs the same way the desktop app does — as a thin client of the
 # `review-daemon` process — so it gets terminals without linking a PTY stack
 # (and therefore without needing Zig).
-server = ["axum", "tower", "tower-http", "tokio-stream", "notify", "notify-debouncer-mini", "env_logger", "daemon-client", "dep:web-push", "dep:jwt-simple", "dep:reqwest", "dep:openssl"]
+server = ["axum", "tower", "tower-http", "tokio-stream", "notify", "notify-debouncer-mini", "env_logger", "daemon-client", "push"]
+# Web Push (`push.rs`): the VAPID identity, the subscription store, and the
+# HTTP send. The server needs it to register subscriptions (it is what serves
+# the service worker); the CLI adds it for `review notify`.
+push = ["dep:web-push", "dep:jwt-simple", "dep:reqwest", "dep:openssl"]
 # Terminal session daemon. `daemon` is the server half (owns the SessionManager,
 # so it implies `terminal`); `daemon-client` is the connect side and pulls in no
 # PTY dependencies. They compose freely with each other and with `server`.

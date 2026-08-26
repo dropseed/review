@@ -130,10 +130,14 @@ pub struct NotificationPayload {
 }
 
 /// The outcome of one [`send_to_all`]. `pruned` endpoints are gone, not failed:
-/// the push service said the subscription no longer exists.
+/// the push service said the subscription no longer exists. `subscriptions`
+/// is how many were registered going in, so a caller can tell "nobody to send
+/// to" from "everyone failed" without a second read of the file.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SendReport {
+    #[serde(default)]
+    pub subscriptions: usize,
     pub sent: usize,
     pub failed: usize,
     pub pruned: usize,
@@ -300,12 +304,16 @@ pub fn subscription_count() -> anyhow::Result<usize> {
 /// is not a subscription being dead.
 pub async fn send_to_all(payload: &NotificationPayload) -> anyhow::Result<SendReport> {
     let state = load()?;
+    let mut report = SendReport {
+        subscriptions: state.subscriptions.len(),
+        ..SendReport::default()
+    };
     let Some(vapid) = state.vapid.as_ref() else {
         // No keypair means nobody could have subscribed against one.
-        return Ok(SendReport::default());
+        return Ok(report);
     };
     if state.subscriptions.is_empty() {
-        return Ok(SendReport::default());
+        return Ok(report);
     }
 
     let signer = VapidSignatureBuilder::from_base64_no_sub(&vapid.private_key)
@@ -313,7 +321,6 @@ pub async fn send_to_all(payload: &NotificationPayload) -> anyhow::Result<SendRe
     let body = serde_json::to_vec(payload)?;
     let client = reqwest::Client::builder().timeout(SEND_TIMEOUT).build()?;
 
-    let mut report = SendReport::default();
     let mut dead = Vec::new();
 
     for stored in &state.subscriptions {

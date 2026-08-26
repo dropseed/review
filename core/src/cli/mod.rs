@@ -11,6 +11,8 @@ mod comments;
 mod common;
 mod guide;
 mod history;
+#[cfg(feature = "push")]
+mod notify;
 mod review_state;
 mod skill;
 mod staging;
@@ -147,6 +149,10 @@ pub enum Commands {
 
     /// Set (or show/clear) the default comparison so commands don't need `-s`
     Use(UseArgs),
+
+    /// Send a push notification to every phone subscribed in Settings → Push notifications
+    #[cfg(feature = "push")]
+    Notify(notify::NotifyArgs),
 
     /// Inspect and drive the app's terminal sessions (list, start, send, peek, wait)
     Terminal(terminal::TerminalArgs),
@@ -312,6 +318,8 @@ pub fn run(cli: Cli) -> Result<(), String> {
         Some(Commands::Url(args)) => url::run_url(args),
         Some(Commands::Skill(args)) => skill::run_skill(args),
         Some(Commands::Use(args)) => run_use(args),
+        #[cfg(feature = "push")]
+        Some(Commands::Notify(args)) => notify::run_notify(args),
         Some(Commands::Terminal(args)) => terminal::run_terminal(args),
         Some(Commands::Workspace(args)) => workspace::run_workspace(args),
         None => run_open(cli.path, has_home_override),

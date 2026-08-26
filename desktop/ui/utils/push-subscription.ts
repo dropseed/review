@@ -132,6 +132,7 @@ export async function unsubscribeFromPush(): Promise<void> {
 
 /** What a test push actually did, so the UI can say so instead of "Sent." */
 export interface SendReport {
+  subscriptions: number;
   sent: number;
   failed: number;
   pruned: number;

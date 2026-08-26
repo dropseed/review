@@ -133,5 +133,5 @@ fi
 echo
 echo "Done. Everything builds now, e.g.:"
 echo "  cargo build -p review --features daemon --bin review-daemon"
-echo "  cargo build -p review --features cli --bin review"
+echo "  cargo build -p review --features cli,push --bin review"
 echo "  scripts/dev-web"
