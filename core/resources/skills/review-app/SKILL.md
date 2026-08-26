@@ -224,7 +224,7 @@ review terminal list [--all|--repo PATH] [--json]     # sessions + phase + works
 review terminal start [--id NAME] [--cwd DIR] [--workspace ID] [--json]
 review terminal whoami [ID] [--json]                  # which session am I in?
 review terminal move <id>... --workspace <ID>         # reattribute sessions
-review terminal send <id> [TEXT] [--key KEY]... [--enter|--submit]
+review terminal send <id> [TEXT|--file PATH] [--paste] [--key KEY]... [--enter|--submit]
 review terminal peek <id> [--scrollback N]            # what's on screen right now
 review terminal log <id> [-n N]                       # everything it has printed
 review terminal wait <id> [--until <phase|exit>] [--match REGEX] [--new-only] [--timeout SECS]
@@ -361,6 +361,19 @@ submitting what you typed:
 review terminal send agent-1 'summarize what you just did' --submit
 review terminal send agent-1 '/compact' --submit --settle-ms 1000
 review terminal peek agent-1                       # confirm it took the input
+```
+
+`--settle-ms` only delays the Enter; it does nothing for the text itself.
+
+**Send a long prompt to a TUI** — add `--paste`. It wraps the text in
+bracketed-paste markers so the app takes it as one paste; without it, Claude
+Code's paste heuristic can fold the first burst of a long send into a hidden
+`[Pasted text #N]` and show only the tail as typed. `--file PATH` (or
+`--file -` for stdin) reads the text from a file instead of the command line:
+
+```
+review terminal send agent-1 --file prompt.md --paste --submit
+cat prompt.md | review terminal send agent-1 --file - --paste --submit
 ```
 
 **Wait for a session to end** (you sent `exit`, or a one-shot command shell):

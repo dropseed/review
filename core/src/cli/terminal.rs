@@ -165,6 +165,15 @@ pub struct SendArgs {
     pub target: TargetArgs,
     /// Text to type into the session, sent verbatim (no newline)
     pub text: Option<String>,
+    /// Read the text from PATH instead (`-` for stdin) — for prompts too long
+    /// or too quoted to put on a command line
+    #[arg(long, value_name = "PATH", conflicts_with = "text")]
+    pub file: Option<String>,
+    /// Wrap the text in bracketed-paste markers so a TUI takes it as one
+    /// paste rather than typed keystrokes — what a long prompt to Claude Code
+    /// needs. Enter (`--enter`/`--submit`) goes outside the markers
+    #[arg(long)]
+    pub paste: bool,
     /// Named keys to send after the text: enter, tab, esc, backspace, space,
     /// up/down/left/right, home, end, ctrl-<letter>
     #[arg(long = "key", value_name = "KEY")]
@@ -633,10 +642,23 @@ fn tail(text: &str, n: usize) -> String {
     lines[lines.len().saturating_sub(n)..].join("\n")
 }
 
-async fn run_send(client: &DaemonClient, args: SendArgs) -> Result<(), String> {
+/// Bracketed-paste markers: a TUI that has enabled the mode (`CSI ? 2004 h`)
+/// takes everything between them as one paste.
+const PASTE_BEGIN: &[u8] = b"\x1b[200~";
+const PASTE_END: &[u8] = b"\x1b[201~";
+
+/// The payload `send` writes in its first write: text (optionally wrapped as a
+/// paste), then named keys, then a trailing Enter for `--enter`.
+fn send_payload(args: &SendArgs, text: Option<&[u8]>) -> Result<Vec<u8>, String> {
     let mut bytes = Vec::new();
-    if let Some(text) = &args.text {
-        bytes.extend_from_slice(text.as_bytes());
+    if let Some(text) = text {
+        if args.paste {
+            bytes.extend_from_slice(PASTE_BEGIN);
+            bytes.extend_from_slice(text);
+            bytes.extend_from_slice(PASTE_END);
+        } else {
+            bytes.extend_from_slice(text);
+        }
     }
     for key in &args.keys {
         bytes.extend_from_slice(&encode_key(key)?);
@@ -645,8 +667,34 @@ async fn run_send(client: &DaemonClient, args: SendArgs) -> Result<(), String> {
         bytes.push(b'\r');
     }
     if bytes.is_empty() {
-        return Err("Nothing to send: pass TEXT, --key, or --enter.".to_owned());
+        return Err("Nothing to send: pass TEXT, --file, --key, or --enter.".to_owned());
     }
+    Ok(bytes)
+}
+
+/// The text `send` was given: the TEXT argument, or `--file PATH` (`-` reads
+/// stdin) as bytes, sent as they are.
+fn send_text(args: &SendArgs) -> Result<Option<Vec<u8>>, String> {
+    use std::io::Read as _;
+    match (&args.text, &args.file) {
+        (Some(text), _) => Ok(Some(text.as_bytes().to_vec())),
+        (None, Some(path)) if path == "-" => {
+            let mut buf = Vec::new();
+            std::io::stdin()
+                .read_to_end(&mut buf)
+                .map_err(|e| format!("Could not read stdin: {e}"))?;
+            Ok(Some(buf))
+        }
+        (None, Some(path)) => std::fs::read(path)
+            .map(Some)
+            .map_err(|e| format!("Could not read {path}: {e}")),
+        (None, None) => Ok(None),
+    }
+}
+
+async fn run_send(client: &DaemonClient, args: SendArgs) -> Result<(), String> {
+    let text = send_text(&args)?;
+    let bytes = send_payload(&args, text.as_deref())?;
 
     let id = resolve_id(client, &args.target.id).await?;
     client.write(&id, &bytes).await.map_err(|e| e.to_string())?;
@@ -1243,6 +1291,63 @@ mod tests {
             "hi",
             "--settle-ms",
             "100",
+        ])
+        .is_err());
+    }
+
+    #[test]
+    fn send_paste_wraps_only_the_text() {
+        let TerminalAction::Send(send) = action(&[
+            "review", "terminal", "send", "abc", "hello", "--paste", "--key", "tab", "--enter",
+        ]) else {
+            panic!("expected send");
+        };
+        assert!(send.paste);
+        let bytes = send_payload(&send, Some(b"hello")).unwrap();
+        assert_eq!(bytes, b"\x1b[200~hello\x1b[201~\t\r");
+
+        // Without --paste the text goes out bare.
+        let TerminalAction::Send(send) =
+            action(&["review", "terminal", "send", "abc", "hello", "--enter"])
+        else {
+            panic!("expected send");
+        };
+        assert_eq!(send_payload(&send, Some(b"hello")).unwrap(), b"hello\r");
+
+        // --paste with no text wraps nothing; keys alone still send.
+        let TerminalAction::Send(send) = action(&[
+            "review", "terminal", "send", "abc", "--paste", "--key", "esc",
+        ]) else {
+            panic!("expected send");
+        };
+        assert_eq!(send_payload(&send, None).unwrap(), b"\x1b");
+        // Nothing at all is an error.
+        let TerminalAction::Send(send) = action(&["review", "terminal", "send", "abc", "--paste"])
+        else {
+            panic!("expected send");
+        };
+        assert!(send_payload(&send, None).is_err());
+    }
+
+    #[test]
+    fn send_file_is_an_alternative_to_text() {
+        use clap::Parser;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("prompt.txt");
+        std::fs::write(&path, "from a file\n").unwrap();
+        let path = path.to_str().unwrap().to_owned();
+        let TerminalAction::Send(send) =
+            action(&["review", "terminal", "send", "abc", "--file", &path])
+        else {
+            panic!("expected send");
+        };
+        assert_eq!(
+            send_text(&send).unwrap().as_deref(),
+            Some(&b"from a file\n"[..])
+        );
+        // TEXT and --file are two answers to one question.
+        assert!(crate::cli::Cli::try_parse_from([
+            "review", "terminal", "send", "abc", "hi", "--file", &path,
         ])
         .is_err());
     }

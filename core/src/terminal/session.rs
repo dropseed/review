@@ -360,9 +360,17 @@ impl Session {
             return Err(anyhow!("terminal {} has exited", self.shared.id));
         }
         {
+            // One lock hold for the whole payload, so two concurrent writers
+            // never interleave their chunks.
             let mut writer = self.writer.lock().unwrap();
-            writer.write_all(data).context("Failed to write to pty")?;
-            writer.flush().context("Failed to flush pty")?;
+            let mut chunks = pty_write_chunks(data).peekable();
+            while let Some(chunk) = chunks.next() {
+                writer.write_all(chunk).context("Failed to write to pty")?;
+                writer.flush().context("Failed to flush pty")?;
+                if chunks.peek().is_some() {
+                    std::thread::sleep(PTY_WRITE_PAUSE);
+                }
+            }
         }
         if self.shared.scanner.lock().unwrap().on_write() {
             self.shared.publish_status();
@@ -604,10 +612,209 @@ fn spawn_reader_thread(
         .expect("failed to spawn terminal reader thread")
 }
 
+/// The largest single write the PTY master ever sees.
+///
+/// The kernel tty queue hands a raw-mode reader a 1024-byte burst first and the
+/// rest in a second `read()`, so one large write reaches the foreground program
+/// as two: a TUI with a paste heuristic (Claude Code) takes the first burst as a
+/// paste and only the tail as typed text. Nothing is lost by the kernel, but
+/// the head goes somewhere the sender did not mean. Writing well under that
+/// boundary, one flushed chunk at a time with a breath between them (see
+/// [`PTY_WRITE_PAUSE`]), lands every sender's payload as plain typed input. In
+/// canonical mode (a shell at its prompt) the line discipline still drops
+/// everything past its 1024-byte input limit — that is the shell's own rule,
+/// and no chunking helps it.
+pub const PTY_WRITE_CHUNK: usize = 512;
+
+/// The gap between two chunks of one write. Chunks written back to back are
+/// coalesced by the kernel into the same 1024-byte read, so the size alone
+/// changes nothing; the pause is what makes the reader see them separately.
+/// Only multi-chunk writes pay it, and `write` runs on a blocking thread.
+pub const PTY_WRITE_PAUSE: std::time::Duration = std::time::Duration::from_millis(10);
+
+/// Split a PTY write into flush-sized chunks (see [`PTY_WRITE_CHUNK`]).
+///
+/// Boundary-aware: a chunk never ends inside an escape sequence or a
+/// multi-byte UTF-8 character, because the pause after it would be read as
+/// part of the input — a bare ESC followed by silence is the Escape key to
+/// Ink and Claude Code (which cancels a `--paste` mid-marker), and a torn
+/// UTF-8 sequence is two garbage bytes. The cut moves back to just before
+/// the ESC or lead byte; only a single sequence longer than the chunk size
+/// is cut hard.
+fn pty_write_chunks(data: &[u8]) -> impl Iterator<Item = &[u8]> {
+    let mut rest = data;
+    std::iter::from_fn(move || {
+        if rest.is_empty() {
+            return None;
+        }
+        let mut end = rest.len().min(PTY_WRITE_CHUNK);
+        if end < rest.len() {
+            let safe = safe_split_point(rest, end);
+            if safe > 0 {
+                end = safe;
+            }
+        }
+        let (chunk, tail) = rest.split_at(end);
+        rest = tail;
+        Some(chunk)
+    })
+}
+
+/// The largest split point `<= at` in `data` that does not fall inside a
+/// sequence (escape or UTF-8) that started before it. `0` means no such
+/// point exists — the sequence at the start is itself longer than `at`.
+fn safe_split_point(data: &[u8], at: usize) -> usize {
+    // Walk the sequences from the start; cheap, since `at` is at most one
+    // chunk. Whatever sequence contains `at` starts at `start` — cut there.
+    let mut i = 0;
+    while i < at {
+        let len = sequence_len(&data[i..]);
+        if i + len > at {
+            return i;
+        }
+        i += len;
+    }
+    at
+}
+
+/// Length of the sequence beginning at `data[0]`: an ESC sequence up to and
+/// including its final byte, a UTF-8 character up to its last continuation
+/// byte, else one byte. An unterminated sequence runs to the end of `data`.
+fn sequence_len(data: &[u8]) -> usize {
+    let first = data[0];
+    if first == 0x1b {
+        // ESC alone is one byte (what `--key esc` sends). `ESC [` opens a
+        // CSI sequence: parameter and intermediate bytes (0x20..=0x3F) up to
+        // a final byte 0x40..=0x7E, so `\e[200~` ends at `~` and `\e[1;5C`
+        // at `C`. `ESC O` (SS3, the arrow keys in application mode) takes
+        // exactly one more byte. Anything else is ESC + intermediates
+        // (0x20..=0x2F) + one final byte.
+        let Some(&intro) = data.get(1) else {
+            return 1;
+        };
+        let mut n = 2;
+        match intro {
+            b'[' => {
+                while n < data.len() {
+                    let b = data[n];
+                    n += 1;
+                    if (0x40..=0x7e).contains(&b) {
+                        break;
+                    }
+                }
+            }
+            b'O' => n = (n + 1).min(data.len()),
+            _ => {
+                let mut b = intro;
+                while (0x20..=0x2f).contains(&b) && n < data.len() {
+                    b = data[n];
+                    n += 1;
+                }
+            }
+        }
+        return n;
+    }
+    let width = match first {
+        0xc0..=0xdf => 2,
+        0xe0..=0xef => 3,
+        0xf0..=0xf7 => 4,
+        _ => return 1,
+    };
+    // Trust the continuation bytes that are actually there; stop early at
+    // the first byte that is not one so a torn input can't swallow text.
+    let mut n = 1;
+    while n < width && n < data.len() && (data[n] & 0xc0) == 0x80 {
+        n += 1;
+    }
+    n
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use tokio::sync::mpsc;
+
+    #[test]
+    fn pty_writes_are_chunked_under_the_tty_read_boundary() {
+        // Empty stays empty (no zero-length write).
+        assert_eq!(pty_write_chunks(b"").count(), 0);
+        // A small write goes out whole.
+        let small = vec![b'x'; PTY_WRITE_CHUNK];
+        assert_eq!(
+            pty_write_chunks(&small).collect::<Vec<_>>(),
+            vec![&small[..]]
+        );
+        // 1538 bytes (the reported failing send) becomes three full chunks and a tail.
+        let big: Vec<u8> = (0..1538u32).map(|i| b'a' + (i % 26) as u8).collect();
+        let chunks: Vec<&[u8]> = pty_write_chunks(&big).collect();
+        assert_eq!(
+            chunks.iter().map(|c| c.len()).collect::<Vec<_>>(),
+            vec![512, 512, 512, 2]
+        );
+        assert!(chunks.iter().all(|c| c.len() < 1024));
+        // Concatenated back, nothing is lost or reordered.
+        assert_eq!(chunks.concat(), big);
+    }
+
+    #[test]
+    fn pty_writes_never_split_inside_an_escape_sequence() {
+        // A bracketed-paste marker straddling the 512 boundary: 509 bytes of
+        // text, then `\e[200~` (6 bytes) spanning 509..515.
+        let mut data = vec![b'a'; 509];
+        data.extend_from_slice(b"\x1b[200~");
+        data.extend_from_slice(&[b'b'; 300]);
+        let chunks: Vec<&[u8]> = pty_write_chunks(&data).collect();
+        assert_eq!(chunks[0].len(), 509, "cut lands just before the ESC");
+        assert!(chunks[1].starts_with(b"\x1b[200~"));
+        assert_eq!(chunks.concat(), data);
+        // No chunk ends with an unfinished sequence.
+        for c in &chunks {
+            assert!(!c.contains(&0x1b) || c.ends_with(b"~") || c.len() > 6);
+        }
+        // Same for a marker that starts exactly at the boundary minus one.
+        let mut data = vec![b'a'; 511];
+        data.extend_from_slice(b"\x1b[201~xyz");
+        let chunks: Vec<&[u8]> = pty_write_chunks(&data).collect();
+        assert_eq!(chunks[0].len(), 511);
+        assert_eq!(chunks[1], b"\x1b[201~xyz");
+
+        // A lone ESC (as `--key esc` sends) is one byte, and text after it
+        // is still chunked normally.
+        assert_eq!(sequence_len(b"\x1b"), 1);
+        assert_eq!(sequence_len(b"\x1b[200~rest"), 6);
+        assert_eq!(sequence_len(b"\x1bOA"), 3);
+        assert_eq!(sequence_len(b"\x1b[1;5Cx"), 6);
+
+        // A single sequence longer than a chunk is cut hard, not looped on.
+        let mut data = vec![0x1b, b'['];
+        data.extend(std::iter::repeat_n(b'1', PTY_WRITE_CHUNK + 10));
+        data.push(b'm');
+        let chunks: Vec<&[u8]> = pty_write_chunks(&data).collect();
+        assert_eq!(chunks[0].len(), PTY_WRITE_CHUNK);
+        assert_eq!(chunks.concat(), data);
+    }
+
+    #[test]
+    fn pty_writes_never_split_inside_a_utf8_character() {
+        // 510 ASCII bytes, then a 4-byte emoji spanning 510..514.
+        let mut data = vec![b'a'; 510];
+        data.extend_from_slice("🙂".as_bytes());
+        data.extend_from_slice(&[b'b'; 100]);
+        let chunks: Vec<&[u8]> = pty_write_chunks(&data).collect();
+        assert_eq!(chunks[0].len(), 510);
+        assert!(chunks[1].starts_with("🙂".as_bytes()));
+        for c in &chunks {
+            assert!(std::str::from_utf8(c).is_ok(), "chunk is valid UTF-8");
+        }
+        assert_eq!(chunks.concat(), data);
+
+        // A 3-byte char with its lead byte at 511.
+        let mut data = vec![b'a'; 511];
+        data.extend_from_slice("é€".as_bytes());
+        let chunks: Vec<&[u8]> = pty_write_chunks(&data).collect();
+        assert_eq!(chunks[0].len(), 511);
+        assert_eq!(chunks[1], "é€".as_bytes());
+    }
 
     #[test]
     fn fanout_drops_slow_subscriber_but_keeps_healthy_one() {
