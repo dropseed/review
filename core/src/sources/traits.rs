@@ -30,6 +30,13 @@ pub struct GitStatusSummary {
     pub staged: Vec<StatusEntry>,
     pub unstaged: Vec<StatusEntry>,
     pub untracked: Vec<String>,
+    /// True while `$GIT_DIR/index.lock` exists — some git process is writing
+    /// the index (a commit and its hooks, a checkout, a stash). This is the
+    /// indicator's *initial* state only; the watchers then keep it current on
+    /// their own `git-index-lock` channel, which is why a lock never rides on
+    /// `git-changed`. See `service::watcher_events::ChangeKind::IndexLock`.
+    #[serde(rename = "indexLocked")]
+    pub index_locked: bool,
 }
 
 /// A single entry in the git status (staged or unstaged)

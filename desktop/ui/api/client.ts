@@ -79,6 +79,13 @@ export interface GitChangedPayload {
   gitStateChanged: boolean;
 }
 
+/** Payload emitted with the `git-index-lock` watcher event. */
+export interface GitIndexLockPayload {
+  repoPath: string;
+  /** Whether `.git/index.lock` is held right now. */
+  locked: boolean;
+}
+
 /** Payload emitted with the `repo-activity-changed` watcher event. */
 export interface RepoActivityChangedPayload {
   repoPath: string;
@@ -641,6 +648,13 @@ export interface ApiClient {
 
   /** Subscribe to git change events */
   onGitChanged(callback: (payload: GitChangedPayload) => void): () => void;
+
+  /**
+   * Subscribe to `.git/index.lock` transitions — some git process started or
+   * finished writing the index. Separate from `onGitChanged` on purpose: this
+   * says "don't touch the repo", not "re-read it".
+   */
+  onGitIndexLock(callback: (payload: GitIndexLockPayload) => void): () => void;
 
   /** Subscribe to scoped activity deltas for a single repo. */
   onRepoActivityChanged(

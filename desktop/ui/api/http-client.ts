@@ -8,6 +8,7 @@
 import type {
   ApiClient,
   GitChangedPayload,
+  GitIndexLockPayload,
   RepoActivityChangedPayload,
   TerminalStartParams,
 } from "./client";
@@ -78,6 +79,8 @@ export class HttpClient implements ApiClient {
   private eventSource: EventSource | null = null;
   private reviewStateCallbacks: ((repoPath: string) => void)[] = [];
   private gitChangedCallbacks: ((payload: GitChangedPayload) => void)[] = [];
+  private gitIndexLockCallbacks: ((payload: GitIndexLockPayload) => void)[] =
+    [];
   private repoActivityCallbacks: ((
     payload: RepoActivityChangedPayload,
   ) => void)[] = [];
@@ -839,6 +842,20 @@ export class HttpClient implements ApiClient {
       }
       this.gitChangedCallbacks.forEach((cb) => cb(payload));
     });
+    this.eventSource.addEventListener("git-index-lock", (e) => {
+      const data = (e as MessageEvent).data;
+      try {
+        const parsed = typeof data === "string" ? JSON.parse(data) : data;
+        const payload: GitIndexLockPayload = {
+          repoPath: parsed?.repoPath ?? repoPath,
+          locked: Boolean(parsed?.locked),
+        };
+        this.gitIndexLockCallbacks.forEach((cb) => cb(payload));
+      } catch {
+        // Malformed payload — dropping it leaves the indicator as it was,
+        // which the next transition corrects. Guessing would not.
+      }
+    });
     this.eventSource.addEventListener("work-changed", () => {
       this.workChangedCallbacks.forEach((cb) => cb());
     });
@@ -878,6 +895,15 @@ export class HttpClient implements ApiClient {
     this.gitChangedCallbacks.push(callback);
     return () => {
       this.gitChangedCallbacks = this.gitChangedCallbacks.filter(
+        (cb) => cb !== callback,
+      );
+    };
+  }
+
+  onGitIndexLock(callback: (payload: GitIndexLockPayload) => void): () => void {
+    this.gitIndexLockCallbacks.push(callback);
+    return () => {
+      this.gitIndexLockCallbacks = this.gitIndexLockCallbacks.filter(
         (cb) => cb !== callback,
       );
     };

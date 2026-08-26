@@ -30,6 +30,7 @@ const status = (branch: string) =>
     staged: [],
     unstaged: [],
     untracked: [],
+    indexLocked: false,
   }) as ReviewStore["gitStatus"];
 
 const peek = {

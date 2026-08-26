@@ -97,6 +97,7 @@ const status = (branch: string): GitStatusSummary => ({
   staged: [],
   unstaged: [{ path: "a.ts", status: "modified" }],
   untracked: [],
+  indexLocked: false,
 });
 
 /** A settled review, exactly as the pipeline leaves it. */
@@ -336,6 +337,7 @@ describe("statusFingerprint", () => {
         { path: "a.ts", status: "added" },
       ],
       untracked: ["z.ts"],
+      indexLocked: false,
     };
     const reordered: GitStatusSummary = {
       ...a,
@@ -414,6 +416,7 @@ describe("hasDrifted", () => {
       staged: [],
       unstaged: [],
       untracked: ["new.ts"],
+      indexLocked: false,
     });
     await expect(hasDrifted(restored())).resolves.toBe(true);
   });

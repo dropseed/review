@@ -311,6 +311,18 @@ export function useFileWatcher(comparisonReady: number) {
     );
     console.log("[watcher] Listening for git-changed");
 
+    // Straight to the store, with no debounce of its own: the event already
+    // reports a settled transition, and the point of the indicator is to be
+    // on screen *while* git is busy — the refresh debounce below would show
+    // it after the fact, or not at all for a short write.
+    unlistenFns.push(
+      apiClient.onGitIndexLock((payload) => {
+        if (payload.repoPath !== repoPathRef.current) return;
+        console.log(`[watcher] git-index-lock (locked=${payload.locked})`);
+        useReviewStore.getState().setIndexLocked(payload.locked);
+      }),
+    );
+
     return () => {
       clearTimeout(gitChangedTimerRef.current!);
       gitChangedTimerRef.current = null;

@@ -25,6 +25,9 @@ const WATCHER_DEBOUNCE_MS: u64 = 500;
 /// Event names emitted to the frontend. Must match the strings in `tauri-client.ts`.
 const EVENT_REVIEW_STATE_CHANGED: &str = "review-state-changed";
 const EVENT_GIT_CHANGED: &str = "git-changed";
+/// `.git/index.lock` was taken or released. Deliberately not `git-changed`:
+/// nothing about the repo has changed, so this must not provoke a refresh.
+const EVENT_GIT_INDEX_LOCK: &str = "git-index-lock";
 
 /// Log a message to the app.log file (for debugging watcher events, dev only)
 #[cfg(debug_assertions)]
@@ -149,6 +152,12 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
     let central_root_for_closure =
         review::review::central::canonical_central_root().unwrap_or_default();
 
+    // The lock state we last told the frontend about. `index.lock` is created
+    // and removed constantly by ordinary git, and the debouncer coalesces both
+    // halves of a short write into one batch — so we report transitions only,
+    // and a batch that leaves the lock where it was says nothing.
+    let mut last_locked = review::service::watcher_events::index_is_locked(&repo_path_buf);
+
     let mut debouncer = new_debouncer(
         Duration::from_millis(WATCHER_DEBOUNCE_MS),
         move |result: Result<Vec<notify_debouncer_mini::DebouncedEvent>, notify::Error>| {
@@ -156,6 +165,7 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
                 Ok(events) => {
                     let mut review_changed = false;
                     let mut git_state_changed = false;
+                    let mut index_lock_changed = false;
                     let mut working_tree_changed = false;
                     // Deduped set of repo-relative paths that changed in this window.
                     // Sorted for stable payload ordering.
@@ -193,6 +203,7 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
                             let category_str = match &category {
                                 ChangeKind::ReviewState => "ReviewState",
                                 ChangeKind::GitState => "GitState",
+                                ChangeKind::IndexLock => "IndexLock",
                                 ChangeKind::WorkingTree => "WorkingTree",
                                 ChangeKind::WorkQueue => "WorkQueue",
                                 ChangeKind::Ignored => "Ignored",
@@ -209,6 +220,9 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
                             }
                             ChangeKind::GitState => {
                                 git_state_changed = true;
+                            }
+                            ChangeKind::IndexLock => {
+                                index_lock_changed = true;
                             }
                             ChangeKind::WorkingTree => {
                                 working_tree_changed = true;
@@ -245,6 +259,27 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
                             payload.changed_paths.len()
                         );
                         let _ = app_clone.emit(EVENT_GIT_CHANGED, &payload);
+                    }
+
+                    // Stat the lock rather than trusting the events: a batch
+                    // can hold its creation and its removal both.
+                    if index_lock_changed {
+                        let locked = review::service::watcher_events::index_is_locked(
+                            &repo_path_for_closure,
+                        );
+                        if locked != last_locked {
+                            last_locked = locked;
+                            log::info!(
+                                "[watcher] git-index-lock for {repo_for_closure} (locked={locked})"
+                            );
+                            let _ = app_clone.emit(
+                                EVENT_GIT_INDEX_LOCK,
+                                &review::service::watcher_events::GitIndexLockPayload {
+                                    repo_path: repo_for_closure.clone(),
+                                    locked,
+                                },
+                            );
+                        }
                     }
 
                     if let Some(trigger) = RefreshTrigger::from_flags(

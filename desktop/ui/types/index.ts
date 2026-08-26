@@ -172,6 +172,13 @@ export interface GitStatusSummary {
   staged: StatusEntry[];
   unstaged: StatusEntry[];
   untracked: string[];
+  /**
+   * True while `.git/index.lock` exists — some git process is writing the
+   * index (a commit and its hooks, a checkout, a stash). Only the *initial*
+   * state: after the first load the watcher's `git-index-lock` event keeps
+   * `GitSlice.indexLocked` current, and that is what the UI reads.
+   */
+  indexLocked: boolean;
 }
 
 export interface StatusEntry {

@@ -1585,6 +1585,9 @@ async fn events_sse(
         // An unresolvable root can't match any real path, which is the right
         // answer: there is no queue to watch.
         let central_root_for_closure = central_root.clone().unwrap_or_default();
+        // The lock state we last told the browser about — see the desktop
+        // watcher for why this reports transitions rather than events.
+        let mut last_locked = crate::service::watcher_events::index_is_locked(&repo_root);
 
         let debouncer_result = new_debouncer(
             Duration::from_millis(200),
@@ -1592,6 +1595,7 @@ async fn events_sse(
                 if let Ok(events) = result {
                     let mut review_changed = false;
                     let mut git_state_changed = false;
+                    let mut index_lock_changed = false;
                     let mut working_tree_changed = false;
                     let mut work_changed = false;
                     let mut changed_paths: std::collections::BTreeSet<String> =
@@ -1611,6 +1615,7 @@ async fn events_sse(
                         match category {
                             ChangeKind::ReviewState => review_changed = true,
                             ChangeKind::GitState => git_state_changed = true,
+                            ChangeKind::IndexLock => index_lock_changed = true,
                             ChangeKind::WorkQueue => work_changed = true,
                             ChangeKind::WorkingTree => {
                                 working_tree_changed = true;
@@ -1660,6 +1665,21 @@ async fn events_sse(
                                     .data(&repo_for_closure)
                             });
                         let _ = tx_clone.blocking_send(event);
+                    }
+                    if index_lock_changed {
+                        let locked = crate::service::watcher_events::index_is_locked(&repo_root);
+                        if locked != last_locked {
+                            last_locked = locked;
+                            let payload = crate::service::watcher_events::GitIndexLockPayload {
+                                repo_path: repo_for_closure.clone(),
+                                locked,
+                            };
+                            if let Ok(event) =
+                                Event::default().event("git-index-lock").json_data(&payload)
+                            {
+                                let _ = tx_clone.blocking_send(event);
+                            }
+                        }
                     }
                     if let Some(trigger) =
                         crate::service::activity_cache::RefreshTrigger::from_flags(

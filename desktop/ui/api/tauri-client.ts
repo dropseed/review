@@ -12,6 +12,7 @@ import { decodeBase64 } from "../components/Terminal/base64";
 import type {
   ApiClient,
   GitChangedPayload,
+  GitIndexLockPayload,
   RepoActivityChangedPayload,
   TerminalStartParams,
 } from "./client";
@@ -73,6 +74,7 @@ import type {
 /** Event names emitted by the Rust watcher. Must match constants in watchers.rs. */
 const EVENT_REVIEW_STATE_CHANGED = "review-state-changed";
 const EVENT_GIT_CHANGED = "git-changed";
+const EVENT_GIT_INDEX_LOCK = "git-index-lock";
 const EVENT_REPO_ACTIVITY_CHANGED = "repo-activity-changed";
 const EVENT_WORK_CHANGED = "work-changed";
 
@@ -722,6 +724,13 @@ export class TauriClient implements ApiClient {
 
   onGitChanged(callback: (payload: GitChangedPayload) => void): () => void {
     return this.listenForEvent<GitChangedPayload>(EVENT_GIT_CHANGED, callback);
+  }
+
+  onGitIndexLock(callback: (payload: GitIndexLockPayload) => void): () => void {
+    return this.listenForEvent<GitIndexLockPayload>(
+      EVENT_GIT_INDEX_LOCK,
+      callback,
+    );
   }
 
   onRepoActivityChanged(

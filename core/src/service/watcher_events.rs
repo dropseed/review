@@ -6,7 +6,7 @@
 
 use serde::Serialize;
 use std::ffi::OsStr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Payload for the `git-changed` event. Carries the set of working-tree paths
 /// that changed in the debounce window, so the frontend can refresh only those
@@ -23,12 +23,30 @@ pub struct GitChangedPayload {
     pub git_state_changed: bool,
 }
 
+/// Payload for the `git-index-lock` event. Its own channel rather than a field
+/// on [`GitChangedPayload`], because the two say opposite things: `git-changed`
+/// means "re-read the repo", and this means "some process is writing it, don't".
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitIndexLockPayload {
+    pub repo_path: String,
+    /// Whether the lock is held *now* — the watcher stats the file after the
+    /// debounce rather than inferring it from create/remove events, which
+    /// arrive coalesced and out of order.
+    pub locked: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChangeKind {
     ReviewState,
     /// A git-internal state change (index, HEAD, refs/heads) that affects
     /// branch and working-tree status.
     GitState,
+    /// `.git/index.lock` appeared or vanished. Reported on its own channel and
+    /// never folded into `git_state_changed`: the repo has not changed, some
+    /// process is merely mid-write, and a diff refresh runs git — which would
+    /// take the lock again and report itself.
+    IndexLock,
     WorkingTree,
     /// The global work queue (`<central root>/work.json`) changed.
     WorkQueue,
@@ -56,11 +74,39 @@ pub fn is_git_state_path(path_str: &str) -> bool {
         || path_str.ends_with("\\.git\\index")
 }
 
+/// Returns true for git's own `index.lock` — the one `.git` lock file we do
+/// *not* ignore. It is held for exactly as long as some process is writing the
+/// index (a commit, including its hooks; a checkout; a stash), which is what
+/// makes it worth reporting. It is deliberately **not** a
+/// [`is_git_state_path`]: nothing about the repo has changed yet, so a lock
+/// event must never provoke a diff refresh — see [`ChangeKind::IndexLock`].
+pub fn is_index_lock_path(path_str: &str) -> bool {
+    path_str.ends_with("/.git/index.lock") || path_str.ends_with("\\.git\\index.lock")
+}
+
+/// Where `repo_path`'s `index.lock` would be. Worktree-aware, because a linked
+/// worktree has its own index (and so its own lock) under
+/// `<main>/.git/worktrees/<name>/`. The one answer, shared by the watchers that
+/// stat it on an event and by `get_status`, which reports its initial state.
+pub fn index_lock_path(repo_path: &Path) -> PathBuf {
+    crate::review::central::resolve_git_dirs(repo_path)
+        .0
+        .join("index.lock")
+}
+
+/// Whether some git process currently holds `repo_path`'s index lock.
+pub fn index_is_locked(repo_path: &Path) -> bool {
+    std::fs::metadata(index_lock_path(repo_path)).is_ok()
+}
+
 /// Returns true if `.git`-internal noise (lock files, pack files, logs) or
 /// common build-output directories (`target/`, `node_modules/`, ...) should be
 /// dropped before further categorization.
 pub fn should_ignore_path(path_str: &str) -> bool {
     if path_str.contains("/.git/") || path_str.contains("\\.git\\") {
+        if is_index_lock_path(path_str) {
+            return false;
+        }
         if std::path::Path::new(path_str)
             .extension()
             .is_some_and(|ext| ext.eq_ignore_ascii_case("lock"))
@@ -156,6 +202,10 @@ pub fn categorize_change(path_str: &str, central_root: &Path) -> ChangeKind {
         return ChangeKind::ReviewState;
     }
 
+    if is_index_lock_path(path_str) {
+        return ChangeKind::IndexLock;
+    }
+
     if is_git_state_path(path_str) {
         return ChangeKind::GitState;
     }
@@ -236,6 +286,35 @@ mod tests {
             categorize("/home/u/code/app/.git/HEAD"),
             ChangeKind::GitState
         );
+    }
+
+    #[test]
+    fn the_index_lock_is_the_one_git_lock_we_watch() {
+        // It is held for the whole of an index write (a commit's hooks
+        // included), which is how work started in a terminal becomes visible
+        // before it lands.
+        assert_eq!(
+            categorize("/home/u/code/app/.git/index.lock"),
+            ChangeKind::IndexLock
+        );
+        // Every other `.git` lock is still noise.
+        for name in ["config.lock", "HEAD.lock", "shallow.lock"] {
+            let path = format!("/home/u/code/app/.git/{name}");
+            assert_eq!(categorize(&path), ChangeKind::Ignored, "{name}");
+        }
+        assert_eq!(
+            categorize("/home/u/code/app/.git/refs/heads/main.lock"),
+            ChangeKind::Ignored
+        );
+    }
+
+    #[test]
+    fn the_index_lock_is_not_git_state() {
+        // The whole point of the separate kind: a lock must not reach
+        // `git_state_changed`, which is what triggers a full diff refresh —
+        // and a refresh runs git, which would take the lock again.
+        assert!(!is_git_state_path("/home/u/code/app/.git/index.lock"));
+        assert!(is_git_state_path("/home/u/code/app/.git/index"));
     }
 
     #[test]

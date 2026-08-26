@@ -92,6 +92,7 @@ export function CommitPanel(): ReactNode {
   const commitStaged = useReviewStore((s) => s.commitStaged);
   const clearCommitResult = useReviewStore((s) => s.clearCommitResult);
   const staged = useReviewStore((s) => s.gitStatus?.staged);
+  const indexLocked = useReviewStore((s) => s.indexLocked);
   const commitMessageGenerating = useReviewStore(
     (s) => s.commitMessageGenerating,
   );
@@ -109,8 +110,17 @@ export function CommitPanel(): ReactNode {
 
   const hasStagedFiles = staged && staged.length > 0;
 
+  // `.git/index.lock` is held for exactly as long as some process is writing
+  // the index — a commit and its hooks, but equally a checkout or a stash —
+  // so the panel says "git busy" rather than naming a verb it cannot know.
+  // Our own commit holds the lock too, hence the `||` rather than two states.
+  // A lock left behind by a crashed git reads as busy until it is removed,
+  // which is right: git itself refuses to run until then, and its own error
+  // message is the fix.
+  const busy = commitInProgress || indexLocked;
+
   const canCommit =
-    !commitInProgress &&
+    !busy &&
     !commitMessageGenerating &&
     commitMessage.trim().length > 0 &&
     hasStagedFiles;
@@ -164,7 +174,9 @@ export function CommitPanel(): ReactNode {
     }
   }, [commitMessage]);
 
-  if (!hasStagedFiles && !commitResult && !commitInProgress) return null;
+  // `git commit -a` from a terminal stages nothing, so the panel has to open
+  // on the lock alone — it is the only place the indicator lives.
+  if (!hasStagedFiles && !commitResult && !busy) return null;
 
   return (
     <CollapsibleSection
@@ -181,7 +193,7 @@ export function CommitPanel(): ReactNode {
           onKeyDown={handleKeyDown}
           placeholder="Commit message..."
           rows={1}
-          disabled={commitInProgress || commitMessageGenerating}
+          disabled={busy || commitMessageGenerating}
           className="w-full resize-none rounded border border-border bg-surface px-2 py-1.5 text-xs text-fg placeholder:text-fg-muted/50 focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50"
           style={{ minHeight: "32px", maxHeight: "144px" }}
         />
@@ -190,9 +202,7 @@ export function CommitPanel(): ReactNode {
           <div className="flex items-center gap-1">
             <button
               onClick={generateCommitMessage}
-              disabled={
-                !hasStagedFiles || commitInProgress || commitMessageGenerating
-              }
+              disabled={!hasStagedFiles || busy || commitMessageGenerating}
               title="Generate commit message with AI"
               className="h-5 px-1.5 rounded text-fg-muted text-[10px] hover:text-fg hover:bg-surface-hover disabled:opacity-30 flex items-center gap-1"
             >
@@ -203,7 +213,7 @@ export function CommitPanel(): ReactNode {
               )}
               Generate
             </button>
-            {commitMessage && !commitInProgress && !commitMessageGenerating && (
+            {commitMessage && !busy && !commitMessageGenerating && (
               <button
                 onClick={() => setCommitMessage("")}
                 title="Clear message"
@@ -219,8 +229,11 @@ export function CommitPanel(): ReactNode {
             title={`Commit (${MOD_KEY_SYMBOL}+Enter)`}
             className="h-5 px-1.5 rounded bg-accent text-accent-fg text-[10px] font-medium disabled:opacity-30 hover:bg-accent/90 flex items-center gap-1"
           >
-            {commitInProgress ? (
-              <SpinnerIcon className="animate-spin h-3 w-3" />
+            {busy ? (
+              <>
+                <SpinnerIcon className="animate-spin h-3 w-3" />
+                Git busy…
+              </>
             ) : (
               <>
                 Commit{" "}

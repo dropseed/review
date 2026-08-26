@@ -19,6 +19,15 @@ let generateCommitNonce = 0;
 export interface GitSlice {
   // Git state
   gitStatus: GitStatusSummary | null;
+  /**
+   * Some git process holds `.git/index.lock` — a commit and its hooks, a
+   * checkout, a stash. Standalone rather than read off `gitStatus`, because
+   * after the initial load it is maintained by the watcher's own
+   * `git-index-lock` event: the lock changes far more often than the status
+   * does, and re-running `git status` to learn about it is what the lock is
+   * telling us not to do.
+   */
+  indexLocked: boolean;
   stagedFilePaths: Set<string>;
   remoteInfo: RemoteInfo | null;
   gitUser: string | null;
@@ -32,6 +41,7 @@ export interface GitSlice {
 
   // Actions
   loadGitStatus: () => Promise<void>;
+  setIndexLocked: (locked: boolean) => void;
   loadRemoteInfo: () => Promise<void>;
   loadGitUser: () => Promise<void>;
   stageFile: (path: string) => Promise<void>;
@@ -63,6 +73,7 @@ export const gitCommitResetState = {
 export const createGitSlice: SliceCreatorWithClient<GitSlice> =
   (client: ApiClient) => (set, get) => ({
     gitStatus: null,
+    indexLocked: false,
     stagedFilePaths: EMPTY_STAGED_SET,
     remoteInfo: null,
     gitUser: null,
@@ -81,6 +92,10 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
         // on getWorkingTreePath() here since status is worktree-scoped
         // rather than repo-scoped).
         if (get().getWorkingTreePath() !== workingPath) return;
+        // Before the short-circuit below, which is about `gitStatus`'s
+        // reference identity: the lock is its own state and the watcher may
+        // have moved it since this status was taken.
+        get().setIndexLocked(status.indexLocked);
         // Skip the set() when nothing changed — replacing references
         // re-renders every component selecting `gitStatus` or
         // `stagedFilePaths`, even when the data is identical. Cheap O(1)
@@ -109,6 +124,10 @@ export const createGitSlice: SliceCreatorWithClient<GitSlice> =
           set({ gitStatus: null, stagedFilePaths: EMPTY_STAGED_SET });
         }
       }
+    },
+
+    setIndexLocked: (locked: boolean) => {
+      if (get().indexLocked !== locked) set({ indexLocked: locked });
     },
 
     loadRemoteInfo: async () => {

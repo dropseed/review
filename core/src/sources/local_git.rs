@@ -1635,11 +1635,18 @@ impl LocalGitSource {
             }
         }
 
+        // The initial state of the indicator the watchers then keep up to date
+        // on their own channel. It is a fact about a *process*, not about the
+        // repo, so it rides along here only because this is the call every
+        // surface already makes when it starts showing a working tree.
+        let index_locked = crate::service::watcher_events::index_is_locked(&self.repo_path);
+
         Ok(GitStatusSummary {
             current_branch,
             staged,
             unstaged,
             untracked,
+            index_locked,
         })
     }
 
@@ -2181,10 +2188,7 @@ impl LocalGitSource {
     }
 
     fn run_git_bytes(&self, args: &[&str]) -> Result<Vec<u8>, LocalGitError> {
-        let output = Command::new("git")
-            .args(args)
-            .current_dir(&self.repo_path)
-            .output()?;
+        let output = git_command(&self.repo_path).args(args).output()?;
 
         if output.status.success() {
             Ok(output.stdout)
@@ -2723,9 +2727,8 @@ impl LocalGitSource {
 
     /// Run a git command with data piped to stdin.
     fn run_git_with_stdin(&self, args: &[&str], input: &[u8]) -> Result<String, LocalGitError> {
-        let mut child = Command::new("git")
+        let mut child = git_command(&self.repo_path)
             .args(args)
-            .current_dir(&self.repo_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -2775,9 +2778,8 @@ impl LocalGitSource {
         args: &[&str],
         stdin: Option<&[u8]>,
     ) -> Result<String, LocalGitError> {
-        let mut cmd = Command::new("git");
+        let mut cmd = git_command(&self.repo_path);
         cmd.args(args)
-            .current_dir(&self.repo_path)
             .env("GIT_INDEX_FILE", index_path)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -2894,9 +2896,8 @@ impl LocalGitSource {
     /// Unlike `run_git()`, this returns the child process immediately so the
     /// caller can stream output lines in real time (e.g. for pre-commit hooks).
     pub fn spawn_commit(&self, message: &str) -> Result<std::process::Child, LocalGitError> {
-        Command::new("git")
+        git_command(&self.repo_path)
             .args(["commit", "-m", message])
-            .current_dir(&self.repo_path)
             .env("FORCE_COLOR", "1")
             .env("CLICOLOR_FORCE", "1")
             .stdout(Stdio::piped())
@@ -2981,10 +2982,7 @@ impl LocalGitSource {
         args.push(query);
 
         // Run git grep - note: returns exit code 1 if no matches, which is not an error
-        let output = Command::new("git")
-            .args(&args)
-            .current_dir(&self.repo_path)
-            .output()?;
+        let output = git_command(&self.repo_path).args(&args).output()?;
 
         // Exit code 1 means no matches found - return empty vec
         if !output.status.success() && output.status.code() != Some(1) {
@@ -3356,9 +3354,29 @@ impl DiffSource for LocalGitSource {
     }
 }
 
+/// Every git process this app starts, in `dir`.
+///
+/// `GIT_OPTIONAL_LOCKS=0` is the load-bearing part. When a file's mtime moved
+/// but its content did not — a formatter rewriting it identically, a `touch`,
+/// a checkout restoring what was there — a plain `git status` (or `diff`)
+/// takes `.git/index.lock` purely to write the refreshed stat cache back. A
+/// filesystem watcher cannot tell that blip from a commit's, so the app's own
+/// status call announced a commit and asked for another status: one spurious
+/// full refresh per mtime-only touch, and two extra watcher emits on top.
+///
+/// The cost is that a stale stat entry is re-hashed on every call instead of
+/// once, which is the trade every editor makes for its background git.
+/// Commands that genuinely need the lock still take it, so nothing about what
+/// a write does changes.
+fn git_command(dir: &std::path::Path) -> Command {
+    let mut cmd = Command::new("git");
+    cmd.current_dir(dir).env("GIT_OPTIONAL_LOCKS", "0");
+    cmd
+}
+
 /// Run a git command in the given directory, returning stdout or a `LocalGitError`.
 fn run_git_cmd(dir: &std::path::Path, args: &[&str]) -> Result<String, LocalGitError> {
-    let output = Command::new("git").args(args).current_dir(dir).output()?;
+    let output = git_command(dir).args(args).output()?;
 
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())

@@ -82,7 +82,7 @@ function GitSection({
   accentColor: string;
   children: ReactNode;
   defaultOpen?: boolean;
-  menuItems?: { label: string; onClick: () => void }[];
+  menuItems?: { label: string; onClick: () => void; disabled?: boolean }[];
   onExpandAll?: () => void;
   onCollapseAll?: () => void;
   actionContent?: ReactNode;
@@ -106,6 +106,7 @@ function GitSection({
               <CollapsibleSectionMenuItem
                 key={item.label}
                 onClick={item.onClick}
+                disabled={item.disabled}
               >
                 {item.label}
               </CollapsibleSectionMenuItem>
@@ -165,9 +166,16 @@ export function GitStatusPanel({
     [onSelectFile, onSelectWorkingTreeFile],
   );
   const gitStatus = useReviewStore((s) => s.gitStatus);
-  const stageFile = useReviewStore((s) => s.stageFile);
-  const unstageFile = useReviewStore((s) => s.unstageFile);
+  const stageFileAction = useReviewStore((s) => s.stageFile);
+  const unstageFileAction = useReviewStore((s) => s.unstageFile);
   const unstageAll = useReviewStore((s) => s.unstageAll);
+  const indexLocked = useReviewStore((s) => s.indexLocked);
+  // Staging writes the index, and git refuses while another process holds the
+  // lock — the write would fail with nothing on screen to say why. The row
+  // buttons are withheld rather than disabled, since they only appear on
+  // hover; the menu verbs, which are always there, grey out instead.
+  const stageFile = indexLocked ? undefined : stageFileAction;
+  const unstageFile = indexLocked ? undefined : unstageFileAction;
   const gitDisplayMode = useReviewStore((s) => s.gitDisplayMode);
   const setGitDisplayMode = useReviewStore((s) => s.setGitDisplayMode);
   const openWorkingTreeMultiView = useReviewStore(
@@ -310,7 +318,11 @@ export function GitStatusPanel({
                 label: "Approve all staged",
                 onClick: () => alert("Approve all staged — coming soon"),
               },
-              { label: "Unstage all", onClick: () => unstageAll() },
+              {
+                label: "Unstage all",
+                onClick: () => unstageAll(),
+                disabled: indexLocked,
+              },
               {
                 label: "Unstage rejected",
                 onClick: () => alert("Unstage rejected — coming soon"),
@@ -377,7 +389,8 @@ export function GitStatusPanel({
               },
               {
                 label: "Stage unstaged",
-                onClick: () => unstaged.forEach((e) => stageFile(e.path)),
+                onClick: () => unstaged.forEach((e) => stageFileAction(e.path)),
+                disabled: indexLocked,
               },
               ...displayModeMenuItems,
             ]}
@@ -427,7 +440,8 @@ export function GitStatusPanel({
             menuItems={[
               {
                 label: "Stage untracked",
-                onClick: () => untracked.forEach((p) => stageFile(p)),
+                onClick: () => untracked.forEach((p) => stageFileAction(p)),
+                disabled: indexLocked,
               },
               ...displayModeMenuItems,
             ]}
