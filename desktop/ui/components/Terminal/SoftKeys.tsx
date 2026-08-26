@@ -56,6 +56,13 @@ export function SoftKeys({ terminalId }: { terminalId: string }): ReactNode {
       <Key label="↓" onPress={() => sendKey(terminalId, "down")} />
       <Key label="↑" onPress={() => sendKey(terminalId, "up")} />
       <Key label="→" onPress={() => sendKey(terminalId, "right")} />
+      {/* The compose box submits prose; this is the bare keystroke, for the
+          menus an agent draws — arrow to an option, Enter to take it. */}
+      <Key
+        label="⏎"
+        title="Enter"
+        onPress={() => sendKey(terminalId, "Enter")}
+      />
     </div>
   );
 }

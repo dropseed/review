@@ -39,6 +39,11 @@ describe("the phone's terminal keys", () => {
 
     press("Shift-Tab");
     expect(sendKey).toHaveBeenCalledWith("t1", "Tab", { shift: true });
+
+    // The bare keystroke, not the compose box's submit: an agent's menu is
+    // walked with the arrows and taken with Enter.
+    press("Enter");
+    expect(sendKey).toHaveBeenCalledWith("t1", "Enter");
   });
 
   it("asks for arrows by direction", () => {
