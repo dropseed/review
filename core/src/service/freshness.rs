@@ -5,15 +5,10 @@ use std::path::PathBuf;
 
 use crate::service::targets::resolve_review;
 use crate::sources::github::GhCliProvider;
-use crate::sources::local_git::{DiffShortStat, LocalGitSource};
+use crate::sources::local_git::LocalGitSource;
 use crate::sources::traits::Comparison;
 
 use super::{ReviewFreshnessInput, ReviewFreshnessResult};
-
-/// A diff is considered active when it has any changed files, additions, or deletions.
-pub fn is_diff_active(stats: Option<DiffShortStat>) -> bool {
-    stats.is_some_and(|s| s.file_count > 0 || s.additions > 0 || s.deletions > 0)
-}
 
 /// Detect missing refs by checking if a non-empty ref resolved to the empty tree.
 pub fn missing_refs_from_resolved(
@@ -64,7 +59,7 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
                         missing_refs: vec![],
                     };
                 }
-                // Head changed — re-check diff stats
+                // Head changed — re-check whether the diff is active
                 let source = match LocalGitSource::new(PathBuf::from(&input.repo_path)) {
                     Ok(s) => s,
                     Err(_) => {
@@ -77,17 +72,16 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
                         };
                     }
                 };
-                let stats = resolve_review(
+                let is_active = resolve_review(
                     &source,
                     &input.ref_name,
                     input.base_override.as_deref(),
                     input.github_pr.as_ref(),
                 )
-                .ok()
-                .and_then(|(comparison, _)| source.get_diff_shortstat(&comparison).ok());
+                .is_ok_and(|(comparison, _)| source.is_diff_active(&comparison));
                 return ReviewFreshnessResult {
                     key,
-                    is_active: is_diff_active(stats),
+                    is_active,
                     old_sha: None,
                     new_sha: Some(status.head_ref_oid),
                     missing_refs: vec![],
@@ -143,7 +137,7 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
     if source.include_working_tree(&comparison) {
         return ReviewFreshnessResult {
             key,
-            is_active: is_diff_active(source.get_diff_shortstat(&comparison).ok()),
+            is_active: source.is_diff_active(&comparison),
             old_sha: None,
             new_sha: None,
             missing_refs: vec![],
@@ -184,10 +178,10 @@ pub fn check_single_review_freshness(input: ReviewFreshnessInput) -> ReviewFresh
         };
     }
 
-    // SHAs changed — re-check diff stats
+    // SHAs changed — re-check whether the diff is active
     ReviewFreshnessResult {
         key,
-        is_active: is_diff_active(source.get_diff_shortstat(&comparison).ok()),
+        is_active: source.is_diff_active(&comparison),
         old_sha: Some(resolved_old),
         new_sha: Some(resolved_new),
         missing_refs: vec![],
@@ -224,39 +218,6 @@ pub async fn check_reviews_freshness(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn stats(file_count: u32, additions: u32, deletions: u32) -> DiffShortStat {
-        DiffShortStat {
-            file_count,
-            additions,
-            deletions,
-        }
-    }
-
-    #[test]
-    fn is_diff_active_false_when_no_stats() {
-        assert!(!is_diff_active(None));
-    }
-
-    #[test]
-    fn is_diff_active_false_when_all_zero() {
-        assert!(!is_diff_active(Some(stats(0, 0, 0))));
-    }
-
-    #[test]
-    fn is_diff_active_true_when_files_changed() {
-        assert!(is_diff_active(Some(stats(1, 0, 0))));
-    }
-
-    #[test]
-    fn is_diff_active_true_when_only_additions() {
-        assert!(is_diff_active(Some(stats(0, 3, 0))));
-    }
-
-    #[test]
-    fn is_diff_active_true_when_only_deletions() {
-        assert!(is_diff_active(Some(stats(0, 0, 2))));
-    }
 
     #[test]
     fn missing_refs_empty_when_both_resolve_to_non_empty_tree() {
