@@ -65,56 +65,149 @@ pub const PASTE_END: &str = "\x1b[201~";
 ///   enabled the mode — a plain `sh`, `cat` — reads the markers as input, so
 ///   they are spent only where they buy something.
 /// - **Anything already carrying an escape**, since a `ESC [ 201 ~` of its own
-///   would close the bracket early. Nothing legitimate has one: this is prose
-///   from a software keyboard.
+///   would close the bracket early. That covers prose from a software keyboard,
+///   which has none — and text a caller has *already* bracketed itself
+///   (`review terminal send --paste`), which must not be bracketed twice.
 ///
 /// One function for every surface that submits, like [`SUBMIT_SETTLE_MS`]
 /// above it. The frontend keeps a documented copy in
 /// `desktop/ui/components/Terminal/compose-send.ts`, for the desktop transport
 /// that never crosses this process.
 #[must_use]
-pub fn wrap_multiline_paste(text: &str) -> std::borrow::Cow<'_, str> {
-    if !text.contains(['\n', '\r']) || text.contains('\x1b') {
+pub fn wrap_multiline_paste(text: &[u8]) -> std::borrow::Cow<'_, [u8]> {
+    if !text.iter().any(|b| matches!(b, b'\n' | b'\r')) || text.contains(&ESC) {
         return std::borrow::Cow::Borrowed(text);
     }
-    std::borrow::Cow::Owned(format!("{PASTE_BEGIN}{text}{PASTE_END}"))
+    let mut out = Vec::with_capacity(PASTE_BEGIN.len() + text.len() + PASTE_END.len());
+    out.extend_from_slice(PASTE_BEGIN.as_bytes());
+    out.extend_from_slice(text);
+    out.extend_from_slice(PASTE_END.as_bytes());
+    std::borrow::Cow::Owned(out)
+}
+
+/// The escape a bracketed text would already carry.
+const ESC: u8 = 0x1b;
+
+/// Type a message into a session and submit it: the text, a settle, then Enter.
+///
+/// The whole shape of a submit, in one place, because both surfaces that offer
+/// one owe the same three things — the bracketing above, the pause of
+/// [`SUBMIT_SETTLE_MS`], and an Enter that is a **separate write**. The web
+/// server holds it for a phone whose own timers iOS freezes; `review terminal
+/// send --submit` holds it for a shell. Neither is a different act.
+///
+/// `write` is called twice and each call must be one complete write: the
+/// server's runs through a reconnecting bridge that retries a whole call, and a
+/// retry spanning both writes would type the message a second time. Answers how
+/// many bytes the first write carried, which is the message plus whatever
+/// bracketing it needed.
+pub async fn submit_message<W, Fut>(
+    text: &[u8],
+    settle: std::time::Duration,
+    write: W,
+) -> anyhow::Result<usize>
+where
+    W: Fn(Vec<u8>) -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<()>>,
+{
+    let typed = wrap_multiline_paste(text).into_owned();
+    let len = typed.len();
+    write(typed).await?;
+    tokio::time::sleep(settle).await;
+    write(b"\r".to_vec()).await?;
+    Ok(len)
 }
 
 #[cfg(test)]
 mod paste_tests {
-    use super::{wrap_multiline_paste, PASTE_BEGIN, PASTE_END};
+    use super::{submit_message, wrap_multiline_paste, PASTE_BEGIN, PASTE_END};
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    /// The rule, as the frontend's copy states it in strings.
+    fn wrapped(text: &str) -> String {
+        String::from_utf8(wrap_multiline_paste(text.as_bytes()).into_owned()).unwrap()
+    }
 
     #[test]
     fn single_line_text_is_untouched() {
-        assert_eq!(wrap_multiline_paste("run the tests"), "run the tests");
-        assert_eq!(wrap_multiline_paste(""), "");
+        assert_eq!(wrapped("run the tests"), "run the tests");
+        assert_eq!(wrapped(""), "");
     }
 
     #[test]
     fn a_newline_makes_it_a_paste() {
         assert_eq!(
-            wrap_multiline_paste("first\nsecond"),
+            wrapped("first\nsecond"),
             format!("{PASTE_BEGIN}first\nsecond{PASTE_END}"),
         );
         // The whole text is one paste, however many lines it runs to — and the
         // interior newlines stay newlines, which is the entire point.
         assert_eq!(
-            wrap_multiline_paste("a\nb\nc"),
-            format!("{PASTE_BEGIN}a\nb\nc{PASTE_END}"),
+            wrapped("a\nb\nc"),
+            format!("{PASTE_BEGIN}a\nb\nc{PASTE_END}")
         );
     }
 
     #[test]
     fn a_bare_carriage_return_counts_too() {
-        assert!(wrap_multiline_paste("a\rb").starts_with(PASTE_BEGIN));
+        assert!(wrapped("a\rb").starts_with(PASTE_BEGIN));
     }
 
     #[test]
     fn text_that_already_holds_an_escape_is_never_bracketed() {
         // Its own end marker would close the bracket early, and the tail would
-        // land as ordinary input — the failure this is meant to prevent.
+        // land as ordinary input — the failure this is meant to prevent. Text a
+        // caller bracketed itself is the same case, and must not be wrapped
+        // twice.
         let hostile = "first\n\x1b[201~rm -rf /";
-        assert_eq!(wrap_multiline_paste(hostile), hostile);
+        assert_eq!(wrapped(hostile), hostile);
+        let already = format!("{PASTE_BEGIN}first\nsecond{PASTE_END}");
+        assert_eq!(wrapped(&already), already);
+    }
+
+    #[tokio::test]
+    async fn a_submit_is_the_message_then_a_separate_enter() {
+        let writes = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+        let seen = Arc::clone(&writes);
+        let len = submit_message(b"first\nsecond", Duration::from_millis(0), move |bytes| {
+            let seen = Arc::clone(&seen);
+            async move {
+                seen.lock().unwrap().push(bytes);
+                Ok(())
+            }
+        })
+        .await
+        .unwrap();
+
+        let writes = writes.lock().unwrap();
+        assert_eq!(
+            writes.as_slice(),
+            [
+                format!("{PASTE_BEGIN}first\nsecond{PASTE_END}").into_bytes(),
+                b"\r".to_vec(),
+            ]
+        );
+        assert_eq!(len, writes[0].len());
+    }
+
+    #[tokio::test]
+    async fn a_failed_message_is_never_followed_by_an_enter() {
+        // Half a message is recoverable; a half message that was then submitted
+        // is not.
+        let calls = Arc::new(Mutex::new(0_usize));
+        let seen = Arc::clone(&calls);
+        let result = submit_message(b"hi", Duration::from_millis(0), move |_| {
+            let seen = Arc::clone(&seen);
+            async move {
+                *seen.lock().unwrap() += 1;
+                Err(anyhow::anyhow!("gone"))
+            }
+        })
+        .await;
+
+        assert!(result.is_err());
+        assert_eq!(*calls.lock().unwrap(), 1);
     }
 }
 

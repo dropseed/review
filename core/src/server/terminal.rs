@@ -51,7 +51,7 @@ use crate::daemon::{
     DaemonClient, Event, EventsHandle, Op, StreamFrame, StreamHandle, ERR_CLOSED, ERR_CONNECTING,
     ERR_SENDING,
 };
-use crate::terminal::{wrap_multiline_paste, SUBMIT_SETTLE_MS};
+use crate::terminal::{submit_message, SUBMIT_SETTLE_MS};
 
 /// Close code meaning "this session no longer exists" — the one close the
 /// frontend must not retry (`SESSION_GONE_CODE` in `terminal-socket.ts`).
@@ -478,34 +478,37 @@ async fn write_stdin(
 /// switcher opened mid-send. This process is not suspended, so the gap is
 /// honoured whatever the client does next — including going away entirely.
 ///
-/// A message that spans lines goes out as a **bracketed paste**
-/// ([`wrap_multiline_paste`]), because a bare newline is itself a submit to
-/// anything with a line editor: without the brackets a two-line message ran its
-/// first line and left the rest typed at a fresh prompt.
+/// A message that spans lines goes out as a **bracketed paste**, because a bare
+/// newline is itself a submit to anything with a line editor: without the
+/// brackets a two-line message ran its first line and left the rest typed at a
+/// fresh prompt. That, the settle and the separate Enter are all
+/// [`submit_message`]'s — this end supplies only the write.
 async fn submit(
     State(bridge): State<TerminalBridge>,
     Json(request): Json<WriteRequest>,
 ) -> ApiResult<Value> {
     let WriteRequest { terminal_id, data } = request;
-    let data = wrap_multiline_paste(&data).into_owned();
-    // Two calls rather than one closure: `with_client` retries a whole call
-    // against a fresh connection, and a retry that re-ran both writes would
-    // type the message twice.
-    bridge
-        .with_client(|client| {
-            let (id, data) = (terminal_id.clone(), data.clone());
-            async move { client.write(&id, data.as_bytes()).await }
-        })
-        .await
-        .map_err(internal_err)?;
-    tokio::time::sleep(Duration::from_millis(SUBMIT_SETTLE_MS)).await;
-    bridge
-        .with_client(|client| {
+    // One `with_client` per write rather than one around both: it retries a
+    // whole call against a fresh connection, and a retry spanning both writes
+    // would type the message twice.
+    submit_message(
+        data.as_bytes(),
+        Duration::from_millis(SUBMIT_SETTLE_MS),
+        |bytes| {
             let id = terminal_id.clone();
-            async move { client.write(&id, b"\r").await }
-        })
-        .await
-        .map_err(internal_err)?;
+            let bridge = &bridge;
+            async move {
+                bridge
+                    .with_client(|client| {
+                        let (id, bytes) = (id.clone(), bytes.clone());
+                        async move { client.write(&id, &bytes).await }
+                    })
+                    .await
+            }
+        },
+    )
+    .await
+    .map_err(internal_err)?;
     Ok(Json(Value::Null))
 }
 

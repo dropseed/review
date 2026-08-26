@@ -1,14 +1,6 @@
 import { SIDEBAR_LIMITS } from "../../utils/resize";
 
 /**
- * Which half a phone-width stage shows is `push-nav`'s `codePushed`: the
- * terminal is the screen, and the code half is pushed over it. "split" resolves
- * to the terminal, because the reason to open this app on a phone is almost
- * always an agent that has been left running, and a diff at 390px is read four
- * words at a time.
- */
-
-/**
  * The narrowest the diff may get before the files column stops being worth its
  * room, in rem.
  *

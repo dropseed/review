@@ -27,8 +27,6 @@
  */
 
 export interface NewOutputState {
-  /** Whether the viewport is showing the bottom of the buffer. */
-  atBottom: boolean;
   /** Whether output has arrived since it stopped showing the bottom. */
   missed: boolean;
   /** Whether the terminal is on its alternate screen. */
@@ -45,7 +43,6 @@ export type NewOutputEvent =
 
 /** A terminal nobody has scrolled yet: at the bottom, with nothing missed. */
 export const initialNewOutput: NewOutputState = {
-  atBottom: true,
   missed: false,
   alt: false,
 };
@@ -54,51 +51,38 @@ export const initialNewOutput: NewOutputState = {
  * Fold one event in, returning the *same* object when nothing changed — a
  * terminal at the bottom fires one of these per frame of output, and each one
  * would otherwise be a React render of the pane.
+ *
+ * Where the viewport is sitting is not kept: it is only ever asked about at the
+ * moment an event carries it, and the two answers that matter are both already
+ * folded into `missed` — output landing away from the bottom sets it, arriving
+ * at the bottom by any means clears it.
  */
 export function reduceNewOutput(
   state: NewOutputState,
   event: NewOutputEvent,
 ): NewOutputState {
-  return settle(state, next(state, event));
-}
-
-function next(state: NewOutputState, event: NewOutputEvent): NewOutputState {
+  const { missed, alt } = state;
   switch (event.type) {
     case "viewport":
       // Only arriving clears it. Scrolling *further* up is still away, and
       // leaving the bottom is not by itself something to report.
-      return {
-        ...state,
-        atBottom: event.atBottom,
-        missed: event.atBottom ? false : state.missed,
-      };
-    case "output":
+      return event.atBottom && missed ? { missed: false, alt } : state;
+    case "output": {
       // The alternate screen's repaints are not news, and its buffer has no
       // bottom to be away from.
-      return {
-        ...state,
-        atBottom: event.atBottom,
-        missed: !event.atBottom && !state.alt,
-      };
+      const now = !event.atBottom && !alt;
+      return now === missed ? state : { missed: now, alt };
+    }
     case "screen":
       // Either direction is a different buffer than the one anything was
       // missed in, and both land showing their own bottom.
-      return { atBottom: true, missed: false, alt: event.alt };
+      return !missed && alt === event.alt
+        ? state
+        : { missed: false, alt: event.alt };
   }
-}
-
-function settle(
-  state: NewOutputState,
-  candidate: NewOutputState,
-): NewOutputState {
-  return state.atBottom === candidate.atBottom &&
-    state.missed === candidate.missed &&
-    state.alt === candidate.alt
-    ? state
-    : candidate;
 }
 
 /** Whether the pane should be offering the jump. */
 export function newOutputVisible(state: NewOutputState): boolean {
-  return state.missed && !state.atBottom && !state.alt;
+  return state.missed;
 }

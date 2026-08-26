@@ -1,6 +1,6 @@
 /**
- * Sending a composed message to a shell — the DOM-free half of the phone's
- * compose bar.
+ * The two rules a composed message goes out under, kept where both the bar and
+ * the transport that applies them can read them.
  *
  * This is `review terminal send --submit`, in the browser. Enter is written as
  * a *second* write, after a settle delay, rather than a `\r` appended to the
@@ -13,11 +13,10 @@
  * held by the server (`POST /api/terminal/submit`), because the client here is
  * a phone and iOS freezes a backgrounded PWA's timers — a send that reached the
  * gap and then went to the app switcher would leave the message typed and never
- * submitted. Which of the two happens is `ApiClient.terminalSubmit`'s business;
- * this is just the caller.
+ * submitted. Which of the two happens is `ApiClient.terminalSubmit`'s business,
+ * which is why the bar simply calls it: the rules below are what the desktop
+ * half of that answer (`tauri-client`) is made of.
  */
-
-import type { ApiClient } from "../../api/client";
 
 /**
  * How long to wait between the text and the Enter that submits it.
@@ -59,22 +58,4 @@ export const PASTE_END = "\x1b[201~";
 export function wrapMultilinePaste(text: string): string {
   if (!/[\n\r]/.test(text) || text.includes("\x1b")) return text;
   return `${PASTE_BEGIN}${text}${PASTE_END}`;
-}
-
-/**
- * Write a composed message and submit it.
- *
- * The text goes out exactly as typed — newlines included, in a single write —
- * and the trailing `\r` is the only byte this adds. A failed first write means
- * no Enter follows: half a message is recoverable, a half message that was then
- * submitted is not. Whether that single write is bracketed as a paste is
- * `ApiClient.terminalSubmit`'s business, so the two transports can each apply
- * it on the side of the wire that holds their settle.
- */
-export async function submitComposed(
-  client: ApiClient,
-  terminalId: string,
-  text: string,
-): Promise<void> {
-  await client.terminalSubmit(terminalId, text);
 }

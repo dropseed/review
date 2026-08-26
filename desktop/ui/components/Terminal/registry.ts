@@ -61,14 +61,6 @@ interface RegistryEntry {
    */
   gridSize: { cols: number; rows: number } | null;
   /**
-   * Panes listening for grid changes (a viewer re-rendering at the new size).
-   * `seed` marks the stream's opening announcement — the daemon stating the
-   * current size on attach, not anyone changing it.
-   */
-  gridListeners: Set<
-    (size: { cols: number; rows: number }, seed: boolean) => void
-  >;
-  /**
    * The grid another client claimed while an owner pane was letterboxing it,
    * or null. Held here rather than in the pane so the claim survives remounts
    * (⌘` toggles, workspace switches) — reclaiming stays a deliberate click or
@@ -104,6 +96,52 @@ interface RegistryEntry {
 }
 
 const registry = new Map<string, RegistryEntry>();
+
+/**
+ * Listeners about one terminal, keyed by its id.
+ *
+ * Two things outside a pane watch a session — the grid it is drawn at, and the
+ * scale it is drawn down to — and the bookkeeping is all either of them needs:
+ * subscribing hands back its own unsubscribe, and the last listener out takes
+ * the id with it.
+ *
+ * Kept beside the registry rather than in an entry, because the surfaces doing
+ * the watching do not all mount after the pane has acquired one — the terminal
+ * strip renders *above* the pane, and a listener keyed on an entry that doesn't
+ * exist yet is a listener that never fires.
+ */
+function listenerSet<L>() {
+  const byId = new Map<string, Set<L>>();
+  return {
+    /** Subscribe to `id`; the returned function is this listener's unsubscribe. */
+    add(id: string, listener: L): () => void {
+      const listeners = byId.get(id) ?? new Set<L>();
+      byId.set(id, listeners);
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+        if (listeners.size === 0) byId.delete(id);
+      };
+    },
+    /** Tell everyone watching `id`. */
+    emit(id: string, notify: (listener: L) => void): void {
+      const listeners = byId.get(id);
+      if (listeners) for (const listener of listeners) notify(listener);
+    },
+    /** Drop every listener on `id` — the thing they were about is gone. */
+    clear(id: string): void {
+      byId.delete(id);
+    },
+  };
+}
+
+/**
+ * Panes listening for grid changes (a viewer re-rendering at the new size).
+ * `seed` marks the stream's opening announcement — the daemon stating the
+ * current size on attach, not anyone changing it.
+ */
+const gridListeners =
+  listenerSet<(size: { cols: number; rows: number }, seed: boolean) => void>();
 
 /** Font/spacing values applied to every live term (see refreshAllTerminalOptions). */
 export interface TerminalFontOptions {
@@ -211,7 +249,6 @@ export function acquireTerminal(
     unsubResized: null,
     disposeKitty,
     gridSize: null,
-    gridListeners: new Set(),
     remoteClaim: null,
     mountPolicy: null,
     fitAction: null,
@@ -234,8 +271,7 @@ export function acquireTerminal(
       // states the current size on every attach); later ones are changes.
       const seed = entry.gridSize === null;
       entry.gridSize = { cols, rows };
-      for (const listener of entry.gridListeners)
-        listener({ cols, rows }, seed);
+      gridListeners.emit(id, (listener) => listener({ cols, rows }, seed));
     },
   );
   return { term, fit, isNew: true };
@@ -282,12 +318,7 @@ export function onTerminalGrid(
   id: string,
   listener: (size: { cols: number; rows: number }, seed: boolean) => void,
 ): () => void {
-  const entry = registry.get(id);
-  if (!entry) return () => {};
-  entry.gridListeners.add(listener);
-  return () => {
-    entry.gridListeners.delete(listener);
-  };
+  return gridListeners.add(id, listener);
 }
 
 /** Record how the mounted pane sizes this terminal — see RegistryEntry. */
@@ -807,14 +838,9 @@ export function requestFit(id: string): void {
 /**
  * What the mounted pane is drawing each grid at — 1 at the drawing's true
  * size, less when it is scaled down to fit — and who is watching that number.
- *
- * Beside the registry rather than inside it, because the one thing watching is
- * the phone's fit chip in the terminal strip, and a strip renders (and mounts
- * its effects) *before* the pane below it has acquired anything. A listener
- * keyed on an entry that doesn't exist yet is a listener that never fires.
  */
 const viewScales = new Map<string, number>();
-const scaleListeners = new Map<string, Set<(scale: number) => void>>();
+const scaleListeners = listenerSet<(scale: number) => void>();
 
 /**
  * Publish what the mounted pane is drawing this grid at.
@@ -822,13 +848,12 @@ const scaleListeners = new Map<string, Set<(scale: number) => void>>();
  * Called from the pane's own layout, on the paths that just laid the terminal
  * out; a scale that hasn't changed notifies nobody. Published out of the pane
  * because the control that acts on it is deliberately not in the pane — see
- * `Terminal/view-scale`.
+ * `Terminal/TerminalScaleChip`.
  */
 export function setTerminalViewScale(id: string, scale: number): void {
   if (viewScales.get(id) === scale) return;
   viewScales.set(id, scale);
-  const listeners = scaleListeners.get(id);
-  if (listeners) for (const listener of listeners) listener(scale);
+  scaleListeners.emit(id, (listener) => listener(scale));
 }
 
 /** What the mounted pane is drawing this grid at; 1 for a terminal nobody is
@@ -837,21 +862,21 @@ export function terminalViewScale(id: string): number {
   return viewScales.get(id) ?? 1;
 }
 
-/** Watch the drawing's scale for one terminal (returns unsubscribe fn). */
+/**
+ * Watch the drawing's scale for one terminal (returns unsubscribe fn).
+ *
+ * The current value is delivered on subscribe, the way `TerminalSocket`'s
+ * `onState` announces itself: a subscriber that also had to read the value
+ * separately would be two statements of one fact, with a window between them
+ * for the pane to lay itself out in.
+ */
 export function onTerminalViewScale(
   id: string,
   listener: (scale: number) => void,
 ): () => void {
-  let listeners = scaleListeners.get(id);
-  if (!listeners) {
-    listeners = new Set();
-    scaleListeners.set(id, listeners);
-  }
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-    if (listeners.size === 0) scaleListeners.delete(id);
-  };
+  const unsubscribe = scaleListeners.add(id, listener);
+  listener(terminalViewScale(id));
+  return unsubscribe;
 }
 
 /**
@@ -1014,7 +1039,7 @@ export function disposeTerminal(id: string): void {
   entry.unsubOutput = null;
   entry.unsubResized?.();
   entry.unsubResized = null;
-  entry.gridListeners.clear();
+  gridListeners.clear(id);
   entry.disposeKitty?.();
   entry.disposeKitty = null;
   // The keyboard mode belongs to the program that negotiated it, so it dies
@@ -1075,7 +1100,7 @@ export function refreshAllTerminalOptions(opts: TerminalFontOptions): void {
         cols: entry.term.cols,
         rows: entry.term.rows,
       };
-      for (const listener of entry.gridListeners) listener(size, false);
+      gridListeners.emit(id, (listener) => listener(size, false));
       continue;
     }
 

@@ -147,21 +147,18 @@ export class TerminalSocket extends ReconnectingSocket {
     };
   }
 
-  /** Whether the transport is currently down. */
-  isReconnecting(): boolean {
-    return this.reconnecting;
-  }
-
   /**
    * The tab came back to the foreground. A closed socket is the base class's
    * case; an *open* one still has to prove it — see the class comment.
    */
   override wake(): void {
-    if (this.stopped) return;
     if (!this.isOpen()) {
+      // Including a socket that is finished for good: declining that is the
+      // first thing the base class's own `wake` does.
       super.wake();
       return;
     }
+    if (this.stopped) return;
     // No `resume()` here. An open socket that answers its probe never stopped
     // carrying bytes, and re-fetching the ring for a tab that merely came back
     // to the foreground is a round trip per session for nothing. Catching up is
@@ -330,7 +327,9 @@ export class TerminalSocket extends ReconnectingSocket {
     const queued = this.resumeQueue;
     this.resumeQueue = [];
     for (const chunk of queued) {
-      if (this.lastSeq !== null && chunk.seq <= this.lastSeq) continue;
+      // There is always a cursor by here: only `resume` queues anything, and
+      // it declines outright without one.
+      if (chunk.seq <= this.lastSeq!) continue;
       this.lastSeq = chunk.seq;
       this.handlers.onOutput(chunk.data, chunk.seq);
     }

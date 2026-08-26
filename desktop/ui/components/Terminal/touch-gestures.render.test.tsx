@@ -69,6 +69,7 @@ vi.mock("./registry", () => ({
   setTerminalMountPolicy: vi.fn(),
   setTerminalRemoteClaim: vi.fn(),
   setTerminalViewScale: vi.fn(),
+  terminalViewScale: () => 1,
   startTerminalOutput: vi.fn(),
   terminalGridSize: () => null,
   terminalRemoteClaim: () => null,

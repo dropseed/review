@@ -1,23 +1,33 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useSyncExternalStore } from "react";
 import { onTerminalViewScale, requestFit, terminalViewScale } from "./registry";
-import { formatScale, scaleChipVisible } from "./view-scale";
 
 /**
  * The phone's readout of how far down the terminal is being drawn, and the tap
  * that fixes it.
  *
- * It lives in the strip's trailing group rather than over the drawing, for the
- * reason `view-scale` gives: the pill it replaces covered the last rows of
- * output. Up here it is a status chip that happens to be a control — which is
- * also why it is a percentage rather than the words "Fit to screen". The words
- * are still in the `⋯` sheet, where they are offered unconditionally; this one
- * appears only when there is something to report, and disappearing is what it
- * has to say when the fit works.
+ * A phone renders the PTY's true grid scaled down to fit (see "One PTY grid" in
+ * the root CLAUDE.md), and the only way to change that is to fit the shared
+ * grid to this screen — a write every other client sees, so it stays a tap and
+ * never a side effect. The tap used to be a pill floating in the bottom-right
+ * corner of the drawing, which put it on top of the last rows of output: over
+ * Claude Code, exactly on its status line. A control that covers the thing it
+ * is about is the wrong trade at any size, and it was already reachable a
+ * second way (the `⋯` sheet's "Fit to screen").
+ *
+ * So it lives in the strip's trailing group instead — a place that can never
+ * sit on a row of output. Which makes it a status readout first and a control
+ * second, and that is what decides both rules below: it is a percentage rather
+ * than the words "Fit to screen" (the words are in the sheet, where they are
+ * offered unconditionally), and it appears only when there is something to
+ * report — disappearing is what it has to say when the fit works.
  */
 export function TerminalScaleChip({ paneId }: { paneId: string }): ReactNode {
   const scale = useTerminalViewScale(paneId);
-  if (!scaleChipVisible(scale)) return null;
-  const percent = formatScale(scale);
+  if (!chipVisible(scale)) return null;
+  // Rounded down, because the number is a claim about legibility and 94.6%
+  // shown as "95%" would be the one case where the chip appears reading like
+  // the threshold it just crossed.
+  const percent = `${Math.max(1, Math.floor(scale * 100))}%`;
   return (
     <button
       type="button"
@@ -34,6 +44,23 @@ export function TerminalScaleChip({ paneId }: { paneId: string }): ReactNode {
 }
 
 /**
+ * How far below true size the drawing has to be drawn before the chip appears.
+ *
+ * A few percent of shrink is invisible and reads as noise in the strip, and a
+ * chip that came and went on a resize of a few pixels would be worse than
+ * either state. Anything a person can actually see is well below this.
+ */
+const SCALE_CHIP_THRESHOLD = 0.95;
+
+/** Whether the strip should be reporting this scale at all. */
+function chipVisible(scale: number): boolean {
+  // Guard the numbers a layout can produce before it has measured anything:
+  // 0 (a pane with no size yet) is not "scaled to nothing", it is "unknown".
+  if (!Number.isFinite(scale) || scale <= 0) return false;
+  return scale < SCALE_CHIP_THRESHOLD;
+}
+
+/**
  * What the mounted pane is drawing this session at.
  *
  * Subscribed rather than read: the strip renders above the pane, so its effect
@@ -41,10 +68,11 @@ export function TerminalScaleChip({ paneId }: { paneId: string }): ReactNode {
  * as a notification, never as the initial read.
  */
 function useTerminalViewScale(id: string): number {
-  const [scale, setScale] = useState(() => terminalViewScale(id));
-  useEffect(() => {
-    setScale(terminalViewScale(id));
-    return onTerminalViewScale(id, setScale);
-  }, [id]);
-  return scale;
+  return useSyncExternalStore(
+    useCallback(
+      (onChange: () => void) => onTerminalViewScale(id, onChange),
+      [id],
+    ),
+    () => terminalViewScale(id),
+  );
 }

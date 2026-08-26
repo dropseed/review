@@ -2,13 +2,12 @@ import { vi, describe, it, expect, afterEach, beforeEach } from "vitest";
 import { render, cleanup, act, screen } from "@testing-library/react";
 
 /**
- * The strip's scale chip, wired up.
+ * The strip's scale chip: when it appears, what it says, and how it hears.
  *
- * The thresholds and the wording are `view-scale.test.ts`. What is worth
- * rendering for is the subscription: the strip mounts *above* the pane, so the
- * chip's effect runs before anything has been laid out and the first scale can
- * only ever arrive as a notification. A chip that read the registry once would
- * be permanently absent.
+ * The subscription is the part worth a render test. The strip mounts *above*
+ * the pane, so the chip is subscribed before anything has been laid out and the
+ * first scale can only ever arrive as a notification — a chip that read the
+ * registry once would be permanently absent.
  */
 
 const mocks = vi.hoisted(() => ({
@@ -82,5 +81,22 @@ describe("the strip's scale chip", () => {
   it("stays quiet about a shrink nobody can see", () => {
     publish(0.98);
     expect(chip()).toBeNull();
+  });
+
+  /** 0 is "not measured", not "scaled to nothing". */
+  it("says nothing about a scale a layout cannot have meant", () => {
+    publish(0);
+    expect(chip()).toBeNull();
+    publish(Number.NaN);
+    expect(chip()).toBeNull();
+  });
+
+  /**
+   * Rounded down: 94.6% shown as "95%" would be the one case where the chip
+   * appears reading like the threshold it just crossed.
+   */
+  it("reports whole percents, rounded down", () => {
+    publish(0.946);
+    expect(chip()?.textContent).toBe("94%");
   });
 });

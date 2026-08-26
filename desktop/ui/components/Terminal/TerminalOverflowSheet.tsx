@@ -1,12 +1,8 @@
 import { type ReactNode, useState } from "react";
 import { useReviewStore } from "../../stores";
-import {
-  ActionSheet,
-  ActionSheetRow,
-  ActionSheetSeparator,
-} from "../ui/action-sheet";
+import { ActionSheet, ActionSheetRow } from "../ui/action-sheet";
 import { TERMINAL_FONT_SIZE_STEP } from "../../stores/slices/preferencesSlice";
-import { useFocusedWorkspace } from "../../stores/selectors/workspaces";
+import { focusedWorkspaceIn } from "../../stores/selectors/workspaces";
 import { applyTerminalFontSize } from "./TerminalTextSize";
 import { closeTerminalPane } from "./close";
 import { openTerminalTab } from "./newTab";
@@ -36,7 +32,6 @@ export function TerminalOverflowSheet({
 }): ReactNode {
   const [open, setOpen] = useState(false);
   const fontSize = useReviewStore((s) => s.terminalFontSize);
-  const workspace = useFocusedWorkspace();
 
   const step = (delta: number) =>
     applyTerminalFontSize(paneId, fontSize + delta);
@@ -89,26 +84,24 @@ export function TerminalOverflowSheet({
             would be a control nobody could find twice. */}
         <ActionSheetRow
           label="Fit to screen"
-          onSelect={() => {
-            setOpen(false);
-            requestFit(paneId);
-          }}
+          onSelect={() => requestFit(paneId)}
         />
-        <ActionSheetSeparator />
+        {/* A hairline between the two rows that change this terminal and the
+            two that make or end one. */}
+        <div aria-hidden="true" className="my-1 h-px bg-edge" />
         <ActionSheetRow
           label="New terminal"
           onSelect={() => {
-            setOpen(false);
-            void openTerminalTab(workspace);
+            // Read at the tap rather than subscribed to: the sheet does not
+            // draw the workspace, so which one is focused is only ever a
+            // question this one row asks, at the moment it is answered.
+            void openTerminalTab(focusedWorkspaceIn(useReviewStore.getState()));
           }}
         />
         <ActionSheetRow
           label="Close terminal"
           danger
-          onSelect={() => {
-            setOpen(false);
-            void closeTerminalPane(paneId);
-          }}
+          onSelect={() => void closeTerminalPane(paneId)}
         />
       </ActionSheet>
     </>

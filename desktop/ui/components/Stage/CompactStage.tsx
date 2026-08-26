@@ -7,7 +7,6 @@ import { TerminalPanel } from "../Terminal/TerminalPanel";
 import {
   AXIS_SLOP_PX,
   codePushed,
-  dragOffset,
   dragProgress,
   popCommits,
   pushTransforms,
@@ -69,22 +68,29 @@ export function CompactStage({
     const screen = screenRef.current;
     if (!screen || !docked) return;
 
-    /**
-     * Draw the stack at `progress` — 0 fully pushed, 1 fully popped.
-     *
-     * `settling` hands the transition back to CSS; during a drag it is off, so
-     * the screen tracks the finger exactly instead of chasing it 350ms behind.
-     */
-    const paint = (progress: number, settling: boolean): void => {
+    /** Draw the stack at `progress` — 0 fully pushed, 1 fully popped. */
+    const paint = (progress: number): void => {
       const at = pushTransforms(progress);
       const underlay = underlayRef.current;
       const scrim = scrimRef.current;
-      for (const el of [screen, underlay, scrim]) {
-        if (el) el.style.transition = settling ? "" : "none";
-      }
-      if (screen) screen.style.transform = at.screen;
+      screen.style.transform = at.screen;
       if (underlay) underlay.style.transform = at.underlay;
       if (scrim) scrim.style.opacity = String(at.scrim);
+    };
+
+    /**
+     * Hand the transition back to CSS, or take it away for the length of a
+     * drag — off while the finger is down, so the screen tracks it exactly
+     * instead of chasing it 350ms behind, and back on the moment it lets go.
+     *
+     * Written once at each end of the gesture rather than on every move: the
+     * value is the same all the way through, and a style write per touchmove
+     * is a style write per frame.
+     */
+    const setTransitions = (on: boolean): void => {
+      for (const el of [screen, underlayRef.current, scrimRef.current]) {
+        if (el) el.style.transition = on ? "" : "none";
+      }
     };
 
     let tracking = false;
@@ -97,8 +103,12 @@ export function CompactStage({
     const onStart = (e: TouchEvent): void => {
       if (!pushedRef.current || e.touches.length !== 1) return;
       const touch = e.touches[0];
+      // The screen is `inset-0` over the whole stage, so its left edge is the
+      // viewport's — which is what lets the cheap test come *before* the
+      // layout read rather than after it, on every touch that isn't this
+      // gesture.
+      if (!startsAtEdge(touch.clientX)) return;
       const rect = screen.getBoundingClientRect();
-      if (!startsAtEdge(touch.clientX, rect.left)) return;
       tracking = true;
       horizontal = false;
       startX = touch.clientX;
@@ -125,11 +135,12 @@ export function CompactStage({
           return;
         }
         horizontal = true;
+        if (!reduced) setTransitions(false);
       }
 
       // The drag is ours from here.
       e.preventDefault();
-      if (!reduced) paint(dragProgress(dragOffset(dx, width), width), false);
+      if (!reduced) paint(dragProgress(dx, width));
     };
 
     const onEnd = (e: TouchEvent): void => {
@@ -142,12 +153,18 @@ export function CompactStage({
       // Paint where this is going *before* telling the store, so the render
       // that follows sets the values already on the element. Both orders
       // animate; only this one can't flash the screen home for a frame first.
-      if (!reduced) paint(commit ? 1 : 0, true);
+      if (!reduced) {
+        setTransitions(true);
+        paint(commit ? 1 : 0);
+      }
       if (commit) setContentFocus("split");
     };
 
     const onCancel = (): void => {
-      if (tracking && horizontal && !reduced) paint(0, true);
+      if (tracking && horizontal && !reduced) {
+        setTransitions(true);
+        paint(0);
+      }
       tracking = false;
     };
 

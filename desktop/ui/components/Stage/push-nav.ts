@@ -72,21 +72,25 @@ export const UNDERLAY_DIM = 0.35;
  * With no terminal half there is nothing to push *over* — the code half is
  * simply the screen, with no back affordance, which is what `docked === false`
  * means everywhere else in the compact layout.
+ *
+ * "split" resolves to the terminal, because the reason to open this app on a
+ * phone is almost always an agent that has been left running, and a diff at
+ * 390px is read four words at a time.
  */
 export function codePushed(focus: ContentFocus, docked: boolean): boolean {
   return docked && focus === "code";
 }
 
-/** Where the pushed screen sits, in px from its home position. */
-export function dragOffset(dx: number, width: number): number {
-  if (!Number.isFinite(dx)) return 0;
-  return Math.max(0, Math.min(width, dx));
-}
-
-/** That offset as 0..1, where 0 is fully pushed and 1 is fully popped. */
-export function dragProgress(offset: number, width: number): number {
+/**
+ * How far a finger has dragged the pushed screen, as 0..1 — 0 fully pushed, 1
+ * fully popped.
+ *
+ * Clamped at both ends, since the two are the same statement: home is as far
+ * left as the screen goes, and its own width as far right.
+ */
+export function dragProgress(dx: number, width: number): number {
   if (width <= 0) return 0;
-  return Math.max(0, Math.min(1, offset / width));
+  return Math.max(0, Math.min(1, dx / width));
 }
 
 /**
@@ -147,8 +151,9 @@ export function popCommits({
   /** The screen's own width, px. */
   width: number;
 }): boolean {
-  const offset = dragOffset(dx, width);
-  if (width > 0 && offset >= width * COMMIT_FRACTION) return true;
+  const progress = dragProgress(dx, width);
+  if (progress >= COMMIT_FRACTION) return true;
+  const offset = progress * width;
   if (dt <= 0 || offset < FLICK_MIN_PX) return false;
   return offset / dt >= FLICK_PX_PER_MS;
 }

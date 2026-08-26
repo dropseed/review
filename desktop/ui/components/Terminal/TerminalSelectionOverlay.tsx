@@ -234,10 +234,13 @@ export function TerminalSelectionOverlay({
         type="button"
         // Same bargain the key bar makes: no focus move, so the keyboard (and
         // the selection) stay where they are until this actually exits.
-        onPointerDown={(e) => {
-          e.preventDefault();
-          onExit();
-        }}
+        //
+        // It does not exit *here*: a press on this button is a press outside
+        // the text, which the document listener above already reads as leaving.
+        // Saying it twice would only be a second rule to keep in step.
+        onPointerDown={(e) => e.preventDefault()}
+        // Except by keyboard, which produces no pointer event for that rule to
+        // catch — a `click` with no detail is the only exit this button owns.
         onClick={(e) => {
           if (e.detail === 0) onExit();
         }}

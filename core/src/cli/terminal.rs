@@ -32,7 +32,9 @@ use regex::Regex;
 use serde_json::json;
 
 use crate::daemon::{features, socket_path, DaemonClient, Op, StreamFrame, VersionInfo};
-use crate::terminal::{Phase, SessionStatus, TerminalSummary, TERMINAL_ID_ENV};
+use crate::terminal::{
+    submit_message, Phase, SessionStatus, TerminalSummary, PASTE_BEGIN, PASTE_END, TERMINAL_ID_ENV,
+};
 use crate::work::{self, router};
 
 use super::common::{new_id_suffix, print_json, read_path_or_stdin, resolve_cwd_arg};
@@ -184,7 +186,8 @@ pub struct SendArgs {
     pub enter: bool,
     /// Press Enter as a *separate* write, after letting the session settle —
     /// for TUIs whose autocomplete popup would read a newline arriving with
-    /// the text as "accept the highlighted entry"
+    /// the text as "accept the highlighted entry". Text spanning lines is sent
+    /// as a bracketed paste, since a bare newline is itself a submit
     #[arg(long, conflicts_with = "enter")]
     pub submit: bool,
     /// How long `--submit` waits before pressing Enter
@@ -648,11 +651,6 @@ fn tail(text: &str, n: usize) -> String {
     lines[lines.len().saturating_sub(n)..].join("\n")
 }
 
-/// Bracketed-paste markers: a TUI that has enabled the mode (`CSI ? 2004 h`)
-/// takes everything between them as one paste.
-const PASTE_BEGIN: &[u8] = b"\x1b[200~";
-const PASTE_END: &[u8] = b"\x1b[201~";
-
 /// The payload `send` writes in its first write: text (optionally wrapped as a
 /// paste), then named keys, then a trailing Enter for `--enter`.
 fn send_payload(args: &SendArgs, text: Option<&[u8]>) -> Result<Vec<u8>, String> {
@@ -660,9 +658,9 @@ fn send_payload(args: &SendArgs, text: Option<&[u8]>) -> Result<Vec<u8>, String>
         Vec::with_capacity(text.map_or(0, |t| t.len()) + PASTE_BEGIN.len() + PASTE_END.len());
     if let Some(text) = text {
         if args.paste {
-            bytes.extend_from_slice(PASTE_BEGIN);
+            bytes.extend_from_slice(PASTE_BEGIN.as_bytes());
             bytes.extend_from_slice(text);
-            bytes.extend_from_slice(PASTE_END);
+            bytes.extend_from_slice(PASTE_END.as_bytes());
         } else {
             bytes.extend_from_slice(text);
         }
@@ -697,20 +695,25 @@ async fn run_send(client: &DaemonClient, args: SendArgs) -> Result<(), String> {
     let bytes = send_payload(&args, text.as_deref())?;
 
     let id = resolve_id(client, &args.target.id).await?;
-    client.write(&id, &bytes).await.map_err(|e| e.to_string())?;
     if args.submit {
-        // A newline arriving in the same write as the text is ambiguous to a
-        // TUI with an open autocomplete popup (Claude Code's slash commands):
-        // it reads as accepting the highlighted entry rather than submitting
-        // what was typed. Letting the UI settle first disambiguates it.
-        tokio::time::sleep(Duration::from_millis(args.settle_ms)).await;
-        client.write(&id, b"\r").await.map_err(|e| e.to_string())?;
+        // The text, a settle, then Enter as its own write — the same submit the
+        // web server makes, and the same rule about a multi-line message going
+        // out as a paste. Text `--paste` has already bracketed carries an
+        // escape, so it is left exactly as it was built.
+        let target = &id;
+        let sent = submit_message(
+            &bytes,
+            Duration::from_millis(args.settle_ms),
+            |chunk| async move { client.write(target, &chunk).await },
+        )
+        .await
+        .map_err(|e| e.to_string())?;
         println!(
-            "Sent {} byte(s) to {id}, then Enter after {}ms.",
-            bytes.len(),
+            "Sent {sent} byte(s) to {id}, then Enter after {}ms.",
             args.settle_ms
         );
     } else {
+        client.write(&id, &bytes).await.map_err(|e| e.to_string())?;
         println!("Sent {} byte(s) to {id}.", bytes.len());
     }
     Ok(())

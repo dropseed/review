@@ -4,7 +4,7 @@ import { useSidebarResize } from "../../hooks/useSidebarResize";
 import { useAutoUpdater } from "../../hooks/useAutoUpdater";
 import { getPlatformServices } from "../../platform";
 import { newWorkspace } from "../../commands/workspaceCommands";
-import { SidebarPanelIcon, XIcon } from "../ui/icons";
+import { SearchIcon, SidebarPanelIcon, XIcon } from "../ui/icons";
 import { SidebarResizeHandle } from "../ui/sidebar-resize-handle";
 import { Spinner } from "../ui/spinner";
 import { LspStatusIndicator } from "../LspStatusIndicator";
@@ -122,19 +122,7 @@ function SidebarHeader({
                        rounded-md text-fg-muted active:bg-surface-raised"
             aria-label="Search"
           >
-            <svg
-              className="h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <circle cx="11" cy="11" r="7" />
-              <path d="M20 20l-3.5-3.5" />
-            </svg>
+            <SearchIcon />
           </button>
         )}
         {terminalsSupported && (

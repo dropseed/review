@@ -600,7 +600,11 @@ describe("TerminalSocket connection state", () => {
       } else {
         FakeWebSocket.last().emitText({ t: "exit", exitCode: 0 });
       }
-      expect(socket.isReconnecting()).toBe(false);
+      // Subscribed after the ending, so the one value it reports is the
+      // socket's settled answer about itself.
+      const seen: boolean[] = [];
+      socket.onState((reconnecting) => seen.push(reconnecting));
+      expect(seen).toEqual([false]);
     }
   });
 

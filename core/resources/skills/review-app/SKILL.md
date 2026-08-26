@@ -363,14 +363,19 @@ review terminal send agent-1 '/compact' --submit --settle-ms 1000
 review terminal peek agent-1                       # confirm it took the input
 ```
 
-`--settle-ms` only delays the Enter; it does nothing for the text itself.
+`--settle-ms` only delays the Enter; it does nothing for the text itself. Text
+spanning lines is sent as a bracketed paste, since a bare newline is itself a
+submit to anything with a line editor — the same rule the app's own compose bar
+follows.
 
 **Send a long or multi-line prompt to a TUI** — `--file PATH` (or `--file -`
 for stdin) reads the text from a file instead of the command line, bytes
-unmodified (a trailing newline is an Enter). Add `--paste` to wrap it in
+unmodified (a trailing newline is an Enter). `--paste` wraps it in
 bracketed-paste markers so the app takes it as one paste — no per-line submit,
-no autoindent — instead of keystrokes. Only for a program with paste mode on
-(Claude Code, most editors); a plain shell would show the markers as text:
+no autoindent — instead of keystrokes; with `--submit` that is already what a
+multi-line text gets, so the flag is what says so for a single-line one. Only
+for a program with paste mode on (Claude Code, most editors); a plain shell
+would show the markers as text:
 
 ```
 review terminal send agent-1 --file prompt.md --paste --submit

@@ -3,7 +3,6 @@ import {
   COMMIT_FRACTION,
   EDGE_ZONE_PX,
   codePushed,
-  dragOffset,
   dragProgress,
   popCommits,
   startsAtEdge,
@@ -45,16 +44,17 @@ describe("the edge zone", () => {
 });
 
 describe("following the finger", () => {
-  it("never drags the screen left of home or past its own width", () => {
-    expect(dragOffset(-40, 390)).toBe(0);
-    expect(dragOffset(120, 390)).toBe(120);
-    expect(dragOffset(900, 390)).toBe(390);
+  it("reports the drag as a fraction of the screen", () => {
+    expect(dragProgress(195, 390)).toBeCloseTo(0.5);
   });
 
-  it("reports progress as a fraction of the screen", () => {
-    expect(dragProgress(195, 390)).toBeCloseTo(0.5);
-    expect(dragProgress(390, 390)).toBe(1);
-    // An unmeasured screen is not a fully-popped one.
+  it("never drags the screen left of home or past its own width", () => {
+    expect(dragProgress(-40, 390)).toBe(0);
+    expect(dragProgress(900, 390)).toBe(1);
+  });
+
+  /** An unmeasured screen is not a fully-popped one. */
+  it("reads an unmeasured screen as home", () => {
     expect(dragProgress(50, 0)).toBe(0);
   });
 });

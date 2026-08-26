@@ -6,7 +6,6 @@ import { useReviewStore } from "../../stores";
 import { sendChar } from "./registry";
 import { isCtrlArmed } from "./soft-keys";
 import { Key } from "./SoftKeys";
-import { submitComposed } from "./compose-send";
 
 /**
  * The phone's way of saying something to the shell.
@@ -55,7 +54,12 @@ export function ComposeBar({ terminalId }: { terminalId: string }): ReactNode {
     const value = text;
     setText("");
     setSending(true);
-    void submitComposed(getApiClient(), terminalId, value)
+    // The text goes out exactly as typed, newlines included; the Enter that
+    // submits it — and the settle before it — is the client's, so each
+    // transport can hold that delay on the side of the wire that survives a
+    // backgrounded phone (see `compose-send`).
+    void getApiClient()
+      .terminalSubmit(terminalId, value)
       .catch((err: unknown) => {
         console.error("[terminal] Compose send failed:", err);
       })

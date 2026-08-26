@@ -74,7 +74,7 @@ describe("the alternate screen", () => {
       { type: "screen", alt: true },
       { type: "screen", alt: false },
     );
-    expect(state).toEqual({ atBottom: true, missed: false, alt: false });
+    expect(state).toEqual({ missed: false, alt: false });
   });
 });
 

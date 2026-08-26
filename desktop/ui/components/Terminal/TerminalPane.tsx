@@ -34,6 +34,7 @@ import {
   terminalGridSize,
   terminalRemoteClaim,
   terminalReplayInFlight,
+  terminalViewScale,
 } from "./registry";
 import { buildXtermTheme } from "./xterm-theme";
 import {
@@ -158,12 +159,10 @@ export function TerminalPane({
    * the first layout. The selection overlay has to be positioned on exactly
    * these numbers rather than measuring the canvas a second time; the scale
    * alone also goes out to the registry, for the strip's fit chip (see
-   * `view-scale`).
+   * `TerminalScaleChip`) — and comes back from there in the touch handlers,
+   * which need it without re-binding every time the drawing rescales.
    */
   const [layout, setLayout] = useState<SelectionLayout | null>(null);
-  /** The same scale, readable from the touch handlers without re-binding
-   *  them every time the drawing rescales. */
-  const scaleRef = useRef(1);
   /**
    * Select mode: the frozen screen a long press put on top of the terminal,
    * and the cell it was pressed on. Null the rest of the time, which is nearly
@@ -215,7 +214,6 @@ export function TerminalPane({
     // A fresh mount (or a mode flip re-running this effect) starts unclaimed.
     remoteSizeRef.current = null;
     setRemoteSize(null);
-    scaleRef.current = 1;
     setLayout(null);
     setTerminalViewScale(id, 1);
     setSelecting(null);
@@ -333,13 +331,11 @@ export function TerminalPane({
       } catch {
         /* disposed mid-layout */
       }
-      scaleRef.current = s;
       publishLayout({ left, top, width: w, height: h, scale: s });
     };
 
     /** Back to normal flow — the element is the container's again. */
     const clearScaledLayout = () => {
-      scaleRef.current = 1;
       const el = term.element;
       if (!el) return;
       el.style.width = "";
@@ -695,7 +691,7 @@ export function TerminalPane({
       // The drawing may be scaled down, and the grid is measured in its own
       // unscaled pixels: a finger crossing a scaled pane crosses more cells
       // than the distance it travelled on glass.
-      const scale = scaleRef.current || 1;
+      const scale = terminalViewScale(id) || 1;
       // A finger moving up the screen pulls the text up with it, which is a
       // positive delta — the same sign a wheel uses for the same movement.
       const deltaY = drag.lastY - touch.clientY;
@@ -965,7 +961,7 @@ export function TerminalPane({
           floating in this corner sat on the last rows of output — over Claude
           Code, precisely on its status line — so the scale is reported in the
           terminal strip instead, where it can never cover anything, and the
-          words are in the `⋯` sheet. See `view-scale`. */}
+          words are in the `⋯` sheet. See `TerminalScaleChip`. */}
 
       {/* The one thing that does still float over the drawing, because it is
           only ever there while the reader is deliberately away from the tail:
