@@ -43,6 +43,81 @@ pub const TERMINAL_ID_ENV: &str = "REVIEW_TERMINAL_ID";
 /// for sharing a constant across the two languages.
 pub const SUBMIT_SETTLE_MS: u64 = 500;
 
+/// What a terminal emulator puts in front of pasted text (DEC mode 2004).
+pub const PASTE_BEGIN: &str = "\x1b[200~";
+/// What it puts after it.
+pub const PASTE_END: &str = "\x1b[201~";
+
+/// Wrap a submitted message in bracketed-paste markers when it spans lines.
+///
+/// A newline arriving as ordinary input *is* a submit to anything with a line
+/// editor, so a two-line message typed into the phone's compose bar used to run
+/// its first line and leave the rest stranded at a fresh prompt. Bracketed
+/// paste is the answer every terminal emulator already gives for this: what
+/// lies between `ESC [ 200 ~` and `ESC [ 201 ~` is content — newlines
+/// included — and the Enter that follows is the one thing that submits it. A
+/// multi-line message is exactly what a paste is, and the programs this bar
+/// exists to drive negotiate the mode (Claude Code, bash 5.1+, zsh, fish).
+///
+/// Two texts are left exactly as they came:
+///
+/// - **Single-line**, which has no newline to protect. A program that never
+///   enabled the mode — a plain `sh`, `cat` — reads the markers as input, so
+///   they are spent only where they buy something.
+/// - **Anything already carrying an escape**, since a `ESC [ 201 ~` of its own
+///   would close the bracket early. Nothing legitimate has one: this is prose
+///   from a software keyboard.
+///
+/// One function for every surface that submits, like [`SUBMIT_SETTLE_MS`]
+/// above it. The frontend keeps a documented copy in
+/// `desktop/ui/components/Terminal/compose-send.ts`, for the desktop transport
+/// that never crosses this process.
+#[must_use]
+pub fn wrap_multiline_paste(text: &str) -> std::borrow::Cow<'_, str> {
+    if !text.contains(['\n', '\r']) || text.contains('\x1b') {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    std::borrow::Cow::Owned(format!("{PASTE_BEGIN}{text}{PASTE_END}"))
+}
+
+#[cfg(test)]
+mod paste_tests {
+    use super::{wrap_multiline_paste, PASTE_BEGIN, PASTE_END};
+
+    #[test]
+    fn single_line_text_is_untouched() {
+        assert_eq!(wrap_multiline_paste("run the tests"), "run the tests");
+        assert_eq!(wrap_multiline_paste(""), "");
+    }
+
+    #[test]
+    fn a_newline_makes_it_a_paste() {
+        assert_eq!(
+            wrap_multiline_paste("first\nsecond"),
+            format!("{PASTE_BEGIN}first\nsecond{PASTE_END}"),
+        );
+        // The whole text is one paste, however many lines it runs to — and the
+        // interior newlines stay newlines, which is the entire point.
+        assert_eq!(
+            wrap_multiline_paste("a\nb\nc"),
+            format!("{PASTE_BEGIN}a\nb\nc{PASTE_END}"),
+        );
+    }
+
+    #[test]
+    fn a_bare_carriage_return_counts_too() {
+        assert!(wrap_multiline_paste("a\rb").starts_with(PASTE_BEGIN));
+    }
+
+    #[test]
+    fn text_that_already_holds_an_escape_is_never_bracketed() {
+        // Its own end marker would close the bracket early, and the tail would
+        // land as ordinary input — the failure this is meant to prevent.
+        let hostile = "first\n\x1b[201~rm -rf /";
+        assert_eq!(wrap_multiline_paste(hostile), hostile);
+    }
+}
+
 /// Drop `text`'s trailing blank lines in place, leaving no trailing newline.
 ///
 /// The empty rows below the last thing written are padding rather than content,

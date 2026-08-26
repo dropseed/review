@@ -61,6 +61,7 @@ vi.mock("./registry", () => ({
   seedTerminalGridSize: vi.fn(),
   setTerminalMountPolicy: vi.fn(),
   setTerminalRemoteClaim: vi.fn(),
+  setTerminalViewScale: vi.fn(),
   startTerminalOutput: vi.fn(),
   terminalGridSize: () => ({ cols: 80, rows: 4 }),
   terminalRemoteClaim: () => null,
@@ -99,19 +100,26 @@ function fakeTerminal() {
       active: {
         type: "normal",
         viewportY: 0,
+        baseY: 0,
         getLine: (y: number) =>
           mocks.lines[y] === undefined
             ? undefined
             : { translateToString: () => mocks.lines[y].replace(/\s+$/, "") },
       },
+      onBufferChange: () => ({ dispose: () => undefined }),
     },
     modes: { applicationCursorKeysMode: false },
     onData: () => ({ dispose: () => undefined }),
     onRender: mocks.onRender,
+    // Watched by the jump-back-to-the-tail pill; nothing a selection does
+    // reaches them (see `new-output`).
+    onScroll: () => ({ dispose: () => undefined }),
+    onWriteParsed: () => ({ dispose: () => undefined }),
     resize: vi.fn(),
     refresh: vi.fn(),
     focus: vi.fn(),
     scrollLines: vi.fn(),
+    scrollToBottom: vi.fn(),
   };
 }
 

@@ -51,7 +51,7 @@ use crate::daemon::{
     DaemonClient, Event, EventsHandle, Op, StreamFrame, StreamHandle, ERR_CLOSED, ERR_CONNECTING,
     ERR_SENDING,
 };
-use crate::terminal::SUBMIT_SETTLE_MS;
+use crate::terminal::{wrap_multiline_paste, SUBMIT_SETTLE_MS};
 
 /// Close code meaning "this session no longer exists" — the one close the
 /// frontend must not retry (`SESSION_GONE_CODE` in `terminal-socket.ts`).
@@ -477,11 +477,17 @@ async fn write_stdin(
 /// writes would leave the message typed and never submitted the moment the app
 /// switcher opened mid-send. This process is not suspended, so the gap is
 /// honoured whatever the client does next — including going away entirely.
+///
+/// A message that spans lines goes out as a **bracketed paste**
+/// ([`wrap_multiline_paste`]), because a bare newline is itself a submit to
+/// anything with a line editor: without the brackets a two-line message ran its
+/// first line and left the rest typed at a fresh prompt.
 async fn submit(
     State(bridge): State<TerminalBridge>,
     Json(request): Json<WriteRequest>,
 ) -> ApiResult<Value> {
     let WriteRequest { terminal_id, data } = request;
+    let data = wrap_multiline_paste(&data).into_owned();
     // Two calls rather than one closure: `with_client` retries a whole call
     // against a fresh connection, and a retry that re-ran both writes would
     // type the message twice.
@@ -1673,6 +1679,148 @@ mod daemon_tests {
 
         let (status, _) = served
             .post("/api/terminal/kill", json!({"terminalId": "web-submit"}))
+            .await;
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    /// Read PTY output off the socket until `needle` shows up in it.
+    ///
+    /// Accumulates into `seen` so an assertion can look at everything that has
+    /// arrived, not just the frame the needle landed in.
+    async fn read_until<S, E>(socket: &mut S, seen: &mut String, needle: &str) -> bool
+    where
+        S: StreamExt<Item = Result<WsMessage, E>> + Unpin,
+    {
+        tokio::time::timeout(TIMEOUT, async {
+            loop {
+                match socket.next().await {
+                    Some(Ok(WsMessage::Binary(bytes))) => {
+                        // The 8-byte BE sequence number prefixes every frame.
+                        seen.push_str(&String::from_utf8_lossy(&bytes[8..]));
+                        if seen.contains(needle) {
+                            return true;
+                        }
+                    }
+                    Some(Ok(_)) => {}
+                    _ => return false,
+                }
+            }
+        })
+        .await
+        .unwrap_or(false)
+    }
+
+    /// A message that spans lines is a **paste**, not two submits.
+    ///
+    /// A bare newline is itself Enter to anything with a line editor, so a
+    /// two-line message used to run its first line and strand the rest at a
+    /// fresh prompt. The endpoint therefore brackets a multi-line write (mode
+    /// 2004) and leaves a single-line one alone.
+    ///
+    /// Proved by looking at the bytes the PTY actually receives rather than at
+    /// a shell's reaction to them: the session runs `cat -v` on a raw tty, so
+    /// every byte written comes straight back in caret notation. That is the
+    /// only assertion that can tell a newline *inside the bracket* from one
+    /// that arrived as Enter — a shell reading either eventually runs the same
+    /// thing, and `/bin/sh` never negotiates the mode at all.
+    #[tokio::test]
+    #[allow(
+        clippy::await_holding_lock,
+        reason = "serialises $REVIEW_HOME for the test body; single-threaded runtime"
+    )]
+    async fn a_multi_line_submit_goes_out_as_one_bracketed_paste() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _home = isolated_home();
+
+        let harness = Harness::start().await;
+        let served = Served::start(&harness).await;
+
+        let cwd = harness.dir.path().to_string_lossy().into_owned();
+        let (status, started) = served
+            .post(
+                "/api/terminal/start",
+                json!({
+                    "terminalId": "web-paste",
+                    "repoPath": cwd,
+                    "cwd": cwd,
+                    "cols": 80,
+                    "rows": 24,
+                    "shell": "/bin/sh",
+                }),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "start failed: {started}");
+
+        let (mut socket, _) = tokio_tungstenite::connect_async(served.ws_url("web-paste"))
+            .await
+            .expect("the socket attaches to a live session");
+
+        // Turn the session into a byte mirror: no line discipline to cook the
+        // input, no kernel echo doubling it, and `cat -v` rendering every
+        // control byte visibly. The sentinel is split across a quote so the
+        // shell's *echo* of this line and the line's *output* are different
+        // strings — only the second one means the tty is actually raw yet.
+        let (status, _) = served
+            .post(
+                "/api/terminal/write",
+                json!({
+                    "terminalId": "web-paste",
+                    "data": "stty raw -echo; printf 'REA''DY\\n'; exec cat -v\r",
+                }),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK);
+        let mut seen = String::new();
+        assert!(
+            read_until(&mut socket, &mut seen, "READY").await,
+            "the session never reached `cat -v` on a raw tty: {seen:?}"
+        );
+        seen.clear();
+
+        // One line has no newline to protect, and the markers would be input to
+        // anything that never enabled the mode.
+        let (status, _) = served
+            .post(
+                "/api/terminal/submit",
+                json!({"terminalId": "web-paste", "data": "plain-line"}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            read_until(&mut socket, &mut seen, "plain-line^M").await,
+            "the single-line submit never came back: {seen:?}"
+        );
+        assert!(
+            !seen.contains("^[[200~"),
+            "a single-line submit must not be bracketed: {seen:?}"
+        );
+        seen.clear();
+
+        let (status, _) = served
+            .post(
+                "/api/terminal/submit",
+                json!({"terminalId": "web-paste", "data": "line-one\nline-two"}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            read_until(&mut socket, &mut seen, "^[[201~").await,
+            "the paste never closed: {seen:?}"
+        );
+        // The whole assertion in one string: the newline sits *between* the two
+        // markers, so the program on the other end reads it as content. Had it
+        // arrived as Enter there would be no markers and an `^M` in its place.
+        assert!(
+            seen.contains("^[[200~line-one\nline-two^[[201~"),
+            "expected one bracketed paste carrying the newline: {seen:?}"
+        );
+        assert!(
+            read_until(&mut socket, &mut seen, "^M").await,
+            "the Enter that submits the paste never followed: {seen:?}"
+        );
+
+        let (status, _) = served
+            .post("/api/terminal/kill", json!({"terminalId": "web-paste"}))
             .await;
         assert_eq!(status, StatusCode::OK);
     }

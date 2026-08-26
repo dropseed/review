@@ -68,6 +68,7 @@ vi.mock("./registry", () => ({
   seedTerminalGridSize: vi.fn(),
   setTerminalMountPolicy: vi.fn(),
   setTerminalRemoteClaim: vi.fn(),
+  setTerminalViewScale: vi.fn(),
   startTerminalOutput: vi.fn(),
   terminalGridSize: () => null,
   terminalRemoteClaim: () => null,
@@ -92,13 +93,21 @@ function fakeTerminal() {
     element,
     cols: 80,
     rows: 24,
-    buffer: { active: { type: "normal" } },
+    buffer: {
+      active: { type: "normal", viewportY: 0, baseY: 0 },
+      onBufferChange: () => ({ dispose: () => undefined }),
+    },
     modes: { applicationCursorKeysMode: false },
     onData: () => ({ dispose: () => undefined }),
+    // The pill that offers a jump back to the tail watches all three; none of
+    // them has anything to say about a gesture (see `new-output`).
+    onScroll: () => ({ dispose: () => undefined }),
+    onWriteParsed: () => ({ dispose: () => undefined }),
     resize: vi.fn(),
     refresh: vi.fn(),
     focus: vi.fn(),
     scrollLines: vi.fn(),
+    scrollToBottom: vi.fn(),
   };
 }
 

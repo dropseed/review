@@ -805,15 +805,69 @@ export function requestFit(id: string): void {
 }
 
 /**
+ * What the mounted pane is drawing each grid at — 1 at the drawing's true
+ * size, less when it is scaled down to fit — and who is watching that number.
+ *
+ * Beside the registry rather than inside it, because the one thing watching is
+ * the phone's fit chip in the terminal strip, and a strip renders (and mounts
+ * its effects) *before* the pane below it has acquired anything. A listener
+ * keyed on an entry that doesn't exist yet is a listener that never fires.
+ */
+const viewScales = new Map<string, number>();
+const scaleListeners = new Map<string, Set<(scale: number) => void>>();
+
+/**
+ * Publish what the mounted pane is drawing this grid at.
+ *
+ * Called from the pane's own layout, on the paths that just laid the terminal
+ * out; a scale that hasn't changed notifies nobody. Published out of the pane
+ * because the control that acts on it is deliberately not in the pane — see
+ * `Terminal/view-scale`.
+ */
+export function setTerminalViewScale(id: string, scale: number): void {
+  if (viewScales.get(id) === scale) return;
+  viewScales.set(id, scale);
+  const listeners = scaleListeners.get(id);
+  if (listeners) for (const listener of listeners) listener(scale);
+}
+
+/** What the mounted pane is drawing this grid at; 1 for a terminal nobody is
+ *  showing, which is also what "not scaled" means. */
+export function terminalViewScale(id: string): number {
+  return viewScales.get(id) ?? 1;
+}
+
+/** Watch the drawing's scale for one terminal (returns unsubscribe fn). */
+export function onTerminalViewScale(
+  id: string,
+  listener: (scale: number) => void,
+): () => void {
+  let listeners = scaleListeners.get(id);
+  if (!listeners) {
+    listeners = new Set();
+    scaleListeners.set(id, listeners);
+  }
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) scaleListeners.delete(id);
+  };
+}
+
+/**
  * What the key bar can send. Named rather than encoded, because what a key
  * sends depends on what the program running in that session has negotiated.
  */
-export type SoftKeyName = "Escape" | "Tab" | keyof typeof CURSOR_FINAL;
+export type SoftKeyName =
+  "Escape" | "Tab" | "Enter" | keyof typeof CURSOR_FINAL;
 
 /** The bytes a key sends when no keyboard protocol is in play. */
 const LEGACY_KEY: Record<SoftKeyName, string> = {
   Escape: "\x1b",
   Tab: "\t",
+  // `\r`, not `\n`: a tty's ICRNL is what turns a Return into a newline, and a
+  // program in raw mode is reading the Return.
+  Enter: "\r",
   up: "\x1b[A",
   down: "\x1b[B",
   right: "\x1b[C",
@@ -824,6 +878,7 @@ const LEGACY_KEY: Record<SoftKeyName, string> = {
 const EVENT_KEY: Record<SoftKeyName, string> = {
   Escape: "Escape",
   Tab: "Tab",
+  Enter: "Enter",
   up: "ArrowUp",
   down: "ArrowDown",
   right: "ArrowRight",
@@ -965,6 +1020,9 @@ export function disposeTerminal(id: string): void {
   // The keyboard mode belongs to the program that negotiated it, so it dies
   // with the session rather than leaking into whatever reuses this id.
   forgetKittyState(id);
+  // The scale is a fact about a drawing that no longer exists. Its listeners
+  // are the chip's and are unsubscribed by React, so only the value is ours.
+  viewScales.delete(id);
   try {
     entry.webgl?.dispose();
   } catch {

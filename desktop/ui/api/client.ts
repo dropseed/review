@@ -919,6 +919,10 @@ export interface ApiClient {
    * mode that is the server, which holds the gap itself so a PWA backgrounded
    * mid-send still gets its Enter; on the desktop it is this process, which
    * nothing suspends.
+   *
+   * A message spanning lines is written as a **bracketed paste**, since a bare
+   * newline is itself a submit — see `wrapMultilinePaste`. Each transport
+   * applies it beside the write it owns, which is the same split as the settle.
    */
   terminalSubmit(terminalId: string, text: string): Promise<void>;
 }

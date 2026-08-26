@@ -9,7 +9,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import { decodeBase64 } from "../components/Terminal/base64";
-import { SUBMIT_SETTLE_MS } from "../components/Terminal/compose-send";
+import {
+  SUBMIT_SETTLE_MS,
+  wrapMultilinePaste,
+} from "../components/Terminal/compose-send";
 import type {
   ApiClient,
   GitChangedPayload,
@@ -1023,9 +1026,14 @@ export class TauriClient implements ApiClient {
    * The settle is held here rather than on the daemon, because the thing it
    * has to outlive is a *suspended client* — and a desktop app is never one.
    * Web mode's `/api/terminal/submit` exists for the half that is.
+   *
+   * The paste bracketing is applied here for the same reason: it belongs with
+   * the write it protects, and in web mode that write is the server's. Both
+   * transports run the same rule (see `wrapMultilinePaste`), so a message
+   * behaves the same whichever one carried it.
    */
   async terminalSubmit(terminalId: string, text: string): Promise<void> {
-    await this.terminalWrite(terminalId, text);
+    await this.terminalWrite(terminalId, wrapMultilinePaste(text));
     await new Promise((resolve) => setTimeout(resolve, SUBMIT_SETTLE_MS));
     await this.terminalWrite(terminalId, "\r");
   }

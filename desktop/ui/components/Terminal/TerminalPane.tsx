@@ -6,6 +6,7 @@ import {
   useState,
 } from "react";
 import type { Terminal } from "@xterm/xterm";
+import { clsx } from "clsx";
 import { getApiClient } from "../../api";
 import { useReviewStore } from "../../stores";
 import { useIsCompact } from "../../hooks/useIsCompact";
@@ -20,7 +21,6 @@ import {
   onTerminalGrid,
   openLinkAt,
   previewFontSize,
-  requestFit,
   scrollByDrag,
   sendChar,
   sendKey,
@@ -28,6 +28,7 @@ import {
   seedTerminalGridSize,
   setTerminalMountPolicy,
   setTerminalRemoteClaim,
+  setTerminalViewScale,
   startTerminalOutput,
   takeSteps,
   terminalGridSize,
@@ -49,6 +50,12 @@ import {
   pinchSteps,
   touchDistance,
 } from "./touch-gestures";
+import {
+  type NewOutputEvent,
+  initialNewOutput,
+  newOutputVisible,
+  reduceNewOutput,
+} from "./new-output";
 import { createLongPress } from "./long-press";
 import { snapshotRows } from "./selection-text";
 import {
@@ -148,12 +155,12 @@ export function TerminalPane({
   const remoteSizeRef = useRef<GridSize | null>(null);
   /**
    * Where the drawing sits in this pane and what it is scaled by — null until
-   * the first layout. One answer for two readers: the "Fit to screen" button
-   * appears only below scale 1, and the selection overlay has to be positioned
-   * on exactly these numbers rather than measuring the canvas a second time.
+   * the first layout. The selection overlay has to be positioned on exactly
+   * these numbers rather than measuring the canvas a second time; the scale
+   * alone also goes out to the registry, for the strip's fit chip (see
+   * `view-scale`).
    */
   const [layout, setLayout] = useState<SelectionLayout | null>(null);
-  const viewScale = layout?.scale ?? 1;
   /** The same scale, readable from the touch handlers without re-binding
    *  them every time the drawing rescales. */
   const scaleRef = useRef(1);
@@ -169,6 +176,14 @@ export function TerminalPane({
   const exitSelect = useCallback(() => setSelecting(null), []);
   /** Owner reclaim (fit + resize), reachable from render handlers. */
   const reclaimRef = useRef<(() => void) | null>(null);
+  /**
+   * Whether output has landed below a reader who scrolled up — the pill's one
+   * question, decided in `new-output` and mirrored here to render it.
+   */
+  const [newOutput, setNewOutput] = useState(false);
+  /** The pill's jump, published by the effect that owns the terminal. */
+  const jumpToBottomRef = useRef<(() => void) | null>(null);
+  const jumpToBottom = useCallback(() => jumpToBottomRef.current?.(), []);
   /** Whether this client's live-output transport is currently down, and
    *  whether it has been down long enough to be worth saying so. */
   const [reconnecting, setReconnecting] = useState(false);
@@ -202,7 +217,9 @@ export function TerminalPane({
     setRemoteSize(null);
     scaleRef.current = 1;
     setLayout(null);
+    setTerminalViewScale(id, 1);
     setSelecting(null);
+    setNewOutput(false);
 
     // Consume the "fresh" flag before acquiring — a freshly created session has
     // no scrollback to replay.
@@ -243,9 +260,15 @@ export function TerminalPane({
 
     // ----- Layout: one grid, drawn at scale or fitted -----
 
-    /** Publish the drawing's box, for the two readers that need it. */
+    /**
+     * Publish the drawing's box, for the readers that need it — the selection
+     * overlay here, and the strip's fit chip through the registry. No layout
+     * at all is not "scaled to nothing": a pane that hasn't measured yet is
+     * reported as unscaled, which is what stops a chip appearing on a mount.
+     */
     const publishLayout = (next: SelectionLayout | null) => {
       setLayout((cur) => (sameLayout(cur, next) ? cur : next));
+      setTerminalViewScale(id, next?.scale ?? 1);
     };
 
     /**
@@ -480,6 +503,51 @@ export function TerminalPane({
       setTerminalRemoteClaim(id, size);
       scheduleScaledLayout();
     });
+
+    // ----- New output, below a reader who scrolled up -----
+    //
+    // The rules are `new-output`; this is the three DOM facts they need. All
+    // three are cheap and two of them fire per frame on a busy terminal, which
+    // is why the reducer returns its own state when nothing changed — only a
+    // real transition reaches React.
+
+    let missed = {
+      ...initialNewOutput,
+      alt: term.buffer.active.type === "alternate",
+    };
+    const applyOutputEvent = (event: NewOutputEvent) => {
+      const settled = reduceNewOutput(missed, event);
+      if (settled === missed) return;
+      missed = settled;
+      setNewOutput(newOutputVisible(settled));
+    };
+    /** Whether the viewport is showing the bottom of the buffer. */
+    const atBottom = () => {
+      const buffer = term.buffer.active;
+      return buffer.viewportY >= buffer.baseY;
+    };
+    const onScrollDisposable = term.onScroll(() =>
+      applyOutputEvent({ type: "viewport", atBottom: atBottom() }),
+    );
+    // After parsing rather than on arrival: the buffer has to have grown (and
+    // xterm to have auto-scrolled, or not) before "am I at the bottom" means
+    // anything.
+    const onWriteDisposable = term.onWriteParsed(() =>
+      applyOutputEvent({ type: "output", atBottom: atBottom() }),
+    );
+    const onBufferDisposable = term.buffer.onBufferChange(() =>
+      applyOutputEvent({
+        type: "screen",
+        alt: term.buffer.active.type === "alternate",
+      }),
+    );
+    // xterm's own scroll fires from `scrollToBottom`, but reading the viewport
+    // straight after is what makes the pill's disappearance the same frame as
+    // the jump rather than one event later.
+    jumpToBottomRef.current = () => {
+      term.scrollToBottom();
+      applyOutputEvent({ type: "viewport", atBottom: atBottom() });
+    };
 
     // ----- Touch: the drag that scrolls, the swipe that moves the cursor,
     //             the pinch that sizes the text, and the press that selects --
@@ -764,13 +832,19 @@ export function TerminalPane({
       longPress.cancel();
       endDrag(term);
       onDataDisposable.dispose();
+      onScrollDisposable.dispose();
+      onWriteDisposable.dispose();
+      onBufferDisposable.dispose();
+      jumpToBottomRef.current = null;
       unsubGrid();
       reclaimRef.current = null;
       setFitAction(id, null);
       setTerminalMountPolicy(id, null);
       // The next mount decides its own layout, but don't leave a scale on an
-      // instance that may next be adopted by a differently-sized pane.
+      // instance that may next be adopted by a differently-sized pane — nor a
+      // chip in the strip reporting a drawing nobody is making.
       clearScaledLayout();
+      setTerminalViewScale(id, 1);
       termRef.current = null;
       // Keep the registry instance alive — do NOT dispose here, and leave its
       // output subscription running so a hidden session keeps filling its
@@ -887,23 +961,38 @@ export function TerminalPane({
         </div>
       )}
 
-      {/* Compact's one way to change the shared grid, shown only while the
-          drawing is actually scaled down. Deliberate by design: nothing on a
-          phone resizes the PTY except this tap. */}
-      {compact && viewScale < 0.999 && !selecting && (
-        <button
-          type="button"
-          // Not a reason to focus the shell — the wrapper's mousedown would
-          // raise the soft keyboard mid-fit, shrinking the very viewport the
-          // fit is measuring.
-          onMouseDown={(e) => e.stopPropagation()}
-          onClick={() => requestFit(id)}
-          className="absolute bottom-2 right-2 z-10 rounded-md
-                     bg-surface-raised/90 px-2.5 py-1.5 text-xs text-fg-muted
-                     shadow-sm hover:text-fg-secondary"
-        >
-          Fit to screen
-        </button>
+      {/* Compact's way to change the shared grid is no longer here. A pill
+          floating in this corner sat on the last rows of output — over Claude
+          Code, precisely on its status line — so the scale is reported in the
+          terminal strip instead, where it can never cover anything, and the
+          words are in the `⋯` sheet. See `view-scale`. */}
+
+      {/* The one thing that does still float over the drawing, because it is
+          only ever there while the reader is deliberately away from the tail:
+          what it covers is old output, and reaching the bottom — by this tap
+          or by a drag — is what takes it away. The bottom edge of the *pane*,
+          so on a phone the compose bar and key row sit below it rather than
+          under it. */}
+      {newOutput && !selecting && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-2 z-10 flex justify-center">
+          <button
+            type="button"
+            // Not a reason to focus the shell and raise the keyboard: this is
+            // a reading gesture, and the pane's own mousedown would do both.
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={jumpToBottom}
+            className={clsx(
+              `tap pointer-events-auto flex items-center gap-1 rounded-full
+               bg-surface-raised/95 text-fg-secondary shadow-sm`,
+              touchPrimary
+                ? "tap-target px-4 text-sm"
+                : "px-2.5 py-1 text-xxs hover:text-fg",
+            )}
+          >
+            <span aria-hidden="true">↓</span>
+            New output
+          </button>
+        </div>
       )}
 
       {/* What a long press put here: the visible screen as text, over the

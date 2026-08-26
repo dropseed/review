@@ -41,6 +41,7 @@ import { StartTerminal } from "./StartTerminal";
 import { ComposeBar } from "./ComposeBar";
 import { SoftKeys } from "./SoftKeys";
 import { TerminalOverflowSheet } from "./TerminalOverflowSheet";
+import { TerminalScaleChip } from "./TerminalScaleChip";
 import { PaneTree } from "./PaneTree";
 import { FocusToggle } from "../Stage/FocusToggle";
 import { WarningIcon } from "../ui/icons";
@@ -472,6 +473,13 @@ export function TerminalPanel(): ReactNode {
         <div className="ml-1 flex shrink-0 items-center gap-0.5">
           {compact ? (
             <>
+              {/* How far down the grid is being drawn, and the tap that fits
+                  it. Here rather than over the terminal because a control that
+                  covers the rows it is about — Claude Code's status line, in
+                  practice — is the wrong trade at any size. It shows only when
+                  there is something to report; the unconditional "Fit to
+                  screen" is one tap deeper, in the sheet. */}
+              {showingPaneId && <TerminalScaleChip paneId={showingPaneId} />}
               {/* The one way into the code half at phone width. It pushes a
                   screen rather than switching a tab — see Stage/CompactStage —
                   which is why it is a plain button here and not half of a
