@@ -416,13 +416,22 @@ mod tests {
         assert_eq!(list().unwrap().workspaces.len(), 1);
 
         // …including by another spelling of the same directory. On macOS every
-        // temp path is one (`/var` is a symlink to `/private/var`), and a shell
-        // started from each would otherwise get a workspace of its own.
-        let canonical = dir.canonicalize().unwrap();
-        assert_ne!(canonical, dir, "the test needs two spellings");
-        let third = route(&canonical);
-        assert!(!third.created);
-        assert_eq!(third.workspace.id, first.workspace.id);
-        assert_eq!(list().unwrap().workspaces.len(), 1);
+        // temp path is one (`/var` is a symlink to `/private/var`), but that's a
+        // platform quirk, not something to depend on — manufacture a symlink
+        // alias instead, the same way
+        // `canonical_central_root_resolves_a_symlinked_review_home` (central.rs)
+        // does, so a shell started from each would otherwise get a workspace of
+        // its own regardless of where the test runs.
+        #[cfg(unix)]
+        {
+            let alias = plain.path().join("scratch-alias");
+            std::os::unix::fs::symlink(&dir, &alias).unwrap();
+            assert_eq!(alias.canonicalize().unwrap(), dir.canonicalize().unwrap());
+
+            let third = route(&alias);
+            assert!(!third.created);
+            assert_eq!(third.workspace.id, first.workspace.id);
+            assert_eq!(list().unwrap().workspaces.len(), 1);
+        }
     }
 }
