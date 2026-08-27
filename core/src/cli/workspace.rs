@@ -342,12 +342,9 @@ fn run_attach(args: AttachArgs, json: bool) -> Result<(), String> {
 
 fn run_detach(args: DetachArgs, json: bool) -> Result<(), String> {
     let path = target_path(args.path)?;
+    let label = Attachment::new(&path, None).repo_name().to_owned();
     let (state, ws) = work::detach(&args.id, &path).map_err(|e| e.to_string())?;
-    let message = format!(
-        "Detached {} from \"{}\".",
-        path.display(),
-        ws.display_title()
-    );
+    let message = format!("Detached {label} from \"{}\".", ws.display_title());
     report(json, &state, ws, &message);
     Ok(())
 }
