@@ -1,5 +1,6 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { Attachment, TerminalSessionInfo } from "../../types";
+import type { TerminalTab } from "./pane-tree";
 
 vi.mock("../../api", () => ({
   getApiClient: () => ({}),
@@ -28,7 +29,7 @@ import {
   UNDO_CLOSE_TIMEOUT_MS,
 } from "./close";
 import { useReviewStore } from "../../stores";
-import { collectLeafIds, makeTab } from "./pane-tree";
+import { collectLeafIds, makeTab, splitLeaf } from "./pane-tree";
 import { attachment, terminalStatus, workspace } from "../../test/fixtures";
 
 const REMOVED: string[] = [];
@@ -431,6 +432,23 @@ describe("undoing a close", () => {
 
   const tabIds = () => useReviewStore.getState().terminalTabs.map((t) => t.id);
 
+  /** One tab holding two panes side by side. */
+  function splitTab(): TerminalTab {
+    return {
+      id: "tab-1",
+      focused: "t1",
+      root: {
+        type: "split",
+        direction: "row",
+        children: [
+          { type: "leaf", terminalId: "t1" },
+          { type: "leaf", terminalId: "t2" },
+        ],
+        sizes: [0.5, 0.5],
+      },
+    };
+  }
+
   it("takes the pane off the screen but keeps the shell", async () => {
     panel();
     await closeTerminalPane("t1");
@@ -471,22 +489,65 @@ describe("undoing a close", () => {
   });
 
   it("brings a closed split back as that split", async () => {
-    const tab = makeTab("tab-1", "t1");
-    const split = {
-      ...tab,
-      root: {
-        type: "split" as const,
-        direction: "row" as const,
-        children: [tab.root, makeTab("x", "t2").root],
-        sizes: [0.5, 0.5],
-      },
-    };
+    const split = splitTab();
     panel([split]);
     await closeTerminalTab(split);
     expect(tabIds()).toEqual([]);
     expect(undoCloseTerminal()).toBe(true);
     const restored = useReviewStore.getState().terminalTabs;
     expect(restored.map((t) => collectLeafIds(t.root))).toEqual([["t1", "t2"]]);
+  });
+
+  it("puts a closed pane back in the split it was one of", async () => {
+    panel([splitTab()]);
+    await closeTerminalPane("t1");
+    expect(
+      useReviewStore.getState().terminalTabs.map((t) => collectLeafIds(t.root)),
+    ).toEqual([["t2"]]);
+    expect(undoCloseTerminal()).toBe(true);
+    const back = useReviewStore.getState().terminalTabs;
+    expect(back.map((t) => t.id)).toEqual(["tab-1"]);
+    expect(collectLeafIds(back[0].root)).toEqual(["t1", "t2"]);
+    expect(back[0].focused).toBe("t1");
+    await lapse();
+    expect(KILLED).toEqual([]);
+  });
+
+  it("keeps the tab's place in the strip when it merges back into it", async () => {
+    panel([makeTab("tab-0", "t0"), splitTab(), makeTab("tab-2", "t3")]);
+    await closeTerminalPane("t2");
+    expect(undoCloseTerminal()).toBe(true);
+    expect(tabIds()).toEqual(["tab-0", "tab-1", "tab-2"]);
+  });
+
+  it("keeps a pane that arrived after the close", async () => {
+    panel([splitTab()]);
+    await closeTerminalPane("t1");
+    // A split opened in the thinned tab while the undo window was still open.
+    useReviewStore.setState({
+      terminalSessions: {
+        ...useReviewStore.getState().terminalSessions,
+        t9: session("t9", "ws-1"),
+      },
+      terminalTabs: useReviewStore.getState().terminalTabs.map((tab) => ({
+        ...tab,
+        root: splitLeaf(tab.root, "t2", "t9", "row"),
+      })),
+    });
+    expect(undoCloseTerminal()).toBe(true);
+    const back = useReviewStore.getState().terminalTabs;
+    expect(back).toHaveLength(1);
+    expect(collectLeafIds(back[0].root).sort()).toEqual(["t1", "t2", "t9"]);
+  });
+
+  it("kills the pane, and only it, once the window lapses", async () => {
+    panel([splitTab()]);
+    await closeTerminalPane("t1");
+    await lapse();
+    expect(KILLED).toEqual(["t1"]);
+    expect(
+      useReviewStore.getState().terminalTabs.map((t) => collectLeafIds(t.root)),
+    ).toEqual([["t2"]]);
   });
 
   it("reopens the most recent close first", async () => {

@@ -162,10 +162,17 @@ export interface TerminalSlice {
   hideTerminal: (id: string) => void;
 
   /**
-   * Put tabs taken out by `hideTerminal` back in the strip, as they were —
-   * a split tab comes back as that split, not as one tab per pane. Leaves
-   * whose session has since gone are dropped; a tab already present is left
-   * alone. The first tab restored becomes the active one.
+   * Put panes taken out by `hideTerminal` back where they were, from the
+   * snapshot of the tabs that held them.
+   *
+   * A tab the close emptied is gone from the strip and comes back whole — as
+   * the split it was, not as one tab per pane. A tab it only *thinned* is
+   * still in the strip, holding the panes that survived, and the snapshot is
+   * merged into it in place: the closed pane returns to its own slot, at its
+   * own size, in the tab that never left. Leaves whose session has since gone
+   * are dropped, and panes that arrived in the tab after the close — which
+   * the snapshot has never heard of — are kept alongside. The first tab
+   * touched becomes the active one.
    */
   restoreTerminalTabs: (tabs: TerminalTab[]) => void;
 
@@ -1497,28 +1504,58 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
       for (const tab of g.terminalTabs) {
         for (const leafId of collectLeafIds(tab.root)) placed.add(leafId);
       }
-      const restored: TerminalTab[] = [];
+      // A snapshot of a tab still in the strip is a merge into that tab, not a
+      // second copy of it: closing one pane of a split leaves the tab standing,
+      // so this is the ordinary case for an undone pane close, not an edge one.
+      const merged = new Map<string, TerminalTab>();
+      const appended: TerminalTab[] = [];
+      const touched: string[] = [];
       for (const tab of tabs) {
-        if (g.terminalTabs.some((entry) => entry.id === tab.id)) continue;
+        const standing = g.terminalTabs.find((entry) => entry.id === tab.id);
+        // The panes that tab is holding right now: they are `placed`, but
+        // placed *here*, which is where the snapshot wants them anyway.
+        const here = new Set(
+          standing ? collectLeafIds(standing.root) : ([] as string[]),
+        );
         const keep = new Set(
           collectLeafIds(tab.root).filter(
-            (leafId) => live.has(leafId) && !placed.has(leafId),
+            (leafId) =>
+              live.has(leafId) && (here.has(leafId) || !placed.has(leafId)),
           ),
         );
-        const pruned = withRepairedFocus(tab, pruneLeaves(tab.root, keep));
-        if (!pruned) continue;
-        restored.push(pruned);
-        for (const leafId of keep) {
+        let root = pruneLeaves(tab.root, keep);
+        if (root && standing) {
+          // Panes that arrived in the tab after the close — a split, a drag
+          // from another tab. The snapshot has never heard of them and would
+          // prune them away, which would unlist a live terminal; they join the
+          // rebuilt tree instead, at its end.
+          for (const leafId of collectLeafIds(standing.root)) {
+            if (keep.has(leafId)) continue;
+            const leaves = collectLeafIds(root);
+            root = splitLeaf(root, leaves[leaves.length - 1], leafId, "row");
+          }
+        }
+        const rebuilt = withRepairedFocus(tab, root);
+        if (!rebuilt) continue;
+        if (standing) merged.set(rebuilt.id, rebuilt);
+        else appended.push(rebuilt);
+        touched.push(rebuilt.id);
+        for (const leafId of collectLeafIds(rebuilt.root)) {
           placed.add(leafId);
           hidden.delete(leafId);
         }
       }
-      if (restored.length === 0) return;
+      if (touched.length === 0) return;
       const usedAt = { ...g.terminalTabUsedAt };
-      for (const tab of restored) usedAt[tab.id] = ++useCounter;
+      for (const tabId of touched) usedAt[tabId] = ++useCounter;
       set({
-        terminalTabs: [...g.terminalTabs, ...restored],
-        activeTabId: restored[0].id,
+        // Merged tabs keep their place in the strip; only a tab the close
+        // emptied has a place to be given back, and it goes on the end.
+        terminalTabs: [
+          ...g.terminalTabs.map((tab) => merged.get(tab.id) ?? tab),
+          ...appended,
+        ],
+        activeTabId: touched[0],
         terminalTabUsedAt: usedAt,
       });
     },
