@@ -588,6 +588,43 @@ fn write_open_request(
     }
 }
 
+/// Hold a key down and have it repeat, the way it does in a terminal.
+///
+/// macOS press-and-hold turns a held key into the accent picker instead of a
+/// repeat, and WKWebView honors it — so holding `j` in `less`, or `k` in vim,
+/// sent exactly one keystroke and the app looked like it was dropping input.
+/// Every editor and terminal in a web view turns this off (VS Code, Zed); the
+/// app is one, so it does too.
+///
+/// `registerDefaults` writes nothing to disk and is scoped to this process's
+/// defaults search list, at the end of it — so anyone who explicitly wants the
+/// accent picker back still outranks this:
+///
+/// ```sh
+/// defaults write com.dropseed.review ApplePressAndHoldEnabled -bool true
+/// ```
+///
+/// The one `unsafe` in the workspace, which otherwise denies it: `objc2` marks
+/// `registerDefaults` unsafe because it cannot check the dictionary's generic
+/// against the selector, and the dictionary is built two lines above it. There
+/// is no safe route to the registration domain, and the alternative — a
+/// `defaults write` at every launch — would stamp on the user's own preference
+/// rather than sit behind it.
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+fn let_keys_repeat() {
+    use objc2::runtime::AnyObject;
+    use objc2_foundation::{NSDictionary, NSNumber, NSString, NSUserDefaults};
+
+    let key = NSString::from_str("ApplePressAndHoldEnabled");
+    let off = NSNumber::new_bool(false);
+    let registration: objc2::rc::Retained<NSDictionary<NSString, AnyObject>> =
+        NSDictionary::from_slices(&[&*key], &[&*off as &AnyObject]);
+    // Safe: the dictionary is exactly the `NSString` -> object shape the
+    // method's generic asks for.
+    unsafe { NSUserDefaults::standardUserDefaults().registerDefaults(&registration) };
+}
+
 /// Run the Tauri desktop application.
 ///
 /// This sets up all plugins, menus, and command handlers, then starts
@@ -596,6 +633,10 @@ pub fn run() {
     // Fix PATH when launched from Finder/Dock (macOS gives GUI apps a minimal environment).
     // This is a no-op when launched from a terminal.
     let _ = fix_path_env::fix();
+
+    // Before any web view exists — it reads the pref when it is created.
+    #[cfg(target_os = "macos")]
+    let_keys_repeat();
 
     // Initialize Sentry early so it captures any panics during setup.
     // Events are silently dropped until the user opts in via preferences.

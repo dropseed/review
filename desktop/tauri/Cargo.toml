@@ -74,6 +74,18 @@ dirs = "6"
 fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs" }
 tauri-plugin-drag = "2"
 
+# Just enough Objective-C to register one default at launch — see
+# `let_keys_repeat` in `desktop/mod.rs`. Already in the tree under tao/wry.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSDictionary",
+    "NSString",
+    "NSUserDefaults",
+    "NSValue",
+] }
+
 [features]
 default = []
 symbols-all = ["review/symbols-all"]
