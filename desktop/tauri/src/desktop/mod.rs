@@ -112,6 +112,11 @@ fn setup_app(
         .accelerator("CmdOrCtrl+T")
         .build(app)?;
 
+    let reopen_terminal = MenuItemBuilder::new("Reopen Closed Terminal")
+        .id("reopen_terminal")
+        .accelerator("CmdOrCtrl+Shift+T")
+        .build(app)?;
+
     let new_workspace = MenuItemBuilder::new("New Workspace")
         .id("new_workspace")
         .accelerator("CmdOrCtrl+N")
@@ -222,6 +227,7 @@ fn setup_app(
     let file_menu = SubmenuBuilder::new(app, "File")
         .item(&new_workspace)
         .item(&new_terminal)
+        .item(&reopen_terminal)
         .item(&open_repo)
         .separator()
         .item(&new_review)
@@ -396,6 +402,7 @@ fn handle_menu_event(app: &tauri::AppHandle, id: &str) {
     match id {
         "close" => emit_menu_event(app, "menu:close", ()),
         "new_terminal" => emit_menu_event(app, "menu:new-terminal", ()),
+        "reopen_terminal" => emit_menu_event(app, "menu:reopen-terminal", ()),
         "new_workspace" => emit_menu_event(app, "menu:new-workspace", ()),
         "open_repo" => emit_menu_event(app, "menu:open-repo", ()),
         "refresh" => emit_menu_event(app, "menu:refresh", ()),

@@ -152,6 +152,23 @@ export interface TerminalSlice {
   /** Remove an already-dead session's pane without killing anything. */
   removeTerminal: (id: string) => void;
 
+  /**
+   * Take a live session's pane out of the strip without killing it — a close
+   * that can still be undone. The session stays in the maps (it is still
+   * running) but `ingestTabs` leaves it alone, so no list frame wraps it in a
+   * tab again, until `restoreTerminalTabs` puts it back or `killTerminal` ends
+   * it.
+   */
+  hideTerminal: (id: string) => void;
+
+  /**
+   * Put tabs taken out by `hideTerminal` back in the strip, as they were —
+   * a split tab comes back as that split, not as one tab per pane. Leaves
+   * whose session has since gone are dropped; a tab already present is left
+   * alone. The first tab restored becomes the active one.
+   */
+  restoreTerminalTabs: (tabs: TerminalTab[]) => void;
+
   /** Show `tabId` in the panel, and record it as this tab's latest use. */
   setActiveTab: (tabId: string) => void;
   /**
@@ -1110,6 +1127,13 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
    */
   const placing = new Set<string>();
 
+  /**
+   * Sessions closed by the person but not yet killed — see `hideTerminal`.
+   * Kept out of the strip by `ingestTabs` the same way `placing` is: both are
+   * live sessions this window has decided not to draw right now.
+   */
+  const hidden = new Set<string>();
+
   /** Monotonic stamp for tab recency — see `terminalTabUsedAt`. */
   let useCounter = 0;
 
@@ -1255,6 +1279,7 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
   /** Drop a gone session from every map that holds it. */
   function teardownSession(id: string): void {
     unsubscribeSession(id);
+    hidden.delete(id);
     const g = get();
     set({
       ...removeTerminalFromState(g, id),
@@ -1455,6 +1480,49 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
 
     removeTerminal: (id) => teardownSession(id),
 
+    hideTerminal: (id) => {
+      if (!get().terminalSessions[id]) return;
+      hidden.add(id);
+      const g = get();
+      set({
+        ...removeTerminalFromTabs(g, id),
+        terminalSearchId: g.terminalSearchId === id ? null : g.terminalSearchId,
+      });
+    },
+
+    restoreTerminalTabs: (tabs) => {
+      const g = get();
+      const live = new Set(Object.keys(g.terminalSessions));
+      const placed = new Set<string>();
+      for (const tab of g.terminalTabs) {
+        for (const leafId of collectLeafIds(tab.root)) placed.add(leafId);
+      }
+      const restored: TerminalTab[] = [];
+      for (const tab of tabs) {
+        if (g.terminalTabs.some((entry) => entry.id === tab.id)) continue;
+        const keep = new Set(
+          collectLeafIds(tab.root).filter(
+            (leafId) => live.has(leafId) && !placed.has(leafId),
+          ),
+        );
+        const pruned = withRepairedFocus(tab, pruneLeaves(tab.root, keep));
+        if (!pruned) continue;
+        restored.push(pruned);
+        for (const leafId of keep) {
+          placed.add(leafId);
+          hidden.delete(leafId);
+        }
+      }
+      if (restored.length === 0) return;
+      const usedAt = { ...g.terminalTabUsedAt };
+      for (const tab of restored) usedAt[tab.id] = ++useCounter;
+      set({
+        terminalTabs: [...g.terminalTabs, ...restored],
+        activeTabId: restored[0].id,
+        terminalTabUsedAt: usedAt,
+      });
+    },
+
     setActiveTab: (tabId) => set(activateTab(tabId)),
 
     selectWorkspaceTab: (workspaceId) => {
@@ -1621,7 +1689,7 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
         ...ingestTabs(
           g,
           Object.values(merged.terminalSessions ?? g.terminalSessions),
-          placing,
+          new Set([...placing, ...hidden]),
         ),
       });
       // The daemon has now answered which sessions exist, which is the half of

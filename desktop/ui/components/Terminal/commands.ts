@@ -1,6 +1,11 @@
 import { registerContextKey } from "../../commands/contextKeys";
 import type { Command, CommandContext } from "../../commands";
-import { focusedTerminalId, focusedTerminalTab } from "./close";
+import {
+  focusedTerminalId,
+  focusedTerminalTab,
+  hasPendingClose,
+  undoCloseTerminal,
+} from "./close";
 import { focusNextNeedsYou } from "./jump";
 import { hasNeedsYou } from "./glance";
 import { collectLeafIds, expandedLeafIds, type TerminalTab } from "./pane-tree";
@@ -117,6 +122,23 @@ export const TERMINAL_COMMANDS: readonly Command[] = [
     isVisible: supported,
     run: ({ store }) => {
       void openTerminalTab(focusedWorkspaceIn(store));
+    },
+  },
+  {
+    id: "terminal.undoClose",
+    title: "Reopen Closed Terminal",
+    category: "Terminal",
+    keywords: ["undo", "restore", "reopen", "closed", "tab"],
+    // The browser's reopen-tab chord. Only for a few seconds after a close —
+    // the shell is held that long and then really killed (see
+    // `UNDO_CLOSE_TIMEOUT_MS`), so past that there is nothing to reopen.
+    shortcut: { code: "KeyT", mod: true, shift: true },
+    allowInInput: true,
+    allowInTerminal: true,
+    isVisible: supported,
+    isEnabled: () => hasPendingClose(),
+    run: () => {
+      undoCloseTerminal();
     },
   },
   {

@@ -4,6 +4,7 @@
  * shell can't be attached to some of them and not the others.
  */
 
+import { toast } from "sonner";
 import { getPlatformServices } from "../../platform";
 import { useReviewStore } from "../../stores";
 import {
@@ -212,6 +213,134 @@ function teardown(id: string): void {
   }
 }
 
+/**
+ * How long a closed terminal can be brought back before its shell is really
+ * killed. Ghostty's `undo-timeout` default, and the same idea: the pane leaves
+ * the screen at once, the process goes a moment later.
+ */
+export const UNDO_CLOSE_TIMEOUT_MS = 5000;
+
+/** A close that has left the screen but not yet reached the daemon. */
+interface PendingClose {
+  /** The sessions on their way out. */
+  ids: string[];
+  /** The tabs they were drawn in, as they were — what undo puts back. */
+  tabs: TerminalTab[];
+  /** The kill, and whatever is meant to follow it. */
+  finalize: () => Promise<void>;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+/** Closes still inside their undo window, oldest first. */
+const pendingCloses: PendingClose[] = [];
+
+/** Whether ⌘⇧T has anything to bring back. */
+export function hasPendingClose(): boolean {
+  return pendingCloses.length > 0;
+}
+
+/**
+ * Close `ids` in a way that can be undone for a few seconds.
+ *
+ * The panes leave the strip now — the close has to *look* done, or it isn't
+ * one — but the shells keep running, unlisted, until the window lapses. That
+ * is what makes undo cheap and faithful: nothing is restarted, so the
+ * scrollback, the running command, and the daemon's own record of the session
+ * all come back exactly as they were. Sessions that already exited have
+ * nothing to keep alive and are torn down at once.
+ *
+ * `after` runs once the kills have gone through — cleanup that would be wrong
+ * to do while the shells might still come back, such as reaping the workspace
+ * they were the last thing in.
+ */
+function deferClose(ids: string[], after: () => Promise<void>): void {
+  const state = useReviewStore.getState();
+  const live = ids.filter((id) => !(id in state.terminalExited));
+  for (const id of ids) {
+    if (!live.includes(id)) teardown(id);
+  }
+
+  // The tabs holding these panes, before they lose them. Snapshotted whole
+  // so a closed split comes back as a split.
+  const tabs: TerminalTab[] = [];
+  for (const id of live) {
+    const tab = findTabForTerminal(state.terminalTabs, id);
+    if (tab && !tabs.some((entry) => entry.id === tab.id)) tabs.push(tab);
+  }
+  for (const id of live) state.hideTerminal(id);
+
+  const pending: PendingClose = {
+    ids: live,
+    tabs,
+    finalize: async () => {
+      for (const id of live) teardown(id);
+      await after();
+    },
+    timer: setTimeout(() => {
+      void settle(pending);
+    }, UNDO_CLOSE_TIMEOUT_MS),
+  };
+  pendingCloses.push(pending);
+
+  if (live.length > 0) {
+    toast(
+      live.length === 1 ? "Closed terminal" : `Closed ${live.length} terminals`,
+      {
+        duration: UNDO_CLOSE_TIMEOUT_MS,
+        action: {
+          label: "Undo",
+          onClick: () => {
+            undoClose(pending);
+          },
+        },
+      },
+    );
+  } else {
+    // Nothing was alive to hold on to: the close is already complete.
+    void settle(pending);
+  }
+}
+
+/** Let a pending close through: kill the shells and run what follows. */
+async function settle(pending: PendingClose): Promise<void> {
+  const index = pendingCloses.indexOf(pending);
+  if (index === -1) return;
+  pendingCloses.splice(index, 1);
+  clearTimeout(pending.timer);
+  await pending.finalize();
+}
+
+/** Bring a pending close back, tabs and all. */
+function undoClose(pending: PendingClose): void {
+  const index = pendingCloses.indexOf(pending);
+  if (index === -1) return;
+  pendingCloses.splice(index, 1);
+  clearTimeout(pending.timer);
+  useReviewStore.getState().restoreTerminalTabs(pending.tabs);
+}
+
+/**
+ * Reopen the most recently closed terminal — ⌘⇧T, and the toast's Undo.
+ * Answers whether there was one to reopen.
+ */
+export function undoCloseTerminal(): boolean {
+  const pending = pendingCloses[pendingCloses.length - 1];
+  if (!pending) return false;
+  undoClose(pending);
+  return true;
+}
+
+/**
+ * Let every pending close through now. For the paths that end this window —
+ * a close that is still holding its shell for undo when the window goes
+ * would leave that shell running with nothing to bring it back.
+ */
+export async function flushPendingCloses(): Promise<void> {
+  while (pendingCloses.length > 0) {
+    await settle(pendingCloses[pendingCloses.length - 1]);
+  }
+}
+
 /** One pane. */
 export async function closeTerminalPane(id: string): Promise<boolean> {
   return closeTerminals([id]);
@@ -231,13 +360,17 @@ export async function closeTerminals(ids: string[]): Promise<boolean> {
       .map((id) => terminalSessions[id]?.workspaceId)
       .filter((id): id is string => id != null),
   );
-  for (const id of ids) teardown(id);
-  // Serially, and not because it is slow: `removeWorkspace` takes the backend's
-  // whole-queue answer as truth, so two in flight at once each return a
-  // snapshot missing only their own removal and the loser resurrects the other.
-  for (const workspaceId of workspaceIds) {
-    await reapSpentWorkspace(workspaceId, ids);
-  }
+  // The reap waits for the kill: a workspace whose last terminal is still
+  // inside its undo window is not spent yet.
+  deferClose(ids, async () => {
+    // Serially, and not because it is slow: `removeWorkspace` takes the
+    // backend's whole-queue answer as truth, so two in flight at once each
+    // return a snapshot missing only their own removal and the loser
+    // resurrects the other.
+    for (const workspaceId of workspaceIds) {
+      await reapSpentWorkspace(workspaceId, ids);
+    }
+  });
   return true;
 }
 

@@ -9,6 +9,7 @@
 
 import { getPlatformServices } from "../platform";
 import { useReviewStore } from "../stores";
+import { flushPendingCloses } from "../components/Terminal/close";
 
 /** Terminals still holding a live PTY — what the window is standing in front of. */
 function liveTerminalCount(): number {
@@ -53,6 +54,10 @@ export async function closeWindowWithConfirmation(): Promise<boolean> {
       "Close window",
     );
     if (!ok) return false;
+    // A close still holding its shell for undo has to go through before the
+    // window does — after that there is nothing left to undo it from, and the
+    // shell would run on unlisted.
+    await flushPendingCloses();
     await platform.window.close();
     return true;
   } finally {

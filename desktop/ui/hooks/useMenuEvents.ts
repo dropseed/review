@@ -22,6 +22,10 @@ export const MENU_COMMANDS: Record<string, { event: string; command: string }> =
     settings: { event: "menu:open-settings", command: "app.settings" },
     close: { event: "menu:close", command: "app.closeTab" },
     new_terminal: { event: "menu:new-terminal", command: "terminal.new" },
+    reopen_terminal: {
+      event: "menu:reopen-terminal",
+      command: "terminal.undoClose",
+    },
     new_workspace: {
       event: "menu:new-workspace",
       command: "workspace.new",

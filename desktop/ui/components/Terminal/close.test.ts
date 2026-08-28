@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from "vitest";
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { Attachment, TerminalSessionInfo } from "../../types";
 
 vi.mock("../../api", () => ({
@@ -6,6 +6,9 @@ vi.mock("../../api", () => ({
 }));
 
 vi.mock("./registry", () => ({ disposeTerminal: vi.fn() }));
+
+const toasted = vi.hoisted(() => vi.fn());
+vi.mock("sonner", () => ({ toast: toasted }));
 
 const confirm = vi.hoisted(() =>
   vi.fn(async (_message: string, _title?: string): Promise<boolean> => true),
@@ -17,13 +20,33 @@ vi.mock("../../platform", () => ({
 import {
   closeFocusedTerminal,
   closeTerminalPane,
+  closeTerminalTab,
+  flushPendingCloses,
+  hasPendingClose,
   removeWorkspaceAndTerminals,
+  undoCloseTerminal,
+  UNDO_CLOSE_TIMEOUT_MS,
 } from "./close";
 import { useReviewStore } from "../../stores";
-import { makeTab } from "./pane-tree";
+import { collectLeafIds, makeTab } from "./pane-tree";
 import { attachment, terminalStatus, workspace } from "../../test/fixtures";
 
 const REMOVED: string[] = [];
+
+// A close holds its shell for the undo window before anything reaches the
+// daemon; `lapse` is that window going by.
+beforeEach(() => {
+  vi.useFakeTimers();
+  toasted.mockClear();
+});
+afterEach(async () => {
+  await vi.runAllTimersAsync();
+  vi.useRealTimers();
+});
+
+async function lapse(): Promise<void> {
+  await vi.advanceTimersByTimeAsync(UNDO_CLOSE_TIMEOUT_MS);
+}
 
 function session(id: string, workspaceId: string | null): TerminalSessionInfo {
   return {
@@ -95,24 +118,28 @@ describe("closing the last terminal in a workspace", () => {
   it("drops a workspace nobody named or built out", async () => {
     seed({}, ["t1"]);
     await closeTerminalPane("t1");
+    await lapse();
     expect(REMOVED).toEqual(["ws-1"]);
   });
 
   it("drops one with no attachment at all", async () => {
     seed({ attachments: [] }, ["t1"]);
     await closeTerminalPane("t1");
+    await lapse();
     expect(REMOVED).toEqual(["ws-1"]);
   });
 
   it("keeps one the user named", async () => {
     seed({ title: "the migration" }, ["t1"]);
     await closeTerminalPane("t1");
+    await lapse();
     expect(REMOVED).toEqual([]);
   });
 
   it("keeps one showing more than one repo", async () => {
     seed({ attachments: [attachment("/repo"), attachment("/other")] }, ["t1"]);
     await closeTerminalPane("t1");
+    await lapse();
     expect(REMOVED).toEqual([]);
   });
 
@@ -123,16 +150,19 @@ describe("closing the last terminal in a workspace", () => {
     seed({}, ["t1"]);
     useReviewStore.setState({ killTerminal: async () => {} });
     await closeTerminalPane("t1");
+    await lapse();
     expect(REMOVED).toEqual(["ws-1"]);
   });
 
   it("keeps one that still has a terminal running", async () => {
     seed({}, ["t1", "t2"]);
     await closeTerminalPane("t1");
+    await lapse();
     expect(REMOVED).toEqual([]);
 
     // ...and goes once the second one closes too.
     await closeTerminalPane("t2");
+    await lapse();
     expect(REMOVED).toEqual(["ws-1"]);
   });
 });
@@ -186,6 +216,7 @@ describe("⌘W picks a terminal", () => {
     panel({ contentFocus: "code" });
     focusIn("data-terminal-id", "t1");
     expect(await closeFocusedTerminal()).toBe(true);
+    await lapse();
     expect(KILLED).toEqual(["t1"]);
   });
 
@@ -194,6 +225,7 @@ describe("⌘W picks a terminal", () => {
     // click that didn't land on something focusable. This closed the window.
     panel();
     expect(await closeFocusedTerminal()).toBe(true);
+    await lapse();
     expect(KILLED).toEqual(["t1"]);
   });
 
@@ -201,6 +233,7 @@ describe("⌘W picks a terminal", () => {
     panel();
     focusIn("data-sidebar");
     expect(await closeFocusedTerminal()).toBe(true);
+    await lapse();
     expect(KILLED).toEqual(["t1"]);
   });
 
@@ -223,6 +256,7 @@ describe("⌘W picks a terminal", () => {
     panel({ contentFocus: "split" });
     focusIn("data-terminal-panel");
     expect(await closeFocusedTerminal()).toBe(true);
+    await lapse();
     expect(KILLED).toEqual(["t1"]);
   });
 
@@ -357,5 +391,133 @@ describe("removing a workspace", () => {
     expect(Object.keys(useReviewStore.getState().terminalSessions)).toEqual([
       "t3",
     ]);
+  });
+});
+
+/**
+ * A close leaves the screen at once but holds its shell for a few seconds, so
+ * the one you didn't mean can come back exactly as it was — Ghostty's undo
+ * window, on the browser's reopen-tab chord.
+ */
+describe("undoing a close", () => {
+  const KILLED: string[] = [];
+
+  function panel(tabs = [makeTab("tab-1", "t1")]): void {
+    KILLED.length = 0;
+    confirm.mockClear();
+    confirm.mockResolvedValue(true);
+    const sessions: Record<string, TerminalSessionInfo> = {};
+    for (const tab of tabs) {
+      for (const id of collectLeafIds(tab.root))
+        sessions[id] = session(id, "ws-1");
+    }
+    useReviewStore.setState({
+      workspaces: [workspace("ws-1", { title: "kept" })],
+      focusedWorkspaceId: "ws-1",
+      terminalTabs: tabs,
+      activeTabId: tabs[0]?.id ?? null,
+      terminalSessions: sessions,
+      terminalStatuses: {},
+      terminalExited: {},
+      killTerminal: async (id: string) => {
+        KILLED.push(id);
+        const next = { ...useReviewStore.getState().terminalSessions };
+        delete next[id];
+        useReviewStore.setState({ terminalSessions: next });
+      },
+      removeWorkspace: async () => {},
+    });
+  }
+
+  const tabIds = () => useReviewStore.getState().terminalTabs.map((t) => t.id);
+
+  it("takes the pane off the screen but keeps the shell", async () => {
+    panel();
+    await closeTerminalPane("t1");
+    expect(tabIds()).toEqual([]);
+    expect(KILLED).toEqual([]);
+    expect(useReviewStore.getState().terminalSessions.t1).toBeDefined();
+    expect(hasPendingClose()).toBe(true);
+    expect(toasted).toHaveBeenCalledWith(
+      "Closed terminal",
+      expect.objectContaining({ action: expect.anything() }),
+    );
+  });
+
+  it("kills it once the window lapses", async () => {
+    panel();
+    await closeTerminalPane("t1");
+    await lapse();
+    expect(KILLED).toEqual(["t1"]);
+    expect(hasPendingClose()).toBe(false);
+  });
+
+  it("brings the tab back, unkilled, within the window", async () => {
+    panel();
+    await closeTerminalPane("t1");
+    expect(undoCloseTerminal()).toBe(true);
+    expect(tabIds()).toEqual(["tab-1"]);
+    expect(useReviewStore.getState().activeTabId).toBe("tab-1");
+    await lapse();
+    expect(KILLED).toEqual([]);
+  });
+
+  it("has nothing to bring back once the window has lapsed", async () => {
+    panel();
+    await closeTerminalPane("t1");
+    await lapse();
+    expect(undoCloseTerminal()).toBe(false);
+    expect(tabIds()).toEqual([]);
+  });
+
+  it("brings a closed split back as that split", async () => {
+    const tab = makeTab("tab-1", "t1");
+    const split = {
+      ...tab,
+      root: {
+        type: "split" as const,
+        direction: "row" as const,
+        children: [tab.root, makeTab("x", "t2").root],
+        sizes: [0.5, 0.5],
+      },
+    };
+    panel([split]);
+    await closeTerminalTab(split);
+    expect(tabIds()).toEqual([]);
+    expect(undoCloseTerminal()).toBe(true);
+    const restored = useReviewStore.getState().terminalTabs;
+    expect(restored.map((t) => collectLeafIds(t.root))).toEqual([["t1", "t2"]]);
+  });
+
+  it("reopens the most recent close first", async () => {
+    panel([makeTab("tab-1", "t1"), makeTab("tab-2", "t2")]);
+    await closeTerminalPane("t1");
+    await closeTerminalPane("t2");
+    expect(undoCloseTerminal()).toBe(true);
+    expect(tabIds()).toEqual(["tab-2"]);
+    expect(undoCloseTerminal()).toBe(true);
+    expect(tabIds()).toEqual(["tab-2", "tab-1"]);
+  });
+
+  it("does not hold a shell that already exited", async () => {
+    panel();
+    useReviewStore.setState({ terminalExited: { t1: 0 } });
+    await closeTerminalPane("t1");
+    expect(hasPendingClose()).toBe(false);
+    expect(useReviewStore.getState().terminalSessions.t1).toBeUndefined();
+  });
+
+  it("goes through at once when the window is on its way out", async () => {
+    panel();
+    await closeTerminalPane("t1");
+    await flushPendingCloses();
+    expect(KILLED).toEqual(["t1"]);
+    expect(hasPendingClose()).toBe(false);
+  });
+
+  it("is not offered while nothing is pending", () => {
+    panel();
+    expect(hasPendingClose()).toBe(false);
+    expect(undoCloseTerminal()).toBe(false);
   });
 });
