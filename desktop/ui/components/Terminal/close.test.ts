@@ -33,6 +33,7 @@ import { collectLeafIds, makeTab, splitLeaf } from "./pane-tree";
 import { attachment, terminalStatus, workspace } from "../../test/fixtures";
 
 const REMOVED: string[] = [];
+const CASCADED: boolean[] = [];
 
 // A close holds its shell for the undo window before anything reaches the
 // daemon; `lapse` is that window going by.
@@ -81,6 +82,7 @@ function seed(
   sessionIds: string[],
 ): void {
   REMOVED.length = 0;
+  CASCADED.length = 0;
   confirm.mockClear();
   confirm.mockResolvedValue(true);
   const item = workspace("ws-1", {
@@ -100,14 +102,30 @@ function seed(
       delete next[id];
       useReviewStore.setState({ terminalSessions: next });
     },
-    removeWorkspace: async (id: string) => {
+    removeWorkspace: async (id: string, cascade?: boolean) => {
       REMOVED.push(id);
+      CASCADED.push(Boolean(cascade));
       useReviewStore.setState({
         workspaces: useReviewStore
           .getState()
           .workspaces.filter((entry) => entry.id !== id),
       });
     },
+  });
+}
+
+/**
+ * `seed`, plus a workspace nested under ws-1 with its own terminal — the
+ * shape `chooseRemovalScope` exists for.
+ */
+function seedNested(childSessionIds: string[] = ["t2"]): void {
+  seed({ title: "the migration" }, ["t1"]);
+  const child = workspace("ws-2", { parentId: "ws-1", title: "sub-task" });
+  const sessions = { ...useReviewStore.getState().terminalSessions };
+  for (const id of childSessionIds) sessions[id] = session(id, "ws-2");
+  useReviewStore.setState({
+    workspaces: [...useReviewStore.getState().workspaces, child],
+    terminalSessions: sessions,
   });
 }
 
@@ -392,6 +410,43 @@ describe("removing a workspace", () => {
     expect(Object.keys(useReviewStore.getState().terminalSessions)).toEqual([
       "t3",
     ]);
+  });
+});
+
+describe("removing a workspace with nested children", () => {
+  it("cascades to the nested workspaces when asked to remove them", async () => {
+    seedNested();
+    // Both dialogs default to "yes": take the nested workspaces too, then
+    // confirm killing the terminals that go with them.
+    expect(await removeWorkspaceAndTerminals("ws-1")).toBe(true);
+    expect(REMOVED).toEqual(["ws-1"]);
+    expect(CASCADED).toEqual([true]);
+    expect(Object.keys(useReviewStore.getState().terminalSessions)).toEqual([]);
+  });
+
+  it("keeps the nested workspaces when asked to, removing this one alone", async () => {
+    seedNested();
+    // Decline "remove all"; the follow-up "remove this one alone?" and the
+    // terminal-kill confirmation both default to "yes".
+    confirm.mockResolvedValueOnce(false);
+    expect(await removeWorkspaceAndTerminals("ws-1")).toBe(true);
+    expect(REMOVED).toEqual(["ws-1"]);
+    expect(CASCADED).toEqual([false]);
+    // ws-2 was never asked about beyond staying in the queue, so its own
+    // terminal is never touched.
+    expect(Object.keys(useReviewStore.getState().terminalSessions)).toEqual([
+      "t2",
+    ]);
+  });
+
+  it("cancels the whole removal when both nested-workspace questions are declined", async () => {
+    seedNested();
+    confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(false);
+    expect(await removeWorkspaceAndTerminals("ws-1")).toBe(false);
+    expect(REMOVED).toEqual([]);
+    expect(
+      Object.keys(useReviewStore.getState().terminalSessions).sort(),
+    ).toEqual(["t1", "t2"]);
   });
 });
 
