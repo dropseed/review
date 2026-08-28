@@ -176,6 +176,10 @@ export function RepoPicker({
         onKeyDown={handleKeyDown}
         aria-label="Find a repo"
         placeholder="Find a repo…"
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="off"
+        spellCheck={false}
         className="w-full shrink-0 rounded-md bg-fg/[0.06] px-3 py-1.5 text-sm
                    text-fg-secondary outline-none placeholder:text-fg-faint
                    focus:inset-ring-1 focus:inset-ring-focus-ring/70"
