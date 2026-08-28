@@ -403,6 +403,74 @@ mod tests {
         manager.kill(&id).unwrap();
     }
 
+    /// Is `pid` still alive? (`kill -0` semantics, via `/bin/kill` so the
+    /// test doesn't need its own libc binding.)
+    fn pid_is_alive(pid: u32) -> bool {
+        std::process::Command::new("/bin/kill")
+            .args(["-0", &pid.to_string()])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+
+    /// Start a shell, run `command` in its foreground, and return the pid the
+    /// shell printed for it (the command must echo `$$` first).
+    fn start_with_foreground_job(id: &str, command: &str) -> (SessionManager, TerminalId, u32) {
+        let manager = SessionManager::new();
+        let tid = TerminalId::from(id);
+        manager.start(spec(id)).unwrap();
+        let mut sub = manager.subscribe(&tid).unwrap();
+        manager
+            .write(&tid, format!("{command}\n").as_bytes())
+            .unwrap();
+        // Wait for the printed value, not the echo of `$$`.
+        assert!(
+            wait_for_output(&mut sub.rx, "PID=", Duration::from_secs(5)),
+            "job never printed its pid"
+        );
+        std::thread::sleep(Duration::from_millis(200));
+        let text = String::from_utf8_lossy(&manager.replay(&tid).unwrap().0).into_owned();
+        // The terminal echoes the typed command (`PID=$$`) before the job
+        // prints the real value, so take the last occurrence.
+        let pid: u32 = text
+            .rsplit("PID=")
+            .next()
+            .and_then(|rest| rest.split(|c: char| !c.is_ascii_digit()).next())
+            .and_then(|digits| digits.parse().ok())
+            .expect("pid in output");
+        assert!(pid_is_alive(pid));
+        (manager, tid, pid)
+    }
+
+    #[test]
+    fn kill_takes_the_foreground_job_down_with_the_shell() {
+        // A plain sleep in the shell's group dies on the SIGHUP.
+        let (manager, id, pid) =
+            start_with_foreground_job("kill-fg", "sh -c 'echo PID=$$; exec sleep 300'");
+        manager.kill(&id).unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(!pid_is_alive(pid), "foreground job survived kill");
+    }
+
+    #[test]
+    fn kill_escalates_past_a_job_that_ignores_hangup_and_term() {
+        // The job traps SIGHUP and SIGTERM; only the SIGKILL escalation ends it.
+        let (manager, id, pid) = start_with_foreground_job(
+            "kill-stubborn",
+            "sh -c 'trap \"\" HUP TERM; echo PID=$$; while :; do sleep 1; done'",
+        );
+        let started = std::time::Instant::now();
+        manager.kill(&id).unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(!pid_is_alive(pid), "stubborn job survived kill");
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "kill took {:?}",
+            started.elapsed()
+        );
+    }
+
     #[test]
     fn kill_terminates_delivers_exit_and_blocks_writes() {
         let manager = SessionManager::new();

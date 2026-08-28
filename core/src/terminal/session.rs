@@ -16,6 +16,8 @@ use std::thread::JoinHandle;
 
 use anyhow::{anyhow, Context, Result};
 use bytes::Bytes;
+use nix::sys::signal::{killpg, Signal};
+use nix::unistd::Pid;
 use portable_pty::{native_pty_system, Child, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::mpsc::Sender;
@@ -488,11 +490,43 @@ impl Session {
     }
 
     /// Terminate the child and join the reader thread. Idempotent.
+    ///
+    /// Signals the shell's whole process group, not just the shell — the same
+    /// approach Ghostty takes (`termio/Exec.zig` `killPid`). portable-pty
+    /// spawns the shell via `setsid`, so the group is everything the shell
+    /// started that didn't deliberately leave it. Escalation is bounded:
+    /// SIGHUP (what a real terminal hangup sends), then SIGTERM, then SIGKILL
+    /// if the shell is still alive after each grace period. A shell at a prompt
+    /// dies on the SIGHUP within milliseconds, so the grace periods only cost
+    /// anything for a process that ignores hangups.
+    ///
+    /// Processes that left the session entirely (`setsid`/`nohup`, or an agent
+    /// whose background jobs run in their own group with no controlling tty)
+    /// are out of reach here by design — the same as any other terminal.
     pub fn kill(&self) -> Result<()> {
-        // Signal the child; ignore errors (it may already be gone).
+        // The foreground job's group can differ from the shell's under job
+        // control; hang it up too, in case the shell doesn't forward. Must be
+        // read before the master is dropped (tcgetpgrp needs the fd).
+        let foreground_pgid = self.foreground_pgid();
+
+        let groups = self.process_groups(foreground_pgid);
+
+        signal_groups(&groups, Signal::SIGHUP);
+        // Also the direct child (portable-pty's own SIGHUP) — cheap, and covers
+        // a shell that somehow isn't its group leader.
         let _ = self.killer.lock().unwrap().kill();
         // Drop the master so the reader unblocks via EOF if it hasn't already.
         drop(self.master.lock().unwrap().take());
+
+        // Escalate on the *groups* being empty, not on the shell exiting: a
+        // shell dies on SIGHUP readily while a job it started may not.
+        if !wait_for_groups_to_empty(&groups, KILL_GRACE) {
+            signal_groups(&groups, Signal::SIGTERM);
+            if !wait_for_groups_to_empty(&groups, KILL_GRACE) {
+                signal_groups(&groups, Signal::SIGKILL);
+            }
+        }
+
         // Wait for the reader thread to finish finalizing status and fan-out.
         if let Some(handle) = self.reader_handle.lock().unwrap().take() {
             let _ = handle.join();
@@ -509,6 +543,61 @@ impl Session {
         Ok(())
     }
 }
+
+impl Session {
+    /// The process groups `kill` signals: the shell's own, and the PTY's
+    /// foreground group when it differs (under job control the foreground job
+    /// gets its own group, and the shell may not forward a hangup to it).
+    fn process_groups(&self, foreground_pgid: Option<i32>) -> Vec<Pid> {
+        let mut groups: Vec<Pid> = Vec::new();
+        if let Some(pgid) = self.shell_pid {
+            groups.push(Pid::from_raw(pgid));
+        }
+        if let Some(pgid) = foreground_pgid {
+            let pgid = Pid::from_raw(pgid);
+            if pgid.as_raw() > 0 && !groups.contains(&pgid) {
+                groups.push(pgid);
+            }
+        }
+        groups
+    }
+}
+
+/// Send `signal` to every group. Errors are ignored: ESRCH means the group is
+/// already gone, and Darwin reports EPERM for a group containing processes we
+/// can't signal (Ghostty ignores that one for the same reason).
+fn signal_groups(groups: &[Pid], signal: Signal) {
+    for &pgid in groups {
+        let _ = killpg(pgid, signal);
+    }
+}
+
+/// Does any process remain in `pgid`? `killpg` with signal 0 sends nothing but
+/// still reports ESRCH once the group is empty. Any other error (EPERM) means
+/// something is still there.
+fn group_has_members(pgid: Pid) -> bool {
+    !matches!(killpg(pgid, None), Err(nix::errno::Errno::ESRCH))
+}
+
+/// Poll until every group is empty, or `timeout` passes.
+fn wait_for_groups_to_empty(groups: &[Pid], timeout: std::time::Duration) -> bool {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        if !groups.iter().any(|&pgid| group_has_members(pgid)) {
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(KILL_POLL);
+    }
+}
+
+/// How long `kill` waits for the shell's process groups to empty after each
+/// signal before escalating to the next one.
+const KILL_GRACE: std::time::Duration = std::time::Duration::from_millis(750);
+/// How often `kill` re-checks the groups during a grace period.
+const KILL_POLL: std::time::Duration = std::time::Duration::from_millis(10);
 
 /// Resolve the shell to run: explicit override, then `$SHELL`, then `/bin/zsh`.
 fn resolve_shell(shell: Option<PathBuf>) -> PathBuf {

@@ -83,7 +83,7 @@ tree-sitter-md = { version = "0.3", optional = true }
 # Terminal sessions (feature-gated)
 portable-pty = { version = "0.8", optional = true }
 vte = { version = "0.13", optional = true }
-nix = { version = "0.29", features = ["term", "process"], optional = true }
+nix = { version = "0.29", features = ["term", "process", "signal"], optional = true }
 bytes = { version = "1", optional = true }
 # VT screen engine — Ghostty's own terminal core. Native, built from the
 # `vendor/ghostty` submodule by zig; see CLAUDE.md → "Terminal VT engine".
