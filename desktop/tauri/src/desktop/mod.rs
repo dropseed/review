@@ -611,7 +611,10 @@ fn write_open_request(
 /// `defaults write` at every launch — would stamp on the user's own preference
 /// rather than sit behind it.
 #[cfg(target_os = "macos")]
-#[allow(unsafe_code)]
+#[allow(
+    unsafe_code,
+    reason = "objc2 cannot check registerDefaults's generic against the selector; there is no safe route to the registration domain"
+)]
 fn let_keys_repeat() {
     use objc2::runtime::AnyObject;
     use objc2_foundation::{NSDictionary, NSNumber, NSString, NSUserDefaults};
@@ -620,7 +623,7 @@ fn let_keys_repeat() {
     let off = NSNumber::new_bool(false);
     let registration: objc2::rc::Retained<NSDictionary<NSString, AnyObject>> =
         NSDictionary::from_slices(&[&*key], &[&*off as &AnyObject]);
-    // Safe: the dictionary is exactly the `NSString` -> object shape the
+    // SAFETY: the dictionary is exactly the `NSString` -> object shape the
     // method's generic asks for.
     unsafe { NSUserDefaults::standardUserDefaults().registerDefaults(&registration) };
 }
