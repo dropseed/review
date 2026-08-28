@@ -463,6 +463,13 @@ type SessionState = Pick<
 type TabState = Pick<TerminalSlice, "terminalTabs" | "activeTabId">;
 
 /**
+ * Tab state plus the sessions it is attributed through — what a reducer that
+ * may have to re-pick the active tab needs, since which workspace a tab belongs
+ * to is the daemon's answer about its sessions, not the tab's own.
+ */
+type TabStateWithSessions = TabState & Pick<TerminalSlice, "terminalSessions">;
+
+/**
  * Whether two statuses say the same thing about a session.
  *
  * Every field is a primitive, so this is a plain field-wise compare rather
@@ -635,13 +642,44 @@ export function withWorkspace(
 
 // ----- Pure tab reducers (exported for unit testing) -----
 
-/** The active tab, re-picked when the old answer is gone. */
+/**
+ * The active tab, re-picked when the old answer is gone — closing a tab, and
+ * every reconcile that drops one.
+ *
+ * `state` is the strip as it was, `terminalTabs` what is left of it, because
+ * the replacement is chosen by where the departed tab *was*: the tab after it,
+ * else the tab before it, which is what every tabbed thing does and what the
+ * eye expects.
+ *
+ * Nearness alone isn't enough, though, because the strip is not the whole list:
+ * the panel draws one workspace's tabs (see `showingTabId` in TerminalPanel),
+ * so landing on a neighbour belonging to another workspace shows a strip with
+ * nothing under it. A surviving tab of the departed tab's own workspace
+ * therefore wins over a nearer one that isn't — and in the strip the user is
+ * looking at, that tab *is* the neighbour.
+ */
 export function resolveActiveTabId(
-  tabs: TerminalTab[],
-  previous: string | null,
+  state: TabAttribution & Pick<TerminalSlice, "activeTabId">,
+  terminalTabs: TerminalTab[],
 ): string | null {
-  if (previous && tabs.some((tab) => tab.id === previous)) return previous;
-  return tabs[0]?.id ?? null;
+  const previous = state.activeTabId;
+  if (previous && terminalTabs.some((tab) => tab.id === previous))
+    return previous;
+  const before = state.terminalTabs;
+  const at = previous ? before.findIndex((tab) => tab.id === previous) : -1;
+  if (at === -1) return terminalTabs[0]?.id ?? null;
+
+  // Where it was, outward: everything after it, then everything before it.
+  const candidates = [
+    ...before.slice(at + 1),
+    ...before.slice(0, at).reverse(),
+  ].filter((tab) => terminalTabs.some((entry) => entry.id === tab.id));
+  const workspaceId = tabWorkspaceId(state, before[at]);
+  const kin =
+    workspaceId === null
+      ? null
+      : candidates.find((tab) => tabWorkspaceId(state, tab) === workspaceId);
+  return (kin ?? candidates[0])?.id ?? terminalTabs[0]?.id ?? null;
 }
 
 /** The tab with `tabId`, or null. */
@@ -759,7 +797,7 @@ export function tabWithoutPane(
  * it there, so that is what should be on screen.
  */
 export function movePaneToTabTree(
-  state: TabState,
+  state: TabStateWithSessions,
   sourceId: string,
   targetTabId: string,
 ): Partial<TabState> {
@@ -815,7 +853,7 @@ export function extractPaneToTab(
  * the active tab if it went away.
  */
 export function removeTerminalFromTabs(
-  state: TabState,
+  state: TabStateWithSessions,
   id: string,
 ): Partial<TabState> {
   // A tab that has nothing left is dropped, which is what the nulls are.
@@ -824,7 +862,7 @@ export function removeTerminalFromTabs(
     .filter((tab): tab is TerminalTab => tab !== null);
   return {
     terminalTabs,
-    activeTabId: resolveActiveTabId(terminalTabs, state.activeTabId),
+    activeTabId: resolveActiveTabId(state, terminalTabs),
   };
 }
 
@@ -927,7 +965,7 @@ export function resizeSplitInTab(
  * both holding a live session and keeps them.
  */
 export function ingestTabs(
-  state: TabState,
+  state: TabStateWithSessions,
   sessions: TerminalSessionInfo[],
   placing: ReadonlySet<string> = new Set(),
 ): Partial<TabState> {
@@ -950,7 +988,7 @@ export function ingestTabs(
 
   return {
     terminalTabs,
-    activeTabId: resolveActiveTabId(terminalTabs, state.activeTabId),
+    activeTabId: resolveActiveTabId(state, terminalTabs),
   };
 }
 
@@ -1007,6 +1045,7 @@ export function restoreTabs(
         typeof layout.activeTabId === "string"
           ? layout.activeTabId
           : state.activeTabId,
+      terminalSessions: state.terminalSessions,
     },
     Object.values(state.terminalSessions),
   );

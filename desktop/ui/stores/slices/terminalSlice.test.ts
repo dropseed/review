@@ -307,26 +307,103 @@ describe("terminalSeverity", () => {
   });
 });
 
-describe("resolveActiveTabId", () => {
-  it("keeps the current tab when it is still there", () => {
-    expect(resolveActiveTabId([makeTab("a", "a")], "a")).toBe("a");
-  });
-  it("re-picks the first when the remembered tab is gone", () => {
-    expect(resolveActiveTabId([makeTab("b", "b")], "a")).toBe("b");
-  });
-  it("nulls when there are no tabs left", () => {
-    expect(resolveActiveTabId([], "a")).toBeNull();
-  });
-});
-
 interface TabTestState {
   terminalTabs: TerminalTab[];
   activeTabId: string | null;
+  terminalSessions: Record<string, TerminalSessionInfo>;
 }
 
 function emptyTabState(): TabTestState {
-  return { terminalTabs: [], activeTabId: null };
+  return { terminalTabs: [], activeTabId: null, terminalSessions: {} };
 }
+
+/** A strip of single-pane tabs, each session attributed to a workspace. */
+function strip(
+  tabs: [tabId: string, workspaceId: string | null][],
+  activeTabId: string | null,
+): TabTestState {
+  const terminalSessions: Record<string, TerminalSessionInfo> = {};
+  for (const [tabId, workspaceId] of tabs) {
+    terminalSessions[tabId] = { ...session(tabId, "/r"), workspaceId };
+  }
+  return {
+    terminalTabs: tabs.map(([tabId]) => makeTab(tabId, tabId)),
+    activeTabId,
+    terminalSessions,
+  };
+}
+
+/** `state` without the tabs named — the strip after a close. */
+function without(state: TabTestState, ...tabIds: string[]): TerminalTab[] {
+  return state.terminalTabs.filter((tab) => !tabIds.includes(tab.id));
+}
+
+describe("resolveActiveTabId", () => {
+  it("keeps the current tab when it is still there", () => {
+    const state = strip([["a", "w1"]], "a");
+    expect(resolveActiveTabId(state, state.terminalTabs)).toBe("a");
+  });
+
+  it("takes the tab after the one that went away", () => {
+    const state = strip(
+      [
+        ["a", "w1"],
+        ["b", "w1"],
+        ["c", "w1"],
+      ],
+      "b",
+    );
+    expect(resolveActiveTabId(state, without(state, "b"))).toBe("c");
+  });
+
+  it("falls back to the tab before it when it was the last", () => {
+    const state = strip(
+      [
+        ["a", "w1"],
+        ["b", "w1"],
+      ],
+      "b",
+    );
+    expect(resolveActiveTabId(state, without(state, "b"))).toBe("a");
+  });
+
+  // The panel draws one workspace's tabs, so a nearer tab belonging to another
+  // one leaves a strip with nothing under it.
+  it("prefers a tab of the same workspace over a nearer stranger", () => {
+    const state = strip(
+      [
+        ["a", "w1"],
+        ["b", "w1"],
+        ["c", "w2"],
+        ["d", "w1"],
+      ],
+      "b",
+    );
+    expect(resolveActiveTabId(state, without(state, "b"))).toBe("d");
+  });
+
+  it("takes the nearest survivor when the workspace has none left", () => {
+    const state = strip(
+      [
+        ["a", "w2"],
+        ["b", "w1"],
+        ["c", "w2"],
+      ],
+      "b",
+    );
+    expect(resolveActiveTabId(state, without(state, "b"))).toBe("c");
+  });
+
+  it("re-picks the first when the remembered tab was never in the strip", () => {
+    const state = { ...strip([["b", "w1"]], "a") };
+    expect(resolveActiveTabId(state, state.terminalTabs)).toBe("b");
+  });
+
+  it("nulls when there are no tabs left", () => {
+    const state = strip([["a", "w1"]], "a");
+    expect(resolveActiveTabId(state, [])).toBeNull();
+  });
+});
 
 describe("tab reducers", () => {
   it("addTabForTerminal appends a single-leaf tab and makes it active", () => {
