@@ -161,3 +161,130 @@ where
     }
     any_changed
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_hunk(lines: Vec<DiffLine>) -> DiffHunk {
+        DiffHunk {
+            id: "test:testhash".to_owned(),
+            file_path: "test".to_owned(),
+            old_start: 1,
+            old_count: 0,
+            new_start: 1,
+            new_count: 0,
+            content: String::new(),
+            lines,
+            content_hash: "testhash".to_owned(),
+            move_pair_id: None,
+        }
+    }
+
+    fn added(content: &str) -> DiffLine {
+        DiffLine {
+            line_type: LineType::Added,
+            content: content.to_owned(),
+            old_line_number: None,
+            new_line_number: Some(1),
+        }
+    }
+
+    fn removed(content: &str) -> DiffLine {
+        DiffLine {
+            line_type: LineType::Removed,
+            content: content.to_owned(),
+            old_line_number: Some(1),
+            new_line_number: None,
+        }
+    }
+
+    fn context(content: &str) -> DiffLine {
+        DiffLine {
+            line_type: LineType::Context,
+            content: content.to_owned(),
+            old_line_number: Some(1),
+            new_line_number: Some(1),
+        }
+    }
+
+    #[test]
+    fn empty_hunk_has_no_pairs() {
+        let hunk = make_hunk(vec![]);
+        assert!(paired_changed_lines(&hunk).is_none());
+    }
+
+    #[test]
+    fn context_only_has_no_pairs() {
+        let hunk = make_hunk(vec![context("a"), context("b")]);
+        assert!(paired_changed_lines(&hunk).is_none());
+    }
+
+    #[test]
+    fn single_replacement_pairs_positionally() {
+        let hunk = make_hunk(vec![removed("old"), added("new")]);
+        let pairs = paired_changed_lines(&hunk).unwrap();
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].0.content, "old");
+        assert_eq!(pairs[0].1.content, "new");
+    }
+
+    #[test]
+    fn equal_sized_block_pairs_in_order() {
+        let hunk = make_hunk(vec![
+            removed("old1"),
+            removed("old2"),
+            added("new1"),
+            added("new2"),
+        ]);
+        let pairs = paired_changed_lines(&hunk).unwrap();
+        let contents: Vec<(&str, &str)> = pairs
+            .iter()
+            .map(|(old, new)| (old.content.as_str(), new.content.as_str()))
+            .collect();
+        assert_eq!(contents, vec![("old1", "new1"), ("old2", "new2")]);
+    }
+
+    #[test]
+    fn separate_blocks_each_pair_independently() {
+        let hunk = make_hunk(vec![
+            removed("a-old"),
+            added("a-new"),
+            context("unchanged"),
+            removed("b-old"),
+            added("b-new"),
+        ]);
+        let pairs = paired_changed_lines(&hunk).unwrap();
+        let contents: Vec<(&str, &str)> = pairs
+            .iter()
+            .map(|(old, new)| (old.content.as_str(), new.content.as_str()))
+            .collect();
+        assert_eq!(contents, vec![("a-old", "a-new"), ("b-old", "b-new")]);
+    }
+
+    #[test]
+    fn unequal_counts_in_a_block_decline() {
+        let hunk = make_hunk(vec![removed("old1"), removed("old2"), added("new")]);
+        assert!(paired_changed_lines(&hunk).is_none());
+    }
+
+    #[test]
+    fn pure_addition_declines() {
+        let hunk = make_hunk(vec![added("new")]);
+        assert!(paired_changed_lines(&hunk).is_none());
+    }
+
+    #[test]
+    fn pure_removal_declines() {
+        let hunk = make_hunk(vec![removed("old")]);
+        assert!(paired_changed_lines(&hunk).is_none());
+    }
+
+    #[test]
+    fn line_moved_across_context_declines() {
+        // a lone removal, its matching addition on the far side of context —
+        // counting alone would pair them, but that hides a reordering.
+        let hunk = make_hunk(vec![removed("moved"), context("unchanged"), added("moved")]);
+        assert!(paired_changed_lines(&hunk).is_none());
+    }
+}
