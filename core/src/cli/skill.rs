@@ -35,15 +35,37 @@ fn install_skill() -> Result<(), String> {
     let home = dirs::home_dir().ok_or("Could not determine the home directory.")?;
 
     let claude_dir = home.join(".claude").join("skills");
-    write_skill("Claude Code", &claude_dir)?;
+    let claude_result = write_skill("Claude Code", &claude_dir);
 
-    let codex_dir = crate::service::util::codex_home()
-        .ok_or("Could not determine the Codex home directory.")?
-        .join("skills");
-    write_skill("Codex", &codex_dir)?;
+    let codex_result = crate::service::util::codex_home()
+        .ok_or_else(|| "Could not determine the Codex home directory.".to_owned())
+        .and_then(|dir| write_skill("Codex", &dir.join("skills")));
 
-    println!("Restart Claude Code or Codex to pick up the skill.");
-    Ok(())
+    finish_install(claude_result, codex_result)
+}
+
+/// Combine the two independent installs into one outcome. Each tool's skills
+/// directory is unrelated to the other's, so one failing (a read-only
+/// `$CODEX_HOME`, say) is not a reason to hide that the other succeeded —
+/// only fail the command outright when neither install landed.
+fn finish_install(claude: Result<(), String>, codex: Result<(), String>) -> Result<(), String> {
+    match (claude, codex) {
+        (Ok(()), Ok(())) => {
+            println!("Restart Claude Code or Codex to pick up the skill.");
+            Ok(())
+        }
+        (Ok(()), Err(e)) => {
+            eprintln!("Warning: skipped Codex ({e})");
+            println!("Restart Claude Code to pick up the skill.");
+            Ok(())
+        }
+        (Err(e), Ok(())) => {
+            eprintln!("Warning: skipped Claude Code ({e})");
+            println!("Restart Codex to pick up the skill.");
+            Ok(())
+        }
+        (Err(e1), Err(e2)) => Err(format!("{e1}\n{e2}")),
+    }
 }
 
 fn write_skill(tool: &str, skills_root: &std::path::Path) -> Result<(), String> {
@@ -73,6 +95,55 @@ fn remove_superseded(skills_root: &std::path::Path) {
         let dir = skills_root.join(name);
         if dir.is_dir() && std::fs::remove_dir_all(&dir).is_ok() {
             println!("Removed the superseded {name} skill at {}", dir.display());
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn finish_install_succeeds_if_either_tool_landed() {
+        assert!(finish_install(Ok(()), Ok(())).is_ok());
+        assert!(finish_install(Ok(()), Err("codex boom".into())).is_ok());
+        assert!(finish_install(Err("claude boom".into()), Ok(())).is_ok());
+    }
+
+    #[test]
+    fn finish_install_fails_only_when_both_tools_failed() {
+        let err = finish_install(Err("claude boom".into()), Err("codex boom".into()))
+            .expect_err("both installs failing should be reported as failure");
+        assert!(err.contains("claude boom"));
+        assert!(err.contains("codex boom"));
+    }
+
+    #[test]
+    fn write_skill_creates_then_updates() {
+        let dir = tempfile::tempdir().unwrap();
+        let skill_file = dir.path().join(SKILL_NAME).join("SKILL.md");
+
+        write_skill("Claude Code", dir.path()).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&skill_file).unwrap(),
+            SKILL_CONTENTS
+        );
+
+        // Writing again over an existing install is still Ok, not a fresh-install error.
+        write_skill("Claude Code", dir.path()).unwrap();
+    }
+
+    #[test]
+    fn write_skill_removes_superseded_skills() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in SUPERSEDED {
+            std::fs::create_dir_all(dir.path().join(name)).unwrap();
+        }
+
+        write_skill("Claude Code", dir.path()).unwrap();
+
+        for name in SUPERSEDED {
+            assert!(!dir.path().join(name).exists());
         }
     }
 }
