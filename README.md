@@ -30,6 +30,27 @@ Spur is local-first — your code stays on your machine. No diffs are uploaded t
 
 The desktop app includes optional crash reporting via [Sentry](https://sentry.io). It is **off by default** and requires explicit opt-in. When enabled, PII is stripped before transmission. No code or diff content is ever included in crash reports.
 
+## The `spur` CLI
+
+The app bundle ships the CLI, but nothing puts it on your `PATH` — link it once:
+
+```bash
+sudo ln -sf /Applications/Spur.app/Contents/MacOS/spur-cli /usr/local/bin/spur
+```
+
+`spur --help` covers the rest: hunk triage, the workspace queue, and the app's
+terminal sessions.
+
+Upgrading from the app's previous name, remove the old link at the same time:
+
+```bash
+sudo rm -f /usr/local/bin/review
+```
+
+Leaving it costs more than a stale name. That link points into `Review.app`,
+whose CLI resolves `~/.review` — a home Spur has already migrated away from — so
+it keeps working while reading state nothing writes any more.
+
 ## Development
 
 Requires Node.js 18+, Rust (latest stable), and Zig 0.16+ (`brew install zig`) — the embedded terminal's VT engine is built from Ghostty's source. See `CLAUDE.md` for full development docs.
