@@ -113,7 +113,7 @@ pub fn migrate_legacy_home() {
             default_central_root(),
             dirs::home_dir().map(|h| h.join(LEGACY_CENTRAL_DIR)),
         ) {
-            adopt_legacy_home(&legacy, &target);
+            adopt_legacy_home(&legacy, &target, legacy_app_is_running());
         }
     }
     // Whatever home we ended up with, the queue file inside it may predate the
@@ -124,23 +124,29 @@ pub fn migrate_legacy_home() {
     }
 }
 
-/// Is a daemon actually serving this home?
+/// Is a pre-rename desktop app still running?
 ///
-/// Asked by connecting to its socket rather than by probing `daemon.pid`: a
-/// crashed daemon leaves both files behind, and only the connect distinguishes
-/// "still running" from "left a corpse". A refused connection is the answer
-/// that lets migration proceed, which is the right default — the failure worth
-/// preventing is migrating out from under a *live* app.
-fn daemon_is_live(root: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        std::os::unix::net::UnixStream::connect(root.join("daemon.sock")).is_ok()
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = root;
-        false
-    }
+/// This, and not a live daemon, is what the migration must refuse to move
+/// beneath. An app that is still up recreates the home the moment it writes,
+/// and then holds a queue nobody else can see — two homes, both half right.
+///
+/// A live *daemon* is the opposite case and must not block: it owns PTYs, never
+/// writes the queue, and its socket travels with the rename by inode, so the
+/// new app finds it, sees a protocol-compatible build, and keeps every session
+/// running (`attach_decision` → `AttachSkewed`). Blocking on it would mean
+/// choosing between migrating and keeping the user's shells, and there is no
+/// reason to make anyone choose.
+///
+/// Asked with `pgrep`, because the old app left no lock to check. The pattern
+/// is case-sensitive on purpose: `MacOS/Review` is the app, `MacOS/review-daemon`
+/// is not. A false positive only delays the migration to the next launch; a
+/// false negative is the split above, so the loose end is the safe one.
+fn legacy_app_is_running() -> bool {
+    std::process::Command::new("pgrep")
+        .arg("-f")
+        .arg("Review.app/Contents/MacOS/Review")
+        .output()
+        .is_ok_and(|out| out.status.success() && !out.stdout.trim_ascii().is_empty())
 }
 
 /// Move a pre-rename `~/.review` into place as `~/.spur`.
@@ -148,7 +154,7 @@ fn daemon_is_live(root: &Path) -> bool {
 /// Takes both paths rather than deriving them so the rule can be tested against
 /// temporary directories — the one piece of this file that must never be
 /// exercised against a real `$HOME`.
-fn adopt_legacy_home(legacy: &Path, target: &Path) {
+fn adopt_legacy_home(legacy: &Path, target: &Path, app_running: bool) {
     if target.exists() {
         return;
     }
@@ -157,12 +163,12 @@ fn adopt_legacy_home(legacy: &Path, target: &Path) {
     }
     // The one thing that must never happen: moving the directory out from under
     // a running Review.app, which then recreates it empty and writes a fresh
-    // queue into the husk. If its daemon is up, the old app is in use — say so
-    // and leave everything alone. The next launch after quitting it migrates.
-    if daemon_is_live(legacy) {
+    // queue into the husk.
+    if app_running {
         log::warn!(
             "{} is still in use by a running Review app — not migrating. \
-             Quit Review and start Spur again to bring your queue and reviews across.",
+             Quit Review and start Spur again to bring your queue and reviews \
+             across; any terminals it left running will come with them.",
             legacy.display()
         );
         return;
@@ -723,45 +729,49 @@ pub(crate) mod tests {
     use std::sync::Mutex;
     use tempfile::TempDir;
 
-    /// The rule that matters most: a live daemon in the legacy home means a
-    /// running Review app, and migrating out from under it leaves that app
-    /// writing a fresh queue into a husk. Asserted with a real listener, since
-    /// the guard is a real connect.
+    /// The rule that matters most: a running Review app means migrating would
+    /// move the home out from under something that writes to it, which is how
+    /// you end up with two half-right queues.
     #[test]
-    #[cfg(unix)]
-    fn a_live_legacy_daemon_blocks_the_move() {
+    fn a_running_legacy_app_blocks_the_move() {
         let tmp = TempDir::new().unwrap();
         let legacy = tmp.path().join(".review");
         let target = tmp.path().join(".spur");
         fs::create_dir_all(&legacy).unwrap();
         fs::write(legacy.join("workspaces.json"), "{}").unwrap();
 
-        let _listener = std::os::unix::net::UnixListener::bind(legacy.join("daemon.sock")).unwrap();
-
-        adopt_legacy_home(&legacy, &target);
+        adopt_legacy_home(&legacy, &target, true);
 
         assert!(legacy.exists(), "legacy home must be left alone");
         assert!(!target.exists(), "nothing should have been created");
     }
 
-    /// A crashed daemon leaves its socket file behind. Nobody is listening, so
-    /// the connect is refused and migration proceeds.
+    /// The symmetric rule, and the one that keeps people's shells: a live
+    /// *daemon* must not block. Its socket travels with the rename, and the new
+    /// app attaches to a protocol-compatible build rather than restarting it —
+    /// so migrating and keeping your terminals is not a trade.
     #[test]
-    fn a_stale_socket_does_not_block_the_move() {
+    #[cfg(unix)]
+    fn a_live_daemon_does_not_block_the_move() {
         let tmp = TempDir::new().unwrap();
         let legacy = tmp.path().join(".review");
         let target = tmp.path().join(".spur");
         fs::create_dir_all(&legacy).unwrap();
-        fs::write(legacy.join("daemon.sock"), "not a socket").unwrap();
         fs::write(legacy.join("workspaces.json"), r#"{"v":1}"#).unwrap();
 
-        adopt_legacy_home(&legacy, &target);
+        let listener = std::os::unix::net::UnixListener::bind(legacy.join("daemon.sock")).unwrap();
 
-        assert!(!legacy.exists());
+        adopt_legacy_home(&legacy, &target, false);
+
+        assert!(!legacy.exists(), "the home should have moved");
         assert_eq!(
             fs::read_to_string(target.join("workspaces.json")).unwrap(),
             r#"{"v":1}"#
         );
+        // And the socket came with it, still bound to the same listener — which
+        // is what lets the new app find the old daemon's sessions.
+        assert!(target.join("daemon.sock").exists());
+        drop(listener);
     }
 
     /// An existing `~/.spur` is the live home; a leftover `~/.review` beside it
@@ -775,7 +785,7 @@ pub(crate) mod tests {
         fs::create_dir_all(&target).unwrap();
         fs::write(target.join("workspaces.json"), "keep me").unwrap();
 
-        adopt_legacy_home(&legacy, &target);
+        adopt_legacy_home(&legacy, &target, false);
 
         assert!(legacy.exists());
         assert_eq!(
