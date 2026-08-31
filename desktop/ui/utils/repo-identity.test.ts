@@ -59,7 +59,7 @@ describe("splitRoutePrefix", () => {
 
 describe("orgAvatarUrl", () => {
   it("builds an avatar URL from the first path segment", () => {
-    expect(orgAvatarUrl("https://github.com/dropseed/review")).toBe(
+    expect(orgAvatarUrl("https://github.com/dropseed/spur")).toBe(
       "https://github.com/dropseed.png?size=64",
     );
   });

@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { getApiClient } from "../api";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 
 /**
  * App-wide listener for `repo-activity-changed` events. Mounted at the
@@ -8,9 +8,7 @@ import { useReviewStore } from "../stores";
  * screen — not just while a repo is open in ReviewView.
  */
 export function useRepoActivitySync() {
-  const applyRepoActivityDelta = useReviewStore(
-    (s) => s.applyRepoActivityDelta,
-  );
+  const applyRepoActivityDelta = useSpurStore((s) => s.applyRepoActivityDelta);
 
   useEffect(() => {
     const apiClient = getApiClient();

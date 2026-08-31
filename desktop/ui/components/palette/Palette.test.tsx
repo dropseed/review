@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, beforeEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { registerCommands } from "../../commands/registry";
 import { APP_COMMANDS } from "../../commands/appCommands";
 import { Palette } from "./Palette";
@@ -12,7 +12,7 @@ const input = () => screen.getByRole("combobox") as HTMLInputElement;
 const chip = () => document.querySelector("[data-palette-mode]") as HTMLElement;
 
 function open(mode: PaletteMode) {
-  useReviewStore.setState({ activeOverlay: "palette", paletteMode: mode });
+  useSpurStore.setState({ activeOverlay: "palette", paletteMode: mode });
   render(<Palette />);
 }
 
@@ -22,7 +22,7 @@ let unregister = () => {};
 
 beforeEach(() => {
   unregister = registerCommands(APP_COMMANDS);
-  useReviewStore.setState({
+  useSpurStore.setState({
     activeOverlay: null,
     paletteMode: "commands",
     searchQuery: "",

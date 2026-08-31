@@ -21,7 +21,7 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum MigrateError {
-    #[error("review was written by a newer version of Review (schema v{found}, this build supports v{supported}); upgrade Review to open it")]
+    #[error("review was written by a newer version of Spur (schema v{found}, this build supports v{supported}); upgrade Spur to open it")]
     TooNew { found: u64, supported: u32 },
     #[error("review document is not a JSON object")]
     NotAnObject,

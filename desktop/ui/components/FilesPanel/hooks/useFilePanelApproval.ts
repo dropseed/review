@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { useReviewStore } from "../../../stores";
+import { useSpurStore } from "../../../stores";
 
 /** Provides unified approve/unapprove/reject handlers for files and directories. */
 export function useFilePanelApproval() {
@@ -10,7 +10,7 @@ export function useFilePanelApproval() {
     approveAllDirHunks,
     unapproveAllDirHunks,
     rejectAllDirHunks,
-  } = useReviewStore();
+  } = useSpurStore();
 
   const handleApproveAll = useCallback(
     (path: string, isDir: boolean) => {

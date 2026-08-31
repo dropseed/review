@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo } from "react";
-import { useReviewStore } from "../../../stores";
+import { useSpurStore } from "../../../stores";
 import type { FileEntry } from "../../../types";
 import { scoreCandidate, foldText, HighlightedText } from "../../../lib/fuzzy";
 import type { ScoreField } from "../../../lib/fuzzy";
@@ -92,11 +92,11 @@ export function useFileSource(
   query: string,
   active: boolean,
 ): PaletteSource<FileMatch> {
-  const allFiles = useReviewStore((s) => s.allFiles);
-  const files = useReviewStore((s) => s.files);
-  const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
-  const closeOverlay = useReviewStore((s) => s.closeOverlay);
-  const ensureAllFiles = useReviewStore((s) => s.ensureAllFiles);
+  const allFiles = useSpurStore((s) => s.allFiles);
+  const files = useSpurStore((s) => s.files);
+  const navigateToBrowse = useSpurStore((s) => s.navigateToBrowse);
+  const closeOverlay = useSpurStore((s) => s.closeOverlay);
+  const ensureAllFiles = useSpurStore((s) => s.ensureAllFiles);
 
   // This mode lists the whole repo, not just the diff, so opening it is what
   // asks for the whole-repo listing — behind `active` like the walks below.

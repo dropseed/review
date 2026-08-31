@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { useDebounce } from "../../hooks/useDebounce";
 import { HighlightedLine } from "../ui/HighlightedLine";
 import { XIcon } from "../ui/icons";
@@ -17,26 +17,22 @@ import { SearchMessage } from "./SearchMessage";
 import type { SearchMode } from "../../stores/slices/searchSlice";
 
 export function SearchView(): ReactNode {
-  const searchQuery = useReviewStore((s) => s.searchQuery);
-  const searchResults = useReviewStore((s) => s.searchResults);
-  const searchLoading = useReviewStore((s) => s.searchLoading);
-  const searchError = useReviewStore((s) => s.searchError);
-  const performSearch = useReviewStore((s) => s.performSearch);
-  const clearSearch = useReviewStore((s) => s.clearSearch);
-  const clearSearchResults = useReviewStore((s) => s.clearSearchResults);
-  const navigateToSearchResult = useReviewStore(
-    (s) => s.navigateToSearchResult,
-  );
-  const searchCaseSensitive = useReviewStore((s) => s.searchCaseSensitive);
-  const setSearchCaseSensitive = useReviewStore(
-    (s) => s.setSearchCaseSensitive,
-  );
-  const searchMode = useReviewStore((s) => s.searchMode);
-  const setSearchMode = useReviewStore((s) => s.setSearchMode);
-  const searchVerifiedOnly = useReviewStore((s) => s.searchVerifiedOnly);
-  const setSearchVerifiedOnly = useReviewStore((s) => s.setSearchVerifiedOnly);
+  const searchQuery = useSpurStore((s) => s.searchQuery);
+  const searchResults = useSpurStore((s) => s.searchResults);
+  const searchLoading = useSpurStore((s) => s.searchLoading);
+  const searchError = useSpurStore((s) => s.searchError);
+  const performSearch = useSpurStore((s) => s.performSearch);
+  const clearSearch = useSpurStore((s) => s.clearSearch);
+  const clearSearchResults = useSpurStore((s) => s.clearSearchResults);
+  const navigateToSearchResult = useSpurStore((s) => s.navigateToSearchResult);
+  const searchCaseSensitive = useSpurStore((s) => s.searchCaseSensitive);
+  const setSearchCaseSensitive = useSpurStore((s) => s.setSearchCaseSensitive);
+  const searchMode = useSpurStore((s) => s.searchMode);
+  const setSearchMode = useSpurStore((s) => s.setSearchMode);
+  const searchVerifiedOnly = useSpurStore((s) => s.searchVerifiedOnly);
+  const setSearchVerifiedOnly = useSpurStore((s) => s.setSearchVerifiedOnly);
 
-  const closeSearchView = useReviewStore((s) => s.closeSearchView);
+  const closeSearchView = useSpurStore((s) => s.closeSearchView);
 
   const [query, setQuery] = useState(searchQuery);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -148,7 +144,7 @@ export function SearchView(): ReactNode {
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
-              useReviewStore.getState().setSearchQuery(e.target.value);
+              useSpurStore.getState().setSearchQuery(e.target.value);
             }}
             placeholder={
               searchMode === "text" ? "Search in files…" : "Search symbols…"

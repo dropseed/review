@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { useAllHunks } from "../stores/selectors/hunks";
 import { anyLabelMatchesPattern, hunkLabels, EMPTY_TRUST_LIST } from "../types";
 import { getApiClient } from "../api";
@@ -47,7 +47,7 @@ interface TrustCounts {
 
 export function useTrustCounts(knownPatternIds?: Set<string>): TrustCounts {
   const hunks = useAllHunks();
-  const reviewState = useReviewStore((s) => s.reviewState);
+  const reviewState = useSpurStore((s) => s.reviewState);
 
   const trustList = reviewState?.trustList ?? EMPTY_TRUST_LIST;
 

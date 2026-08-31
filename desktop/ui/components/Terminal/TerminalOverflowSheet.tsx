@@ -1,5 +1,5 @@
 import { type ReactNode, useState } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { ActionSheet, ActionSheetRow } from "../ui/action-sheet";
 import { TERMINAL_FONT_SIZE_STEP } from "../../stores/slices/preferencesSlice";
 import { focusedWorkspaceIn } from "../../stores/selectors/workspaces";
@@ -31,7 +31,7 @@ export function TerminalOverflowSheet({
   paneId: string;
 }): ReactNode {
   const [open, setOpen] = useState(false);
-  const fontSize = useReviewStore((s) => s.terminalFontSize);
+  const fontSize = useSpurStore((s) => s.terminalFontSize);
 
   const step = (delta: number) =>
     applyTerminalFontSize(paneId, fontSize + delta);
@@ -95,7 +95,7 @@ export function TerminalOverflowSheet({
             // Read at the tap rather than subscribed to: the sheet does not
             // draw the workspace, so which one is focused is only ever a
             // question this one row asks, at the moment it is answered.
-            void openTerminalTab(focusedWorkspaceIn(useReviewStore.getState()));
+            void openTerminalTab(focusedWorkspaceIn(useSpurStore.getState()));
           }}
         />
         <ActionSheetRow

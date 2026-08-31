@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { useReviewStore } from "../../../stores";
+import { useSpurStore } from "../../../stores";
 import { useFileHunks } from "../../../stores/selectors/hunks";
 import { getApiClient } from "../../../api";
 import type { FileSymbol, SymbolDiff } from "../../../types";
@@ -42,12 +42,12 @@ export function useSymbolSource(
   query: string,
   active: boolean,
 ): PaletteSource<SymbolMatch> {
-  const selectedFile = useReviewStore((s) => s.selectedFile);
-  const repoPath = useReviewStore((s) => s.repoPath);
-  const symbolDiffs = useReviewStore((s) => s.symbolDiffs);
+  const selectedFile = useSpurStore((s) => s.selectedFile);
+  const repoPath = useSpurStore((s) => s.repoPath);
+  const symbolDiffs = useSpurStore((s) => s.symbolDiffs);
   const fileHunks = useFileHunks(selectedFile);
-  const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
-  const closeOverlay = useReviewStore((s) => s.closeOverlay);
+  const navigateToBrowse = useSpurStore((s) => s.navigateToBrowse);
+  const closeOverlay = useSpurStore((s) => s.closeOverlay);
 
   const [allSymbols, setAllSymbols] = useState<FileSymbol[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -224,7 +224,7 @@ export function useSymbolSource(
       );
 
       if (symbol.sortKey > 0) {
-        useReviewStore.setState({
+        useSpurStore.setState({
           scrollTarget: {
             type: "line",
             filePath: selectedFile,

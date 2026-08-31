@@ -1,6 +1,6 @@
 import { useCallback, useEffect } from "react";
 import { getApiClient } from "../api";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { usePollWhileVisible } from "./usePollWhileVisible";
 
 /**
@@ -13,7 +13,7 @@ const POLL_INTERVAL_MS = 5 * 60 * 1000;
 
 /**
  * App-wide listener for `work-changed`. Mounted at the AppShell level, like
- * `useRepoActivitySync`: `work.json` is global and the `review` CLI edits it
+ * `useRepoActivitySync`: `workspaces.json` is global and the `spur` CLI edits it
  * with or without a repo open, so the list has to stay live on the home screen
  * too.
  *
@@ -23,7 +23,7 @@ const POLL_INTERVAL_MS = 5 * 60 * 1000;
  *
  */
 export function useWorkspaceSync() {
-  const loadWorkspaces = useReviewStore((s) => s.loadWorkspaces);
+  const loadWorkspaces = useSpurStore((s) => s.loadWorkspaces);
 
   const refresh = useCallback(() => {
     void loadWorkspaces();

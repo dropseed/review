@@ -8,12 +8,12 @@
  */
 
 import { getPlatformServices } from "../platform";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { flushPendingCloses } from "../components/Terminal/close";
 
 /** Terminals still holding a live PTY — what the window is standing in front of. */
 function liveTerminalCount(): number {
-  const { terminalSessions, terminalExited } = useReviewStore.getState();
+  const { terminalSessions, terminalExited } = useSpurStore.getState();
   return Object.keys(terminalSessions).filter((id) => !(id in terminalExited))
     .length;
 }
@@ -21,14 +21,14 @@ function liveTerminalCount(): number {
 /**
  * The question, naming what survives the answer.
  *
- * The terminals belong to `review-daemon`, not to this window, so closing it
+ * The terminals belong to `spur-daemon`, not to this window, so closing it
  * kills nothing — and someone who believes otherwise answers the wrong way.
  */
 export function closeWindowPrompt(running: number): string {
-  if (running === 0) return "Close the Review window?";
+  if (running === 0) return "Close the Spur window?";
   const [noun, verb, pronoun] =
     running === 1 ? ["terminal", "keeps", "it"] : ["terminals", "keep", "them"];
-  return `Close the Review window?\n\n${running} ${noun} ${verb} running in the background — reopening Review brings ${pronoun} back.`;
+  return `Close the Spur window?\n\n${running} ${noun} ${verb} running in the background — reopening Spur brings ${pronoun} back.`;
 }
 
 /**

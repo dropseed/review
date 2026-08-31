@@ -21,7 +21,7 @@ vi.mock("../../commands/host", () => ({
 
 import { SidebarRail } from "./SidebarRail";
 import { TooltipProvider } from "../ui/tooltip";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { makeTab } from "../Terminal/pane-tree";
 import { attachment, terminalStatus, workspace } from "../../test/fixtures";
 
@@ -41,8 +41,8 @@ function item(id: string, overrides: Partial<Workspace> = {}): Workspace {
  */
 function session(id: string, phase: "idle" | "working", workspaceId: string) {
   const status = terminalStatus(phase, { id });
-  const state = useReviewStore.getState();
-  useReviewStore.setState({
+  const state = useSpurStore.getState();
+  useSpurStore.setState({
     terminalSessions: {
       ...state.terminalSessions,
       [id]: {
@@ -78,7 +78,7 @@ function numbers(container: HTMLElement): string[] {
 
 afterEach(() => {
   cleanup();
-  useReviewStore.setState({
+  useSpurStore.setState({
     workspaces: [],
     localActivity: [],
     terminalSessions: {},
@@ -91,7 +91,7 @@ afterEach(() => {
 
 describe("the collapsed sidebar rail", () => {
   it("carries the workspaces as their position numbers", () => {
-    useReviewStore.setState({ workspaces: [item("a"), item("b"), item("c")] });
+    useSpurStore.setState({ workspaces: [item("a"), item("b"), item("c")] });
     const { container } = renderRail();
     expect(numbers(container)).toEqual(["1", "2", "3"]);
   });
@@ -102,7 +102,7 @@ describe("the collapsed sidebar rail", () => {
    * workspace with no terminals at all reads as dormant.
    */
   it("marks a number with the state its own terminals put it in", () => {
-    useReviewStore.setState({ workspaces: [item("a"), item("b")] });
+    useSpurStore.setState({ workspaces: [item("a"), item("b")] });
     session("s1", "idle", "a");
     session("s2", "working", "a");
 
@@ -119,7 +119,7 @@ describe("the collapsed sidebar rail", () => {
   });
 
   it("opens the workspace the number stands for", () => {
-    useReviewStore.setState({
+    useSpurStore.setState({
       workspaces: [item("a")],
       localActivity: [
         {

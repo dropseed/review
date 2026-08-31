@@ -1,6 +1,6 @@
 import { type ReactNode, memo, useCallback, useMemo, useState } from "react";
 import { clsx } from "clsx";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { useWorkspaces } from "../../stores/selectors/workspaces";
 import {
   getSidebarTree,
@@ -39,12 +39,12 @@ import { useWorkspaceContext } from "./workspace-context";
  * section that can never fill is worse than no section.
  */
 export const PullRequestsDrawer = memo(function PullRequestsDrawer() {
-  const snapshot = useReviewStore((s) => s.viewerPrs);
-  const refreshing = useReviewStore((s) => s.viewerPrsRefreshing);
-  const refresh = useReviewStore((s) => s.refreshViewerPrs);
-  const open = useReviewStore((s) => s.pullRequestsOpen);
-  const toggle = useReviewStore((s) => s.togglePullRequests);
-  const hiddenRepos = useReviewStore((s) => s.hiddenPrRepos);
+  const snapshot = useSpurStore((s) => s.viewerPrs);
+  const refreshing = useSpurStore((s) => s.viewerPrsRefreshing);
+  const refresh = useSpurStore((s) => s.refreshViewerPrs);
+  const open = useSpurStore((s) => s.pullRequestsOpen);
+  const toggle = useSpurStore((s) => s.togglePullRequests);
+  const hiddenRepos = useSpurStore((s) => s.hiddenPrRepos);
   const workspaces = useWorkspaces();
   const ctx = useWorkspaceContext();
 
@@ -169,8 +169,8 @@ interface RepoFilterProps {
  */
 function RepoFilter({ repos, hiddenRepos }: RepoFilterProps): ReactNode {
   const [open, setOpen] = useState(false);
-  const toggleRepo = useReviewStore((s) => s.togglePrRepoHidden);
-  const showAll = useReviewStore((s) => s.showAllPrRepos);
+  const toggleRepo = useSpurStore((s) => s.togglePrRepoHidden);
+  const showAll = useSpurStore((s) => s.showAllPrRepos);
   const filtering = hiddenRepos.length > 0;
 
   if (repos.length < 2 && !filtering) return null;
@@ -267,7 +267,7 @@ function pickUp(pr: ViewerPr): void {
   const row =
     pr.repoPath == null
       ? undefined
-      : sidebarRowsByPr(getSidebarTree(useReviewStore.getState())).get(
+      : sidebarRowsByPr(getSidebarTree(useSpurStore.getState())).get(
           `${pr.repoPath}#${pr.number}`,
         );
   if (!row) {

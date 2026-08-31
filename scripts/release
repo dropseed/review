@@ -156,7 +156,7 @@ RUN_URL=$(gh run list --workflow=release.yml --branch "$BRANCH" --limit 1 --json
 
 echo ""
 echo "Release v$VERSION dispatched."
-echo "  ${RUN_URL:-https://github.com/dropseed/review/actions/workflows/release.yml}"
+echo "  ${RUN_URL:-https://github.com/dropseed/spur/actions/workflows/release.yml}"
 echo ""
 echo "Watch it with: gh run watch --exit-status"
 echo "The tag and GitHub release are created by the workflow on success."

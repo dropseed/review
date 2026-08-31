@@ -1,5 +1,5 @@
 import { type ReactNode, useCallback, useMemo, useState } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { getPlatformServices } from "../../platform";
 import { useAllHunks } from "../../stores/selectors/hunks";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
@@ -37,14 +37,14 @@ export function DebugModal({ isOpen, onClose }: DebugModalProps): ReactNode {
     "persisted",
   );
 
-  const repoPath = useReviewStore((s) => s.repoPath);
-  const comparison = useReviewStore((s) => s.comparison);
-  const reviewRef = useReviewStore((s) => s.reviewRef);
-  const selectedFile = useReviewStore((s) => s.selectedFile);
-  const files = useReviewStore((s) => s.files);
+  const repoPath = useSpurStore((s) => s.repoPath);
+  const comparison = useSpurStore((s) => s.comparison);
+  const reviewRef = useSpurStore((s) => s.reviewRef);
+  const selectedFile = useSpurStore((s) => s.selectedFile);
+  const files = useSpurStore((s) => s.files);
   const hunks = useAllHunks();
-  const reviewState = useReviewStore((s) => s.reviewState);
-  const focusedHunkId = useReviewStore((s) => s.focusedHunkId);
+  const reviewState = useSpurStore((s) => s.reviewState);
+  const focusedHunkId = useSpurStore((s) => s.focusedHunkId);
 
   const persistedJsonString = useMemo(
     () => (isOpen ? JSON.stringify({ reviewState }, null, 2) : ""),
@@ -78,11 +78,11 @@ export function DebugModal({ isOpen, onClose }: DebugModalProps): ReactNode {
     [isOpen, inMemoryJsonString],
   );
 
-  // Construct the review state file path (centralized in ~/.review/). The file
+  // Construct the review state file path (centralized in ~/.spur/). The file
   // is named by the review's ref (sanitized on the backend).
   const reviewStatePath = useMemo(() => {
     if (!repoPath || !reviewRef) return null;
-    return `~/.review/repos/<repo-id>/reviews/${reviewRef}.json`;
+    return `~/.spur/repos/<repo-id>/reviews/${reviewRef}.json`;
   }, [repoPath, reviewRef]);
 
   const handleCopy = useCallback(() => {

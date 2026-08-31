@@ -1,5 +1,5 @@
 import { useMemo, useCallback, useState, useRef, useEffect } from "react";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { useAllHunks } from "../stores/selectors/hunks";
 import { getPlatformServices } from "../platform";
 import {
@@ -155,19 +155,19 @@ function byLocation(a: LineAnnotation, b: LineAnnotation): number {
  * Reads all data directly from the review store.
  */
 export function useFeedbackPanel(): FeedbackPanelState {
-  const reviewState = useReviewStore((s) => s.reviewState);
-  const comparison = useReviewStore((s) => s.comparison);
+  const reviewState = useSpurStore((s) => s.reviewState);
+  const comparison = useSpurStore((s) => s.comparison);
   const hunks = useAllHunks();
-  const setReviewNotes = useReviewStore((s) => s.setReviewNotes);
-  const deleteAnnotation = useReviewStore((s) => s.deleteAnnotation);
-  const resolveAnnotation = useReviewStore((s) => s.resolveAnnotation);
-  const unresolveAnnotation = useReviewStore((s) => s.unresolveAnnotation);
-  const resolveAllAnnotations = useReviewStore((s) => s.resolveAllAnnotations);
-  const deleteResolvedAnnotations = useReviewStore(
+  const setReviewNotes = useSpurStore((s) => s.setReviewNotes);
+  const deleteAnnotation = useSpurStore((s) => s.deleteAnnotation);
+  const resolveAnnotation = useSpurStore((s) => s.resolveAnnotation);
+  const unresolveAnnotation = useSpurStore((s) => s.unresolveAnnotation);
+  const resolveAllAnnotations = useSpurStore((s) => s.resolveAllAnnotations);
+  const deleteResolvedAnnotations = useSpurStore(
     (s) => s.deleteResolvedAnnotations,
   );
-  const clearFeedback = useReviewStore((s) => s.clearFeedback);
-  const revealFileInTree = useReviewStore((s) => s.revealFileInTree);
+  const clearFeedback = useSpurStore((s) => s.clearFeedback);
+  const revealFileInTree = useSpurStore((s) => s.revealFileInTree);
 
   const [copied, setCopied] = useState(false);
   const copiedTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);

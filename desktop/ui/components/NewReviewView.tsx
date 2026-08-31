@@ -1,7 +1,7 @@
 import { type ReactNode, useState, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import type { ReviewTarget } from "../types";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { getApiClient } from "../api";
 import { getPlatformServices } from "../platform";
 import { ComparisonPicker } from "./ComparisonPicker/ComparisonPicker";
@@ -36,8 +36,8 @@ interface NewReviewViewProps {
 
 export function NewReviewView({ onNewReview }: NewReviewViewProps): ReactNode {
   const navigate = useNavigate();
-  const savedReviews = useReviewStore((s) => s.savedReviews);
-  const recentRepositories = useReviewStore((s) => s.recentRepositories);
+  const savedReviews = useSpurStore((s) => s.savedReviews);
+  const recentRepositories = useSpurStore((s) => s.recentRepositories);
 
   const existingRefs = savedReviews.map((r) => r.ref);
 

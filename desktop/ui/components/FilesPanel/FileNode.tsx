@@ -1,5 +1,5 @@
 import { memo, type ReactNode } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { REVEAL_LABEL } from "../../hooks/useRevealLabel";
 import { useFileDrag } from "../../hooks/useFileDrag";
 import { getPlatformServices } from "../../platform";
@@ -589,7 +589,7 @@ export const FileNode = memo(
           {showRevealInBrowse && (
             <ContextMenuItem
               onSelect={() =>
-                useReviewStore.getState().revealInBrowse(entry.path)
+                useSpurStore.getState().revealInBrowse(entry.path)
               }
             >
               <svg

@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import type { ReactNode } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { useDebounce } from "../../hooks/useDebounce";
 import { SymbolKindBadge } from "../symbols";
 import { HighlightedText } from "../../lib/fuzzy";
@@ -88,10 +88,10 @@ function groupByFile(results: SymbolSearchResult[]): GroupedResults[] {
 }
 
 export function SymbolResults({ query }: { query: string }): ReactNode {
-  const repoSymbols = useReviewStore((s) => s.repoSymbols);
-  const repoSymbolsLoading = useReviewStore((s) => s.repoSymbolsLoading);
-  const repoSymbolsLoaded = useReviewStore((s) => s.repoSymbolsLoaded);
-  const loadRepoSymbols = useReviewStore((s) => s.loadRepoSymbols);
+  const repoSymbols = useSpurStore((s) => s.repoSymbols);
+  const repoSymbolsLoading = useSpurStore((s) => s.repoSymbolsLoading);
+  const repoSymbolsLoaded = useSpurStore((s) => s.repoSymbolsLoaded);
+  const loadRepoSymbols = useSpurStore((s) => s.loadRepoSymbols);
 
   // Load repo symbols on first render
   useEffect(() => {
@@ -115,7 +115,7 @@ export function SymbolResults({ query }: { query: string }): ReactNode {
     // The store action rather than a `set` bag of our own: picking a symbol is
     // the same act as picking a search hit, and the hand-rolled version of it
     // here had already fallen behind on what a navigation has to clear.
-    useReviewStore.getState().navigateToFileLine(sym.filePath, sym.startLine);
+    useSpurStore.getState().navigateToFileLine(sym.filePath, sym.startLine);
   };
 
   if (repoSymbolsLoading) {

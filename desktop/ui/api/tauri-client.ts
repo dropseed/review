@@ -82,7 +82,7 @@ const EVENT_REVIEW_STATE_CHANGED = "review-state-changed";
 const EVENT_GIT_CHANGED = "git-changed";
 const EVENT_GIT_INDEX_LOCK = "git-index-lock";
 const EVENT_REPO_ACTIVITY_CHANGED = "repo-activity-changed";
-const EVENT_WORK_CHANGED = "work-changed";
+const EVENT_WORKSPACES_CHANGED = "workspaces-changed";
 
 export class TauriClient implements ApiClient {
   // ----- Git operations -----
@@ -614,28 +614,28 @@ export class TauriClient implements ApiClient {
     await invoke("unregister_repo", { repoPath });
   }
 
-  // ----- Work items -----
+  // ----- Workspaces -----
 
   async listWorkspaces(focused?: string | null): Promise<Workspace[]> {
-    return invoke<Workspace[]>("work_list", { focused: focused ?? null });
+    return invoke<Workspace[]>("workspace_list", { focused: focused ?? null });
   }
 
   async addWorkspace(
     title: string | null,
     attachments: Attachment[],
   ): Promise<Workspace[]> {
-    return invoke<Workspace[]>("work_add", { title, attachments });
+    return invoke<Workspace[]>("workspace_add", { title, attachments });
   }
 
   async removeWorkspace(id: string, recursive = false): Promise<Workspace[]> {
-    return invoke<Workspace[]>("work_remove", { id, recursive });
+    return invoke<Workspace[]>("workspace_remove", { id, recursive });
   }
 
   async nestWorkspace(
     id: string,
     parentId: string | null,
   ): Promise<Workspace[]> {
-    return invoke<Workspace[]>("work_nest", { id, parentId });
+    return invoke<Workspace[]>("workspace_nest", { id, parentId });
   }
 
   async moveWorkspace(
@@ -643,7 +643,7 @@ export class TauriClient implements ApiClient {
     position: number,
     keepParent = false,
   ): Promise<Workspace[]> {
-    return invoke<Workspace[]>("work_move", { id, position, keepParent });
+    return invoke<Workspace[]>("workspace_move", { id, position, keepParent });
   }
 
   async attachWorkspace(
@@ -651,7 +651,7 @@ export class TauriClient implements ApiClient {
     path: string,
     refName?: string | null,
   ): Promise<Workspace[]> {
-    return invoke<Workspace[]>("work_attach", {
+    return invoke<Workspace[]>("workspace_attach", {
       id,
       path,
       ref: refName ?? null,
@@ -659,14 +659,14 @@ export class TauriClient implements ApiClient {
   }
 
   async detachWorkspace(id: string, path: string): Promise<Workspace[]> {
-    return invoke<Workspace[]>("work_detach", { id, path });
+    return invoke<Workspace[]>("workspace_detach", { id, path });
   }
 
   async renameWorkspace(
     id: string,
     title: string | null,
   ): Promise<Workspace[]> {
-    return invoke<Workspace[]>("work_rename", { id, title });
+    return invoke<Workspace[]>("workspace_rename", { id, title });
   }
 
   async routeWorkspace(
@@ -674,7 +674,7 @@ export class TauriClient implements ApiClient {
     ref: string,
     workspaceId?: string,
   ): Promise<RouteLanding> {
-    return invoke<RouteLanding>("work_route", {
+    return invoke<RouteLanding>("workspace_route", {
       repoPath,
       ref,
       workspaceId: workspaceId ?? null,
@@ -749,7 +749,7 @@ export class TauriClient implements ApiClient {
   }
 
   onWorkChanged(callback: () => void): () => void {
-    return this.listenForEvent(EVENT_WORK_CHANGED, () => callback());
+    return this.listenForEvent(EVENT_WORKSPACES_CHANGED, () => callback());
   }
 
   // ----- Window/App -----

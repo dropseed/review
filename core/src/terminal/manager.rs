@@ -1,7 +1,7 @@
 //! The single interface for creating and driving terminal sessions.
 //!
 //! [`SessionManager`] owns every [`Session`] keyed by [`TerminalId`]. The
-//! `review-daemon` process owns the one instance and serves it to the desktop
+//! `spur-daemon` process owns the one instance and serves it to the desktop
 //! app over the daemon protocol.
 
 use std::collections::HashMap;
@@ -127,7 +127,7 @@ impl SessionManager {
 
     /// Move a session to another workspace (or to none).
     ///
-    /// The id is opaque here — the daemon never reads the work queue, so it
+    /// The id is opaque here — the daemon never reads the workspace queue, so it
     /// neither validates the workspace exists nor reacts when it stops existing.
     pub fn assign_workspace(&self, id: &TerminalId, workspace_id: Option<String>) -> Result<()> {
         self.get(id)?.assign_workspace(workspace_id);
@@ -371,12 +371,12 @@ mod tests {
         // The brackets keep the echoed command line (which contains the
         // variable name, not its value) from satisfying the needle.
         manager
-            .write(&id, b"echo mine=[$REVIEW_TERMINAL_ID]\n")
+            .write(&id, b"echo mine=[$SPUR_TERMINAL_ID]\n")
             .unwrap();
 
         assert!(
             wait_for_output(&mut sub.rx, "mine=[whoami-test]", Duration::from_secs(5)),
-            "the shell did not inherit REVIEW_TERMINAL_ID"
+            "the shell did not inherit SPUR_TERMINAL_ID"
         );
         manager.kill(&id).unwrap();
     }
@@ -989,7 +989,7 @@ mod tests {
 
     #[test]
     fn zsh_shell_integration_reports_exit_codes() {
-        use crate::review::central::tests::ENV_LOCK;
+        use crate::home::tests::ENV_LOCK;
 
         let Some(zsh) = find_zsh() else {
             eprintln!("skipping: no zsh binary found");
@@ -997,12 +997,12 @@ mod tests {
         };
 
         let _lock = ENV_LOCK.lock().unwrap();
-        // Materialize the integration ZDOTDIR under a throwaway REVIEW_HOME, and
+        // Materialize the integration ZDOTDIR under a throwaway SPUR_HOME, and
         // point the user's ZDOTDIR at an empty dir so zsh doesn't source the real
         // (potentially slow/interactive) user config during the test.
-        let review_home = tempfile::TempDir::new().unwrap();
+        let spur_home = tempfile::TempDir::new().unwrap();
         let user_zdotdir = tempfile::TempDir::new().unwrap();
-        std::env::set_var("REVIEW_HOME", review_home.path());
+        std::env::set_var("SPUR_HOME", spur_home.path());
         std::env::set_var("ZDOTDIR", user_zdotdir.path());
 
         let manager = SessionManager::new();
@@ -1035,6 +1035,6 @@ mod tests {
 
         manager.shutdown_all();
         std::env::remove_var("ZDOTDIR");
-        std::env::remove_var("REVIEW_HOME");
+        std::env::remove_var("SPUR_HOME");
     }
 }

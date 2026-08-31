@@ -55,10 +55,10 @@ pub enum CommentsAction {
 pub struct CommentsSubmitArgs {
     /// JSON file to read — an array of comments (defaults to stdin; "-" too)
     pub file: Option<String>,
-    /// Override the author for every comment (default: $REVIEW_AUTHOR or git user)
+    /// Override the author for every comment (default: $SPUR_AUTHOR or git user)
     #[arg(long)]
     pub author: Option<String>,
-    /// Override the source for every comment (default: $REVIEW_SOURCE or `cli`)
+    /// Override the source for every comment (default: $SPUR_SOURCE or `cli`)
     #[arg(long)]
     pub source: Option<SourceArg>,
     /// Print a ready-to-edit JSON skeleton and exit, writing nothing
@@ -100,10 +100,10 @@ pub struct AddArgs {
     /// Which side of the diff to attach to (default: new)
     #[arg(long, default_value = "new")]
     pub side: SideArg,
-    /// Override the author (default: $REVIEW_AUTHOR or `git config user.name`)
+    /// Override the author (default: $SPUR_AUTHOR or `git config user.name`)
     #[arg(long)]
     pub author: Option<String>,
-    /// Override the source (default: $REVIEW_SOURCE or `cli`)
+    /// Override the source (default: $SPUR_SOURCE or `cli`)
     #[arg(long)]
     pub source: Option<SourceArg>,
     /// Output as JSON
@@ -113,7 +113,7 @@ pub struct AddArgs {
 
 #[derive(Debug, Args)]
 pub struct EditArgs {
-    /// Comment ID (from `review comments`)
+    /// Comment ID (from `spur comments`)
     pub id: String,
     /// New content
     pub content: String,
@@ -126,7 +126,7 @@ pub struct EditArgs {
 pub struct ResolveArgs {
     /// Comment ID
     pub id: String,
-    /// Override who resolved it (default: $REVIEW_AUTHOR or git user)
+    /// Override who resolved it (default: $SPUR_AUTHOR or git user)
     #[arg(long)]
     pub by: Option<String>,
     /// Output as JSON
@@ -208,7 +208,7 @@ struct CommentResultJson {
     version: u64,
 }
 
-/// `review comments` — list comments on a comparison.
+/// `spur comments` — list comments on a comparison.
 pub fn run_comments(args: CommentsArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
     let review = resolve_review_arg(&repo, args.target.spec.as_deref())?;
@@ -306,7 +306,7 @@ fn print_comments_human(comparison: &str, total: usize, rows: &[&LineAnnotation]
     }
 }
 
-/// `review comment add` — leave a comment on a file:line.
+/// `spur comment add` — leave a comment on a file:line.
 pub fn run_add(target: ReviewTarget, args: AddArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&target.repo)?);
     let (file_path, line_number, end_line_number) = parse_location(&args.location)?;
@@ -314,7 +314,7 @@ pub fn run_add(target: ReviewTarget, args: AddArgs) -> Result<(), String> {
 
     let author = args
         .author
-        .or_else(|| std::env::var("REVIEW_AUTHOR").ok())
+        .or_else(|| std::env::var("SPUR_AUTHOR").ok())
         .or_else(|| default_git_user(&repo));
     let source = super::common::resolve_source(args.source)?;
 
@@ -362,7 +362,7 @@ pub fn run_add(target: ReviewTarget, args: AddArgs) -> Result<(), String> {
     Ok(())
 }
 
-/// One comment in a `review comments submit` batch. `line` is 1-based (like
+/// One comment in a `spur comments submit` batch. `line` is 1-based (like
 /// `comment add`); `side` defaults to `new`.
 #[derive(Debug, Deserialize)]
 struct CommentInput {
@@ -375,7 +375,7 @@ struct CommentInput {
     content: String,
 }
 
-/// A ready-to-edit skeleton for `review comments submit --example`.
+/// A ready-to-edit skeleton for `spur comments submit --example`.
 const COMMENTS_EXAMPLE: &str = r#"[
   {
     "path": "src/auth.rs",
@@ -401,7 +401,7 @@ struct CommentsSubmitJson {
     version: u64,
 }
 
-/// `review comments submit` — add many comments in a single mutation, so a
+/// `spur comments submit` — add many comments in a single mutation, so a
 /// batch of review notes doesn't race the store one write at a time.
 pub fn run_submit_comments(target: ReviewTarget, args: CommentsSubmitArgs) -> Result<(), String> {
     if args.example {
@@ -419,7 +419,7 @@ pub fn run_submit_comments(target: ReviewTarget, args: CommentsSubmitArgs) -> Re
 
     let author = args
         .author
-        .or_else(|| std::env::var("REVIEW_AUTHOR").ok())
+        .or_else(|| std::env::var("SPUR_AUTHOR").ok())
         .or_else(|| default_git_user(&repo));
     let source = resolve_source(args.source)?;
     let created_at = now_iso8601();
@@ -504,7 +504,7 @@ fn read_stdin_or_file(file: Option<&str>) -> Result<String, String> {
     super::common::read_path_or_stdin_text(file.unwrap_or("-"), "comments")
 }
 
-/// `review comment edit` — replace the content of an existing comment.
+/// `spur comment edit` — replace the content of an existing comment.
 pub fn run_edit(target: ReviewTarget, args: EditArgs) -> Result<(), String> {
     validate_content(&args.content)?;
     let repo = PathBuf::from(get_repo_path(&target.repo)?);
@@ -548,7 +548,7 @@ pub fn run_edit(target: ReviewTarget, args: EditArgs) -> Result<(), String> {
     )
 }
 
-/// `review comment resolve` — mark a comment as resolved.
+/// `spur comment resolve` — mark a comment as resolved.
 pub fn run_resolve(target: ReviewTarget, args: ResolveArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&target.repo)?);
     let (review, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
@@ -556,7 +556,7 @@ pub fn run_resolve(target: ReviewTarget, args: ResolveArgs) -> Result<(), String
 
     let by = args
         .by
-        .or_else(|| std::env::var("REVIEW_AUTHOR").ok())
+        .or_else(|| std::env::var("SPUR_AUTHOR").ok())
         .or_else(|| default_git_user(&repo));
     let id = args.id.clone();
     let by_for_apply = by.clone();
@@ -594,7 +594,7 @@ pub fn run_resolve(target: ReviewTarget, args: ResolveArgs) -> Result<(), String
     )
 }
 
-/// `review comment unresolve` — clear the resolved state.
+/// `spur comment unresolve` — clear the resolved state.
 pub fn run_unresolve(target: ReviewTarget, args: IdArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&target.repo)?);
     let (review, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;
@@ -636,7 +636,7 @@ pub fn run_unresolve(target: ReviewTarget, args: IdArgs) -> Result<(), String> {
     )
 }
 
-/// `review comment delete` — remove a comment.
+/// `spur comment delete` — remove a comment.
 pub fn run_delete(target: ReviewTarget, args: IdArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&target.repo)?);
     let (review, hunks, _) = load_for_mutation(&repo, target.spec.as_deref())?;

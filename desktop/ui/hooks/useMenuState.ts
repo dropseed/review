@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import {
   useCommandRegistryVersion,
   getAllCommands,
@@ -27,7 +27,7 @@ export function useMenuState() {
 
   // Any store write can change a predicate's answer, and predicates read
   // arbitrary state, so nothing narrower than the whole store is correct here.
-  useReviewStore((s) => s);
+  useSpurStore((s) => s);
 
   useEffect(() => {
     const ctx = buildCommandContext();

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { makeComparison } from "../../types";
-import type { ReviewStore } from "../types";
+import type { SpurStore } from "../types";
 import { headIsWorkingTree, isCheckedOut } from "./checkout";
 import {
   activeHistoricRef,
@@ -10,7 +10,7 @@ import {
 } from "./viewpoint";
 
 /** The fields these selectors read, and nothing else. */
-function state(over: Partial<ReviewStore>): ReviewStore {
+function state(over: Partial<SpurStore>): SpurStore {
   return {
     viewpoint: { kind: "review" },
     comparison: makeComparison("main", "feature"),
@@ -21,7 +21,7 @@ function state(over: Partial<ReviewStore>): ReviewStore {
     readOnlyPreview: false,
     filesPanelTab: "changes",
     ...over,
-  } as ReviewStore;
+  } as SpurStore;
 }
 
 const status = (branch: string) =>
@@ -31,7 +31,7 @@ const status = (branch: string) =>
     unstaged: [],
     untracked: [],
     indexLocked: false,
-  }) as ReviewStore["gitStatus"];
+  }) as SpurStore["gitStatus"];
 
 const peek = {
   kind: "commit" as const,

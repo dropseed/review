@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import type { HunkGroup } from "../../types";
 import type { FileHunkStatus } from "./types";
 import {
@@ -117,13 +117,13 @@ export function FileSelectionProvider({
   // diff is still on screen" from "the user opened something else".
   const openedGroup = useRef<HunkGroup | null>(null);
 
-  const guideContentMode = useReviewStore((s) => s.guideContentMode);
-  const adhocGroup = useReviewStore((s) => s.adhocGroup);
-  const comparison = useReviewStore((s) => s.comparison);
-  const filesByPath = useReviewStore((s) => s.filesByPath);
+  const guideContentMode = useSpurStore((s) => s.guideContentMode);
+  const adhocGroup = useSpurStore((s) => s.adhocGroup);
+  const comparison = useSpurStore((s) => s.comparison);
+  const filesByPath = useSpurStore((s) => s.filesByPath);
 
   const openSelection = useCallback((paths: readonly string[]) => {
-    const store = useReviewStore.getState();
+    const store = useSpurStore.getState();
     const hunkIds = selectionHunkIds(
       paths,
       (path) => store.filesByPath[path]?.hunks,
@@ -163,7 +163,7 @@ export function FileSelectionProvider({
   );
 
   const selectedHunkIds = useCallback(() => {
-    const store = useReviewStore.getState();
+    const store = useSpurStore.getState();
     return selectionHunkIds(
       selection.paths,
       (path) => store.filesByPath[path]?.hunks,
@@ -175,12 +175,12 @@ export function FileSelectionProvider({
   // ten chances to lose a race with the file watcher.
   const approveSelection = useCallback(() => {
     const ids = selectedHunkIds();
-    if (ids.length > 0) useReviewStore.getState().approveHunkIds(ids);
+    if (ids.length > 0) useSpurStore.getState().approveHunkIds(ids);
   }, [selectedHunkIds]);
 
   const unapproveSelection = useCallback(() => {
     const ids = selectedHunkIds();
-    if (ids.length > 0) useReviewStore.getState().unapproveHunkIds(ids);
+    if (ids.length > 0) useSpurStore.getState().unapproveHunkIds(ids);
   }, [selectedHunkIds]);
 
   // Keep the open rolling diff on the *current* hunks of the selected files.
@@ -203,7 +203,7 @@ export function FileSelectionProvider({
     openedGroup.current = next;
     // Not openAdhocGroup: the group is already open, and re-opening it would
     // clear overlays and navigation out from under the reader.
-    useReviewStore.setState({ adhocGroup: next });
+    useSpurStore.setState({ adhocGroup: next });
   }, [filesByPath, adhocGroup, selection]);
 
   // Navigating anywhere else drops the selection: once the content area is no

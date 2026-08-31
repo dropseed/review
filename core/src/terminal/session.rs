@@ -191,10 +191,10 @@ impl Session {
         // Programs branch on these to decide what the terminal can do — and
         // agents in particular check them before enabling richer input or
         // output. Without them Review is indistinguishable from a bare xterm.
-        cmd.env("TERM_PROGRAM", "Review");
+        cmd.env("TERM_PROGRAM", "Spur");
         cmd.env("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"));
         // Which session this is, so anything running inside it can name itself
-        // to `review terminal`. The workspace is deliberately not exported:
+        // to `spur terminal`. The workspace is deliberately not exported:
         // attribution can change under a running shell (a drag in the app is an
         // `AssignWorkspace`), so it has to be asked for live, not frozen here.
         cmd.env(super::TERMINAL_ID_ENV, &id.0);

@@ -24,7 +24,7 @@ vi.mock("../commands/workspaceCommands", () => ({
     targetForAttachment(attachment),
 }));
 
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { useWorkspaceRestore } from "./useWorkspaceRestore";
 import type { RepoStatus } from "./useRepositoryInit";
 import type { Workspace } from "../types";
@@ -50,7 +50,7 @@ function workspace(id: string, paths: string[] = []): Workspace {
 const queue = [workspace("aaa", ["/repo/a"]), workspace("bbb", ["/repo/b"])];
 
 function seed(state: Partial<Record<string, unknown>> = {}) {
-  useReviewStore.setState({
+  useSpurStore.setState({
     workspaces: queue,
     focusedWorkspaceId: null,
     activeReviewKey: null,
@@ -92,7 +92,7 @@ describe("useWorkspaceRestore", () => {
     renderHook(() => useWorkspaceRestore("found"));
 
     expect(focusWorkspace).not.toHaveBeenCalled();
-    expect(useReviewStore.getState().focusedWorkspaceId).toBe("bbb");
+    expect(useSpurStore.getState().focusedWorkspaceId).toBe("bbb");
   });
 
   it("stands down when a workspace is already on the stage", () => {
@@ -101,7 +101,7 @@ describe("useWorkspaceRestore", () => {
     renderHook(() => useWorkspaceRestore("found"));
 
     expect(focusWorkspace).not.toHaveBeenCalled();
-    expect(useReviewStore.getState().focusedWorkspaceId).toBe("aaa");
+    expect(useSpurStore.getState().focusedWorkspaceId).toBe("aaa");
   });
 
   it("restores once the queue lands, not before", () => {
@@ -109,7 +109,7 @@ describe("useWorkspaceRestore", () => {
     const { rerender } = renderHook(() => useWorkspaceRestore("found"));
     expect(focusWorkspace).not.toHaveBeenCalled();
 
-    act(() => useReviewStore.setState({ workspaces: queue } as never));
+    act(() => useSpurStore.setState({ workspaces: queue } as never));
     rerender();
 
     expect(focusWorkspace).toHaveBeenCalledWith(
@@ -129,7 +129,7 @@ describe("useWorkspaceRestore", () => {
       repoPath: attachment.path,
       ref: "main",
     }));
-    act(() => useReviewStore.setState({ localActivity: [{}] } as never));
+    act(() => useSpurStore.setState({ localActivity: [{}] } as never));
     rerender();
 
     expect(focusWorkspace).toHaveBeenCalledWith(
@@ -166,7 +166,7 @@ describe("useWorkspaceRestore", () => {
     renderHook(() => useWorkspaceRestore("found"));
 
     expect(focusWorkspace).not.toHaveBeenCalled();
-    expect(useReviewStore.getState().focusedWorkspaceId).toBeNull();
+    expect(useSpurStore.getState().focusedWorkspaceId).toBeNull();
   });
 
   /**
@@ -180,14 +180,14 @@ describe("useWorkspaceRestore", () => {
     renderHook(() => useWorkspaceRestore("found"));
 
     expect(focusWorkspace).not.toHaveBeenCalled();
-    expect(useReviewStore.getState().focusedWorkspaceId).toBe("bbb");
+    expect(useSpurStore.getState().focusedWorkspaceId).toBe("bbb");
   });
 
   it("leaves a closed repo closed", () => {
     renderHook(() => useWorkspaceRestore("welcome"));
 
     expect(focusWorkspace).not.toHaveBeenCalled();
-    expect(useReviewStore.getState().focusedWorkspaceId).toBeNull();
+    expect(useSpurStore.getState().focusedWorkspaceId).toBeNull();
   });
 
   it("remembers the workspace on screen, derived focus included", () => {
@@ -202,6 +202,6 @@ describe("useWorkspaceRestore", () => {
     // Nothing was restored — but the workspace showing that repo is where the
     // stage is, so that is what the next launch comes back to.
     expect(focusWorkspace).not.toHaveBeenCalled();
-    expect(useReviewStore.getState().lastWorkspaceId).toBe("aaa");
+    expect(useSpurStore.getState().lastWorkspaceId).toBe("aaa");
   });
 });

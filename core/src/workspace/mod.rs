@@ -1,4 +1,4 @@
-//! The work queue — a user-ordered list of the workspaces they intend to work
+//! The workspace queue — a user-ordered list of the workspaces they intend to work
 //! on.
 //!
 //! A **workspace** is a container that becomes whatever is put in it. It holds
@@ -11,9 +11,9 @@
 //! Three properties define the model:
 //!
 //! - **Global, not per-repo.** One queue spans every repository, so a workspace
-//!   can attach `repo-a` and `repo-b` at once. It lives at `~/.review/work.json`
+//!   can attach `repo-a` and `repo-b` at once. It lives at `~/.spur/workspaces.json`
 //!   (see [`storage`]).
-//! - **Array order is priority order.** [`WorkState::workspaces`] is the queue,
+//! - **Array order is priority order.** [`WorkspacesState::workspaces`] is the queue,
 //!   top to bottom; [`move_workspace`] is the only thing that reorders it.
 //! - **Attachments are not exclusive.** Any number of workspaces may attach the
 //!   same path; a workspace shows a path at most once. Nothing here can
@@ -48,10 +48,10 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
-use crate::review::central;
+use crate::home;
 use crate::review::state::{iso8601_from_system_time, now_iso8601, unique_id_seed};
 
-/// Schema version of `work.json`. Bumped when the stored shape changes; an older
+/// Schema version of `workspaces.json`. Bumped when the stored shape changes; an older
 /// document loads as an empty queue (see [`storage::load`]) and a newer one is
 /// refused.
 pub const WORK_SCHEMA_VERSION: u32 = 2;
@@ -65,16 +65,16 @@ const UNTITLED: &str = "Untitled";
 const TITLE_SEP: &str = " · ";
 
 #[derive(Error, Debug)]
-pub enum WorkError {
+pub enum WorkspaceError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
     #[error("Central storage error: {0}")]
-    Central(#[from] central::CentralError),
-    #[error("Version conflict: expected version {expected}, found {found}. Another process modified the work queue.")]
+    Central(#[from] home::CentralError),
+    #[error("Version conflict: expected version {expected}, found {found}. Another process modified the workspace queue.")]
     VersionConflict { expected: u64, found: u64 },
-    #[error("the work queue was written by a newer version of Review (schema v{found}, this build supports v{supported}); upgrade Review to open it")]
+    #[error("the workspace queue was written by a newer version of Review (schema v{found}, this build supports v{supported}); upgrade Review to open it")]
     SchemaTooNew { found: u32, supported: u32 },
     #[error("No workspace matches '{0}'.")]
     NotFound(String),
@@ -82,7 +82,7 @@ pub enum WorkError {
     Cycle { child: String, parent: String },
     #[error("'{query}' is ambiguous; it matches: {}", .matches.join(", "))]
     Ambiguous { query: String, matches: Vec<String> },
-    #[error("Failed to save the work queue after repeated version conflicts.")]
+    #[error("Failed to save the workspace queue after repeated version conflicts.")]
     Contended,
 }
 
@@ -126,7 +126,7 @@ impl Attachment {
 
     /// The directory name, for display ("review", not the full path).
     pub fn repo_name(&self) -> &str {
-        central::display_name(std::path::Path::new(&self.path))
+        home::display_name(std::path::Path::new(&self.path))
     }
 
     /// This attachment on one line: "review · feature/x", or just the directory
@@ -216,13 +216,13 @@ pub struct AttachmentView {
     /// Whether the path is a repository working tree. **Not stored** — it is a
     /// fact about the filesystem, like `display_title` is a fact about the
     /// queue, and `git init` in an attached directory must change it with no
-    /// write to `work.json`.
+    /// write to `workspaces.json`.
     ///
     /// This is what tells a surface which half of itself to draw: everything
     /// built on a diff — comparisons, hunks, review state, the branch picker —
     /// has nothing to say about a plain directory, which is browsable and
     /// nothing more. It is the same test the registry applies (see
-    /// [`central::is_working_tree`]), so an attachment that reads `true` here is
+    /// [`home::is_working_tree`]), so an attachment that reads `true` here is
     /// exactly one the sidebar has an activity row for.
     pub is_git_repo: bool,
 }
@@ -280,7 +280,7 @@ pub fn view_of(queue: &[Workspace], workspace: Workspace) -> WorkspaceView {
         .attachments
         .into_iter()
         .map(|attachment| AttachmentView {
-            is_git_repo: central::is_working_tree(std::path::Path::new(&attachment.path)),
+            is_git_repo: home::is_working_tree(std::path::Path::new(&attachment.path)),
             attachment,
         })
         .collect();
@@ -336,7 +336,7 @@ pub fn views(workspaces: Vec<Workspace>) -> Vec<WorkspaceView> {
 /// surface joins workspace attribution against.
 ///
 /// Read-only, and forgiving: building it is not one of the two reads that clean
-/// the queue up, and an unreadable `work.json` costs titles rather than the
+/// the queue up, and an unreadable `workspaces.json` costs titles rather than the
 /// listing they decorate.
 pub fn title_index() -> HashMap<String, String> {
     list()
@@ -363,7 +363,7 @@ pub fn label_for<'a>(titles: &'a HashMap<String, String>, id: Option<&'a str>) -
 /// The whole queue, as stored. Array order is priority order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct WorkState {
+pub struct WorkspacesState {
     /// Shape of this document; see [`WORK_SCHEMA_VERSION`].
     #[serde(default = "default_schema_version")]
     pub schema_version: u32,
@@ -378,7 +378,7 @@ fn default_schema_version() -> u32 {
     WORK_SCHEMA_VERSION
 }
 
-impl Default for WorkState {
+impl Default for WorkspacesState {
     fn default() -> Self {
         Self {
             schema_version: WORK_SCHEMA_VERSION,
@@ -388,7 +388,7 @@ impl Default for WorkState {
     }
 }
 
-impl WorkState {
+impl WorkspacesState {
     /// The first workspace in priority order attached to `path`, if any.
     ///
     /// The routing rule in one place: attachments are not exclusive, so "which
@@ -405,10 +405,10 @@ impl WorkState {
 ///
 /// Attachments are keyed by this, so a repo attached from a linked worktree,
 /// from the app, and from a relative CLI path all collapse to the same identity
-/// — the same normalization [`central::list_registered_repos`] entries carry,
+/// — the same normalization [`home::list_registered_repos`] entries carry,
 /// which is what the frontend joins these against.
 pub fn normalize_repo_path(path: &std::path::Path) -> String {
-    central::repo_root(path).to_string_lossy().to_string()
+    home::repo_root(path).to_string_lossy().to_string()
 }
 
 /// Mint an 8-hex-character workspace id from [`unique_id_seed`]. The caller
@@ -422,11 +422,11 @@ fn new_id() -> String {
 
 /// Resolve a user-supplied id to its index in the queue, accepting a unique
 /// prefix so nobody has to echo a full id back. Exact match wins; otherwise the
-/// prefix must be unambiguous. Mirrors `review terminal`'s id resolution.
+/// prefix must be unambiguous. Mirrors `spur terminal`'s id resolution.
 ///
 /// Returning the index rather than the id is what lets every mutation address
 /// its workspace in one step — the id would only have to be looked up again.
-fn resolve_index(state: &WorkState, query: &str) -> Result<usize, WorkError> {
+fn resolve_index(state: &WorkspacesState, query: &str) -> Result<usize, WorkspaceError> {
     let mut matches = Vec::new();
     for (index, ws) in state.workspaces.iter().enumerate() {
         if ws.id == query {
@@ -437,9 +437,9 @@ fn resolve_index(state: &WorkState, query: &str) -> Result<usize, WorkError> {
         }
     }
     match matches.len() {
-        0 => Err(WorkError::NotFound(query.to_owned())),
+        0 => Err(WorkspaceError::NotFound(query.to_owned())),
         1 => Ok(matches[0]),
-        _ => Err(WorkError::Ambiguous {
+        _ => Err(WorkspaceError::Ambiguous {
             query: query.to_owned(),
             matches: matches
                 .into_iter()
@@ -500,7 +500,7 @@ fn subtree_len(workspaces: &[Workspace], index: usize) -> usize {
 /// `dest` is in the coordinates of the list **with the subtree already out** —
 /// which is also the row the root ends up on, so a caller that knows where it
 /// wants the card can say so without compensating for the hole it left.
-fn place_subtree(state: &mut WorkState, from: usize, dest: usize) {
+fn place_subtree(state: &mut WorkspacesState, from: usize, dest: usize) {
     let size = subtree_len(&state.workspaces, from);
     let subtree: Vec<Workspace> = state.workspaces.drain(from..from + size).collect();
     let dest = dest.min(state.workspaces.len());
@@ -521,7 +521,7 @@ fn subtree_end(workspaces: &[Workspace], index: usize) -> usize {
 ///
 /// Run after every mutation and on every read, because both are places a
 /// crooked document can arrive: a mutation that re-parents leaves the array in
-/// the old order, and `work.json` can be hand-edited or written by a build that
+/// the old order, and `workspaces.json` can be hand-edited or written by a build that
 /// spelled the tree differently.
 ///
 /// Nothing is ever dropped here. A parent that isn't in the queue (removed
@@ -529,7 +529,7 @@ fn subtree_end(workspaces: &[Workspace], index: usize) -> usize {
 /// comes up to the top level rather than disappearing with it — the same
 /// promotion [`Removal::PromoteChildren`] does deliberately, applied to the
 /// cases nobody chose.
-pub(crate) fn reflow(state: &mut WorkState) -> bool {
+pub(crate) fn reflow(state: &mut WorkspacesState) -> bool {
     let before: Vec<String> = state.workspaces.iter().map(|ws| ws.id.clone()).collect();
     let ids: HashSet<String> = before.iter().cloned().collect();
     let mut changed = false;
@@ -598,9 +598,9 @@ const MAX_SAVE_RETRIES: usize = 5;
 /// (re-attaching a path the workspace already shows, moving a workspace to where
 /// it already is): the state is returned untouched, with no version bump, no
 /// write, and no file-watcher churn.
-fn mutate<T, F>(apply: F) -> Result<(WorkState, T), WorkError>
+fn mutate<T, F>(apply: F) -> Result<(WorkspacesState, T), WorkspaceError>
 where
-    F: Fn(&mut WorkState) -> Result<(T, bool), WorkError>,
+    F: Fn(&mut WorkspacesState) -> Result<(T, bool), WorkspaceError>,
 {
     for _ in 0..MAX_SAVE_RETRIES {
         let mut state = storage::load()?;
@@ -615,20 +615,20 @@ where
         state.version += 1;
         match storage::save(&state) {
             Ok(()) => return Ok((state, value)),
-            Err(WorkError::VersionConflict { .. }) => {}
+            Err(WorkspaceError::VersionConflict { .. }) => {}
             Err(e) => return Err(e),
         }
     }
-    Err(WorkError::Contended)
+    Err(WorkspaceError::Contended)
 }
 
 /// The whole queue, in priority order.
-pub fn list() -> Result<WorkState, WorkError> {
+pub fn list() -> Result<WorkspacesState, WorkspaceError> {
     storage::load()
 }
 
 /// One workspace by id (a unique prefix is accepted).
-pub fn get(id: &str) -> Result<Workspace, WorkError> {
+pub fn get(id: &str) -> Result<Workspace, WorkspaceError> {
     let state = storage::load()?;
     let index = resolve_index(&state, id)?;
     Ok(state.workspaces[index].clone())
@@ -641,7 +641,7 @@ pub fn get(id: &str) -> Result<Workspace, WorkError> {
 /// prioritizing it, attaching to it, detaching from it — is the human taking it
 /// over, and only that keeps `auto_created` meaning "nothing but the router has
 /// ever touched this", which is the whole licence for [`cleanup`] to reap one.
-fn adopt_at(state: &mut WorkState, index: usize) -> bool {
+fn adopt_at(state: &mut WorkspacesState, index: usize) -> bool {
     let changed = state.workspaces[index].auto_created;
     state.workspaces[index].auto_created = false;
     changed
@@ -649,7 +649,7 @@ fn adopt_at(state: &mut WorkState, index: usize) -> bool {
 
 /// Build and append a workspace, minting an id no existing workspace shares.
 fn push_new(
-    state: &mut WorkState,
+    state: &mut WorkspacesState,
     title: Option<String>,
     attachments: Vec<Attachment>,
     auto_created: bool,
@@ -682,7 +682,7 @@ fn push_new(
 pub fn add(
     title: Option<&str>,
     attachments: Vec<Attachment>,
-) -> Result<(WorkState, Workspace), WorkError> {
+) -> Result<(WorkspacesState, Workspace), WorkspaceError> {
     let title = title.map(str::trim).map(ToOwned::to_owned);
     let (state, workspace) = mutate(move |state| {
         let mut resolved: Vec<Attachment> = Vec::new();
@@ -716,7 +716,7 @@ fn push_unique(attachments: &mut Vec<Attachment>, attachment: Attachment) {
 ///
 /// Attaching is the gesture that says "show me this", and it used to say so only
 /// to the queue. The sidebar's tree is built from the *registered* repos
-/// (`central::list_registered_repos` → `activity_cache::snapshot_all`), so a
+/// (`home::list_registered_repos` → `activity_cache::snapshot_all`), so a
 /// workspace could hold an attachment whose repo had no activity row and whose
 /// code side therefore had nothing to open. Doing it here rather than at each
 /// surface is what makes the app, the CLI and the router agree.
@@ -727,12 +727,12 @@ fn push_unique(attachments: &mut Vec<Attachment>, attachment: Attachment) {
 /// [`AttachmentView::is_git_repo`], which asks the same question this does.
 ///
 /// Best-effort: a failure costs a sidebar row rather than the attachment.
-/// [`central::ensure_registered`] decides what counts as a repo and skips one it
+/// [`home::ensure_registered`] decides what counts as a repo and skips one it
 /// already holds, so this is the loop and nothing else.
 fn register_attachments(attachments: &[Attachment]) {
     for attachment in attachments {
         let path = std::path::Path::new(&attachment.path);
-        if let Err(e) = central::ensure_registered(path) {
+        if let Err(e) = home::ensure_registered(path) {
             log::warn!("[work] could not register {}: {e}", attachment.path);
         }
     }
@@ -763,7 +763,7 @@ pub struct Removed {
 }
 
 /// Remove a workspace, and — depending on `mode` — the workspaces under it.
-pub fn remove(id: &str, mode: Removal) -> Result<(WorkState, Removed), WorkError> {
+pub fn remove(id: &str, mode: Removal) -> Result<(WorkspacesState, Removed), WorkspaceError> {
     mutate(move |state| {
         let index = resolve_index(state, id)?;
         let mut gone: Vec<Workspace> = match mode {
@@ -810,7 +810,10 @@ pub fn remove(id: &str, mode: Removal) -> Result<(WorkState, Removed), WorkError
 ///
 /// Both workspaces are adopted (see [`adopt_at`]): building structure here is
 /// as much a human touching them as naming one is.
-pub fn set_parent(id: &str, parent: Option<&str>) -> Result<(WorkState, Workspace), WorkError> {
+pub fn set_parent(
+    id: &str,
+    parent: Option<&str>,
+) -> Result<(WorkspacesState, Workspace), WorkspaceError> {
     let parent = parent.map(ToOwned::to_owned);
     mutate(move |state| {
         let index = resolve_index(state, id)?;
@@ -821,7 +824,7 @@ pub fn set_parent(id: &str, parent: Option<&str>) -> Result<(WorkState, Workspac
                 let parent_index = resolve_index(state, query)?;
                 let parent_id = state.workspaces[parent_index].id.clone();
                 if is_within(&state.workspaces, &parent_id, &child_id) {
-                    return Err(WorkError::Cycle {
+                    return Err(WorkspaceError::Cycle {
                         child: state.workspaces[index].display_title(),
                         parent: state.workspaces[parent_index].display_title(),
                     });
@@ -869,7 +872,10 @@ pub fn set_parent(id: &str, parent: Option<&str>) -> Result<(WorkState, Workspac
 
 /// Retitle a workspace. An empty title clears the stored one, which resumes
 /// derivation (see [`Workspace::display_title`]).
-pub fn rename(id: &str, title: Option<&str>) -> Result<(WorkState, Workspace), WorkError> {
+pub fn rename(
+    id: &str,
+    title: Option<&str>,
+) -> Result<(WorkspacesState, Workspace), WorkspaceError> {
     let title = title
         .map(str::trim)
         .filter(|t| !t.is_empty())
@@ -914,7 +920,7 @@ pub fn move_workspace(
     id: &str,
     to_index: usize,
     keep_parent: bool,
-) -> Result<(WorkState, Workspace), WorkError> {
+) -> Result<(WorkspacesState, Workspace), WorkspaceError> {
     mutate(move |state| {
         let from = resolve_index(state, id)?;
         let size = subtree_len(&state.workspaces, from);
@@ -942,7 +948,10 @@ pub fn move_workspace(
 /// Show a path in a workspace. Attachments are not exclusive, so this can never
 /// conflict: any number of workspaces may attach the same repository, and a
 /// workspace already showing the path only updates its ref hint.
-pub fn attach(id: &str, attachment: Attachment) -> Result<(WorkState, Workspace), WorkError> {
+pub fn attach(
+    id: &str,
+    attachment: Attachment,
+) -> Result<(WorkspacesState, Workspace), WorkspaceError> {
     let attachment = attachment.normalized();
     let registered = attachment.clone();
     let result = mutate(move |state| {
@@ -961,7 +970,10 @@ pub fn attach(id: &str, attachment: Attachment) -> Result<(WorkState, Workspace)
 }
 
 /// Stop showing a path. Detaching one the workspace doesn't show is a no-op.
-pub fn detach(id: &str, path: &std::path::Path) -> Result<(WorkState, Workspace), WorkError> {
+pub fn detach(
+    id: &str,
+    path: &std::path::Path,
+) -> Result<(WorkspacesState, Workspace), WorkspaceError> {
     let path = normalize_repo_path(path);
     mutate(move |state| {
         let index = resolve_index(state, id)?;
@@ -1011,7 +1023,7 @@ pub const CLEANUP_GRACE: Duration = Duration::from_secs(60);
 /// an unreadable (or empty) `created_at` sorts before every cutoff and so gets no
 /// grace, which is the safe direction: it is still protected by being adopted or
 /// live.
-pub fn cleanup(state: &mut WorkState, live: &HashSet<String>, grace: Duration) -> bool {
+pub fn cleanup(state: &mut WorkspacesState, live: &HashSet<String>, grace: Duration) -> bool {
     let cutoff = iso8601_from_system_time(
         SystemTime::now()
             .checked_sub(grace)
@@ -1029,10 +1041,12 @@ pub fn cleanup(state: &mut WorkState, live: &HashSet<String>, grace: Duration) -
 ///
 /// `None` means "nobody can say", not "nothing is running" — see [`cleanup`] for
 /// why that difference is every auto-created workspace in the queue. Both readers
-/// that hold the queue and the daemon's answer at once (the app's `work_list` and
-/// `review workspace list`) go through here, so the distinction is decided once
+/// that hold the queue and the daemon's answer at once (the app's `workspace_list` and
+/// `spur workspace list`) go through here, so the distinction is decided once
 /// instead of being restated at each of them.
-pub fn list_with_liveness(live: Option<&HashSet<String>>) -> Result<WorkState, WorkError> {
+pub fn list_with_liveness(
+    live: Option<&HashSet<String>>,
+) -> Result<WorkspacesState, WorkspaceError> {
     match live {
         Some(live) => list_cleaned(live),
         None => list(),
@@ -1042,9 +1056,9 @@ pub fn list_with_liveness(live: Option<&HashSet<String>>) -> Result<WorkState, W
 /// The queue, with the router's dead leftovers reaped on the way out.
 ///
 /// Cleanup is lazy — it happens on read, in the one place that has both the
-/// queue and the liveness answer — so the daemon never writes `work.json` and
+/// queue and the liveness answer — so the daemon never writes `workspaces.json` and
 /// there is only ever one writer. Nothing is written when nothing is reaped.
-pub fn list_cleaned(live: &HashSet<String>) -> Result<WorkState, WorkError> {
+pub fn list_cleaned(live: &HashSet<String>) -> Result<WorkspacesState, WorkspaceError> {
     let (state, ()) = mutate(|state| Ok(((), cleanup(state, live, CLEANUP_GRACE))))?;
     Ok(state)
 }
@@ -1052,7 +1066,7 @@ pub fn list_cleaned(live: &HashSet<String>) -> Result<WorkState, WorkError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::review::central::tests::{setup_test, ENV_LOCK};
+    use crate::home::tests::{setup_test, ENV_LOCK};
     use std::path::PathBuf;
 
     /// An attachment that skips path normalization, so tests don't depend on
@@ -1064,7 +1078,7 @@ mod tests {
         }
     }
 
-    fn shown(state: &WorkState) -> Vec<String> {
+    fn shown(state: &WorkspacesState) -> Vec<String> {
         state
             .workspaces
             .iter()
@@ -1109,7 +1123,7 @@ mod tests {
         assert_eq!(state.version, 0);
         assert_eq!(state.schema_version, WORK_SCHEMA_VERSION);
         assert!(state.workspaces.is_empty());
-        assert!(!storage::work_path().unwrap().exists());
+        assert!(!storage::workspaces_path().unwrap().exists());
     }
 
     #[test]
@@ -1242,7 +1256,7 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap();
         let (_env, _home, _repo) = setup_test();
 
-        type Mutation = dyn Fn(&str) -> Result<(WorkState, Workspace), WorkError>;
+        type Mutation = dyn Fn(&str) -> Result<(WorkspacesState, Workspace), WorkspaceError>;
         for (n, mutate_it) in [
             (0, &(|id: &str| rename(id, Some("named"))) as &Mutation),
             (1, &(|id: &str| move_workspace(id, 0, false))),
@@ -1279,7 +1293,7 @@ mod tests {
             auto_created: false,
             created_at: "2026-08-12T00:00:00.000Z".to_owned(),
         };
-        let json = serde_json::to_value(WorkState {
+        let json = serde_json::to_value(WorkspacesState {
             schema_version: WORK_SCHEMA_VERSION,
             version: 3,
             workspaces: vec![workspace.clone()],
@@ -1344,7 +1358,7 @@ mod tests {
         let canonical = normalize_repo_path(repo.path());
 
         assert!(
-            !central::is_registered(repo.path()).unwrap(),
+            !home::is_registered(repo.path()).unwrap(),
             "the test needs an unregistered repo"
         );
 
@@ -1353,23 +1367,23 @@ mod tests {
         let ws = add(Some("by add"), vec![Attachment::new(repo.path(), None)])
             .unwrap()
             .1;
-        assert!(central::is_registered(repo.path()).unwrap());
-        assert!(central::list_registered_repos()
+        assert!(home::is_registered(repo.path()).unwrap());
+        assert!(home::list_registered_repos()
             .unwrap()
             .iter()
             .any(|entry| entry.path == canonical));
 
-        central::unregister_repo(repo.path()).unwrap();
+        home::unregister_repo(repo.path()).unwrap();
         attach(
             &ws.id,
             Attachment::new(repo.path(), Some("main".to_owned())),
         )
         .unwrap();
-        assert!(central::is_registered(repo.path()).unwrap());
+        assert!(home::is_registered(repo.path()).unwrap());
 
-        central::unregister_repo(repo.path()).unwrap();
+        home::unregister_repo(repo.path()).unwrap();
         router::route_to(repo.path(), None).unwrap();
-        assert!(central::is_registered(repo.path()).unwrap());
+        assert!(home::is_registered(repo.path()).unwrap());
     }
 
     /// A plain directory attaches exactly like a repo, and the *only* thing
@@ -1385,7 +1399,7 @@ mod tests {
         let (state, ws) = add(Some("scratch"), vec![Attachment::new(plain.path(), None)]).unwrap();
         assert_eq!(ws.attachments[0].path, canonical);
         assert!(
-            central::list_registered_repos().unwrap().is_empty(),
+            home::list_registered_repos().unwrap().is_empty(),
             "the index is the git registry; a directory has no place in it"
         );
 
@@ -1414,7 +1428,7 @@ mod tests {
     }
 
     /// The rendered shape of the queue: every workspace, indented by depth.
-    fn tree(state: &WorkState) -> Vec<String> {
+    fn tree(state: &WorkspacesState) -> Vec<String> {
         let views = views(state.workspaces.clone());
         views
             .iter()
@@ -1478,12 +1492,12 @@ mod tests {
 
         assert!(matches!(
             set_parent(&parent.id, Some(&parent.id)),
-            Err(WorkError::Cycle { .. })
+            Err(WorkspaceError::Cycle { .. })
         ));
         // Nor under anything already beneath it — the same ring, one hop out.
         assert!(matches!(
             set_parent(&parent.id, Some(&child.id)),
-            Err(WorkError::Cycle { .. })
+            Err(WorkspaceError::Cycle { .. })
         ));
         assert_eq!(tree(&list().unwrap()), ["parent", "  child"]);
     }
@@ -1622,14 +1636,14 @@ mod tests {
         assert_eq!(tree(&state), ["child-p", "  grandchild-p"]);
     }
 
-    /// `work.json` is a file people (and older builds) can write. Every read
+    /// `workspaces.json` is a file people (and older builds) can write. Every read
     /// runs it through [`reflow`], which must fix it without losing anything.
     #[test]
     fn a_crooked_document_is_straightened_on_read() {
         let _lock = ENV_LOCK.lock().unwrap();
         let (_env, _home, _repo) = setup_test();
 
-        let mut state = WorkState::default();
+        let mut state = WorkspacesState::default();
         for (id, parent) in [
             ("aaaaaaaa", None),
             // Out of tree order, and pointing at a parent further down.
@@ -1672,15 +1686,15 @@ mod tests {
 
         assert!(matches!(
             remove("zzzz", Removal::PromoteChildren),
-            Err(WorkError::NotFound(_))
+            Err(WorkspaceError::NotFound(_))
         ));
     }
 
     #[test]
     fn ambiguous_prefixes_are_rejected() {
-        let mut state = WorkState {
+        let mut state = WorkspacesState {
             version: 1,
-            ..WorkState::default()
+            ..WorkspacesState::default()
         };
         for id in ["abc10000", "abc20000"] {
             state.workspaces.push(Workspace {
@@ -1694,7 +1708,7 @@ mod tests {
         }
         assert!(matches!(
             resolve_index(&state, "abc"),
-            Err(WorkError::Ambiguous { .. })
+            Err(WorkspaceError::Ambiguous { .. })
         ));
         // An exact id still wins even though it's also a prefix of nothing else.
         assert_eq!(resolve_index(&state, "abc10000").unwrap(), 0);
@@ -1800,13 +1814,13 @@ mod tests {
         // A writer that loaded version 0 and is trying to write version 1 has
         // been overtaken; `mutate` swallows this by reloading, but the raw save
         // must report it.
-        let stale = WorkState {
+        let stale = WorkspacesState {
             version: 1,
-            ..WorkState::default()
+            ..WorkspacesState::default()
         };
         assert!(matches!(
             storage::save(&stale),
-            Err(WorkError::VersionConflict {
+            Err(WorkspaceError::VersionConflict {
                 expected: 0,
                 found: 1
             })
@@ -1863,7 +1877,7 @@ mod tests {
             Ok(((), true))
         });
 
-        assert!(matches!(result, Err(WorkError::Contended)));
+        assert!(matches!(result, Err(WorkspaceError::Contended)));
     }
 
     #[test]

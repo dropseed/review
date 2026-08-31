@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import { Virtualizer } from "@pierre/diffs/react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { useCodeFont, useResponsiveDiffViewMode } from "../../hooks";
 import { getApiClient } from "../../api";
 import type { FileContent } from "../../types";
@@ -22,15 +22,15 @@ type FileLoadState =
   { kind: "ok"; content: FileContent } | { kind: "error"; message: string };
 
 export function WorkingTreeMultiFileDiffViewer(): ReactNode {
-  const view = useReviewStore((s) => s.workingTreeMultiView);
-  const closeView = useReviewStore((s) => s.closeWorkingTreeMultiView);
-  const selectWorkingTreeFile = useReviewStore((s) => s.selectWorkingTreeFile);
-  const workingTreePath = useReviewStore((s) => s.worktreePath ?? s.repoPath);
-  const codeTheme = useReviewStore((s) => s.codeTheme);
+  const view = useSpurStore((s) => s.workingTreeMultiView);
+  const closeView = useSpurStore((s) => s.closeWorkingTreeMultiView);
+  const selectWorkingTreeFile = useSpurStore((s) => s.selectWorkingTreeFile);
+  const workingTreePath = useSpurStore((s) => s.worktreePath ?? s.repoPath);
+  const codeTheme = useSpurStore((s) => s.codeTheme);
   const { lineHeight, fontCSS } = useCodeFont();
-  const diffViewMode = useReviewStore((s) => s.diffViewMode);
-  const gitStatus = useReviewStore((s) => s.gitStatus);
-  const fileVersions = useReviewStore((s) => s.fileVersions);
+  const diffViewMode = useSpurStore((s) => s.diffViewMode);
+  const gitStatus = useSpurStore((s) => s.gitStatus);
+  const fileVersions = useSpurStore((s) => s.fileVersions);
 
   // Too narrow for two columns → render unified regardless of preference.
   const [rootNode, setRootNode] = useState<HTMLDivElement | null>(null);

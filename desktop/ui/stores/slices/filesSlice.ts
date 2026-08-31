@@ -18,7 +18,7 @@ import {
   sameViewpoint,
   viewpointComparison,
 } from "../../types/viewpoint";
-import type { ReviewStore, SliceCreatorWithClient } from "../types";
+import type { SpurStore, SliceCreatorWithClient } from "../types";
 import { createDebouncedFn, flattenFiles, isChangedStatus } from "../types";
 import { mergeDeltaHunks, patchFileTree } from "../filesDelta";
 import type { RestoredComparison } from "../comparisonCache";
@@ -49,7 +49,7 @@ export function cancelPendingSaves(): void {
  * the review at all.
  */
 export function beginDiffSwap(
-  state: ReviewStore,
+  state: SpurStore,
   { snapshot, cache = false }: { snapshot: boolean; cache?: boolean },
 ): void {
   state.flushSidebarProgress();
@@ -64,11 +64,11 @@ export function beginDiffSwap(
  * construction: the swap has been decided, the reset below hasn't run yet.
  *
  * Declined for anything that isn't the review's own settled diff. Any viewpoint
- * but `review` puts a comparison the review isn't of into `comparison`; a
+ * but `spur` puts a comparison the review isn't of into `comparison`; a
  * standalone file has no comparison at all; and a load still in flight would be
  * stored as a finished one and restored as the whole answer.
  */
-function captureOutgoing(state: ReviewStore): void {
+function captureOutgoing(state: SpurStore): void {
   const { repoPath, comparison, reviewRef, reviewState } = state;
   if (!repoPath || !comparison || !reviewRef || !reviewState) return;
   if (state.isStandaloneFile) return;
@@ -104,7 +104,7 @@ function captureOutgoing(state: ReviewStore): void {
 function restoreSnapshot(
   repoPath: string | null,
   comparisonKey: string | undefined,
-): Partial<ReviewStore> {
+): Partial<SpurStore> {
   if (!repoPath || !comparisonKey) return {};
   const entry = takeSnapshot(repoPath, comparisonKey);
   if (!entry) return {};

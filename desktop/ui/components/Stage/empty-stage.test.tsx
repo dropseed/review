@@ -16,12 +16,12 @@ vi.mock("../../commands/host", () => ({
 }));
 
 import { EmptyStage } from "./EmptyStage";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { makeTab } from "../Terminal/pane-tree";
 import { attachment, terminalSession, workspace } from "../../test/fixtures";
 
 function focus(overrides = {}) {
-  useReviewStore.setState({
+  useSpurStore.setState({
     workspaces: [workspace("w", overrides)],
     focusedWorkspaceId: "w",
   });
@@ -29,7 +29,7 @@ function focus(overrides = {}) {
 
 afterEach(() => {
   cleanup();
-  useReviewStore.setState({
+  useSpurStore.setState({
     workspaces: [],
     focusedWorkspaceId: null,
     activeReviewKey: null,
@@ -86,7 +86,7 @@ describe("a workspace with nothing in it", () => {
 
   it("drops it for a workspace whose terminals are already running", () => {
     focus();
-    useReviewStore.setState({
+    useSpurStore.setState({
       terminalSessions: { t1: terminalSession("t1", { workspaceId: "w" }) },
       terminalTabs: [makeTab("t1", "t1")],
     });

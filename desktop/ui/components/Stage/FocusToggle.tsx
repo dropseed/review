@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { SimpleTooltip } from "../ui/tooltip";
 
 /** Which half of the stage a toggle speaks for. */
@@ -30,9 +30,9 @@ export function FocusToggle({
   half: StageHalf;
   tooltipSide?: "top" | "right" | "bottom" | "left";
 }): ReactNode {
-  const contentFocus = useReviewStore((s) => s.contentFocus);
-  const toggleTerminalFocus = useReviewStore((s) => s.toggleTerminalFocus);
-  const toggleTerminalPanel = useReviewStore((s) => s.toggleTerminalPanel);
+  const contentFocus = useSpurStore((s) => s.contentFocus);
+  const toggleTerminalFocus = useSpurStore((s) => s.toggleTerminalFocus);
+  const toggleTerminalPanel = useSpurStore((s) => s.toggleTerminalPanel);
 
   const focused = contentFocus === half;
   const label = focused ? "Exit full view" : "Full view";

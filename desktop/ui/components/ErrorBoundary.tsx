@@ -1,7 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { getPlatformServices } from "../platform";
 
-const GITHUB_ISSUES_URL = "https://github.com/dropseed/review/issues/new";
+const GITHUB_ISSUES_URL = "https://github.com/dropseed/spur/issues/new";
 
 interface Props {
   children: ReactNode;

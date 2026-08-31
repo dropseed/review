@@ -1,12 +1,12 @@
 [package]
-name = "review"
+name = "spur"
 version = "0.0.165"
 description = "A diff review library and CLI"
 license = "FSL-1.1-MIT"
 edition = "2021"
 
 [lib]
-name = "review"
+name = "spur"
 path = "src/lib.rs"
 
 [dependencies]
@@ -132,21 +132,21 @@ lsp = ["dep:lsp-types"]
 # with this and never links a PTY stack it does not own.
 terminal-types = []
 terminal = ["terminal-types", "dep:portable-pty", "dep:vte", "dep:nix", "dep:bytes", "dep:libghostty-vt"]
-# The CLI drives the terminal daemon (`review terminal …`), so it pulls in the
+# The CLI drives the terminal daemon (`spur terminal …`), so it pulls in the
 # connect-side client and the wire types — neither adds PTY dependencies.
 # `push` is deliberately not in here: it drags a TLS + crypto stack and a
 # vendored OpenSSL build into an otherwise light binary. The shipped CLI adds
-# it (`scripts/build-cli`, `scripts/cli`) for `review notify`; a bare
+# it (`scripts/build-cli`, `scripts/cli`) for `spur notify`; a bare
 # `--features cli` build simply has no such subcommand.
 cli = ["clap", "daemon-client", "terminal-types"]
 # Web-mode HTTP backend. It pulls in `daemon-client` and the wire types, not
 # `terminal`: web mode reaches PTYs the same way the desktop app does — as a
-# thin client of the `review-daemon` process — so it gets terminals without
+# thin client of the `spur-daemon` process — so it gets terminals without
 # linking a PTY stack (and therefore without needing Zig).
 server = ["axum", "tower", "tower-http", "tokio-stream", "notify", "notify-debouncer-mini", "env_logger", "daemon-client", "terminal-types", "push"]
 # Web Push (`push.rs`): the VAPID identity, the subscription store, and the
 # HTTP send. The server needs it to register subscriptions (it is what serves
-# the service worker); the CLI adds it for `review notify`.
+# the service worker); the CLI adds it for `spur notify`.
 push = ["dep:web-push", "dep:jwt-simple", "dep:reqwest", "dep:openssl"]
 # Terminal session daemon. `daemon` is the server half (owns the SessionManager,
 # so it implies `terminal`); `daemon-client` is the connect side and pulls in no
@@ -155,17 +155,17 @@ daemon = ["terminal", "tokio/net", "env_logger"]
 daemon-client = ["tokio/net"]
 
 [[bin]]
-name = "review"
-path = "src/bin/review.rs"
+name = "spur"
+path = "src/bin/spur.rs"
 required-features = ["cli"]
 
 [[bin]]
-name = "review-server"
+name = "spur-server"
 path = "src/bin/server.rs"
 required-features = ["server"]
 
 [[bin]]
-name = "review-daemon"
+name = "spur-daemon"
 path = "src/bin/daemon.rs"
 required-features = ["daemon"]
 

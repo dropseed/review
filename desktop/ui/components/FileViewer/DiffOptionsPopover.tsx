@@ -1,5 +1,5 @@
 import { memo, type JSX } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import type {
   DiffLineDiffType,
   DiffOverflow,
@@ -70,10 +70,10 @@ function OptionSectionHeader({ title }: { title: string }): JSX.Element {
 }
 
 export const DiffOptionsPopover = memo(function DiffOptionsPopover() {
-  const diffLineDiffType = useReviewStore((s) => s.diffLineDiffType);
-  const setDiffLineDiffType = useReviewStore((s) => s.setDiffLineDiffType);
-  const diffOverflow = useReviewStore((s) => s.diffOverflow);
-  const setDiffOverflow = useReviewStore((s) => s.setDiffOverflow);
+  const diffLineDiffType = useSpurStore((s) => s.diffLineDiffType);
+  const setDiffLineDiffType = useSpurStore((s) => s.setDiffLineDiffType);
+  const diffOverflow = useSpurStore((s) => s.diffOverflow);
+  const setDiffOverflow = useSpurStore((s) => s.setDiffOverflow);
 
   return (
     <Popover>

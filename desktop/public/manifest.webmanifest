@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "Review",
-  "short_name": "Review",
+  "name": "Spur",
+  "short_name": "Spur",
   "description": "Review diffs, terminals, and the work queue from a browser",
   "start_url": "/",
   "scope": "/",

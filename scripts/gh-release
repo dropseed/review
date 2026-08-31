@@ -32,22 +32,22 @@ trap 'rm -rf "$STAGING"' EXIT
 echo "Staging artifacts in $STAGING..."
 
 # Copy DMGs with arch-specific names (strip version for stable download URLs)
-cp "$AARCH64_DIR/dmg/Review_${VERSION}_aarch64.dmg" "$STAGING/Review_aarch64.dmg"
-cp "$X86_64_DIR/dmg/Review_${VERSION}_x64.dmg" "$STAGING/Review_x64.dmg"
+cp "$AARCH64_DIR/dmg/Spur_${VERSION}_aarch64.dmg" "$STAGING/Spur_aarch64.dmg"
+cp "$X86_64_DIR/dmg/Spur_${VERSION}_x64.dmg" "$STAGING/Spur_x64.dmg"
 
 # Copy .app.tar.gz and .sig with arch-specific names
-cp "$AARCH64_DIR/macos/Review.app.tar.gz" "$STAGING/Review_aarch64.app.tar.gz"
-cp "$AARCH64_DIR/macos/Review.app.tar.gz.sig" "$STAGING/Review_aarch64.app.tar.gz.sig"
-cp "$X86_64_DIR/macos/Review.app.tar.gz" "$STAGING/Review_x64.app.tar.gz"
-cp "$X86_64_DIR/macos/Review.app.tar.gz.sig" "$STAGING/Review_x64.app.tar.gz.sig"
+cp "$AARCH64_DIR/macos/Spur.app.tar.gz" "$STAGING/Spur_aarch64.app.tar.gz"
+cp "$AARCH64_DIR/macos/Spur.app.tar.gz.sig" "$STAGING/Spur_aarch64.app.tar.gz.sig"
+cp "$X86_64_DIR/macos/Spur.app.tar.gz" "$STAGING/Spur_x64.app.tar.gz"
+cp "$X86_64_DIR/macos/Spur.app.tar.gz.sig" "$STAGING/Spur_x64.app.tar.gz.sig"
 
 # Read signatures
-SIG_AARCH64=$(cat "$STAGING/Review_aarch64.app.tar.gz.sig")
-SIG_X86_64=$(cat "$STAGING/Review_x64.app.tar.gz.sig")
+SIG_AARCH64=$(cat "$STAGING/Spur_aarch64.app.tar.gz.sig")
+SIG_X86_64=$(cat "$STAGING/Spur_x64.app.tar.gz.sig")
 
 # Generate latest.json (Tauri v1-compatible updater manifest)
 PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-BASE_URL="https://github.com/dropseed/review/releases/latest/download"
+BASE_URL="https://github.com/dropseed/spur/releases/latest/download"
 
 cat > "$STAGING/latest.json" <<EOF
 {
@@ -56,11 +56,11 @@ cat > "$STAGING/latest.json" <<EOF
   "platforms": {
     "darwin-aarch64": {
       "signature": "$SIG_AARCH64",
-      "url": "$BASE_URL/Review_aarch64.app.tar.gz"
+      "url": "$BASE_URL/Spur_aarch64.app.tar.gz"
     },
     "darwin-x86_64": {
       "signature": "$SIG_X86_64",
-      "url": "$BASE_URL/Review_x64.app.tar.gz"
+      "url": "$BASE_URL/Spur_x64.app.tar.gz"
     }
   }
 }
@@ -76,14 +76,14 @@ if [ -n "$TARGET_SHA" ]; then
     TARGET_ARGS=(--target "$TARGET_SHA")
 fi
 gh release create "v$VERSION" "${TARGET_ARGS[@]}" --title "v$VERSION" --notes-file "$NOTES_FILE" \
-    "$STAGING/Review_aarch64.dmg" \
-    "$STAGING/Review_x64.dmg" \
-    "$STAGING/Review_aarch64.app.tar.gz" \
-    "$STAGING/Review_aarch64.app.tar.gz.sig" \
-    "$STAGING/Review_x64.app.tar.gz" \
-    "$STAGING/Review_x64.app.tar.gz.sig" \
+    "$STAGING/Spur_aarch64.dmg" \
+    "$STAGING/Spur_x64.dmg" \
+    "$STAGING/Spur_aarch64.app.tar.gz" \
+    "$STAGING/Spur_aarch64.app.tar.gz.sig" \
+    "$STAGING/Spur_x64.app.tar.gz" \
+    "$STAGING/Spur_x64.app.tar.gz.sig" \
     "$STAGING/latest.json"
 
 echo ""
-RELEASE_URL="https://github.com/dropseed/review/releases/v$VERSION"
+RELEASE_URL="https://github.com/dropseed/spur/releases/v$VERSION"
 echo "Release published: $RELEASE_URL"

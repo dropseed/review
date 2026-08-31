@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { useOverlay, useCloseOverlay } from "../../stores/selectors/overlay";
 import { PaletteDialog, Kbd, type PaletteSource } from "./PaletteDialog";
 import { PALETTE_MODES, readModeSwitch, type PaletteMode } from "./modes";
@@ -33,8 +33,8 @@ export function Palette() {
  */
 function OpenPalette() {
   const closePalette = useCloseOverlay("palette");
-  const openingMode = useReviewStore((s) => s.paletteMode);
-  const lastSearch = useReviewStore((s) => s.searchQuery);
+  const openingMode = useSpurStore((s) => s.paletteMode);
+  const lastSearch = useSpurStore((s) => s.searchQuery);
 
   const [mode, setMode] = useState<PaletteMode>(openingMode);
   const [query, setQuery] = useState(() => queryFor(openingMode, lastSearch));

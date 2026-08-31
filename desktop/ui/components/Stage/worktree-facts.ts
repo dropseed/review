@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getApiClient } from "../../api";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import type { WorktreeStatus } from "../../types";
 import { repoChoiceKey } from "./repo-choices";
 
@@ -63,7 +63,7 @@ export function useWorktreeStatus(repoPaths: readonly string[]): {
  *
  * Two ways to be in use, because a worktree is reached by two different names.
  * A workspace shows it as *the repo at that branch* — never as its own path,
- * since `work::normalize_repo_path` resolves every attachment to the repository
+ * since `workspace::normalize_repo_path` resolves every attachment to the repository
  * root — so the queue is joined on repo and ref. A terminal names the directory
  * itself, and is the loudest form of "someone is working here": a worktree the
  * queue has forgotten but a shell is sitting in is not unused.
@@ -75,8 +75,8 @@ export function useWorktreeInUse(): (
   repoPath: string,
   worktree: WorktreeStatus,
 ) => boolean {
-  const workspaces = useReviewStore((s) => s.workspaces);
-  const sessions = useReviewStore((s) => s.terminalSessions);
+  const workspaces = useSpurStore((s) => s.workspaces);
+  const sessions = useSpurStore((s) => s.terminalSessions);
 
   return useMemo(() => {
     const attachedRefs = new Set<string>();

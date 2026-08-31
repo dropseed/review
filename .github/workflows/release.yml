@@ -128,7 +128,7 @@ jobs:
       # built from this tree, so the version-match skip can be forbidden here.
       - name: Verify daemon build identity
         run: |
-          REVIEW_REQUIRE_SIDECAR_TESTS=1 cargo test -p review --features daemon,daemon-client \
+          SPUR_REQUIRE_SIDECAR_TESTS=1 cargo test -p spur --features daemon,daemon-client \
             a_release_built_daemon_reports_the_identity_we_expect
 
       - name: Build, sign, and notarize (aarch64)

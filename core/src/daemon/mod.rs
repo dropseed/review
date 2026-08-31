@@ -1,8 +1,8 @@
 //! The terminal session daemon: PTYs that outlive the desktop app.
 //!
-//! A `review-daemon` process owns the one [`SessionManager`] and serves it over
-//! a `0600` Unix socket at [`socket_path`] (`~/.review/daemon.sock`, respecting
-//! `$REVIEW_HOME`). The desktop app attaches to that socket instead of embedding
+//! A `spur-daemon` process owns the one [`SessionManager`] and serves it over
+//! a `0600` Unix socket at [`socket_path`] (`~/.spur/daemon.sock`, respecting
+//! `$SPUR_HOME`). The desktop app attaches to that socket instead of embedding
 //! the manager, so quitting — or crashing — the app leaves running shells alone.
 //!
 //! Two features split the crate's two halves:
@@ -27,13 +27,13 @@ const SOCKET_FILE: &str = "daemon.sock";
 const PID_FILE: &str = "daemon.pid";
 
 /// The socket the daemon listens on: `daemon.sock` inside the review home
-/// (`~/.review`, or `$REVIEW_HOME`).
+/// (`~/.spur`, or `$SPUR_HOME`).
 ///
 /// Daemon and client live in different *processes*, so nothing but this function
 /// keeps them pointed at the same file: the binary binds what this returns and
 /// every client connects to it. Never rebuild the path by hand.
 pub fn socket_path() -> anyhow::Result<PathBuf> {
-    Ok(crate::review::central::get_central_root()?.join(SOCKET_FILE))
+    Ok(crate::home::get_central_root()?.join(SOCKET_FILE))
 }
 
 /// The pid file that sits beside `socket`.
@@ -119,7 +119,7 @@ mod tests {
     #[test]
     fn changed_code_changes_its_identity() {
         let dir = tempfile::TempDir::new().unwrap();
-        let binary = dir.path().join("review-daemon");
+        let binary = dir.path().join("spur-daemon");
         std::fs::write(&binary, b"v1").unwrap();
         let first = build_identity("0.0.123", &binary);
 
@@ -137,7 +137,7 @@ mod tests {
     #[test]
     fn recopying_an_unchanged_binary_keeps_its_identity() {
         let dir = tempfile::TempDir::new().unwrap();
-        let binary = dir.path().join("review-daemon");
+        let binary = dir.path().join("spur-daemon");
         std::fs::write(&binary, b"same bytes").unwrap();
         let before = build_identity("0.0.123", &binary);
 
@@ -155,7 +155,7 @@ mod tests {
     /// A missing binary must not panic — the caller falls back to the version.
     #[test]
     fn an_unreadable_binary_still_yields_an_identity() {
-        let identity = build_identity("0.0.123", Path::new("/nonexistent/review-daemon"));
+        let identity = build_identity("0.0.123", Path::new("/nonexistent/spur-daemon"));
         assert!(identity.starts_with("0.0.123"));
     }
 }

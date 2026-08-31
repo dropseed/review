@@ -43,7 +43,7 @@ pub struct GuideGenerated {
 }
 
 /// The review guide — an agent-authored grouping of a comparison's hunks into a
-/// walkthrough (written via `review guide`, rendered by the desktop app). A thin
+/// walkthrough (written via `spur guide`, rendered by the desktop app). A thin
 /// wrapper over [`GuideGenerated`], kept as its own object so the on-disk
 /// `guide.state` shape stays stable and older files (which also carried an
 /// `autoStart` flag, now ignored) still deserialize.
@@ -353,7 +353,7 @@ impl ReviewState {
     ///   in the same file, just with shifted surrounding context.
     /// - Orphans with no stable match, or whose stable key maps to more than one
     ///   live hunk (ambiguous), are dropped when `drop_orphans` is set — keeping
-    ///   `to_summary` / `review list` honest rather than leaving meaningless
+    ///   `to_summary` / `spur list` honest rather than leaving meaningless
     ///   entries behind. When it is clear, such orphans are **retained** as-is.
     ///
     /// `drop_orphans` must only be set when `live_hunks` is the *authoritative*,
@@ -548,7 +548,7 @@ pub(crate) fn now_iso8601() -> String {
 /// The per-process counter separates ids minted within the same nanosecond, and
 /// the process id separates two processes minting in that same nanosecond
 /// (which would otherwise collide). Callers decide how to present it — the CLI
-/// prefixes it, the work queue hashes it — so the uniqueness argument lives
+/// prefixes it, the workspace queue hashes it — so the uniqueness argument lives
 /// here once instead of in each of them.
 pub(crate) fn unique_id_seed() -> String {
     use std::sync::atomic::{AtomicU64, Ordering};

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useReviewStore } from "../index";
+import { useSpurStore } from "../index";
 import { focusedWorkspaceIn } from "./workspaceData";
 import type { Workspace } from "../../types";
 
@@ -22,7 +22,7 @@ export {
 
 /** The user's workspaces, in priority order. */
 export function useWorkspaces(): Workspace[] {
-  return useReviewStore((s) => s.workspaces);
+  return useSpurStore((s) => s.workspaces);
 }
 
 /**
@@ -34,11 +34,11 @@ export function useWorkspaces(): Workspace[] {
  */
 export function useFocusedWorkspace(): Workspace | null {
   const workspaces = useWorkspaces();
-  const focusedWorkspaceId = useReviewStore((s) => s.focusedWorkspaceId);
-  const activeReviewKey = useReviewStore((s) => s.activeReviewKey);
-  const repoPath = useReviewStore((s) => s.repoPath);
+  const focusedWorkspaceId = useSpurStore((s) => s.focusedWorkspaceId);
+  const activeReviewKey = useSpurStore((s) => s.activeReviewKey);
+  const repoPath = useSpurStore((s) => s.repoPath);
 
-  // Memoized rather than one `useReviewStore(focusedWorkspaceIn)`: the
+  // Memoized rather than one `useSpurStore(focusedWorkspaceIn)`: the
   // derivation builds a repo index over the whole queue, and a plain selector
   // would rebuild it on every store event, terminal output included.
   return useMemo(

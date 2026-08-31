@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useState, type JSX } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { maxRealLine, type ShapeRow } from "./shape-model";
 
 interface ShapeGutterProps {
@@ -37,8 +37,8 @@ export const ShapeGutter = memo(function ShapeGutter({
   scrollNode,
   onToggleFold,
 }: ShapeGutterProps): JSX.Element {
-  const codeFontSize = useReviewStore((s) => s.codeFontSize);
-  const codeFontFamily = useReviewStore((s) => s.codeFontFamily);
+  const codeFontSize = useSpurStore((s) => s.codeFontSize);
+  const codeFontFamily = useSpurStore((s) => s.codeFontFamily);
 
   const [scroll, setScroll] = useState({ top: 0, height: 0 });
 

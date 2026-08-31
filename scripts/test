@@ -2,8 +2,8 @@
 set -e
 cd "$(dirname "$0")/.."
 
-# The feature set the Rust tests build under: the union of what `review`'s own
-# tests need and what `review-desktop` declares on its `review` dependency.
+# The feature set the Rust tests build under: the union of what `spur`'s own
+# tests need and what `spur-desktop` declares on its `spur` dependency.
 # The features are additive (symbols-dev ⊂ symbols-all, terminal-types ⊂
 # terminal), so the union builds the same code either crate would have been
 # built with alone — which is what lets one cargo invocation test both.
@@ -12,12 +12,12 @@ cd "$(dirname "$0")/.."
 # `terminal-types` are already implied by `symbols-all` and `daemon`, but cargo
 # fingerprints a build by the feature names resolved for it, so dropping them
 # would make the sidecar build below resolve a different set from the test
-# build and recompile `review` a second time — the thing this list exists to
+# build and recompile `spur` a second time — the thing this list exists to
 # avoid.
 CORE_FEATURES="symbols-all,symbols-dev,cli,push,server,daemon,daemon-client,lsp,terminal-types"
 # cargo requires package-qualified features once more than one package is
 # selected. Same list, spelled the way that invocation needs it.
-WORKSPACE_FEATURES="review/${CORE_FEATURES//,/,review/}"
+WORKSPACE_FEATURES="spur/${CORE_FEATURES//,/,spur/}"
 
 RUN_TS=1
 RUN_RUST=1
@@ -71,7 +71,7 @@ if [ "$RUN_RUST" = 1 ]; then
     scripts/check-vt-toolchain
 
     if [ "$BUILD_SIDECARS" = 1 ]; then
-        # `cargo test -p review-desktop` builds the Tauri crate, whose
+        # `cargo test -p spur-desktop` builds the Tauri crate, whose
         # externalBin config requires sidecar binaries on disk for the host
         # triple. Built here with neither --release nor --target, deliberately:
         # an implicit host build in the dev profile shares target/debug with
@@ -82,10 +82,10 @@ if [ "$RUN_RUST" = 1 ]; then
         # builds — those are the ones that ship.
         TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
         echo "Building host sidecars for $TRIPLE..."
-        cargo build -p review --features "$CORE_FEATURES" --bin review --bin review-daemon
+        cargo build -p spur --features "$CORE_FEATURES" --bin spur --bin spur-daemon
         mkdir -p desktop/tauri/binaries
-        cp "target/debug/review" "desktop/tauri/binaries/review-cli-$TRIPLE"
-        cp "target/debug/review-daemon" "desktop/tauri/binaries/review-daemon-$TRIPLE"
+        cp "target/debug/spur" "desktop/tauri/binaries/spur-cli-$TRIPLE"
+        cp "target/debug/spur-daemon" "desktop/tauri/binaries/spur-daemon-$TRIPLE"
         echo ""
     fi
 
@@ -93,19 +93,19 @@ if [ "$RUN_RUST" = 1 ]; then
         echo "=== Clippy ==="
         # The workspace lint policy lives in Cargo.toml's [workspace.lints];
         # this is what makes it a gate rather than a preference.
-        cargo clippy -p review -p review-desktop --all-targets \
+        cargo clippy -p spur -p spur-desktop --all-targets \
             --features "$WORKSPACE_FEATURES" -- -D warnings
         echo "Clippy passed!"
         echo ""
     fi
 
-    # One invocation for both packages. Two — `-p review` then `-p
-    # review-desktop` — resolve different feature sets for `review` and so each
+    # One invocation for both packages. Two — `-p spur` then `-p
+    # spur-desktop` — resolve different feature sets for `spur` and so each
     # rebuilds what the other just built, which cost a little over two minutes
     # of every CI run. The desktop crate owns the daemon lifecycle (attach-vs-
     # spawn, version respawn) and the terminal event payloads, both worth
     # gating on.
-    cargo test -p review -p review-desktop --features "$WORKSPACE_FEATURES"
+    cargo test -p spur -p spur-desktop --features "$WORKSPACE_FEATURES"
     echo "Rust tests passed!"
     echo ""
 fi

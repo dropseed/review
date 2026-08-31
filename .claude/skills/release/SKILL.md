@@ -59,7 +59,7 @@ Say what you released and what the notes said afterward, not before.
    to stay for it either; the workflow needs nothing further.
 
 5. **On success, print the release URL**:
-   `https://github.com/dropseed/review/releases/tag/v<version>`
+   `https://github.com/dropseed/spur/releases/tag/v<version>`
 
    On failure: nothing was tagged or published. Diagnose the run
    (`gh run view --log-failed`), fix, and re-dispatch — if the fix needs no

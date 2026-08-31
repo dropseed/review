@@ -1,4 +1,4 @@
-# Review
+# Spur
 
 A local code review app for humans.
 
@@ -6,7 +6,7 @@ A local code review app for humans.
 
 ### Local desktop app
 
-Review runs as a native desktop app on your machine. It reads directly from your local git repo — no browser tabs, no network latency, no uploading diffs to a third party. File watchers reload automatically when your code changes on disk.
+Spur runs as a native desktop app on your machine. It reads directly from your local git repo — no browser tabs, no network latency, no uploading diffs to a third party. File watchers reload automatically when your code changes on disk.
 
 ### Trust patterns
 
@@ -18,7 +18,7 @@ Open the same repo in multiple tabs or windows, each with a different comparison
 
 ### Read-only by design
 
-Review is for reviewing, not editing. You can't modify code from inside the app — and that's the point. When most of the code is written by AI or teammates, your job shifts from writing to evaluating. Review is built for that: approve, reject, or annotate changes without the distraction of an editor.
+Spur is for reviewing, not editing. You can't modify code from inside the app — and that's the point. When most of the code is written by AI or teammates, your job shifts from writing to evaluating. Spur is built for that: approve, reject, or annotate changes without the distraction of an editor.
 
 ### Symbol diffs
 
@@ -26,7 +26,7 @@ See which functions, classes, and methods are affected by each change, powered b
 
 ## Privacy
 
-Review is local-first — your code stays on your machine. No diffs are uploaded to third parties.
+Spur is local-first — your code stays on your machine. No diffs are uploaded to third parties.
 
 The desktop app includes optional crash reporting via [Sentry](https://sentry.io). It is **off by default** and requires explicit opt-in. When enabled, PII is stripped before transmission. No code or diff content is ever included in crash reports.
 

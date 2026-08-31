@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { activeContentOverlay } from "../stores/slices/navigationSlice";
 import { reviewUrl } from "../utils/repo-identity";
 
@@ -21,10 +21,10 @@ export function useFileRouteSync() {
   const navigate = useNavigate();
   const params = useParams();
 
-  const selectedFile = useReviewStore((s) => s.selectedFile);
-  const overlay = useReviewStore(activeContentOverlay);
-  const flatFileList = useReviewStore((s) => s.flatFileList);
-  const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
+  const selectedFile = useSpurStore((s) => s.selectedFile);
+  const overlay = useSpurStore(activeContentOverlay);
+  const flatFileList = useSpurStore((s) => s.flatFileList);
+  const navigateToBrowse = useSpurStore((s) => s.navigateToBrowse);
 
   const isSyncingRef = useRef(false);
 
@@ -107,12 +107,12 @@ export function useFileRouteSync() {
 
     // Only navigate if the path actually changed
     if (location.pathname !== targetPath) {
-      const { isProgrammaticNavigation } = useReviewStore.getState();
+      const { isProgrammaticNavigation } = useSpurStore.getState();
       runSync(() =>
         navigate(targetPath, { replace: !isProgrammaticNavigation }),
       );
       if (isProgrammaticNavigation) {
-        useReviewStore.setState({ canGoBack: true });
+        useSpurStore.setState({ canGoBack: true });
       }
     }
   }, [

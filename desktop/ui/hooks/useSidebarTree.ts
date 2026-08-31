@@ -1,4 +1,4 @@
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { getSidebarTree } from "../stores/selectors/sidebar";
 import { type RepoNode } from "../utils/sidebar-tree";
 
@@ -11,5 +11,5 @@ import { type RepoNode } from "../utils/sidebar-tree";
  * subscribing at the same time cost one tree, not two.
  */
 export function useSidebarTree(): RepoNode[] {
-  return useReviewStore(getSidebarTree);
+  return useSpurStore(getSidebarTree);
 }

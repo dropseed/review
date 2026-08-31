@@ -202,7 +202,7 @@ impl DaemonClient {
 
     /// Every workspace with at least one live session.
     ///
-    /// The liveness half of [`crate::work::cleanup`]: the queue is this
+    /// The liveness half of [`crate::workspace::cleanup`]: the queue is this
     /// process's to read, but "is anything running in it?" is only the daemon's
     /// to answer, and a caller that cannot reach the daemon must not guess.
     pub async fn live_workspaces(&self) -> Result<HashSet<String>> {

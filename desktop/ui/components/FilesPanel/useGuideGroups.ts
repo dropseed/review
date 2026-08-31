@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { useAllHunks } from "../../stores/selectors/hunks";
 import { computeGuideGroups, type Group } from "../../stores/selectors/groups";
 
@@ -10,7 +10,7 @@ import { computeGuideGroups, type Group } from "../../stores/selectors/groups";
  * which groups exist.
  */
 export function useGuideGroups(): Group[] {
-  const reviewGroups = useReviewStore(
+  const reviewGroups = useSpurStore(
     (s) => s.getActiveGroupingEntry().reviewGroups,
   );
   const hunks = useAllHunks();

@@ -1,12 +1,12 @@
 //! Centralized review state storage.
 //!
-//! Stores all review data in `~/.review/` (or `$REVIEW_HOME`) so that
+//! Stores all review data in `~/.spur/` (or `$SPUR_HOME`) so that
 //! reviews from every repository are accessible system-wide.
 //!
 //! Layout — split by durability so the disposable tier can be cleared without
 //! risking durable state:
 //! ```text
-//! ~/.review/
+//! ~/.spur/
 //!   index.json                        # repo_id -> { path, name, last_accessed }
 //!   repos/                            # DURABLE — never delete to reclaim space
 //!     <repo-id>/
@@ -53,7 +53,7 @@ pub struct RepoIndexEntry {
     pub last_accessed: String,
 }
 
-/// The full repo index stored at `~/.review/index.json`.
+/// The full repo index stored at `~/.spur/index.json`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RepoIndex {
     pub repos: HashMap<String, RepoIndexEntry>,
@@ -65,22 +65,154 @@ pub fn sanitize_path_component(name: &str) -> String {
     name.replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_")
 }
 
-/// The central storage root when nothing overrides it: `~/.review/`.
+/// The central storage root when nothing overrides it: `~/.spur/`.
 ///
 /// Its own function because two questions need it — "where do I store things?"
 /// and "am I the default instance?" ([`open_request_name`]) — and a second
 /// spelling of `.review` is a second answer waiting to drift.
 pub fn default_central_root() -> Result<PathBuf, CentralError> {
     let home = dirs::home_dir().ok_or(CentralError::Home)?;
-    Ok(home.join(".review"))
+    Ok(home.join(".spur"))
+}
+
+/// The home this app used when it was called Review.
+///
+/// Kept for exactly one purpose — moving it aside on first run. Nothing reads
+/// from it, and nothing should: a second live root is a second answer to
+/// "where is my state?".
+const LEGACY_CENTRAL_DIR: &str = ".review";
+
+/// The queue file's name before workspaces got their own noun.
+const LEGACY_WORKSPACES_FILE: &str = "work.json";
+
+/// Move a pre-rename `~/.review` into place as `~/.spur`.
+///
+/// **Call this once, from a binary's startup — never from library code.** It is
+/// a filesystem move, and hanging it off [`get_central_root`] would make every
+/// path lookup destructive: any test that resolves the default home with
+/// `$SPUR_HOME` unset would migrate the developer's own live data out from
+/// under a running app. That is not hypothetical — it is why this is a separate
+/// function rather than a step inside the resolver.
+///
+/// Fires only when `~/.spur` does not exist and `~/.review` does, so a fresh
+/// install and every run after the first both no-op. `rename` is atomic and
+/// same-filesystem by construction (both sit in `$HOME`), so two Spur processes
+/// racing at login end with one winning and the other failing harmlessly — its
+/// precondition, "no `~/.spur`", no longer holds.
+///
+/// Honours `$SPUR_HOME`: an instance pointed somewhere else is not the default
+/// home and has nothing to migrate.
+///
+/// A failure is logged, not fatal. Refusing to start over a directory the user
+/// can move by hand would be the worse trade.
+pub fn migrate_legacy_home() {
+    // Only the default home adopts `~/.review`; an instance pointed elsewhere
+    // is not the app the old one turned into.
+    if std::env::var_os("SPUR_HOME").is_none() {
+        if let (Ok(target), Some(legacy)) = (
+            default_central_root(),
+            dirs::home_dir().map(|h| h.join(LEGACY_CENTRAL_DIR)),
+        ) {
+            adopt_legacy_home(&legacy, &target);
+        }
+    }
+    // Whatever home we ended up with, the queue file inside it may predate the
+    // rename. Runs for a `$SPUR_HOME` dev instance too — that file was written
+    // by the same builds.
+    if let Ok(root) = get_central_root() {
+        adopt_legacy_workspaces_file(&root);
+    }
+}
+
+/// Is a daemon actually serving this home?
+///
+/// Asked by connecting to its socket rather than by probing `daemon.pid`: a
+/// crashed daemon leaves both files behind, and only the connect distinguishes
+/// "still running" from "left a corpse". A refused connection is the answer
+/// that lets migration proceed, which is the right default — the failure worth
+/// preventing is migrating out from under a *live* app.
+fn daemon_is_live(root: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        std::os::unix::net::UnixStream::connect(root.join("daemon.sock")).is_ok()
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = root;
+        false
+    }
+}
+
+/// Move a pre-rename `~/.review` into place as `~/.spur`.
+///
+/// Takes both paths rather than deriving them so the rule can be tested against
+/// temporary directories — the one piece of this file that must never be
+/// exercised against a real `$HOME`.
+fn adopt_legacy_home(legacy: &Path, target: &Path) {
+    if target.exists() {
+        return;
+    }
+    if !legacy.exists() {
+        return;
+    }
+    // The one thing that must never happen: moving the directory out from under
+    // a running Review.app, which then recreates it empty and writes a fresh
+    // queue into the husk. If its daemon is up, the old app is in use — say so
+    // and leave everything alone. The next launch after quitting it migrates.
+    if daemon_is_live(legacy) {
+        log::warn!(
+            "{} is still in use by a running Review app — not migrating. \
+             Quit Review and start Spur again to bring your queue and reviews across.",
+            legacy.display()
+        );
+        return;
+    }
+    match fs::rename(legacy, target) {
+        Ok(()) => log::info!(
+            "Moved {} to {} — the app is Spur now.",
+            legacy.display(),
+            target.display()
+        ),
+        Err(e) => log::warn!(
+            "Could not move {} to {}: {e}. Spur is starting with empty state; \
+             move that directory by hand to keep your queue and reviews.",
+            legacy.display(),
+            target.display()
+        ),
+    }
+}
+
+/// Rename a pre-rename `work.json` to `workspaces.json` inside a home.
+///
+/// Separate from the directory move because the two are independent: a home
+/// that was already `~/.spur` still holds a `work.json`, and a freshly adopted
+/// `~/.review` holds one too.
+fn adopt_legacy_workspaces_file(root: &Path) {
+    let current = root.join("workspaces.json");
+    if current.exists() {
+        return;
+    }
+    let legacy = root.join(LEGACY_WORKSPACES_FILE);
+    if !legacy.exists() {
+        return;
+    }
+    match fs::rename(&legacy, &current) {
+        Ok(()) => log::info!("Renamed {} to {}.", legacy.display(), current.display()),
+        Err(e) => log::warn!(
+            "Could not rename {} to {}: {e}. Spur will start with an empty queue.",
+            legacy.display(),
+            current.display()
+        ),
+    }
 }
 
 /// Return the central storage root.
 ///
-/// Uses `$REVIEW_HOME` if set, otherwise `~/.review/`.
+/// Uses `$SPUR_HOME` if set, otherwise `~/.spur/`. Pure: resolving a path never
+/// touches the filesystem — see [`migrate_legacy_home`].
 pub fn get_central_root() -> Result<PathBuf, CentralError> {
-    if let Ok(review_home) = std::env::var("REVIEW_HOME") {
-        return Ok(PathBuf::from(review_home));
+    if let Ok(spur_home) = std::env::var("SPUR_HOME") {
+        return Ok(PathBuf::from(spur_home));
     }
     default_central_root()
 }
@@ -89,8 +221,8 @@ pub fn get_central_root() -> Result<PathBuf, CentralError> {
 /// compare its events against.
 ///
 /// `notify`/FSEvents deliver *resolved* paths. On macOS `/tmp` is a symlink to
-/// `/private/tmp`, so a `$REVIEW_HOME=/tmp/review-dev` — the documented dev
-/// setup — has its `work.json` arrive as `/private/tmp/review-dev/work.json`,
+/// `/private/tmp`, so a `$SPUR_HOME=/tmp/spur-dev` — the documented dev
+/// setup — has its `workspaces.json` arrive as `/private/tmp/spur-dev/workspaces.json`,
 /// which matches neither the parent-equality nor the `strip_prefix` check in
 /// `categorize_change`. The queue's own saves then read as working-tree edits:
 /// no `work-changed` at all, and a spurious full diff refetch on every one.
@@ -102,11 +234,11 @@ pub fn canonical_central_root() -> Result<PathBuf, CentralError> {
 }
 
 /// The file name both sides of the signal use for the default review home.
-const OPEN_REQUEST_NAME: &str = "review-open-request";
+const OPEN_REQUEST_NAME: &str = "spur-open-request";
 
 /// The CLI→app "open this repo" signal file.
 ///
-/// Scoped per review home: a `$REVIEW_HOME` dev instance and the released app
+/// Scoped per review home: a `$SPUR_HOME` dev instance and the released app
 /// must not be able to steer each other, so a custom home hashes into the file
 /// name. The default home keeps the historical bare name — released binaries
 /// on both sides of the file already agree on it.
@@ -201,20 +333,20 @@ pub fn read_open_request() -> Option<OpenRequest> {
 }
 
 /// Which name this process writes and reads, keyed on the **resolved** review
-/// home rather than on whether `REVIEW_HOME` happens to be set.
+/// home rather than on whether `SPUR_HOME` happens to be set.
 ///
 /// That distinction is the whole of it, and getting it wrong broke `review .`
-/// outright: the app pins `REVIEW_HOME=~/.review` on the daemon it spawns and
+/// outright: the app pins `SPUR_HOME=~/.spur` on the daemon it spawns and
 /// every PTY inherits it, so a shell *inside* the app has the variable set to
 /// the default home. Keyed on "is it set", that shell wrote a hashed name while
-/// Review.app — launched from Finder with no environment at all — went on
+/// Spur.app — launched from Finder with no environment at all — went on
 /// reading the bare one. Two processes pointed at one directory, passing on
 /// different channels.
 ///
 /// Both halves of the comparison run through [`canonical_path`] for the reason
-/// [`canonical_central_root`] documents: `$REVIEW_HOME=/tmp/review-dev` is the
+/// [`canonical_central_root`] documents: `$SPUR_HOME=/tmp/spur-dev` is the
 /// documented dev setup, and on macOS that is the same directory as
-/// `/private/tmp/review-dev`. Spelling a home two ways must not hand its two
+/// `/private/tmp/spur-dev`. Spelling a home two ways must not hand its two
 /// processes two channels either — which also means the hashed name is derived
 /// from the resolved path, so a dev instance's name moves once, on the build
 /// that fixes this.
@@ -337,7 +469,7 @@ pub fn repo_root(repo_path: &Path) -> PathBuf {
 
 /// A repository's name for display ("review", not the full path).
 ///
-/// The sidebar's registry entries and the work queue's refs both name repos
+/// The sidebar's registry entries and the workspace queue's refs both name repos
 /// this way, so they share the derivation rather than each taking `file_name()`
 /// and drifting apart.
 pub fn display_name(repo_path: &Path) -> &str {
@@ -363,7 +495,7 @@ pub fn compute_repo_id(repo_path: &Path) -> Result<String, CentralError> {
 }
 
 /// Get the **durable** storage directory for a specific repo
-/// (`~/.review/repos/<repo-id>/`): review state and `repo.json`. This is the
+/// (`~/.spur/repos/<repo-id>/`): review state and `repo.json`. This is the
 /// precious tier — never delete it to reclaim space.
 pub fn get_repo_storage_dir(repo_path: &Path) -> Result<PathBuf, CentralError> {
     let root = get_central_root()?;
@@ -372,8 +504,8 @@ pub fn get_repo_storage_dir(repo_path: &Path) -> Result<PathBuf, CentralError> {
 }
 
 /// Get the **disposable** cache directory for a specific repo
-/// (`~/.review/cache/<repo-id>/`): reconstructable derived data (parsed hunks,
-/// symbol diffs). Safe to delete at any time — `rm -rf ~/.review/cache` never
+/// (`~/.spur/cache/<repo-id>/`): reconstructable derived data (parsed hunks,
+/// symbol diffs). Safe to delete at any time — `rm -rf ~/.spur/cache` never
 /// touches durable review state. Kept separate from `get_repo_storage_dir` so
 /// the two tiers can be cleared independently.
 pub fn get_repo_cache_dir(repo_path: &Path) -> Result<PathBuf, CentralError> {
@@ -384,7 +516,7 @@ pub fn get_repo_cache_dir(repo_path: &Path) -> Result<PathBuf, CentralError> {
 
 /// Get the base directory for review-managed worktrees for a given repo.
 ///
-/// Returns `~/.review/worktrees/<repo-hash>/`.
+/// Returns `~/.spur/worktrees/<repo-hash>/`.
 pub fn get_worktree_base_dir(repo_path: &Path) -> Result<PathBuf, CentralError> {
     let root = get_central_root()?;
     let repo_id = compute_repo_id(repo_path)?;
@@ -418,7 +550,7 @@ fn prune_duplicate_paths(index: &mut RepoIndex) -> bool {
 
 /// Load the global repo index, straight off disk.
 ///
-/// Deliberately uncached. `~/.review/` is written by the app, the CLI and the
+/// Deliberately uncached. `~/.spur/` is written by the app, the CLI and the
 /// daemon at once, so any in-memory copy has to be checked against the file
 /// before it can be trusted — and once you are stat-ing on every call, the cache
 /// is only saving the parse of a small JSON document. Worse, a copy that went
@@ -565,7 +697,7 @@ pub fn unregister_repo(repo_path: &Path) -> Result<(), CentralError> {
 /// surface calls this a repo" can never disagree.
 ///
 /// A `.git` entry rather than `git rev-parse`, for two reasons: this is asked
-/// per attachment on every read of the work queue, and the paths it is asked
+/// per attachment on every read of the workspace queue, and the paths it is asked
 /// about are already [`repo_root`]-normalized, so the cheap answer and the
 /// honest one are the same one. `LocalGitSource::new` draws the line in the same
 /// place, which is what makes "registered" and "diffable" the same set.
@@ -583,7 +715,7 @@ pub fn register_repo_if_valid(repo_path: &Path) -> Result<bool, CentralError> {
     Ok(true)
 }
 
-use super::state::now_iso8601;
+use crate::review::state::now_iso8601;
 
 #[cfg(test)]
 pub(crate) mod tests {
@@ -591,47 +723,139 @@ pub(crate) mod tests {
     use std::sync::Mutex;
     use tempfile::TempDir;
 
-    /// Mutex to serialize tests that modify REVIEW_HOME env var.
+    /// The rule that matters most: a live daemon in the legacy home means a
+    /// running Review app, and migrating out from under it leaves that app
+    /// writing a fresh queue into a husk. Asserted with a real listener, since
+    /// the guard is a real connect.
+    #[test]
+    #[cfg(unix)]
+    fn a_live_legacy_daemon_blocks_the_move() {
+        let tmp = TempDir::new().unwrap();
+        let legacy = tmp.path().join(".review");
+        let target = tmp.path().join(".spur");
+        fs::create_dir_all(&legacy).unwrap();
+        fs::write(legacy.join("workspaces.json"), "{}").unwrap();
+
+        let _listener = std::os::unix::net::UnixListener::bind(legacy.join("daemon.sock")).unwrap();
+
+        adopt_legacy_home(&legacy, &target);
+
+        assert!(legacy.exists(), "legacy home must be left alone");
+        assert!(!target.exists(), "nothing should have been created");
+    }
+
+    /// A crashed daemon leaves its socket file behind. Nobody is listening, so
+    /// the connect is refused and migration proceeds.
+    #[test]
+    fn a_stale_socket_does_not_block_the_move() {
+        let tmp = TempDir::new().unwrap();
+        let legacy = tmp.path().join(".review");
+        let target = tmp.path().join(".spur");
+        fs::create_dir_all(&legacy).unwrap();
+        fs::write(legacy.join("daemon.sock"), "not a socket").unwrap();
+        fs::write(legacy.join("workspaces.json"), r#"{"v":1}"#).unwrap();
+
+        adopt_legacy_home(&legacy, &target);
+
+        assert!(!legacy.exists());
+        assert_eq!(
+            fs::read_to_string(target.join("workspaces.json")).unwrap(),
+            r#"{"v":1}"#
+        );
+    }
+
+    /// An existing `~/.spur` is the live home; a leftover `~/.review` beside it
+    /// is not a reason to overwrite anything.
+    #[test]
+    fn an_existing_home_is_never_overwritten() {
+        let tmp = TempDir::new().unwrap();
+        let legacy = tmp.path().join(".review");
+        let target = tmp.path().join(".spur");
+        fs::create_dir_all(&legacy).unwrap();
+        fs::create_dir_all(&target).unwrap();
+        fs::write(target.join("workspaces.json"), "keep me").unwrap();
+
+        adopt_legacy_home(&legacy, &target);
+
+        assert!(legacy.exists());
+        assert_eq!(
+            fs::read_to_string(target.join("workspaces.json")).unwrap(),
+            "keep me"
+        );
+    }
+
+    #[test]
+    fn work_json_becomes_workspaces_json() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("work.json"), r#"{"workspaces":[]}"#).unwrap();
+
+        adopt_legacy_workspaces_file(tmp.path());
+
+        assert!(!tmp.path().join("work.json").exists());
+        assert_eq!(
+            fs::read_to_string(tmp.path().join("workspaces.json")).unwrap(),
+            r#"{"workspaces":[]}"#
+        );
+    }
+
+    /// Both files present means a newer build already wrote one. The new name
+    /// wins and the old file is left for the user to delete.
+    #[test]
+    fn an_existing_workspaces_file_wins_over_the_legacy_one() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("work.json"), "old").unwrap();
+        fs::write(tmp.path().join("workspaces.json"), "new").unwrap();
+
+        adopt_legacy_workspaces_file(tmp.path());
+
+        assert_eq!(
+            fs::read_to_string(tmp.path().join("workspaces.json")).unwrap(),
+            "new"
+        );
+        assert!(tmp.path().join("work.json").exists());
+    }
+
+    /// Mutex to serialize tests that modify SPUR_HOME env var.
     /// Also used by storage::tests and local_git::tests.
     pub static ENV_LOCK: Mutex<()> = Mutex::new(());
 
-    /// Guard that restores REVIEW_HOME on drop (even on panic).
+    /// Guard that restores SPUR_HOME on drop (even on panic).
     pub struct EnvGuard;
     impl Drop for EnvGuard {
         fn drop(&mut self) {
-            std::env::remove_var("REVIEW_HOME");
+            std::env::remove_var("SPUR_HOME");
         }
     }
 
-    /// Create a REVIEW_HOME temp dir and a fake repo temp dir.
-    /// Returns (env_guard, review_home, repo_dir) — all kept alive.
+    /// Create a SPUR_HOME temp dir and a fake repo temp dir.
+    /// Returns (env_guard, spur_home, repo_dir) — all kept alive.
     /// Caller MUST hold ENV_LOCK.
     pub fn setup_test() -> (EnvGuard, TempDir, TempDir) {
-        let review_home = TempDir::new().unwrap();
-        std::env::set_var("REVIEW_HOME", review_home.path());
+        let spur_home = TempDir::new().unwrap();
+        std::env::set_var("SPUR_HOME", spur_home.path());
         let repo_dir = TempDir::new().unwrap();
-        (EnvGuard, review_home, repo_dir)
+        (EnvGuard, spur_home, repo_dir)
     }
 
     /// The CLI and the app find each other through a file in `$TMPDIR`, so they
     /// have to agree on its name from two very different environments: a shell
-    /// inside the app (which inherits `REVIEW_HOME=~/.review` from the daemon
-    /// the app spawned) and Review.app launched from Finder (which inherits
+    /// inside the app (which inherits `SPUR_HOME=~/.spur` from the daemon
+    /// the app spawned) and Spur.app launched from Finder (which inherits
     /// nothing). Same home, same channel — whatever the environment says.
     #[test]
     fn the_open_request_name_is_keyed_on_the_resolved_home() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let default_home = dirs::home_dir().unwrap().join(".review");
+        let default_home = dirs::home_dir().unwrap().join(".spur");
 
-        // Finder's Review.app: no REVIEW_HOME at all.
-        std::env::remove_var("REVIEW_HOME");
+        // Finder's Spur.app: no SPUR_HOME at all.
+        std::env::remove_var("SPUR_HOME");
         let bare = open_request_name();
         assert_eq!(bare, OPEN_REQUEST_NAME);
 
-        // A shell inside the app: REVIEW_HOME set, but set to the *default*
+        // A shell inside the app: SPUR_HOME set, but set to the *default*
         // home. Keying on "is it set" gave this one a private channel and broke
         // `review .` for everybody.
-        std::env::set_var("REVIEW_HOME", &default_home);
+        std::env::set_var("SPUR_HOME", &default_home);
         let _guard = EnvGuard;
         assert_eq!(
             open_request_name(),
@@ -642,25 +866,25 @@ pub(crate) mod tests {
         // A genuinely separate instance keeps its own channel, which is what
         // the hashing is for.
         let dev = TempDir::new().unwrap();
-        std::env::set_var("REVIEW_HOME", dev.path());
+        std::env::set_var("SPUR_HOME", dev.path());
         let dev_name = open_request_name();
         assert_ne!(dev_name, bare);
         assert!(dev_name.starts_with(OPEN_REQUEST_NAME));
 
         // …and two spellings of that one home are one channel. On macOS every
         // temp path has two (`/var` is a symlink to `/private/var`), and
-        // `$REVIEW_HOME=/tmp/review-dev` is the documented dev setup, so a CLI
+        // `$SPUR_HOME=/tmp/spur-dev` is the documented dev setup, so a CLI
         // and an app that spelled it differently would otherwise never meet.
         let canonical = dev.path().canonicalize().unwrap();
         assert_ne!(canonical, dev.path(), "the test needs two spellings");
-        std::env::set_var("REVIEW_HOME", &canonical);
+        std::env::set_var("SPUR_HOME", &canonical);
         assert_eq!(open_request_name(), dev_name);
     }
 
     /// The CLI writes this file and the app reads it, so the format has exactly
     /// one test worth writing: what one end put in comes out at the other.
     ///
-    /// Isolated by `REVIEW_HOME` rather than by `TMPDIR`: a custom home hashes
+    /// Isolated by `SPUR_HOME` rather than by `TMPDIR`: a custom home hashes
     /// into the file name (see [`open_request_name`]), which is enough to keep
     /// the test clear of any real instance, and `TMPDIR` is read by every
     /// `TempDir::new` in the suite — including in tests that take no lock.
@@ -715,11 +939,11 @@ pub(crate) mod tests {
         let link = link_dir.path().join("review-home");
         std::os::unix::fs::symlink(real.path(), &link).unwrap();
 
-        std::env::set_var("REVIEW_HOME", &link);
+        std::env::set_var("SPUR_HOME", &link);
         let _guard = EnvGuard;
 
         // The watchers compare against paths the OS hands back, and those are
-        // resolved — on macOS a REVIEW_HOME under /tmp arrives as /private/tmp.
+        // resolved — on macOS a SPUR_HOME under /tmp arrives as /private/tmp.
         assert_eq!(get_central_root().unwrap(), link);
         assert_eq!(
             canonical_central_root().unwrap(),
@@ -731,7 +955,7 @@ pub(crate) mod tests {
     fn canonical_central_root_falls_back_when_the_root_is_absent() {
         let _lock = ENV_LOCK.lock().unwrap();
         let missing = "/nonexistent-review-home-for-tests";
-        std::env::set_var("REVIEW_HOME", missing);
+        std::env::set_var("SPUR_HOME", missing);
         let _guard = EnvGuard;
 
         assert_eq!(canonical_central_root().unwrap(), PathBuf::from(missing));
@@ -811,16 +1035,16 @@ pub(crate) mod tests {
     #[test]
     fn test_get_central_root_with_env() {
         let _lock = ENV_LOCK.lock().unwrap();
-        std::env::set_var("REVIEW_HOME", "/tmp/test-review");
+        std::env::set_var("SPUR_HOME", "/tmp/test-review");
         let root = get_central_root().unwrap();
         assert_eq!(root, PathBuf::from("/tmp/test-review"));
-        std::env::remove_var("REVIEW_HOME");
+        std::env::remove_var("SPUR_HOME");
     }
 
     #[test]
     fn test_register_and_list_repos() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, repo_dir) = setup_test();
+        let (_env, _spur_home, repo_dir) = setup_test();
         register_repo(repo_dir.path()).unwrap();
 
         let repos = list_registered_repos().unwrap();
@@ -830,7 +1054,7 @@ pub(crate) mod tests {
     #[test]
     fn test_empty_index() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, _repo_dir) = setup_test();
+        let (_env, _spur_home, _repo_dir) = setup_test();
         let repos = list_registered_repos().unwrap();
         assert!(repos.is_empty());
     }
@@ -838,7 +1062,7 @@ pub(crate) mod tests {
     #[test]
     fn test_repo_storage_dir_structure() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, repo_dir) = setup_test();
+        let (_env, _spur_home, repo_dir) = setup_test();
         register_repo(repo_dir.path()).unwrap();
 
         let storage_dir = get_repo_storage_dir(repo_dir.path()).unwrap();

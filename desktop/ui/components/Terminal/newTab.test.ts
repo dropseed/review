@@ -6,7 +6,7 @@ vi.mock("../../api", () => ({
 }));
 
 import { openTerminalTab } from "./newTab";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { attachment, workspace as makeWorkspace } from "../../test/fixtures";
 
 const REPO = "/repo";
@@ -20,7 +20,7 @@ const started: {
 }[] = [];
 
 function stubStartTerminal(id: string | null = "session-1"): void {
-  useReviewStore.setState({
+  useSpurStore.setState({
     startTerminal: async (repoPath, cwd, _cols, _rows, _shell, workspaceId) => {
       started.push({ repoPath, cwd, workspaceId });
       return id;
@@ -54,7 +54,7 @@ function branch(
 }
 
 function seedActivity(branches: LocalBranchInfo[]): void {
-  useReviewStore.setState({
+  useSpurStore.setState({
     localActivity: [
       {
         repoPath: REPO,
@@ -69,7 +69,7 @@ function seedActivity(branches: LocalBranchInfo[]): void {
 
 afterEach(() => {
   started.length = 0;
-  useReviewStore.setState({
+  useSpurStore.setState({
     localActivity: [],
     repoPath: null,
     reviewRef: null,
@@ -89,7 +89,7 @@ describe("where a workspace's terminal starts", () => {
   it("never inherits the previous workspace's checkout", async () => {
     stubStartTerminal();
     // The screen is still showing another workspace's review.
-    useReviewStore.setState({ repoPath: OTHER, reviewRef: "main" });
+    useSpurStore.setState({ repoPath: OTHER, reviewRef: "main" });
 
     await openTerminalTab(workspace([]));
 
@@ -138,7 +138,7 @@ describe("where a workspace's terminal starts", () => {
   it("falls back to the repo root for an unmaterialized branch elsewhere", async () => {
     stubStartTerminal();
     seedActivity([branch("dormant")]);
-    useReviewStore.setState({ repoPath: OTHER, reviewRef: "main" });
+    useSpurStore.setState({ repoPath: OTHER, reviewRef: "main" });
 
     await openTerminalTab(workspace([attachment(REPO, "dormant")]));
 
@@ -152,7 +152,7 @@ describe("where a workspace's terminal starts", () => {
    */
   it("starts in a ref-less tab's own directory", async () => {
     stubStartTerminal();
-    useReviewStore.setState({ repoPath: OTHER, reviewRef: "main" });
+    useSpurStore.setState({ repoPath: OTHER, reviewRef: "main" });
 
     await openTerminalTab(workspace([attachment("/tmp/scratch")]));
 
@@ -170,7 +170,7 @@ describe("where a workspace's terminal starts", () => {
   it("follows the repo tab that is on screen", async () => {
     stubStartTerminal();
     seedActivity([branch("feature", { isCurrent: true })]);
-    useReviewStore.setState({
+    useSpurStore.setState({
       activeReviewKey: { repoPath: REPO, ref: "feature" },
     });
 
@@ -201,7 +201,7 @@ describe("where a workspace's terminal starts", () => {
    */
   it("names no directory when no workspace is focused", async () => {
     stubStartTerminal();
-    useReviewStore.setState({ repoPath: REPO, reviewRef: null });
+    useSpurStore.setState({ repoPath: REPO, reviewRef: null });
 
     await openTerminalTab();
 
@@ -223,7 +223,7 @@ describe("where a workspace's terminal starts", () => {
 describe("what starting a terminal puts on screen", () => {
   it("gives the terminal half of a code-focused stage back", async () => {
     stubStartTerminal();
-    useReviewStore.setState({ contentFocus: "code" });
+    useSpurStore.setState({ contentFocus: "code" });
 
     await openTerminalTab(workspace([]));
 
@@ -231,26 +231,26 @@ describe("what starting a terminal puts on screen", () => {
     // here: `codePushed` reads "split" as the code screen popped — the
     // terminal, which is where a new shell belongs — and writing "terminal"
     // instead would edit the layout the desktop chose.
-    expect(useReviewStore.getState().contentFocus).toBe("split");
+    expect(useSpurStore.getState().contentFocus).toBe("split");
   });
 
   it("leaves a stage that already shows the terminal alone", async () => {
     stubStartTerminal();
-    useReviewStore.setState({ contentFocus: "terminal" });
+    useSpurStore.setState({ contentFocus: "terminal" });
 
     await openTerminalTab(workspace([]));
 
     // ⌘T from inside a maximized shell must not rearrange the stage.
-    expect(useReviewStore.getState().contentFocus).toBe("terminal");
+    expect(useSpurStore.getState().contentFocus).toBe("terminal");
   });
 
   it("stays put when nothing started", async () => {
     stubStartTerminal(null);
-    useReviewStore.setState({ contentFocus: "code" });
+    useSpurStore.setState({ contentFocus: "code" });
 
     await openTerminalTab(workspace([]));
 
-    expect(useReviewStore.getState().contentFocus).toBe("code");
+    expect(useSpurStore.getState().contentFocus).toBe("code");
   });
 
   /**
@@ -260,11 +260,11 @@ describe("what starting a terminal puts on screen", () => {
    */
   it("stays put for a caller whose gesture was not about the terminal", async () => {
     stubStartTerminal();
-    useReviewStore.setState({ contentFocus: "code" });
+    useSpurStore.setState({ contentFocus: "code" });
 
     await openTerminalTab(workspace([]), null, { reveal: false });
 
-    expect(useReviewStore.getState().contentFocus).toBe("code");
+    expect(useSpurStore.getState().contentFocus).toBe("code");
     expect(started).toHaveLength(1);
   });
 });

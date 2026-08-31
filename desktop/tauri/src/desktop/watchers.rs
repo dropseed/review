@@ -6,11 +6,11 @@
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use notify::RecursiveMode;
 use notify_debouncer_mini::{new_debouncer, DebouncedEventKind};
-use review::service::activity_cache::RefreshTrigger;
-use review::service::watcher_events::{
+use spur::service::activity_cache::RefreshTrigger;
+use spur::service::watcher_events::{
     categorize_change, is_git_state_path, ChangeKind, GitChangedPayload,
 };
-use review::service::{EVENT_REPO_ACTIVITY_CHANGED, EVENT_WORK_CHANGED};
+use spur::service::{EVENT_REPO_ACTIVITY_CHANGED, EVENT_WORKSPACES_CHANGED};
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -34,7 +34,7 @@ const EVENT_GIT_INDEX_LOCK: &str = "git-index-lock";
 fn log_to_file(repo_path: &Path, message: &str) {
     use std::io::Write;
 
-    let log_path = if let Ok(dir) = review::review::central::get_repo_storage_dir(repo_path) {
+    let log_path = if let Ok(dir) = spur::home::get_repo_storage_dir(repo_path) {
         dir.join("app.log")
     } else {
         return;
@@ -149,14 +149,13 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
     // Needed to categorize paths; this watcher is scoped to the repo, so it
     // never actually sees a central-root path — passing it keeps both surfaces
     // on one set of rules rather than two.
-    let central_root_for_closure =
-        review::review::central::canonical_central_root().unwrap_or_default();
+    let central_root_for_closure = spur::home::canonical_central_root().unwrap_or_default();
 
     // The lock state we last told the frontend about. `index.lock` is created
     // and removed constantly by ordinary git, and the debouncer coalesces both
     // halves of a short write into one batch — so we report transitions only,
     // and a batch that leaves the lock where it was says nothing.
-    let mut last_locked = review::service::watcher_events::index_is_locked(&repo_path_buf);
+    let mut last_locked = spur::service::watcher_events::index_is_locked(&repo_path_buf);
 
     let mut debouncer = new_debouncer(
         Duration::from_millis(WATCHER_DEBOUNCE_MS),
@@ -205,7 +204,7 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
                                 ChangeKind::GitState => "GitState",
                                 ChangeKind::IndexLock => "IndexLock",
                                 ChangeKind::WorkingTree => "WorkingTree",
-                                ChangeKind::WorkQueue => "WorkQueue",
+                                ChangeKind::Workspaces => "Workspaces",
                                 ChangeKind::Ignored => "Ignored",
                             };
                             log_to_file(
@@ -226,7 +225,7 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
                             }
                             ChangeKind::WorkingTree => {
                                 working_tree_changed = true;
-                                let rel = review::service::util::repo_relative_path(
+                                let rel = spur::service::util::repo_relative_path(
                                     &event.path,
                                     &repo_path_for_closure,
                                 );
@@ -236,7 +235,7 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
                             }
                             // The dedicated work-queue watcher owns this; a
                             // repo watcher never sees the central root.
-                            ChangeKind::WorkQueue | ChangeKind::Ignored => {}
+                            ChangeKind::Workspaces | ChangeKind::Ignored => {}
                         }
                     }
 
@@ -264,7 +263,7 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
                     // Stat the lock rather than trusting the events: a batch
                     // can hold its creation and its removal both.
                     if index_lock_changed {
-                        let locked = review::service::watcher_events::index_is_locked(
+                        let locked = spur::service::watcher_events::index_is_locked(
                             &repo_path_for_closure,
                         );
                         if locked != last_locked {
@@ -274,7 +273,7 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
                             );
                             let _ = app_clone.emit(
                                 EVENT_GIT_INDEX_LOCK,
-                                &review::service::watcher_events::GitIndexLockPayload {
+                                &spur::service::watcher_events::GitIndexLockPayload {
                                     repo_path: repo_for_closure.clone(),
                                     locked,
                                 },
@@ -287,7 +286,7 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
                         review_changed,
                         working_tree_changed,
                     ) {
-                        review::service::activity_cache::refresh_and_emit(
+                        spur::service::activity_cache::refresh_and_emit(
                             &repo_for_closure,
                             trigger,
                             |payload| {
@@ -315,10 +314,10 @@ pub fn start_watching(repo_path: &str, app: AppHandle) -> Result<(), String> {
     // only created when a review is first saved — so create it up front rather
     // than skipping it. Skipping left repos that had never been reviewed with
     // no `review-state-changed` events for the whole session, which meant CLI
-    // writes (`review approve`, `review guide add`) never reached the app.
+    // writes (`spur approve`, `spur guide add`) never reached the app.
     // Watching the shared parent instead isn't an option: it holds every
     // repo's state, and the frontend keys these events by repo path.
-    if let Ok(central_dir) = review::review::central::get_repo_storage_dir(&repo_path_buf) {
+    if let Ok(central_dir) = spur::home::get_repo_storage_dir(&repo_path_buf) {
         match std::fs::create_dir_all(&central_dir) {
             Ok(()) => {
                 debouncer
@@ -404,7 +403,7 @@ fn build_local_activity_watcher(
                 if !any_meaningful {
                     return;
                 }
-                review::service::activity_cache::refresh_and_emit(
+                spur::service::activity_cache::refresh_and_emit(
                     &repo_path_for_closure,
                     RefreshTrigger::GitState,
                     |payload| {
@@ -471,7 +470,7 @@ pub fn start_local_activity_watcher_for(repo_path: &str, app: AppHandle) -> Resu
     if map.contains_key(repo_path) {
         return Ok(());
     }
-    if !review::review::central::is_registered(&PathBuf::from(repo_path)).unwrap_or(false) {
+    if !spur::home::is_registered(&PathBuf::from(repo_path)).unwrap_or(false) {
         return Ok(());
     }
     map.insert(key, handle);
@@ -485,43 +484,42 @@ pub fn stop_local_activity_watcher(repo_path: &str) {
     if let Some(ref mut map) = *watchers {
         map.remove(&local_activity_key(repo_path));
     }
-    review::service::activity_cache::invalidate(&PathBuf::from(repo_path));
+    spur::service::activity_cache::invalidate(&PathBuf::from(repo_path));
 }
 
-/// Watch the global work queue (`~/.review/work.json`) and emit `work-changed`
-/// so `review workspace ...` edits — and edits from another window — land live.
+/// Watch the global workspace queue (`~/.spur/workspaces.json`) and emit `work-changed`
+/// so `spur workspace ...` edits — and edits from another window — land live.
 ///
 /// One watcher for the whole app, not one per repo: the queue is cross-repo and
 /// lives at the central root, not under `repos/<repo-id>/`, so no repo watcher
 /// covers it. The watch is on the root directory (`notify` can't watch a file
 /// that doesn't exist yet, and the atomic temp+rename write replaces the inode
-/// on every save); `categorize_change` picks `work.json` out of everything else
+/// on every save); `categorize_change` picks `workspaces.json` out of everything else
 /// the root holds, using the same rules as the Axum watcher.
 pub fn start_work_watcher(app: AppHandle) -> Result<(), String> {
-    let work_file = review::work::storage::work_path().map_err(|e| e.to_string())?;
-    let root = work_file
+    let workspaces_file = spur::workspace::storage::workspaces_path().map_err(|e| e.to_string())?;
+    let root = workspaces_file
         .parent()
-        .ok_or("The work queue path has no parent directory")?
+        .ok_or("The workspace queue path has no parent directory")?
         .to_path_buf();
     std::fs::create_dir_all(&root)
         .map_err(|e| format!("Failed to create central storage dir: {e}"))?;
 
     // Canonical only for the comparison — the events come back from the OS with
-    // every symlink resolved, and a `$REVIEW_HOME` under macOS's `/tmp` is one.
+    // every symlink resolved, and a `$SPUR_HOME` under macOS's `/tmp` is one.
     // The watch itself stays on the path we were given.
-    let root_for_closure =
-        review::review::central::canonical_central_root().unwrap_or_else(|_| root.clone());
+    let root_for_closure = spur::home::canonical_central_root().unwrap_or_else(|_| root.clone());
     let mut debouncer = new_debouncer(
         Duration::from_millis(WATCHER_DEBOUNCE_MS),
         move |result: Result<Vec<notify_debouncer_mini::DebouncedEvent>, notify::Error>| {
             if let Ok(events) = result {
                 let queue_changed = events.iter().any(|e| {
                     categorize_change(&e.path.to_string_lossy(), &root_for_closure)
-                        == ChangeKind::WorkQueue
+                        == ChangeKind::Workspaces
                 });
                 if queue_changed {
-                    log::info!("[watcher] Work queue changed");
-                    let _ = app.emit(EVENT_WORK_CHANGED, ());
+                    log::info!("[watcher] Workspace queue changed");
+                    let _ = app.emit(EVENT_WORKSPACES_CHANGED, ());
                 }
             }
         },
@@ -531,12 +529,15 @@ pub fn start_work_watcher(app: AppHandle) -> Result<(), String> {
     debouncer
         .watcher()
         .watch(&root, RecursiveMode::NonRecursive)
-        .map_err(|e| format!("Failed to watch the work queue: {e}"))?;
+        .map_err(|e| format!("Failed to watch the workspace queue: {e}"))?;
 
     *WORK_WATCHER.lock().expect("WORK_WATCHER mutex poisoned") = Some(WatcherHandle {
         _debouncer: debouncer,
     });
-    log::info!("[watcher] Started work queue watcher on {}", root.display());
+    log::info!(
+        "[watcher] Started workspace queue watcher on {}",
+        root.display()
+    );
     Ok(())
 }
 
@@ -546,7 +547,7 @@ pub fn start_work_watcher(app: AppHandle) -> Result<(), String> {
 pub fn start_local_activity_watchers(app: AppHandle) -> Result<(), String> {
     init_watchers();
 
-    let repos = review::review::central::list_registered_repos().map_err(|e| e.to_string())?;
+    let repos = spur::home::list_registered_repos().map_err(|e| e.to_string())?;
     let mut started = 0usize;
 
     for repo_entry in repos {

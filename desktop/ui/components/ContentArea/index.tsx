@@ -1,5 +1,5 @@
 import { type ReactNode, useRef, useCallback, lazy, Suspense } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { FileViewer } from "../FileViewer";
 import { LoadingState } from "../ui/loading-state";
 import { ResizeHandle } from "./ResizeHandle";
@@ -51,7 +51,7 @@ function NoFileSelected(): ReactNode {
  * waiting on and shows nothing else.
  */
 function LoadingComparison(): ReactNode {
-  const head = useReviewStore((s) => s.comparison?.head);
+  const head = useSpurStore((s) => s.comparison?.head);
   return (
     <div className="flex h-full items-center justify-center">
       <div className="max-w-xs -translate-y-[8vh] text-center">
@@ -73,7 +73,7 @@ function LoadingComparison(): ReactNode {
  */
 function DefaultContent({ narrow }: { narrow: boolean }): ReactNode {
   const group = useNeedsReviewDefaultGroup();
-  const loading = useReviewStore((s) => s.loadingProgress !== null);
+  const loading = useSpurStore((s) => s.loadingProgress !== null);
   if (loading) {
     return <LoadingComparison />;
   }
@@ -93,30 +93,30 @@ interface ContentAreaProps {
 }
 
 export function ContentArea({ narrow = false }: ContentAreaProps): ReactNode {
-  const selectedFile = useReviewStore((s) => s.selectedFile);
-  const externalFilePath = useReviewStore((s) => s.externalFilePath);
-  const secondaryFile = useReviewStore((s) => s.secondaryFile);
-  const focusedPane = useReviewStore((s) => s.focusedPane);
-  const splitOrientation = useReviewStore((s) => s.splitOrientation);
-  const guideContentMode = useReviewStore((s) => s.guideContentMode);
-  const workingTreeMultiView = useReviewStore((s) => s.workingTreeMultiView);
-  const searchViewOpen = useReviewStore((s) => s.searchViewOpen);
-  const setFocusedPane = useReviewStore((s) => s.setFocusedPane);
+  const selectedFile = useSpurStore((s) => s.selectedFile);
+  const externalFilePath = useSpurStore((s) => s.externalFilePath);
+  const secondaryFile = useSpurStore((s) => s.secondaryFile);
+  const focusedPane = useSpurStore((s) => s.focusedPane);
+  const splitOrientation = useSpurStore((s) => s.splitOrientation);
+  const guideContentMode = useSpurStore((s) => s.guideContentMode);
+  const workingTreeMultiView = useSpurStore((s) => s.workingTreeMultiView);
+  const searchViewOpen = useSpurStore((s) => s.searchViewOpen);
+  const setFocusedPane = useSpurStore((s) => s.setFocusedPane);
 
   // When viewing an external file (from LSP go-to-definition), use that path
   const effectiveFile = externalFilePath ?? selectedFile;
   // Split size as a fraction (0.5 = 50/50 split). A fraction rather than px
   // because the two panes are peers dividing one region — the same split reads
   // correctly on an ultrawide and on a laptop with no conversion.
-  const splitFraction = useReviewStore((s) => s.diffSplitFraction);
-  const setSplitFraction = useReviewStore((s) => s.setDiffSplitFraction);
+  const splitFraction = useSpurStore((s) => s.diffSplitFraction);
+  const setSplitFraction = useSpurStore((s) => s.setDiffSplitFraction);
 
   // Double-click evens the split out; double-clicking again restores the
   // lopsided one you had, so the gesture is its own undo.
   const rememberedSplit = useRef<number | null>(null);
   const handleSplitReset = useCallback(() => {
     const { next, remember } = toggleToCanonical(
-      useReviewStore.getState().diffSplitFraction,
+      useSpurStore.getState().diffSplitFraction,
       0.5,
       rememberedSplit.current,
       0.5,

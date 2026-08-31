@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { readContextKeys } from "./contextKeys";
 import { getCommandUi } from "./host";
 import { getAllCommands } from "./registry";
@@ -9,7 +9,7 @@ import type { CommandContext } from "./types";
 /** Build the context a command is evaluated and run against, right now. */
 export function buildCommandContext(): CommandContext {
   return {
-    store: useReviewStore.getState(),
+    store: useSpurStore.getState(),
     keys: readContextKeys(),
     ui: getCommandUi(),
   };

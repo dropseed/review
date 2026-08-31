@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { useReviewStore } from "../../../stores";
+import { useSpurStore } from "../../../stores";
 import { useStoreRevision } from "../../../stores/selectors/overlay";
 import {
   scoreCandidate,
@@ -61,7 +61,7 @@ export function useCommandSource(
   query: string,
   active: boolean,
 ): PaletteSource<Entry> {
-  const closeOverlay = useReviewStore((s) => s.closeOverlay);
+  const closeOverlay = useSpurStore((s) => s.closeOverlay);
   useCommandRegistryVersion();
   useStoreRevision();
 

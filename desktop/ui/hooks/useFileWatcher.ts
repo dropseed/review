@@ -2,24 +2,24 @@ import type { MutableRefObject } from "react";
 import { useEffect, useRef } from "react";
 import { getApiClient } from "../api";
 import { shouldIgnoreReviewStateReload } from "../stores/slices/reviewSlice";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 
 /**
  * Manages file watcher lifecycle and listens for review state/git change events.
  */
 export function useFileWatcher(comparisonReady: number) {
-  const repoPath = useReviewStore((s) => s.repoPath);
-  const loadReviewState = useReviewStore((s) => s.loadReviewState);
-  const applyWatcherEvent = useReviewStore((s) => s.applyWatcherEvent);
-  const loadGlobalReviews = useReviewStore((s) => s.loadGlobalReviews);
-  const checkReviewsFreshness = useReviewStore((s) => s.checkReviewsFreshness);
-  const activeReviewKey = useReviewStore((s) => s.activeReviewKey);
-  const comparison = useReviewStore((s) => s.comparison);
-  const setActiveReviewKey = useReviewStore((s) => s.setActiveReviewKey);
-  const isStandaloneFile = useReviewStore((s) => s.isStandaloneFile);
-  const loadRepoFiles = useReviewStore((s) => s.loadRepoFiles);
-  const loadCurrentBranch = useReviewStore((s) => s.loadCurrentBranch);
-  const restoreGuideFromState = useReviewStore((s) => s.restoreGuideFromState);
+  const repoPath = useSpurStore((s) => s.repoPath);
+  const loadReviewState = useSpurStore((s) => s.loadReviewState);
+  const applyWatcherEvent = useSpurStore((s) => s.applyWatcherEvent);
+  const loadGlobalReviews = useSpurStore((s) => s.loadGlobalReviews);
+  const checkReviewsFreshness = useSpurStore((s) => s.checkReviewsFreshness);
+  const activeReviewKey = useSpurStore((s) => s.activeReviewKey);
+  const comparison = useSpurStore((s) => s.comparison);
+  const setActiveReviewKey = useSpurStore((s) => s.setActiveReviewKey);
+  const isStandaloneFile = useSpurStore((s) => s.isStandaloneFile);
+  const loadRepoFiles = useSpurStore((s) => s.loadRepoFiles);
+  const loadCurrentBranch = useSpurStore((s) => s.loadCurrentBranch);
+  const restoreGuideFromState = useSpurStore((s) => s.restoreGuideFromState);
 
   // Use refs to avoid stale closures in event handlers
   const repoPathRef = useRef(repoPath);
@@ -132,7 +132,7 @@ export function useFileWatcher(comparisonReady: number) {
 
     // The guide surfaces (banner, guide-mode panel) read a cache derived from
     // the review state rather than the state itself, so reloading alone leaves
-    // them showing the previous guide — an agent's `review guide add` wouldn't
+    // them showing the previous guide — an agent's `spur guide add` wouldn't
     // appear until some unrelated git change forced a full refresh. Reconcile
     // only once the load has resolved, or we'd derive from the stale state.
     const reloadReviewState = async () => {
@@ -319,7 +319,7 @@ export function useFileWatcher(comparisonReady: number) {
       apiClient.onGitIndexLock((payload) => {
         if (payload.repoPath !== repoPathRef.current) return;
         console.log(`[watcher] git-index-lock (locked=${payload.locked})`);
-        useReviewStore.getState().setIndexLocked(payload.locked);
+        useSpurStore.getState().setIndexLocked(payload.locked);
       }),
     );
 

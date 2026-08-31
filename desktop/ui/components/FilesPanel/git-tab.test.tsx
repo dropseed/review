@@ -14,11 +14,11 @@ vi.mock("../../platform", () => ({
 }));
 
 import { useGitTab } from "./hooks/useFilePanelNavigation";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { makeComparison } from "../../types";
 
 function seed(state: Record<string, unknown>): void {
-  useReviewStore.setState({
+  useSpurStore.setState({
     gitStatus: null,
     comparison: null,
     isStandaloneFile: false,

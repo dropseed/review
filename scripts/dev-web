@@ -3,7 +3,7 @@
 #
 # Both halves run as background jobs in their own process groups so cleanup can
 # kill the *group*. The processes started here are not the ones holding the
-# ports — `cargo run` spawns a child `review-server`, `npx vite` a child `node
+# ports — `cargo run` spawns a child `spur-server`, `npx vite` a child `node
 # vite` — so killing the job leader alone leaves the real server running. That
 # is how a Vite from a previous session ends up squatting on :1420 for days:
 # `strictPort` then kills every later run at startup, `wait` keeps the script
@@ -55,11 +55,11 @@ reclaim_port() {
     fi
 }
 
-reclaim_port "$SERVER_PORT" "review-server"
+reclaim_port "$SERVER_PORT" "spur-server"
 reclaim_port "$VITE_PORT" "vite"
 
-echo "Starting review-server on :$SERVER_PORT..."
-cargo run -p review --features server,symbols-dev --bin review-server &
+echo "Starting spur-server on :$SERVER_PORT..."
+cargo run -p spur --features server,symbols-dev --bin spur-server &
 SERVER_PID=$!
 
 # A cold build takes minutes, so wait on the build itself rather than a fixed
@@ -68,7 +68,7 @@ SERVER_PID=$!
 echo "Waiting for the backend (a cold build takes a while)..."
 until lsof -ti "tcp:$SERVER_PORT" -sTCP:LISTEN >/dev/null 2>&1; do
     if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-        echo "review-server exited before it listened — see the build output above." >&2
+        echo "spur-server exited before it listened — see the build output above." >&2
         exit 1
     fi
     sleep 0.5

@@ -43,7 +43,7 @@ vi.mock("../../commands/host", () => ({
 import { CodeHalfHeader } from "./CodeHalfHeader";
 import { TooltipProvider } from "../ui/tooltip";
 import { openRepoIn, type RepoChoice } from "./repo-choices";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { attachment, workspace } from "../../test/fixtures";
 import type { LocalBranchInfo } from "../../types";
 
@@ -79,7 +79,7 @@ function branch(name: string): LocalBranchInfo {
 /** Both repos registered, each with one branch checked out. */
 function seed(attachments = [attachment(A, "main"), attachment(B, "dev")]) {
   const focused = workspace("w", { title: "the work", attachments });
-  useReviewStore.setState({
+  useSpurStore.setState({
     workspaces: [focused],
     focusedWorkspaceId: "w",
     activeReviewKey: { repoPath: A, ref: "main" },
@@ -111,7 +111,7 @@ function tabs(): HTMLElement[] {
 
 afterEach(() => {
   cleanup();
-  useReviewStore.setState({
+  useSpurStore.setState({
     workspaces: [],
     focusedWorkspaceId: null,
     activeReviewKey: null,
@@ -145,7 +145,7 @@ describe("the repo tab bar", () => {
    */
   it("marks the tab of a repo opened with no comparison", () => {
     seed();
-    useReviewStore.setState({ activeReviewKey: null, repoPath: B });
+    useSpurStore.setState({ activeReviewKey: null, repoPath: B });
     render(<CodeHalfHeader />);
 
     expect(tabs()[0].getAttribute("aria-current")).toBeNull();
@@ -166,7 +166,7 @@ describe("the repo tab bar", () => {
    */
   it("stays the active tab across branches of its own repo", () => {
     seed();
-    useReviewStore.setState({
+    useSpurStore.setState({
       activeReviewKey: { repoPath: A, ref: "some-other-branch" },
     });
     render(<CodeHalfHeader />);
@@ -222,7 +222,7 @@ describe("the code half's Focus toggle", () => {
 
   it("gives the code half the stage once there are two", () => {
     seed();
-    useReviewStore.setState({ terminalsSupported: true, repoPath: A });
+    useSpurStore.setState({ terminalsSupported: true, repoPath: A });
     render(
       <TooltipProvider>
         <CodeHalfHeader />
@@ -230,7 +230,7 @@ describe("the code half's Focus toggle", () => {
     );
 
     fireEvent.click(screen.getByLabelText("Full view"));
-    expect(useReviewStore.getState().contentFocus).toBe("code");
+    expect(useSpurStore.getState().contentFocus).toBe("code");
   });
 });
 
@@ -278,7 +278,7 @@ describe("picking a repo", () => {
    */
   it("stays quiet when the workspace already has a terminal", async () => {
     const focused = seed([attachment(A, "main")]);
-    useReviewStore.setState({
+    useSpurStore.setState({
       terminalTabs: [
         { id: "tab", root: { type: "leaf", terminalId: "t0" }, focused: "t0" },
       ],

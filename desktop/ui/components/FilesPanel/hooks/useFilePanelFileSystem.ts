@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useReviewStore } from "../../../stores";
+import { useSpurStore } from "../../../stores";
 import { useAllHunks } from "../../../stores/selectors/hunks";
 import { useFileHunkStatusMap } from "../../../hooks/useFileHunkStatusMap";
 import { hunkInScope } from "../../../types/scope";
@@ -100,15 +100,15 @@ export function reviewTabBadge(stats: PanelStats): {
  * all, and asks for it itself.
  */
 export function useFilePanelFileSystem() {
-  const repoPath = useReviewStore((s) => s.repoPath);
-  const files = useReviewStore((s) => s.files);
-  const allFiles = useReviewStore((s) => s.allFiles);
-  const allFilesLoading = useReviewStore((s) => s.allFilesLoading);
+  const repoPath = useSpurStore((s) => s.repoPath);
+  const files = useSpurStore((s) => s.files);
+  const allFiles = useSpurStore((s) => s.allFiles);
+  const allFilesLoading = useSpurStore((s) => s.allFilesLoading);
   const hunks = useAllHunks();
-  const reviewState = useReviewStore((s) => s.reviewState);
-  const fileSortOrder = useReviewStore((s) => s.fileSortOrder);
-  const scope = useReviewStore((s) => s.scope);
-  const stagedFilePaths = useReviewStore((s) => s.stagedFilePaths);
+  const reviewState = useSpurStore((s) => s.reviewState);
+  const fileSortOrder = useSpurStore((s) => s.fileSortOrder);
+  const scope = useSpurStore((s) => s.scope);
+  const stagedFilePaths = useSpurStore((s) => s.stagedFilePaths);
 
   // The whole Review tab — sections, counts, and stats — derives from this
   // map. When a scope is active we recount over only its hunks, so files with

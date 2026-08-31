@@ -2,4 +2,4 @@
 set -e
 cd "$(dirname "$0")/.."
 
-cargo run -p review --features cli,push --bin review -- "$@"
+cargo run -p spur --features cli,push --bin spur -- "$@"

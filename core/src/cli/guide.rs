@@ -55,7 +55,7 @@ pub struct AddArgs {
     pub target: ReviewTarget,
     /// Group title (e.g. "Refactor the auth module")
     pub title: String,
-    /// Hunk IDs (`file:hash`, from `review hunks`) that belong in this group
+    /// Hunk IDs (`file:hash`, from `spur hunks`) that belong in this group
     #[arg(required = true)]
     pub hunk_ids: Vec<String>,
     /// Optional one-line description shown under the title
@@ -132,7 +132,7 @@ fn reconcile_for_display(
     (kept_groups, ungrouped)
 }
 
-/// `review guide show` — print the guide, reconciled against the current diff.
+/// `spur guide show` — print the guide, reconciled against the current diff.
 pub fn run_show(args: ShowArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
     let view = load_review_view(&repo, args.target.spec.as_deref())?;
@@ -202,7 +202,7 @@ fn validate_title(title: &str) -> Result<(), String> {
     reject_blank("title", title)
 }
 
-/// `review guide add` — append a group to the guide.
+/// `spur guide add` — append a group to the guide.
 pub fn run_add(args: AddArgs) -> Result<(), String> {
     validate_title(&args.title)?;
     let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
@@ -231,7 +231,7 @@ pub fn run_add(args: AddArgs) -> Result<(), String> {
     }
     if valid.is_empty() {
         return Err(format!(
-            "No valid hunk IDs for {} — none matched the current diff. List them with `review hunks`.",
+            "No valid hunk IDs for {} — none matched the current diff. List them with `spur hunks`.",
             comparison.key
         ));
     }
@@ -282,7 +282,7 @@ pub fn run_add(args: AddArgs) -> Result<(), String> {
     Ok(())
 }
 
-/// `review guide clear` — drop the guide entirely.
+/// `spur guide clear` — drop the guide entirely.
 pub fn run_clear(args: ClearArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
     let (review, hunks, _) = load_for_mutation(&repo, args.target.spec.as_deref())?;

@@ -1,9 +1,9 @@
 import { useEffect } from "react";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { useFileDiff } from "../stores/selectors/hunks";
 
 /**
- * Consume a pending review:// deep-link target once hunks for the requested
+ * Consume a pending spur:// deep-link target once hunks for the requested
  * file are loaded. Resolves the hunk hash to a hunk ID (`{filePath}:{hash}`)
  * and applies it as `selectedFile` + `focusedHunkId` + `scrollTarget`.
  *
@@ -16,7 +16,7 @@ import { useFileDiff } from "../stores/selectors/hunks";
  * the branch — and `enabled` — come back.
  */
 export function useDeepLinkFocus(enabled = true): void {
-  const pending = useReviewStore((s) => s.pendingDeepLinkFocus);
+  const pending = useSpurStore((s) => s.pendingDeepLinkFocus);
   const fileDiff = useFileDiff(pending?.filePath ?? null);
 
   useEffect(() => {
@@ -27,7 +27,7 @@ export function useDeepLinkFocus(enabled = true): void {
     const hunkExists =
       hunkId !== null && fileDiff.hunks.some((h) => h.id === hunkId);
 
-    useReviewStore.setState({
+    useSpurStore.setState({
       selectedFile: filePath,
       focusedHunkId: hunkExists ? hunkId : null,
       scrollTarget: hunkExists ? { type: "hunk", hunkId } : null,

@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
-use review::push::{self, NotificationPayload};
+use spur::push::{self, NotificationPayload};
 use tauri::{AppHandle, Manager};
 
 /// Idle at least this long means the human is away from this machine, so a

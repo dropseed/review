@@ -10,9 +10,17 @@ src/
 │   └── static_classify.rs  Rule-based classification
 ├── diff/           Git diff parsing
 │   └── parser.rs       Parses unified diff format into DiffHunk structs
-├── review/         Review state management
+├── home.rs         The Spur home (~/.spur): storage root, repo index,
+│                    CLI↔app open-request signal. Not review-specific —
+│                    the queue, terminals and push all resolve through it.
+├── review/         Review state: decisions over one comparison's hunks
 │   ├── state.rs        ReviewState struct (hunks, trust_labels, notes)
-│   └── storage.rs      JSON persistence to ~/.review/
+│   ├── migrate.rs      Schema migration for stored reviews
+│   └── storage.rs      JSON persistence under the home
+├── workspace/      The "Working on" queue (workspaces.json)
+│   ├── mod.rs          Workspace, Attachment, reflow/nesting rules
+│   ├── router.rs       Resolve a cwd to the workspace that owns it
+│   └── storage.rs      Versioned read/write of workspaces.json
 ├── trust/          Trust pattern matching
 │   └── patterns.rs     Pattern matching (glob-style), taxonomy loading
 ├── sources/        Git operations abstraction
@@ -33,11 +41,11 @@ src/
 1. **Diff parsing**: `sources::local_git` runs `git diff` → `diff::parser::parse_diff()` → `Vec<DiffHunk>`
 2. **Classification**: `DiffHunk` → `classify::static_classify` → pattern-matched labels
 3. **Trust matching**: User's trust list + `trust::patterns::matches_pattern()` → auto-approve matching hunks
-4. **Persistence**: `ReviewState` ↔ `~/.review/repos/<repo-id>/reviews/<comparison>.json` via `review::storage`
+4. **Persistence**: `ReviewState` ↔ `~/.spur/repos/<repo-id>/reviews/<ref>.json` via `review::storage`
 
 ## State Storage
 
-Review state is stored per-repo in `~/.review/repos/<repo-id>/` (override with `$REVIEW_HOME`). The repo ID is a SHA-256 hash of the canonical repo path.
+Review state is stored per-repo in `~/.spur/repos/<repo-id>/` (override with `$SPUR_HOME`). The repo ID is a SHA-256 hash of the canonical repo path.
 
 - `reviews/<comparison>.json` — Hunk labels, approvals, notes
 - `current` — Last active comparison

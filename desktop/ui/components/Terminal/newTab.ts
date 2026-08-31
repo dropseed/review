@@ -1,4 +1,4 @@
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import {
   CHECKOUT_REF,
   type ReviewTarget,
@@ -45,7 +45,7 @@ export async function openTerminalTab(
   opts: { reveal?: boolean } = {},
 ): Promise<string | null> {
   const show = opts.reveal !== false;
-  const store = useReviewStore.getState();
+  const store = useSpurStore.getState();
   const target = on ?? activeTabTarget(workspace ?? null);
 
   if (!workspace || !target) {
@@ -98,7 +98,7 @@ export async function openTerminalTab(
  */
 function reveal(id: string | null): string | null {
   if (id === null) return null;
-  const store = useReviewStore.getState();
+  const store = useSpurStore.getState();
   if (store.contentFocus === "code") store.toggleTerminalPanel();
   return id;
 }
@@ -116,7 +116,7 @@ export function activeTabTarget(
   workspace: Workspace | null,
 ): ReviewTarget | null {
   if (!workspace) return null;
-  const store = useReviewStore.getState();
+  const store = useSpurStore.getState();
   const activePath = store.activeReviewKey?.repoPath;
   const active: Attachment | undefined =
     workspace.attachments.find(
@@ -135,7 +135,7 @@ async function checkoutFor(
   repoPath: string,
   ref: string,
 ): Promise<string | null> {
-  const store = useReviewStore.getState();
+  const store = useSpurStore.getState();
   if (!ref) return repoPath;
   const branch = store.localActivity
     .find((repo) => repo.repoPath === repoPath)

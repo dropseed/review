@@ -13,7 +13,7 @@ vi.mock("../../platform", () => ({
 
 import { FocusToggle, type StageHalf } from "./FocusToggle";
 import { TooltipProvider } from "../ui/tooltip";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 
 function show(half: StageHalf) {
   render(
@@ -24,12 +24,12 @@ function show(half: StageHalf) {
 }
 
 function focus(): string {
-  return useReviewStore.getState().contentFocus;
+  return useSpurStore.getState().contentFocus;
 }
 
 afterEach(() => {
   cleanup();
-  useReviewStore.setState({ contentFocus: "split" });
+  useSpurStore.setState({ contentFocus: "split" });
   vi.clearAllMocks();
 });
 
@@ -59,7 +59,7 @@ describe("a half's Focus button", () => {
    * the one still on screen — it has to read as the way out.
    */
   it("wears the focused state only for its own half", () => {
-    useReviewStore.setState({ contentFocus: "terminal" });
+    useSpurStore.setState({ contentFocus: "terminal" });
     show("terminal");
 
     expect(
@@ -75,7 +75,7 @@ describe("a half's Focus button", () => {
 
   /** Focusing one half from the other's focus is one click, not two. */
   it("takes the stage straight from the other half's focus", () => {
-    useReviewStore.setState({ contentFocus: "terminal" });
+    useSpurStore.setState({ contentFocus: "terminal" });
     show("code");
 
     fireEvent.click(screen.getByLabelText("Full view"));

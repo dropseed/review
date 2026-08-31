@@ -1,5 +1,5 @@
 import { type ReactNode, useCallback } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { countGroupUnreviewed } from "../../stores/selectors/groups";
 import { jumpToGroup } from "./jumpToGroup";
 import { useGuideGroups } from "./useGuideGroups";
@@ -19,7 +19,7 @@ const CHEVRON_RIGHT = (
 );
 
 /**
- * Minimal entry point for an agent-authored guide (`review guide add`): a row
+ * Minimal entry point for an agent-authored guide (`spur guide add`): a row
  * in the files column, shown only when one exists for this comparison — same
  * availability check the old Guide grouping tab used
  * (`reviewState.guide.state.groups`). Clicking it swaps the sidebar into
@@ -35,13 +35,13 @@ const CHEVRON_RIGHT = (
  * its own.
  */
 export function GuideBanner(): ReactNode {
-  const hasGuide = useReviewStore(
+  const hasGuide = useSpurStore(
     (s) => (s.reviewState?.guide?.state?.groups.length ?? 0) > 0,
   );
   const groups = useGuideGroups();
 
   const handleClick = useCallback(() => {
-    const state = useReviewStore.getState();
+    const state = useSpurStore.getState();
     state.setGuideMode(true);
     const target =
       groups.find((g) => countGroupUnreviewed(g, state.reviewState) > 0) ??

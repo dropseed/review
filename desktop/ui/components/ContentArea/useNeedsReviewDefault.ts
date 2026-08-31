@@ -1,5 +1,5 @@
 import { useMemo, useRef } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { ephemeralView } from "../../stores/selectors/viewpoint";
 import { useAllHunks, useHunkIdsByStatus } from "../../stores/selectors/hunks";
 import type { HunkGroup } from "../../types";
@@ -30,11 +30,11 @@ import type { HunkGroup } from "../../types";
  * nothing pending, or a diff still loading.
  */
 export function useNeedsReviewDefaultGroup(): HunkGroup | null {
-  const repoPath = useReviewStore((s) => s.repoPath);
-  const comparisonKey = useReviewStore((s) => s.comparison?.key ?? null);
-  const reviewState = useReviewStore((s) => s.reviewState);
-  const loaded = useReviewStore((s) => s.loadingProgress === null);
-  const isPeek = useReviewStore((s) => ephemeralView(s) !== null);
+  const repoPath = useSpurStore((s) => s.repoPath);
+  const comparisonKey = useSpurStore((s) => s.comparison?.key ?? null);
+  const reviewState = useSpurStore((s) => s.reviewState);
+  const loaded = useSpurStore((s) => s.loadingProgress === null);
+  const isPeek = useSpurStore((s) => ephemeralView(s) !== null);
 
   const allHunks = useAllHunks();
   const byStatus = useHunkIdsByStatus();

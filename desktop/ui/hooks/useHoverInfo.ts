@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { TokenEventBase } from "@pierre/diffs";
 import { getApiClient } from "../api";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { isNavigableIdentifier } from "../utils/isNavigableIdentifier";
 
 interface HoverPosition {
@@ -149,7 +149,7 @@ export function useHoverInfo(scrollNode: HTMLDivElement | null) {
       clearTooltip();
 
       const { selectedFile, externalFilePath, repoPath } =
-        useReviewStore.getState();
+        useSpurStore.getState();
       const filePath = externalFilePath ?? selectedFile;
       if (!filePath || !repoPath) return;
 

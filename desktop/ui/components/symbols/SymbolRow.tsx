@@ -1,6 +1,6 @@
 import { type ReactNode, useState, useMemo, useCallback, memo } from "react";
 import { SimpleTooltip } from "../ui/tooltip";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import type { SymbolDiff } from "../../types";
 import {
   SymbolKindBadge,
@@ -71,8 +71,8 @@ export const SymbolRow = memo(function SymbolRow({
   children,
 }: SymbolRowProps) {
   const { hunkStates, trustList, onNavigate } = useReviewData();
-  const approveHunkIds = useReviewStore((s) => s.approveHunkIds);
-  const unapproveHunkIds = useReviewStore((s) => s.unapproveHunkIds);
+  const approveHunkIds = useSpurStore((s) => s.approveHunkIds);
+  const unapproveHunkIds = useSpurStore((s) => s.unapproveHunkIds);
   const [expanded, setExpanded] = useState(true);
 
   const allHunkIds = useMemo(() => collectAllHunkIds(symbol), [symbol]);

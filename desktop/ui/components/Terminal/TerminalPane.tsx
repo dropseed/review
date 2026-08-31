@@ -8,7 +8,7 @@ import {
 import type { Terminal } from "@xterm/xterm";
 import { clsx } from "clsx";
 import { getApiClient } from "../../api";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { useIsCompact } from "../../hooks/useIsCompact";
 import { useIsTouchPrimary } from "../../hooks/useIsTouchPrimary";
 import {
@@ -145,11 +145,11 @@ export function TerminalPane({
   // Compact degrades to a viewer and writes nothing back — a phone visit must
   // not reflow the session out from under a desktop that is still sized to it.
   const isViewer = viewer || compact;
-  const fontFamily = useReviewStore((s) => s.terminalFontFamily);
-  const fontSize = useReviewStore((s) => s.terminalFontSize);
-  const fontWeight = useReviewStore((s) => s.terminalFontWeight);
-  const lineHeight = useReviewStore((s) => s.terminalLineHeight);
-  const letterSpacing = useReviewStore((s) => s.terminalLetterSpacing);
+  const fontFamily = useSpurStore((s) => s.terminalFontFamily);
+  const fontSize = useSpurStore((s) => s.terminalFontSize);
+  const fontWeight = useSpurStore((s) => s.terminalFontWeight);
+  const lineHeight = useSpurStore((s) => s.terminalLineHeight);
+  const letterSpacing = useSpurStore((s) => s.terminalLetterSpacing);
 
   /** Owner only: the grid another client claimed, or null when this pane's. */
   const [remoteSize, setRemoteSize] = useState<GridSize | null>(null);
@@ -221,8 +221,8 @@ export function TerminalPane({
 
     // Consume the "fresh" flag before acquiring — a freshly created session has
     // no scrollback to replay.
-    const wasFresh = useReviewStore.getState().freshTerminalIds.includes(id);
-    if (wasFresh) useReviewStore.getState().consumeFreshTerminal(id);
+    const wasFresh = useSpurStore.getState().freshTerminalIds.includes(id);
+    if (wasFresh) useSpurStore.getState().consumeFreshTerminal(id);
 
     const opts = optionsRef.current;
     const { term, fit, isNew } = acquireTerminal(id, {
@@ -400,7 +400,7 @@ export function TerminalPane({
     // reappearing (⌘` toggles, workspace switches) is a glance, and only a
     // click or keystroke here reclaims.
     if (isViewer) {
-      const session = useReviewStore.getState().terminalSessions[id];
+      const session = useSpurStore.getState().terminalSessions[id];
       if (session) {
         seedTerminalGridSize(id, { cols: session.cols, rows: session.rows });
       }
@@ -435,7 +435,7 @@ export function TerminalPane({
             id,
             dataB64 ? { data: decodeBase64(dataB64), cursor } : undefined,
           );
-          useReviewStore.getState().applyTerminalStatus(status);
+          useSpurStore.getState().applyTerminalStatus(status);
         })
         .catch((err) => {
           console.error("[terminal] Replay failed:", err);
@@ -617,7 +617,7 @@ export function TerminalPane({
       endDrag(term);
       pinch = {
         startDistance: touchDistance(event.touches[0], event.touches[1]),
-        baseSize: useReviewStore.getState().terminalFontSize,
+        baseSize: useSpurStore.getState().terminalFontSize,
         size: null,
       };
     };

@@ -13,7 +13,7 @@ use std::sync::{LazyLock, Mutex};
 use std::time::{Instant, SystemTime};
 
 use super::{RepoActivityChangedPayload, RepoLocalActivity};
-use crate::review::central::{
+use crate::home::{
     compute_repo_id, get_registered_repo, list_registered_repos, resolve_git_dirs, RepoIndexEntry,
 };
 use crate::sources::local_git::LocalGitSource;
@@ -95,7 +95,7 @@ fn dir_max_mtime(path: &Path, max_depth: usize) -> Option<SystemTime> {
 }
 
 fn reviews_dir_mtime(repo_path: &Path) -> Option<SystemTime> {
-    let storage = crate::review::central::get_repo_storage_dir(repo_path).ok()?;
+    let storage = crate::home::get_repo_storage_dir(repo_path).ok()?;
     dir_max_mtime(&storage.join("reviews"), DIR_WALK_MAX_DEPTH)
 }
 
@@ -314,8 +314,8 @@ pub fn invalidate(repo_path: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::review::central::register_repo;
-    use crate::review::central::tests::{setup_test, ENV_LOCK};
+    use crate::home::register_repo;
+    use crate::home::tests::{setup_test, ENV_LOCK};
     use crate::test_git::git;
 
     /// A repository with no commits is a repository. Everything above this

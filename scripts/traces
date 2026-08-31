@@ -1,8 +1,8 @@
 #!/bin/bash
-# Show the app.log file from ~/.review/ (Rust backend + frontend logs in dev mode)
+# Show the app.log file from ~/.spur/ (Rust backend + frontend logs in dev mode)
 set -e
 
-LOG_FILE="$HOME/.review/app.log"
+LOG_FILE="$HOME/.spur/app.log"
 
 if [ ! -f "$LOG_FILE" ]; then
     echo "No log file found at $LOG_FILE"

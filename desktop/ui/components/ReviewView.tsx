@@ -9,7 +9,7 @@ import {
   useState,
 } from "react";
 import { clsx } from "clsx";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { useProvideCommandUi } from "../commands/host";
 import { getMissingRefs } from "../stores/slices/groupingSlice";
 import { ephemeralView } from "../stores/selectors/viewpoint";
@@ -51,18 +51,18 @@ interface ReviewViewProps {
 }
 
 export function ReviewView({ comparisonReady }: ReviewViewProps): ReactNode {
-  const repoPath = useReviewStore((s) => s.repoPath);
-  const comparison = useReviewStore((s) => s.comparison);
-  const reviewRef = useReviewStore((s) => s.reviewRef);
-  const reviewBaseOverride = useReviewStore((s) => s.reviewBaseOverride);
-  const activeOverlay = useReviewStore((s) => s.activeOverlay);
-  const closeOverlay = useReviewStore((s) => s.closeOverlay);
+  const repoPath = useSpurStore((s) => s.repoPath);
+  const comparison = useSpurStore((s) => s.comparison);
+  const reviewRef = useSpurStore((s) => s.reviewRef);
+  const reviewBaseOverride = useSpurStore((s) => s.reviewBaseOverride);
+  const activeOverlay = useSpurStore((s) => s.activeOverlay);
+  const closeOverlay = useSpurStore((s) => s.closeOverlay);
 
   // A comparison whose base or compare branch was deleted resolves to git's
   // empty tree, so the diff would otherwise render every file as a deletion.
   // The freshness check (which also drives the sidebar warning) records the
   // missing refs; surface them here instead of the bogus all-deleted diff.
-  const reviewMissingRefs = useReviewStore((s) => s.reviewMissingRefs);
+  const reviewMissingRefs = useSpurStore((s) => s.reviewMissingRefs);
   const missingRefs = useMemo(
     () => getMissingRefs(reviewMissingRefs, repoPath, reviewRef),
     [reviewMissingRefs, repoPath, reviewRef],
@@ -90,23 +90,23 @@ export function ReviewView({ comparisonReady }: ReviewViewProps): ReactNode {
     // viewing) should reload. Deleting the review also clears its missing-refs
     // flag, but it nulls activeReviewKey in the same update — refreshing there
     // would reload (and re-create) the review we just removed.
-    const { activeReviewKey, repoPath: activeRepo } = useReviewStore.getState();
+    const { activeReviewKey, repoPath: activeRepo } = useSpurStore.getState();
     const stillActive =
       activeReviewKey?.repoPath === activeRepo &&
       activeReviewKey?.ref === reviewRef;
     if (stillActive) {
-      useReviewStore.getState().refresh();
+      useSpurStore.getState().refresh();
     }
   }, [compareRefMissing, comparisonKey, reviewRef]);
 
   // Read-only preview mode
-  const readOnlyPreview = useReviewStore((s) => s.readOnlyPreview);
+  const readOnlyPreview = useSpurStore((s) => s.readOnlyPreview);
   // A commit being looked at inside this tab. It owns the banner row while
   // it's up, because the notices below all describe the review's own diff.
-  const viewingCommit = useReviewStore(ephemeralView);
-  const worktreeStale = useReviewStore((s) => s.worktreeStale);
-  const worktreePath = useReviewStore((s) => s.worktreePath);
-  const localActivity = useReviewStore((s) => s.localActivity);
+  const viewingCommit = useSpurStore(ephemeralView);
+  const worktreeStale = useSpurStore((s) => s.worktreeStale);
+  const worktreePath = useSpurStore((s) => s.worktreePath);
+  const localActivity = useSpurStore((s) => s.localActivity);
 
   const isOnCurrentBranch = useMemo(() => {
     if (!repoPath || !comparison) return false;
@@ -120,13 +120,13 @@ export function ReviewView({ comparisonReady }: ReviewViewProps): ReactNode {
     const client = getApiClient();
     const newSha = await client.resolveRef(repoPath, comparison.head);
     await client.updateWorktreeHead(repoPath, worktreePath, newSha);
-    useReviewStore.getState().setWorktreeStale(false);
+    useSpurStore.getState().setWorktreeStale(false);
     const {
       loadFiles,
       refreshAllFiles,
       syncTotalDiffHunks,
       classifyStaticHunks,
-    } = useReviewStore.getState();
+    } = useSpurStore.getState();
     await Promise.all([loadFiles(), refreshAllFiles()]);
     syncTotalDiffHunks();
     classifyStaticHunks();
@@ -150,7 +150,7 @@ export function ReviewView({ comparisonReady }: ReviewViewProps): ReactNode {
     [repoPath, reviewRef, reviewBaseOverride],
   );
 
-  const ensureMaterialized = useReviewStore((s) => s.ensureMaterialized);
+  const ensureMaterialized = useSpurStore((s) => s.ensureMaterialized);
   const checkoutAction = useCallback(async () => {
     await ensureMaterialized("enable LSP features");
   }, [ensureMaterialized]);
@@ -169,8 +169,8 @@ export function ReviewView({ comparisonReady }: ReviewViewProps): ReactNode {
     setIsRefreshing(true);
     try {
       await Promise.all([
-        useReviewStore.getState().refresh(),
-        useReviewStore.getState().loadLocalActivity(),
+        useSpurStore.getState().refresh(),
+        useSpurStore.getState().loadLocalActivity(),
       ]);
     } finally {
       setIsRefreshing(false);
@@ -180,9 +180,9 @@ export function ReviewView({ comparisonReady }: ReviewViewProps): ReactNode {
   // Navigate to a hunk from the classifications modal
   const handleClassificationSelectHunk = useCallback(
     (filePath: string, hunkId: string) => {
-      useReviewStore.getState().closeOverlay("classifications");
-      useReviewStore.getState().navigateToBrowse(filePath, { hunkId });
-      useReviewStore.setState({
+      useSpurStore.getState().closeOverlay("classifications");
+      useSpurStore.getState().navigateToBrowse(filePath, { hunkId });
+      useSpurStore.setState({
         scrollTarget: { type: "hunk", hunkId },
       });
     },
@@ -235,10 +235,10 @@ export function ReviewView({ comparisonReady }: ReviewViewProps): ReactNode {
   // the search view into the column this hides and left the file list on screen.
   // And the deleted-ref notice replaces the diff entirely while the files column
   // isn't rendered at all, which showed a header over nothing.
-  const selectedFile = useReviewStore((s) => s.selectedFile);
-  const searchViewOpen = useReviewStore((s) => s.searchViewOpen);
-  const guideContentMode = useReviewStore((s) => s.guideContentMode);
-  const workingTreeMultiView = useReviewStore((s) => s.workingTreeMultiView);
+  const selectedFile = useSpurStore((s) => s.selectedFile);
+  const searchViewOpen = useSpurStore((s) => s.searchViewOpen);
+  const guideContentMode = useSpurStore((s) => s.guideContentMode);
+  const workingTreeMultiView = useSpurStore((s) => s.workingTreeMultiView);
   const listing =
     selectedFile === null &&
     !searchViewOpen &&

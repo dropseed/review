@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 
 /**
  * Republish the checkout layout whenever the listings change.
@@ -12,9 +12,9 @@ import { useReviewStore } from "../stores";
  * being open is not a reason for it to be empty.
  */
 export function useTerminalCheckoutSync() {
-  const localActivity = useReviewStore((s) => s.localActivity);
-  const globalReviews = useReviewStore((s) => s.globalReviews);
-  const setTerminalCheckouts = useReviewStore((s) => s.setTerminalCheckouts);
+  const localActivity = useSpurStore((s) => s.localActivity);
+  const globalReviews = useSpurStore((s) => s.globalReviews);
+  const setTerminalCheckouts = useSpurStore((s) => s.setTerminalCheckouts);
 
   useEffect(() => {
     setTerminalCheckouts(localActivity, globalReviews);

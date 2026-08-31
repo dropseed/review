@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import { useReviewStore } from "../../../stores";
+import { useSpurStore } from "../../../stores";
 import { useWorkspaces } from "../../../stores/selectors/workspaces";
 import { useSidebarTree } from "../../../hooks/useSidebarTree";
 import {
@@ -114,16 +114,16 @@ export function useGoSource(
   query: string,
   active: boolean,
 ): PaletteSource<Scored> {
-  const closeOverlay = useReviewStore((s) => s.closeOverlay);
+  const closeOverlay = useSpurStore((s) => s.closeOverlay);
   const workspaces = useWorkspaces();
   const ctx = useWorkspaceContext();
   const tree = useSidebarTree();
-  const repoMetadata = useReviewStore((s) => s.repoMetadata);
+  const repoMetadata = useSpurStore((s) => s.repoMetadata);
   const terminals = useTerminalsByWorkspaceId();
-  const terminalTabs = useReviewStore((s) => s.terminalTabs);
-  const sessions = useReviewStore((s) => s.terminalSessions);
-  const statuses = useReviewStore((s) => s.terminalStatuses);
-  const exited = useReviewStore((s) => s.terminalExited);
+  const terminalTabs = useSpurStore((s) => s.terminalTabs);
+  const sessions = useSpurStore((s) => s.terminalSessions);
+  const statuses = useSpurStore((s) => s.terminalStatuses);
+  const exited = useSpurStore((s) => s.terminalExited);
 
   // Two memos, not one: a status tick changes the terminals and nothing else,
   // and rebuilding the branch list on it would re-walk the sidebar tree and

@@ -21,8 +21,8 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+use crate::home;
 use crate::process::output_with_timeout;
-use crate::review::central;
 use crate::review::state::{iso8601_from_system_time, now_iso8601};
 use crate::service::shipped;
 use crate::sources::github::{self, GhAuth, ViewerPr};
@@ -100,7 +100,7 @@ struct FetchFailure {
     gh_available: bool,
 }
 
-/// Disk cache, next to the repo index under `~/.review/` (or `$REVIEW_HOME`).
+/// Disk cache, next to the repo index under `~/.spur/` (or `$SPUR_HOME`).
 const CACHE_FILE: &str = "viewer_prs.json";
 
 /// The user's open PRs, from disk or from GitHub.
@@ -275,7 +275,7 @@ fn join_registered_repos(prs: &mut [ViewerPr]) {
 /// duplicate slug the most recently accessed repo wins — `list_registered_repos`
 /// hands them back in that order.
 fn registered_repos_by_slug() -> HashMap<String, String> {
-    let repos = match central::list_registered_repos() {
+    let repos = match home::list_registered_repos() {
         Ok(repos) => repos,
         Err(e) => {
             log::warn!("[viewer_prs] could not read the repo index: {e}");
@@ -341,7 +341,7 @@ fn github_slug(remote_url: &str) -> Option<String> {
 }
 
 fn cache_path() -> Option<PathBuf> {
-    central::get_central_root()
+    home::get_central_root()
         .ok()
         .map(|root| root.join(CACHE_FILE))
 }
@@ -386,7 +386,7 @@ static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// would otherwise write the same tmp path and rename each other's half-written
 /// bytes into place.
 fn save_snapshot(snapshot: &ViewerPrSnapshot) -> anyhow::Result<()> {
-    let root = central::get_central_root()?;
+    let root = home::get_central_root()?;
     fs::create_dir_all(&root)?;
     let tmp_path = root.join(format!(
         "{CACHE_FILE}.tmp.{}.{}",
@@ -404,24 +404,24 @@ fn save_snapshot(snapshot: &ViewerPrSnapshot) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::review::central::tests::{setup_test, ENV_LOCK};
+    use crate::home::tests::{setup_test, ENV_LOCK};
 
     #[test]
     fn github_slug_accepts_every_form_git_hands_out() {
         for url in [
-            "git@github.com:dropseed/review.git",
-            "https://github.com/dropseed/review.git",
-            "https://github.com/dropseed/review",
-            "ssh://git@github.com/dropseed/review.git",
+            "git@github.com:dropseed/spur.git",
+            "https://github.com/dropseed/spur.git",
+            "https://github.com/dropseed/spur",
+            "ssh://git@github.com/dropseed/spur.git",
             // Case is GitHub's business, not ours — the join compares lowercased.
-            "https://github.com/DropSeed/Review",
+            "https://github.com/DropSeed/Spur",
             // SSH over 443, for networks that block 22. Same GitHub.
-            "ssh://git@ssh.github.com:443/dropseed/review.git",
-            "ssh://git@github.com:22/dropseed/review.git",
+            "ssh://git@ssh.github.com:443/dropseed/spur.git",
+            "ssh://git@github.com:22/dropseed/spur.git",
         ] {
             assert_eq!(
                 github_slug(url).as_deref(),
-                Some("dropseed/review"),
+                Some("dropseed/spur"),
                 "failed on {url}"
             );
         }
@@ -461,8 +461,8 @@ mod tests {
     #[test]
     fn github_slug_rejects_other_hosts_and_junk() {
         for url in [
-            "git@gitlab.com:dropseed/review.git",
-            "https://bitbucket.org/dropseed/review.git",
+            "git@gitlab.com:dropseed/spur.git",
+            "https://bitbucket.org/dropseed/spur.git",
             "/srv/git/review.git",
             "",
         ] {
@@ -473,7 +473,7 @@ mod tests {
     #[test]
     fn an_unfetched_snapshot_is_empty_and_dated_at_the_epoch() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, _repo_dir) = setup_test();
+        let (_env, _spur_home, _repo_dir) = setup_test();
 
         let snapshot = get_viewer_prs(false);
         assert!(snapshot.prs.is_empty());
@@ -525,7 +525,7 @@ mod tests {
     fn departure_is_leaving_the_open_set_in_the_same_repo() {
         let before = snap(
             vec![
-                pr(7, "dropseed/review", Some("dropseed/review")),
+                pr(7, "dropseed/spur", Some("dropseed/spur")),
                 pr(9, "dropseed/plain", Some("dropseed/plain")),
             ],
             false,
@@ -543,7 +543,7 @@ mod tests {
         let gone = departed(&before, &now);
         assert_eq!(gone.len(), 1);
         assert_eq!(gone[0].number, 7);
-        assert_eq!(gone[0].repo_name_with_owner, "dropseed/review");
+        assert_eq!(gone[0].repo_name_with_owner, "dropseed/spur");
 
         // A first-ever refresh has nothing to compare against, so nothing has
         // departed — every PR being new must not read as every PR merging.
@@ -555,10 +555,7 @@ mod tests {
     /// departed and cost a `gh` call that comes back OPEN.
     #[test]
     fn a_truncated_snapshot_on_either_side_reports_no_departures() {
-        let before = snap(
-            vec![pr(7, "dropseed/review", Some("dropseed/review"))],
-            false,
-        );
+        let before = snap(vec![pr(7, "dropseed/spur", Some("dropseed/spur"))], false);
         let now = snap(vec![], false);
         assert_eq!(
             departed(&before, &now).len(),
@@ -587,7 +584,7 @@ mod tests {
     #[test]
     fn a_saved_snapshot_reads_back_off_disk() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, repo_dir) = setup_test();
+        let (_env, _spur_home, repo_dir) = setup_test();
         let repo_path = repo_dir.path().to_string_lossy().into_owned();
 
         let mut only = pr(97, "dropseed/plain", Some("dropseed/plain"));
@@ -620,9 +617,9 @@ mod tests {
     #[test]
     fn the_cache_drops_repo_paths_that_no_longer_exist() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, _repo_dir) = setup_test();
+        let (_env, _spur_home, _repo_dir) = setup_test();
 
-        let mut gone = pr(1, "dropseed/review", Some("dropseed/review"));
+        let mut gone = pr(1, "dropseed/spur", Some("dropseed/spur"));
         gone.repo_path = Some("/repos/deleted-last-week".to_owned());
         save_snapshot(&ViewerPrSnapshot {
             fetched_at: "2026-08-10T15:06:30.000Z".to_owned(),
@@ -646,9 +643,9 @@ mod tests {
     #[test]
     fn a_cache_without_the_available_field_reads_as_available() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, _repo_dir) = setup_test();
+        let (_env, _spur_home, _repo_dir) = setup_test();
 
-        let root = central::get_central_root().unwrap();
+        let root = home::get_central_root().unwrap();
         fs::create_dir_all(&root).unwrap();
         fs::write(
             root.join(CACHE_FILE),
@@ -664,7 +661,7 @@ mod tests {
     #[test]
     fn the_join_ignores_repos_without_a_github_remote() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, repo_dir) = setup_test();
+        let (_env, _spur_home, repo_dir) = setup_test();
         git(repo_dir.path(), &["init"]);
         git(
             repo_dir.path(),
@@ -675,7 +672,7 @@ mod tests {
                 "git@gitlab.com:someone/elsewhere.git",
             ],
         );
-        central::register_repo(repo_dir.path()).unwrap();
+        home::register_repo(repo_dir.path()).unwrap();
 
         let mut prs = vec![pr(1, "someone/elsewhere", Some("someone/elsewhere"))];
         join_registered_repos(&mut prs);
@@ -691,7 +688,7 @@ mod tests {
     #[test]
     fn the_join_matches_any_github_remote_not_just_origin() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, repo_dir) = setup_test();
+        let (_env, _spur_home, repo_dir) = setup_test();
         git(repo_dir.path(), &["init"]);
         git(
             repo_dir.path(),
@@ -708,15 +705,15 @@ mod tests {
                 "remote",
                 "add",
                 "upstream",
-                "https://github.com/dropseed/review.git",
+                "https://github.com/dropseed/spur.git",
             ],
         );
-        central::register_repo(repo_dir.path()).unwrap();
-        let registered = central::list_registered_repos().unwrap()[0].path.clone();
+        home::register_repo(repo_dir.path()).unwrap();
+        let registered = home::list_registered_repos().unwrap()[0].path.clone();
 
         let mut prs = vec![
-            pr(1, "dropseed/review", Some("davegaeddert/review")),
-            pr(2, "dropseed/review", Some("dropseed/review")),
+            pr(1, "dropseed/spur", Some("davegaeddert/review")),
+            pr(2, "dropseed/spur", Some("dropseed/spur")),
         ];
         join_registered_repos(&mut prs);
 
@@ -730,7 +727,7 @@ mod tests {
     #[test]
     fn the_join_keys_on_the_head_repo_and_never_falls_back_to_the_base() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, repo_dir) = setup_test();
+        let (_env, _spur_home, repo_dir) = setup_test();
         git(repo_dir.path(), &["init"]);
         git(
             repo_dir.path(),
@@ -738,16 +735,16 @@ mod tests {
                 "remote",
                 "add",
                 "origin",
-                "git@github.com:dropseed/review.git",
+                "git@github.com:dropseed/spur.git",
             ],
         );
-        central::register_repo(repo_dir.path()).unwrap();
-        let registered = central::list_registered_repos().unwrap()[0].path.clone();
+        home::register_repo(repo_dir.path()).unwrap();
+        let registered = home::list_registered_repos().unwrap()[0].path.clone();
 
         let mut prs = vec![
-            pr(1, "dropseed/review", Some("dropseed/review")),
-            pr(2, "dropseed/review", Some("stranger/review")),
-            pr(3, "dropseed/review", None),
+            pr(1, "dropseed/spur", Some("dropseed/spur")),
+            pr(2, "dropseed/spur", Some("stranger/review")),
+            pr(3, "dropseed/spur", None),
         ];
         join_registered_repos(&mut prs);
 
@@ -767,7 +764,7 @@ mod tests {
     #[test]
     fn the_join_skips_registered_repos_that_are_gone_from_disk() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, repo_dir) = setup_test();
+        let (_env, _spur_home, repo_dir) = setup_test();
         git(repo_dir.path(), &["init"]);
         git(
             repo_dir.path(),
@@ -775,13 +772,13 @@ mod tests {
                 "remote",
                 "add",
                 "origin",
-                "git@github.com:dropseed/review.git",
+                "git@github.com:dropseed/spur.git",
             ],
         );
-        central::register_repo(repo_dir.path()).unwrap();
+        home::register_repo(repo_dir.path()).unwrap();
         fs::remove_dir_all(repo_dir.path()).unwrap();
 
-        let mut prs = vec![pr(1, "dropseed/review", Some("dropseed/review"))];
+        let mut prs = vec![pr(1, "dropseed/spur", Some("dropseed/spur"))];
         join_registered_repos(&mut prs);
 
         assert_eq!(prs[0].repo_path, None);

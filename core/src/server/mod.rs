@@ -1,15 +1,15 @@
-//! Axum HTTP server — web-mode backend for the Review app.
+//! Axum HTTP server — web-mode backend for the Spur app.
 //!
 //! Feature-gated behind `server`. Serves the same business logic as the
 //! Tauri desktop shell, but over HTTP + SSE instead of IPC.
 //!
 //! Terminals work here too: [`terminal`] bridges `/api/terminal/*` (POST for
 //! control, one WebSocket per session for live PTY bytes) onto the
-//! `review-daemon` process, which owns the PTYs. This server is a thin client
+//! `spur-daemon` process, which owns the PTYs. This server is a thin client
 //! of that daemon — it attaches to one that is already running and never spawns
 //! one, so a browser tab and the desktop app drive the same sessions.
 //!
-//! With `REVIEW_WEB_DIST` set, [`serve`] also serves a built Vite bundle, so one
+//! With `SPUR_WEB_DIST` set, [`serve`] also serves a built Vite bundle, so one
 //! port carries the whole app (handy behind `tailscale serve`).
 
 mod handlers;
@@ -26,7 +26,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use tower_http::set_header::SetResponseHeaderLayer;
 
 /// Environment variable naming a built Vite `dist/` to serve alongside the API.
-const WEB_DIST_ENV: &str = "REVIEW_WEB_DIST";
+const WEB_DIST_ENV: &str = "SPUR_WEB_DIST";
 
 /// The port everything defaults to: `spur` on a phone keypad.
 ///
@@ -39,7 +39,7 @@ pub const DEFAULT_PORT: u16 = 7787;
 /// Comma-separated origins allowed on top of the ones [`origin_allowed`]
 /// derives — the escape hatch for a reverse proxy on a name this process never
 /// sees itself.
-const ALLOWED_ORIGINS_ENV: &str = "REVIEW_ALLOWED_ORIGINS";
+const ALLOWED_ORIGINS_ENV: &str = "SPUR_ALLOWED_ORIGINS";
 
 /// Review state on a large repo is a big JSON document, and axum's 2MB default
 /// turns saving one into a silent 413. 64MB is far above anything a review has
@@ -59,7 +59,7 @@ pub struct StaticAsset {
 /// binary, and Tauri hands it out through an asset resolver. Rather than teach
 /// the app to unpack a `dist/` somewhere so `ServeDir` can find it — a copy on
 /// disk to keep in step with the binary, for no gain — the server takes the
-/// lookup itself. `review-server` still uses `$REVIEW_WEB_DIST` and touches
+/// lookup itself. `spur-server` still uses `$SPUR_WEB_DIST` and touches
 /// none of this.
 pub type AssetSource = std::sync::Arc<dyn Fn(&str) -> Option<StaticAsset> + Send + Sync>;
 
@@ -97,7 +97,7 @@ fn build_router_with(assets: Option<AssetSource>) -> Router {
 
     // An embedded bundle takes precedence over the environment variable: the
     // app that compiled its own frontend in is not looking for one on disk, and
-    // a stale `$REVIEW_WEB_DIST` left in a shell must not be able to serve a
+    // a stale `$SPUR_WEB_DIST` left in a shell must not be able to serve a
     // different build of the UI to the desktop app's own port.
     if let Some(assets) = assets {
         log::info!("[server] serving the web bundle embedded in this binary");
@@ -143,7 +143,7 @@ fn embedded_asset(assets: &AssetSource, path: &str) -> axum::response::Response 
     use axum::response::IntoResponse as _;
 
     // Hashed asset names change every build, so only `index.html` — which names
-    // them — needs holding back from the cache. See the `$REVIEW_WEB_DIST` arm.
+    // them — needs holding back from the cache. See the `$SPUR_WEB_DIST` arm.
     let (asset, cacheable) = match assets(path) {
         Some(asset) => {
             let cacheable = path != "/" && path != "/index.html";
@@ -181,7 +181,7 @@ fn embedded_asset(assets: &AssetSource, path: &str) -> axum::response::Response 
 ///   `tailscale serve`, a LAN bind, and any reverse proxy in front, without
 ///   this process needing to know its own public name (ports are ignored on
 ///   both sides, since a proxy routinely rewrites them);
-/// - anything explicitly listed in `$REVIEW_ALLOWED_ORIGINS`.
+/// - anything explicitly listed in `$SPUR_ALLOWED_ORIGINS`.
 fn origin_allowed(origin: Option<&HeaderValue>, headers: &HeaderMap) -> bool {
     origin_allowed_with(origin, headers, &env_allowed_origins())
 }
@@ -254,7 +254,7 @@ fn is_loopback(host: &str) -> bool {
 
 /// Start the HTTP server on the given port.
 ///
-/// The bind address is `$REVIEW_BIND` (default `127.0.0.1`), so serving a
+/// The bind address is `$SPUR_BIND` (default `127.0.0.1`), so serving a
 /// tailnet or a LAN needs an environment variable rather than a code change.
 pub async fn serve(port: u16) {
     let app = build_router();
@@ -273,7 +273,7 @@ pub async fn serve(port: u16) {
 ///
 /// Split from [`serve_on`] because "is this port free" is the one question a
 /// settings toggle actually has to answer synchronously: a port already held —
-/// by a `review-server` left over from a dev session, or a second copy of the
+/// by a `spur-server` left over from a dev session, or a second copy of the
 /// app — must switch the toggle back off with the reason on it. Bundled into
 /// the serving future, that error would surface some indeterminate time after
 /// the UI had already drawn itself as on.
@@ -286,7 +286,7 @@ pub async fn serve(port: u16) {
 /// them, because that gate answers a *browser* question and a plain HTTP client
 /// simply sends no `Origin` at all.
 ///
-/// `$REVIEW_BIND` is not read here either. It is `review-server`'s escape hatch
+/// `$SPUR_BIND` is not read here either. It is `spur-server`'s escape hatch
 /// for someone deliberately running a server; reaching the app from a phone is
 /// what the toggle is for, and it grants exactly that and nothing wider.
 pub async fn bind(port: u16) -> std::io::Result<tokio::net::TcpListener> {
@@ -295,7 +295,7 @@ pub async fn bind(port: u16) -> std::io::Result<tokio::net::TcpListener> {
 
 /// Serve the app on an already-bound listener, until told to stop.
 ///
-/// What `review-server`'s [`serve`] does, minus the two things that only make
+/// What `spur-server`'s [`serve`] does, minus the two things that only make
 /// sense for a process whose whole job this is: it returns its error instead of
 /// panicking, and it stops on the caller's signal rather than on SIGINT — a
 /// host process gets its own Ctrl-C.
@@ -312,9 +312,9 @@ pub async fn serve_on(
         .await
 }
 
-/// The address to bind: `$REVIEW_BIND`, or loopback.
+/// The address to bind: `$SPUR_BIND`, or loopback.
 pub fn bind_host() -> String {
-    match std::env::var("REVIEW_BIND") {
+    match std::env::var("SPUR_BIND") {
         Ok(host) if !host.trim().is_empty() => host.trim().to_owned(),
         _ => "127.0.0.1".to_owned(),
     }
@@ -379,12 +379,12 @@ mod tests {
         );
     }
 
-    /// The whole point of the fallback: `/dropseed/review/review/master` is a
+    /// The whole point of the fallback: `/dropseed/spur/review/master` is a
     /// route in the page, not a missing file, and answering 404 would break
     /// every deep link and every cold start of the installed app.
     #[test]
     fn an_unknown_path_falls_back_to_the_index() {
-        let response = embedded_asset(&bundle(), "/dropseed/review/review/master");
+        let response = embedded_asset(&bundle(), "/dropseed/spur/review/master");
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
             header(&response, axum::http::header::CONTENT_TYPE).as_deref(),
@@ -530,7 +530,7 @@ mod tests {
     }
 
     /// A bare IPv6 literal cannot have `:port` appended to it — that was a
-    /// panic on `REVIEW_BIND=::` before this was formatted through `SocketAddr`.
+    /// panic on `SPUR_BIND=::` before this was formatted through `SocketAddr`.
     #[test]
     fn bind_targets_bracket_ipv6_literals() {
         assert_eq!(bind_target("127.0.0.1", 3421), "127.0.0.1:3421");

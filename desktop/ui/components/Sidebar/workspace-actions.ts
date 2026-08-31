@@ -18,7 +18,7 @@
  */
 
 import { getPlatformServices } from "../../platform";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import {
   focusWorkspace,
   activateAttachment,
@@ -38,19 +38,21 @@ import { type WorkspaceStatus } from "./workspace-status";
  * target chosen from a list ("move this terminal to *which* workspace"), which
  * is exactly the choice the equivalent drag makes with the pointer.
  */
-export interface WorkAction {
+export interface WorkspaceAction {
   id: string;
   label: string;
   run?: () => void;
   /** Nested verbs. Set instead of `run`, never alongside it. */
-  items?: WorkAction[];
+  items?: WorkspaceAction[];
   disabled?: boolean;
   /** Destructive — the renderers colour it. */
   danger?: boolean;
 }
 
 /** Every verb in `actions`, submenu contents included. */
-export function flattenWorkActions(actions: WorkAction[]): WorkAction[] {
+export function flattenWorkActions(
+  actions: WorkspaceAction[],
+): WorkspaceAction[] {
   return actions.flatMap((action) =>
     action.items ? [action, ...flattenWorkActions(action.items)] : [action],
   );
@@ -68,8 +70,8 @@ export function workActionVerb(id: string): string {
   return colon === -1 ? id : id.slice(0, colon);
 }
 
-function store(): ReturnType<typeof useReviewStore.getState> {
-  return useReviewStore.getState();
+function store(): ReturnType<typeof useSpurStore.getState> {
+  return useSpurStore.getState();
 }
 
 function copy(text: string): void {
@@ -85,14 +87,14 @@ function open(url: string): void {
 }
 
 /** The PR verb, when the noun has a PR to offer it for. */
-function openPrAction(id: string, pr: ViewerPr | undefined): WorkAction[] {
+function openPrAction(id: string, pr: ViewerPr | undefined): WorkspaceAction[] {
   if (!pr) return [];
   return [
     { id, label: `Open #${pr.number} on GitHub`, run: () => open(pr.url) },
   ];
 }
 
-// ----- Work item (a card) -----
+// ----- Workspace (a card) -----
 
 /**
  * The rows sharing a workspace's parent, in queue order — what "up", "down"
@@ -134,7 +136,7 @@ export function workspaceActions({
   index,
   status,
   onRename,
-}: WorkspaceActionsInput): WorkAction[] {
+}: WorkspaceActionsInput): WorkspaceAction[] {
   const repoVerbs = status.repos.map((repo) => ({
     repo,
     verbs: [
@@ -276,7 +278,7 @@ export function terminalActions({
   sessionIds,
   attachedItemId,
   workspaces,
-}: TerminalActionsInput): WorkAction[] {
+}: TerminalActionsInput): WorkspaceAction[] {
   const attach = (target: Parameters<typeof applyWorkDrop>[0]) =>
     void applyWorkDrop(target, { kind: "terminal", sessionIds });
 

@@ -1,6 +1,6 @@
 import { type DragEvent, type ReactNode, Fragment, useRef } from "react";
 import { clsx } from "clsx";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import {
   type PaneNode,
   type SplitDirection,
@@ -86,8 +86,8 @@ export function PaneTree({
   onFocus,
   onClose,
 }: PaneTreeProps): ReactNode {
-  const resizeSplit = useReviewStore((s) => s.resizeSplit);
-  const setPaneCollapsed = useReviewStore((s) => s.setPaneCollapsed);
+  const resizeSplit = useSpurStore((s) => s.resizeSplit);
+  const setPaneCollapsed = useSpurStore((s) => s.setPaneCollapsed);
 
   if (node.type === "leaf") {
     // A folded pane shows its title bar instead of its terminal. Clicking it
@@ -257,8 +257,8 @@ function PaneLeaf({
   onFocus,
   onCollapse,
 }: PaneLeafProps): ReactNode {
-  const dropPaneOn = useReviewStore((s) => s.dropPaneOn);
-  const searchOpen = useReviewStore((s) => s.terminalSearchId === id);
+  const dropPaneOn = useSpurStore((s) => s.dropPaneOn);
+  const searchOpen = useSpurStore((s) => s.terminalSearchId === id);
   // Where a drop would land, whichever way the drag reached us: these handlers
   // in web mode, the window-level events under Tauri (see useTerminalFileDrop).
   // Both publish to pane-drag, so the highlight has one source either way.

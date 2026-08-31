@@ -1,5 +1,5 @@
 import { type ReactNode, memo, useEffect, useState } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { useSidebarResize } from "../../hooks/useSidebarResize";
 import { useAutoUpdater } from "../../hooks/useAutoUpdater";
 import { getPlatformServices } from "../../platform";
@@ -13,7 +13,7 @@ import { SidebarRail } from "./SidebarRail";
 import { PullRequestsDrawer } from "./PullRequestsDrawer";
 import { WorkspaceQueue } from "./WorkspaceQueue";
 
-const GITHUB_REPO_URL = "https://github.com/dropseed/review";
+const GITHUB_REPO_URL = "https://github.com/dropseed/spur";
 
 interface FooterVersionInfoProps {
   updateAvailable: { version: string } | null;
@@ -91,14 +91,12 @@ function SidebarHeader({
   onToggle: () => void;
   drawer?: boolean;
 }): ReactNode {
-  const terminalOverview = useReviewStore((s) => s.terminalOverview);
-  const toggleTerminalOverview = useReviewStore(
-    (s) => s.toggleTerminalOverview,
-  );
+  const terminalOverview = useSpurStore((s) => s.terminalOverview);
+  const toggleTerminalOverview = useSpurStore((s) => s.toggleTerminalOverview);
   // Same gate the terminal's own commands use: with no daemon to talk to there
   // are no terminals to line up, and the button would open a view whose only
   // possible answer is "nothing is running".
-  const terminalsSupported = useReviewStore((s) => s.terminalsSupported);
+  const terminalsSupported = useSpurStore((s) => s.terminalsSupported);
 
   return (
     <div className="shrink-0 pl-3 pr-2 py-2 flex items-center justify-between gap-1">
@@ -116,7 +114,7 @@ function SidebarHeader({
             type="button"
             onClick={() => {
               onToggle();
-              useReviewStore.getState().openPalette("go");
+              useSpurStore.getState().openPalette("go");
             }}
             className="tap tap-target flex size-9 items-center justify-center
                        rounded-md text-fg-muted active:bg-surface-raised"
@@ -224,8 +222,8 @@ export const Sidebar = memo(function Sidebar({
   drawer?: boolean;
   onDismiss?: () => void;
 } = {}) {
-  const storeCollapsed = useReviewStore((s) => s.tabRailCollapsed);
-  const toggleStoreSidebar = useReviewStore((s) => s.toggleTabRail);
+  const storeCollapsed = useSpurStore((s) => s.tabRailCollapsed);
+  const toggleStoreSidebar = useSpurStore((s) => s.toggleTabRail);
   // A drawer is only ever rendered while open, and its own state is the shell's
   // — the persisted desktop collapse must not decide whether a phone's queue
   // appears, or a window collapsed on a laptop would open to an empty drawer.

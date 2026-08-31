@@ -1,4 +1,4 @@
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { findSidebarRow, getSidebarTree } from "../stores/selectors/sidebar";
 import {
   CHECKOUT_REF,
@@ -42,7 +42,7 @@ export function activateReviewTarget(target: ReviewTarget): boolean {
   }
 
   const key = makeReviewKey(target.repoPath, target.ref);
-  if (!findSidebarRow(useReviewStore.getState(), key)) return false;
+  if (!findSidebarRow(useSpurStore.getState(), key)) return false;
 
   getCommandUi().activateReviewKey(target.repoPath, target.ref);
   return true;
@@ -71,7 +71,7 @@ export function activateReviewTarget(target: ReviewTarget): boolean {
 export function targetForAttachment(
   attachment: Attachment,
 ): ReviewTarget | null {
-  const state = useReviewStore.getState();
+  const state = useSpurStore.getState();
   const checkout: ReviewTarget = {
     repoPath: attachment.path,
     ref: CHECKOUT_REF,
@@ -110,7 +110,7 @@ function takeFocus(
   workspace: Workspace,
   options: { acknowledge?: boolean } = {},
 ): void {
-  const store = useReviewStore.getState();
+  const store = useSpurStore.getState();
   // Naming a workspace is asking to be shown it, so it also ends the
   // terminals-only overview. That row spans every workspace at once — left up,
   // a card click, a ⌘K row and ⌘1–9 would each appear to do nothing. Guarded
@@ -194,7 +194,7 @@ export async function openRowInWorkspace(
   row: SidebarRow,
   options: { withTerminal?: boolean } = {},
 ): Promise<Workspace | null> {
-  const workspace = await useReviewStore
+  const workspace = await useSpurStore
     .getState()
     .routeWorkspace(row.repoPath, row.ref);
   if (!workspace) return null;
@@ -211,8 +211,8 @@ export async function openRowInWorkspace(
 }
 
 /**
- * Land something from *outside* the app in a workspace: the `review` CLI, the
- * `review://` deep link, Finder's "Open with", the directory the app was
+ * Land something from *outside* the app in a workspace: the `spur` CLI, the
+ * `spur://` deep link, Finder's "Open with", the directory the app was
  * launched from.
  *
  * The third landing verb, beside [`focusWorkspace`] and [`openRowInWorkspace`],
@@ -228,12 +228,12 @@ export async function landWorkspace(
   repoPath: string,
   ref: string | null,
 ): Promise<Workspace | null> {
-  const workspace = await useReviewStore
+  const workspace = await useSpurStore
     .getState()
     .routeWorkspace(repoPath, ref ?? CHECKOUT_REF);
   if (!workspace) return null;
 
-  // Typing `review` is a person doing something, so it acknowledges the card's
+  // Typing `spur` is a person doing something, so it acknowledges the card's
   // attention signal exactly as clicking that card would.
   takeFocus(workspace);
   return workspace;
@@ -249,7 +249,7 @@ export async function landWorkspace(
  * starting a shell in it is what gives it both.
  */
 export async function newWorkspace(): Promise<Workspace | null> {
-  const workspace = await useReviewStore.getState().addWorkspace(null, []);
+  const workspace = await useSpurStore.getState().addWorkspace(null, []);
   if (workspace) focusWorkspace(workspace);
   return workspace;
 }
@@ -287,7 +287,7 @@ export const WORKSPACE_COMMANDS: readonly Command[] = [
 let cache: { items: Workspace[]; commands: Command[] } | null = null;
 
 export function workspaceCommands(): Command[] {
-  const items = useReviewStore.getState().workspaces;
+  const items = useSpurStore.getState().workspaces;
   // Every keystroke in the palette re-resolves every dynamic source, so the
   // list is rebuilt only when the queue itself changes. `loadWorkspaces` keeps
   // the previous array when a refresh returns an identical list, which is what

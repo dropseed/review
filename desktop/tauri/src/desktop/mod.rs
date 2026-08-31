@@ -46,7 +46,7 @@ pub struct SentryConsent(pub Arc<AtomicBool>);
 /// core, beside the path they are written to — this app is one of its two ends,
 /// not its owner.
 #[cfg(desktop)]
-pub use review::review::central::{read_open_request, OpenRequest};
+pub use spur::home::{read_open_request, OpenRequest};
 
 /// The app's one window, as declared in `tauri.conf.json`.
 ///
@@ -311,7 +311,7 @@ fn setup_app(
         ("reveal_in_browse".to_owned(), reveal_in_browse),
     ])));
 
-    // Terminals live in a separate `review-daemon` process so they
+    // Terminals live in a separate `spur-daemon` process so they
     // survive quitting — or crashing — this app. Nothing is spawned or
     // connected here: the daemon is attached to (or started) on the
     // first terminal command, which keeps a respawn after an app update
@@ -338,14 +338,14 @@ fn setup_app(
         }
     });
 
-    // The work queue is global, so its watcher is started once here
+    // The workspace queue is global, so its watcher is started once here
     // rather than alongside any repo's — off the startup path for the
     // same reason as the one above: `new_debouncer` blocks on the
     // platform watcher's handshake.
-    let work_app_handle = app.handle().clone();
+    let workspaces_app_handle = app.handle().clone();
     std::thread::spawn(move || {
-        if let Err(e) = crate::desktop::watchers::start_work_watcher(work_app_handle) {
-            log::error!("[setup] Failed to start work queue watcher: {e}");
+        if let Err(e) = crate::desktop::watchers::start_work_watcher(workspaces_app_handle) {
+            log::error!("[setup] Failed to start workspace queue watcher: {e}");
         }
     });
 
@@ -355,18 +355,18 @@ fn setup_app(
 /// A second launch of the app, forwarded here by the single-instance plugin.
 ///
 /// The CLI reaches the running app this way: it launches the binary with the
-/// repo path (or a `review://` URL) and the plugin hands the argv over rather
+/// repo path (or a `spur://` URL) and the plugin hands the argv over rather
 /// than starting a second process.
 fn handle_second_instance(app: &tauri::AppHandle, argv: Vec<String>) {
     // Clean up signal file — the CLI may have written one before this
     // second process was intercepted by the single-instance plugin.
-    let _ = std::fs::remove_file(review::review::central::open_request_path());
+    let _ = std::fs::remove_file(spur::home::open_request_path());
 
-    // If the second instance was launched with a review:// URL
+    // If the second instance was launched with a spur:// URL
     // (e.g. clicking a link in another app), the deep-link plugin
     // forwards it via argv. Handle it before the positional-arg
     // path below.
-    if let Some(deep_link) = argv.iter().skip(1).find(|a| a.starts_with("review://")) {
+    if let Some(deep_link) = argv.iter().skip(1).find(|a| a.starts_with("spur://")) {
         handle_deep_link(app, deep_link);
         return;
     }
@@ -420,12 +420,12 @@ fn handle_menu_event(app: &tauri::AppHandle, id: &str) {
         "review_help" => {
             let _ = app
                 .opener()
-                .open_url("https://github.com/dropseed/review", None::<&str>);
+                .open_url("https://github.com/dropseed/spur", None::<&str>);
         }
         "report_issue" => {
             let _ = app
                 .opener()
-                .open_url("https://github.com/dropseed/review/issues", None::<&str>);
+                .open_url("https://github.com/dropseed/spur/issues", None::<&str>);
         }
         "find_file" => emit_menu_event(app, "menu:find-file", ()),
         "find_symbols" => emit_menu_event(app, "menu:find-symbols", ()),
@@ -477,7 +477,7 @@ fn emit_menu_event<P: serde::Serialize + Clone>(app: &tauri::AppHandle, event: &
     let _ = app.emit(event, payload);
 }
 
-/// Where a `review://` link points: the repo it resolved to, plus whatever of
+/// Where a `spur://` link points: the repo it resolved to, plus whatever of
 /// the ref, file and hunk the URL named.
 #[cfg(desktop)]
 struct DeepLinkTarget {
@@ -487,11 +487,11 @@ struct DeepLinkTarget {
     hunk: Option<String>,
 }
 
-/// Parse a `review://open?repo=&ref=&file=&hunk=` URL into the parts
+/// Parse a `spur://open?repo=&ref=&file=&hunk=` URL into the parts
 /// `emit_cli_open_review` needs. Returns `None` for unrecognized URLs
 /// (wrong scheme, missing or unknown repo id, etc.).
 #[cfg(desktop)]
-fn parse_review_url(raw: &str) -> Option<DeepLinkTarget> {
+fn parse_spur_url(raw: &str) -> Option<DeepLinkTarget> {
     let url = url::Url::parse(raw).ok()?;
     if url.scheme() != "review" {
         return None;
@@ -513,9 +513,7 @@ fn parse_review_url(raw: &str) -> Option<DeepLinkTarget> {
     }
 
     let repo_id = repo_id?;
-    let entry = review::review::central::get_registered_repo(&repo_id)
-        .ok()
-        .flatten()?;
+    let entry = spur::home::get_registered_repo(&repo_id).ok().flatten()?;
 
     Some(DeepLinkTarget {
         repo_path: entry.path,
@@ -525,7 +523,7 @@ fn parse_review_url(raw: &str) -> Option<DeepLinkTarget> {
     })
 }
 
-/// Handle a `review://` URL: parse it, then either navigate the running
+/// Handle a `spur://` URL: parse it, then either navigate the running
 /// window or write a signal file for the next launch. `app_handle` is used
 /// to emit into an existing window; the signal-file fallback is for the
 /// cold-start case where no webview exists yet.
@@ -536,7 +534,7 @@ fn handle_deep_link(app: &tauri::AppHandle, raw: &str) {
         review_ref,
         file,
         hunk,
-    }) = parse_review_url(raw)
+    }) = parse_spur_url(raw)
     else {
         log::warn!("Ignoring unrecognized deep link: {}", raw);
         return;
@@ -577,13 +575,13 @@ fn write_open_request(
     focused_file: Option<&str>,
     focused_hunk_hash: Option<&str>,
 ) {
-    let request = review::review::central::OpenRequest {
+    let request = spur::home::OpenRequest {
         repo_path: repo_path.to_owned(),
         ref_name: ref_name.map(ToOwned::to_owned),
         focused_file: focused_file.map(ToOwned::to_owned),
         focused_hunk_hash: focused_hunk_hash.map(ToOwned::to_owned),
     };
-    if let Err(e) = review::review::central::write_open_request(&request) {
+    if let Err(e) = spur::home::write_open_request(&request) {
         log::warn!("[desktop] could not write the open request: {e}");
     }
 }
@@ -601,7 +599,7 @@ fn write_open_request(
 /// accent picker back still outranks this:
 ///
 /// ```sh
-/// defaults write com.dropseed.review ApplePressAndHoldEnabled -bool true
+/// defaults write com.dropseed.spur ApplePressAndHoldEnabled -bool true
 /// ```
 ///
 /// The one `unsafe` in the workspace, which otherwise denies it: `objc2` marks
@@ -637,6 +635,11 @@ pub fn run() {
     // This is a no-op when launched from a terminal.
     let _ = fix_path_env::fix();
 
+    // Before anything resolves a storage path: move a pre-rename `~/.review`
+    // into place as `~/.spur`. No-ops unless this is the default home and only
+    // the old one exists.
+    spur::home::migrate_legacy_home();
+
     // Before any web view exists — it reads the pref when it is created.
     #[cfg(target_os = "macos")]
     let_keys_repeat();
@@ -668,10 +671,10 @@ pub fn run() {
 
             // In dev mode, also write logs to the review home's app.log so we
             // can read traces for debugging (same file the frontend logger
-            // uses). Through get_central_root so a `$REVIEW_HOME` dev instance
+            // uses). Through get_central_root so a `$SPUR_HOME` dev instance
             // doesn't interleave its logs with the released app's.
             if cfg!(debug_assertions) {
-                if let Ok(review_dir) = review::review::central::get_central_root() {
+                if let Ok(review_dir) = spur::home::get_central_root() {
                     let _ = std::fs::create_dir_all(&review_dir);
                     builder = builder
                         .target(tauri_plugin_log::Target::new(
@@ -778,15 +781,15 @@ pub fn run() {
             commands::list_all_reviews_global,
             commands::get_review_root,
             commands::get_review_storage_path,
-            commands::work_list,
-            commands::work_add,
-            commands::work_remove,
-            commands::work_nest,
-            commands::work_rename,
-            commands::work_move,
-            commands::work_attach,
-            commands::work_detach,
-            commands::work_route,
+            commands::workspace_list,
+            commands::workspace_add,
+            commands::workspace_remove,
+            commands::workspace_nest,
+            commands::workspace_rename,
+            commands::workspace_move,
+            commands::workspace_attach,
+            commands::workspace_detach,
+            commands::workspace_route,
             commands::consume_cli_request,
             commands::classify_hunks_static,
             commands::get_comparison_move_pairs,
@@ -875,13 +878,13 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             tauri::RunEvent::Opened { urls } => {
                 // Handle files opened via "Open with Review" in Finder, and
-                // review:// deep links delivered to a running app.
+                // spur:// deep links delivered to a running app.
                 for url in urls {
                     match url.scheme() {
                         "file" => {
                             if let Ok(path) = url.to_file_path() {
                                 let (repo_path, focused_file) =
-                                    review::service::util::resolve_open_target(&path);
+                                    spur::service::util::resolve_open_target(&path);
                                 log::info!(
                                     "Opened file via file association: {} (repo: {}, file: {:?})",
                                     path.to_string_lossy(),
@@ -914,7 +917,7 @@ pub fn run() {
                 }
             }
             // `RunEvent::Exit` deliberately does nothing about terminals: the
-            // sessions belong to the `review-daemon` process and are meant to
+            // sessions belong to the `spur-daemon` process and are meant to
             // outlive the GUI. They end only through an explicit kill (or the
             // "shut down all sessions" governance action), or when a version
             // mismatch makes the app respawn the daemon on next launch.

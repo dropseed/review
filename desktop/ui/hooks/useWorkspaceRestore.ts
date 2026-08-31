@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { useFocusedWorkspace } from "../stores/selectors/workspaces";
 import {
   focusWorkspace,
@@ -37,29 +37,29 @@ const ROW_WAIT_MS = 10_000;
  * Both halves live here because they are one sentence: the focused workspace is
  * remembered as it changes, and read back once on launch. The memory is a
  * preference — a fact about this window's last session, like the panel widths
- * beside it — and never `work.json`, which says what the work *is*.
+ * beside it — and never `workspaces.json`, which says what the work *is*.
  *
  * The restore is deliberately timid. Anything else that reaches the stage first
- * wins outright, and a comparison already open — a URL, a `review` invocation,
+ * wins outright, and a comparison already open — a URL, a `spur` invocation,
  * the directory the app was launched from — keeps the screen it asked for; the
  * restore then only takes the focus back, so the tabs are the workspace's own.
  */
 export function useWorkspaceRestore(repoStatus: RepoStatus): void {
-  const workspaces = useReviewStore((s) => s.workspaces);
+  const workspaces = useSpurStore((s) => s.workspaces);
   const focused = useFocusedWorkspace();
-  const activeReviewKey = useReviewStore((s) => s.activeReviewKey);
+  const activeReviewKey = useSpurStore((s) => s.activeReviewKey);
   // Browse and standalone mode both open a repo and no comparison, so the
   // stage is claimed by one without the other.
-  const repoPath = useReviewStore((s) => s.repoPath);
-  const lastWorkspaceId = useReviewStore((s) => s.lastWorkspaceId);
-  const rememberLastWorkspace = useReviewStore((s) => s.rememberLastWorkspace);
+  const repoPath = useSpurStore((s) => s.repoPath);
+  const lastWorkspaceId = useSpurStore((s) => s.lastWorkspaceId);
+  const rememberLastWorkspace = useSpurStore((s) => s.rememberLastWorkspace);
   // A tick from the two loads that build the sidebar's rows, not the rows
   // themselves — what they carry is asked for through `targetForAttachment`,
   // and this only has to re-ask once either of them lands. Counted rather than
   // subscribed to whole: this hook is mounted on the app shell, and holding
   // either list would re-render it on every working-tree delta for a value the
   // restore stops reading a second after launch.
-  const rowSources = useReviewStore(
+  const rowSources = useSpurStore(
     (s) => s.localActivity.length + s.globalReviews.length,
   );
 
@@ -99,7 +99,7 @@ export function useWorkspaceRestore(repoStatus: RepoStatus): void {
     if (decision.kind === "done") return;
 
     if (decision.kind === "focus") {
-      const store = useReviewStore.getState();
+      const store = useSpurStore.getState();
       store.setFocusedWorkspace(decision.workspace.id);
       store.selectWorkspaceTab(decision.workspace.id);
       return;

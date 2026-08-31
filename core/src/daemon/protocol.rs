@@ -113,8 +113,8 @@ pub enum Op {
     /// Spawn a session. Ok payload: `TerminalSummary`.
     ///
     /// `workspace_id` is the workspace this session belongs to, decided by the
-    /// caller's router (`work::router`). The daemon only carries it: it never
-    /// reads or writes `work.json`, so there is exactly one writer of the queue
+    /// caller's router (`workspace::router`). The daemon only carries it: it never
+    /// reads or writes `workspaces.json`, so there is exactly one writer of the queue
     /// and attribution can't drift from a second source of truth.
     Start {
         terminal_id: String,

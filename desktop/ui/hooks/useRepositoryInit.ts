@@ -9,7 +9,7 @@ import { resolveRepoIdentity, reviewUrl } from "../utils/repo-identity";
 import { getApiClient } from "../api";
 import { isTauriEnvironment } from "../api/client";
 import { getPlatformServices } from "../platform";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { makeReviewKey } from "../stores/slices/groupingSlice";
 import { openFolderInFocusedWorkspace } from "../components/Stage/repo-choices";
 import { landWorkspace } from "../commands/workspaceCommands";
@@ -73,7 +73,7 @@ async function resolveRepoFromUrl(): Promise<string | null> {
  */
 export function refFromReviewPath(pathname: string): string | null {
   // Positional, not a search. `/review/` appears twice in this very repo's own
-  // URLs — `/dropseed/review/review/master` — so a regex looking for the first
+  // URLs — `/dropseed/spur/review/master` — so a regex looking for the first
   // one answers "review", the repo, and a regex anchored to the end answers
   // nothing at all once the path continues into a file. The route has a fixed
   // shape; reading it by position is the only form that is right in both.
@@ -131,7 +131,7 @@ async function fetchPrRefIfNeeded(
   githubPr: GitHubPrRef | undefined,
 ): Promise<void> {
   if (!githubPr) return;
-  await useReviewStore.getState().fetchPullRequestRef(repoPath, githubPr);
+  await useSpurStore.getState().fetchPullRequestRef(repoPath, githubPr);
 }
 
 /**
@@ -201,13 +201,13 @@ interface UseRepositoryInitReturn {
  */
 export function useRepositoryInit(): UseRepositoryInitReturn {
   const navigate = useNavigate();
-  const setRepoPath = useReviewStore((s) => s.setRepoPath);
-  const setComparison = useReviewStore((s) => s.setComparison);
-  const switchReview = useReviewStore((s) => s.switchReview);
-  const addRecentRepository = useReviewStore((s) => s.addRecentRepository);
-  const setActiveReviewKey = useReviewStore((s) => s.setActiveReviewKey);
-  const loadGlobalReviews = useReviewStore((s) => s.loadGlobalReviews);
-  const ensureReviewExists = useReviewStore((s) => s.ensureReviewExists);
+  const setRepoPath = useSpurStore((s) => s.setRepoPath);
+  const setComparison = useSpurStore((s) => s.setComparison);
+  const switchReview = useSpurStore((s) => s.switchReview);
+  const addRecentRepository = useSpurStore((s) => s.addRecentRepository);
+  const setActiveReviewKey = useSpurStore((s) => s.setActiveReviewKey);
+  const loadGlobalReviews = useSpurStore((s) => s.loadGlobalReviews);
+  const ensureReviewExists = useSpurStore((s) => s.ensureReviewExists);
   // Repository status tracking
   const [repoStatus, setRepoStatus] = useState<RepoStatus>("loading");
   const [repoError, setRepoError] = useState<string | null>(null);
@@ -238,7 +238,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       // *changes*: `git init` in a folder already open as a plain directory
       // reopens the same path as a repo, and is the one way in here that would
       // otherwise keep drawing the standalone reader over a real checkout.
-      useReviewStore.setState({ isStandaloneFile: false });
+      useSpurStore.setState({ isStandaloneFile: false });
       if (options?.clearLogFile) clearLog();
       setRepoStatus("found");
       setRepoError(null);
@@ -285,7 +285,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     options?: { clearLogFile?: boolean; replace?: boolean },
   ): void {
     setRepoPath(displayRoot);
-    useReviewStore.setState({ isStandaloneFile: true });
+    useSpurStore.setState({ isStandaloneFile: true });
     if (options?.clearLogFile) clearLog();
     setRepoStatus("found");
     setRepoError(null);
@@ -308,7 +308,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     resolved: ResolvedReview,
     options?: InitRepoOptions,
   ): Promise<void> {
-    const crossRepo = path !== useReviewStore.getState().repoPath;
+    const crossRepo = path !== useSpurStore.getState().repoPath;
     if (crossRepo) {
       switchReview(path, resolved);
       addRecentRepository(path);
@@ -348,7 +348,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
   }
 
   // The three landings, and the only way in for anything arriving from outside
-  // the app: the `review` CLI (cold and warm, which the `review://` deep link
+  // the app: the `spur` CLI (cold and warm, which the `spur://` deep link
   // and Finder's "Open with" share), the URL deep link, the launch directory,
   // and a page refresh. Each routes the workspace and *then* opens the screen.
   //
@@ -427,7 +427,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         return;
       }
 
-      // Check for a pending CLI open request (cold start from `review` CLI).
+      // Check for a pending CLI open request (cold start from `spur` CLI).
       // The signal file the CLI writes is the only way a cold start knows what
       // to open.
       try {
@@ -446,13 +446,13 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
           }
 
           if (cliRequest.ref) {
-            // review start <spec> — open the resolved review ref
+            // spur start <spec> — open the resolved review ref
             const resolved = await resolveTarget(
               cliRequest.repoPath,
               cliRequest.ref,
             );
             if (cliRequest.focusedFile) {
-              useReviewStore.getState().setPendingDeepLinkFocus({
+              useSpurStore.getState().setPendingDeepLinkFocus({
                 filePath: cliRequest.focusedFile,
                 hunkHash: cliRequest.focusedHunkHash,
               });
@@ -490,7 +490,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
 
         // A refresh lands like anything else. It looks like it shouldn't have
         // to — the workspace was made when this repo was first opened — but a
-        // router-made one is `autoCreated`, so `work::cleanup` reaps it a
+        // router-made one is `autoCreated`, so `workspace::cleanup` reaps it a
         // minute later if no terminal was started in it, and the reload after
         // that finds the repo belonging to nobody. Routing is idempotent when
         // one does still hold it.
@@ -592,7 +592,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         }
 
         if (data?.focusedFile) {
-          useReviewStore.getState().setPendingDeepLinkFocus({
+          useSpurStore.getState().setPendingDeepLinkFocus({
             filePath: data.focusedFile,
             hunkHash: data.focusedHunkHash ?? null,
           });
@@ -666,7 +666,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
   const handleActivateReview = useCallback(
     async (review: GlobalReviewSummary) => {
       const nav = navigateRef.current;
-      const state = useReviewStore.getState();
+      const state = useSpurStore.getState();
       const meta = state.repoMetadata[review.repoPath];
       const routePrefix = meta?.routePrefix ?? `local/${review.repoName}`;
       const url = reviewUrl(routePrefix, review.ref);
@@ -701,7 +701,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         setComparison(resolved);
       }
 
-      useReviewStore.getState().setReadOnlyPreview(false);
+      useSpurStore.getState().setReadOnlyPreview(false);
 
       setComparisonReady((c) => c + 1);
       setInitialLoading(true);
@@ -716,7 +716,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
     async (path: string, target: ReviewTarget) => {
       if (!(await validateGitRepo(path))) return;
 
-      const state = useReviewStore.getState();
+      const state = useSpurStore.getState();
       const { routePrefix } = await resolveRepoIdentity(path);
 
       // Order matters for PRs: fetch the head so the ref exists, then persist
@@ -773,7 +773,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
   const handleStartReview = useCallback(
     async (path: string, target: ReviewTarget) => {
       await handleNewReview(path, target);
-      useReviewStore.getState().setReadOnlyPreview(false);
+      useSpurStore.getState().setReadOnlyPreview(false);
     },
     [handleNewReview],
   );
@@ -784,7 +784,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
   const handleActivateLocalBranch = useCallback(
     (repoPath: string, branch: string) => {
       const nav = navigateRef.current;
-      const state = useReviewStore.getState();
+      const state = useSpurStore.getState();
 
       // Save navigation snapshot before switching
       state.saveNavigationSnapshot();
@@ -812,14 +812,14 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
 
         setActiveReviewKey({ repoPath, ref: branch });
 
-        if (repoPath !== useReviewStore.getState().repoPath) {
+        if (repoPath !== useSpurStore.getState().repoPath) {
           switchReview(repoPath, resolved);
         } else {
           setComparison(resolved);
         }
 
         // Set read-only preview and worktree path in store
-        const storeActions = useReviewStore.getState();
+        const storeActions = useSpurStore.getState();
         storeActions.setReadOnlyPreview(isReadOnly);
         storeActions.setWorktreePath(
           branchInfo?.worktreePath ?? existingReview?.worktreePath ?? null,

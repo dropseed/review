@@ -6,7 +6,7 @@ import {
   useRef,
 } from "react";
 import { clsx } from "clsx";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { CompactMenuButton } from "../Stage/CompactNav";
 import {
   isOrphanedSession,
@@ -53,21 +53,19 @@ import {
 import { TerminalMenuItems } from "../Sidebar/ActionMenu";
 
 export function TerminalPanel(): ReactNode {
-  const terminalSessions = useReviewStore((s) => s.terminalSessions);
-  const terminalStatuses = useReviewStore((s) => s.terminalStatuses);
-  const terminalExited = useReviewStore((s) => s.terminalExited);
-  const terminalCheckouts = useReviewStore((s) => s.terminalCheckouts);
-  const terminalTabs = useReviewStore((s) => s.terminalTabs);
-  const activeTabId = useReviewStore((s) => s.activeTabId);
+  const terminalSessions = useSpurStore((s) => s.terminalSessions);
+  const terminalStatuses = useSpurStore((s) => s.terminalStatuses);
+  const terminalExited = useSpurStore((s) => s.terminalExited);
+  const terminalCheckouts = useSpurStore((s) => s.terminalCheckouts);
+  const terminalTabs = useSpurStore((s) => s.terminalTabs);
+  const activeTabId = useSpurStore((s) => s.activeTabId);
 
-  const setActiveTab = useReviewStore((s) => s.setActiveTab);
-  const setContentFocus = useReviewStore((s) => s.setContentFocus);
-  const moveTab = useReviewStore((s) => s.moveTab);
-  const setFocusedTerminalPane = useReviewStore(
-    (s) => s.setFocusedTerminalPane,
-  );
-  const movePaneToTab = useReviewStore((s) => s.movePaneToTab);
-  const movePaneToNewTab = useReviewStore((s) => s.movePaneToNewTab);
+  const setActiveTab = useSpurStore((s) => s.setActiveTab);
+  const setContentFocus = useSpurStore((s) => s.setContentFocus);
+  const moveTab = useSpurStore((s) => s.moveTab);
+  const setFocusedTerminalPane = useSpurStore((s) => s.setFocusedTerminalPane);
+  const movePaneToTab = useSpurStore((s) => s.movePaneToTab);
+  const movePaneToNewTab = useSpurStore((s) => s.movePaneToNewTab);
 
   // Tab drag-to-reorder. The in-flight tab lives in the pane-drag module
   // rather than component state, because under Tauri the drop lands on the

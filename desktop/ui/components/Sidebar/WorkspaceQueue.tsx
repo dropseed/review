@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 import { clsx } from "clsx";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import {
   useFocusedWorkspace,
   useWorkspaces,
@@ -166,7 +166,7 @@ export function WorkspaceQueue(): ReactNode {
  * read next to the entry that refused it, then be gone by the next gesture.
  */
 function QueueError(): ReactNode {
-  const error = useReviewStore((s) => s.lastWorkspaceError);
+  const error = useSpurStore((s) => s.lastWorkspaceError);
   if (!error) return null;
   return (
     <p className="px-3 pb-1 pt-1 text-[10px] leading-snug text-status-rejected/80">
@@ -326,7 +326,7 @@ const QueueEntry = memo(function QueueEntry({
             // cannot be dropped onto.
             onDragStart={(e) => {
               const drag = workspaceDragFrom(
-                useReviewStore.getState().workspaces,
+                useSpurStore.getState().workspaces,
                 index,
               );
               if (drag) startWorkspaceDrag(e, drag);

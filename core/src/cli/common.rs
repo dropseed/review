@@ -26,7 +26,7 @@ pub struct ReviewTarget {
     #[arg(short, long, global = true)]
     pub repo: Option<String>,
     /// Comparison spec ("base..head" or a single ref); falls back to
-    /// `$REVIEW_SPEC`, then the `review use` default, then auto-detection
+    /// `$SPUR_SPEC`, then the `spur use` default, then auto-detection
     #[arg(short, long, global = true)]
     pub spec: Option<String>,
 }
@@ -117,8 +117,8 @@ pub fn line_range(start: u32, end: Option<u32>) -> String {
 /// Resolve the review a data command targets — its identity (`ref` +
 /// `baseOverride`) and the concrete `Comparison` to diff.
 ///
-/// Precedence for the spec: explicit `--spec` flag → `$REVIEW_SPEC` → the
-/// `review use` stored default → auto-detection (the current branch as the
+/// Precedence for the spec: explicit `--spec` flag → `$SPUR_SPEC` → the
+/// `spur use` stored default → auto-detection (the current branch as the
 /// ref). The spec is parsed into `(ref, base?)` via [`parse_review_spec`].
 ///
 /// Base resolution then layers three sources, most specific first: an explicit
@@ -141,7 +141,7 @@ pub fn resolve_review_arg(repo: &Path, spec: Option<&str>) -> Result<ResolvedRev
 
 /// Resolve an optional directory argument: the given path made absolute, or the
 /// current directory when it's absent. The shared spelling of "[DIR], defaulting
-/// to here" — `review [path]`, `review workspace resolve`, `review terminal start`.
+/// to here" — `review [path]`, `spur workspace resolve`, `spur terminal start`.
 pub fn resolve_cwd_arg(dir: Option<String>) -> Result<std::path::PathBuf, String> {
     match dir {
         Some(dir) => super::resolve_absolute(Path::new(&dir)),
@@ -156,15 +156,15 @@ pub(crate) fn non_blank(s: &str) -> Option<String> {
 }
 
 /// The spec a command should use before falling back to auto-detection:
-/// the explicit `--spec` flag, else `$REVIEW_SPEC`, else the repo's stored
-/// `review use` default. `None` means "auto-detect". A blank/whitespace-only
+/// the explicit `--spec` flag, else `$SPUR_SPEC`, else the repo's stored
+/// `spur use` default. `None` means "auto-detect". A blank/whitespace-only
 /// value at any precedence level falls through to the next one, rather than
 /// being taken literally.
 pub fn effective_spec(repo: &Path, spec: Option<&str>) -> Option<String> {
     if let Some(spec) = spec.and_then(non_blank) {
         return Some(spec);
     }
-    if let Some(env) = std::env::var("REVIEW_SPEC")
+    if let Some(env) = std::env::var("SPUR_SPEC")
         .ok()
         .and_then(|env| non_blank(&env))
     {
@@ -232,7 +232,7 @@ pub fn hunk_labels(
 }
 
 /// Persist static-classification labels into the review state so summaries
-/// — `review list` and the desktop app's sidebar — see every classified
+/// — `spur list` and the desktop app's sidebar — see every classified
 /// hunk, matching what the app stores. Existing labels (e.g. from the app's
 /// AI classification) are left untouched.
 pub fn sync_classification(state: &mut ReviewState, classification: &ClassifyResponse) {
@@ -299,7 +299,7 @@ pub fn load_review_view(repo: &Path, spec: Option<&str>) -> Result<ReviewView, S
     let mut state = storage::load_review_state(repo, &review.ref_name)
         .map_err(|e| format!("Failed to load review: {e}"))?;
     // Carry decisions forward onto the current diff for display (not persisted
-    // until the next mutation), so `review hunks`/`status` reflect prior work
+    // until the next mutation), so `spur hunks`/`status` reflect prior work
     // even after edits shifted hunk IDs. drop_orphans=true: `hunks` is the
     // authoritative full diff the CLI just computed.
     state.reconcile(&hunks, true);
@@ -341,7 +341,7 @@ pub fn load_for_mutation(
 /// [`ReviewState::reconcile`] carries each decision forward onto the live hunk
 /// with the same stable identity (so an edit that shifts hunk IDs doesn't
 /// discard prior review work) and drops only the genuine orphans — keeping
-/// `to_summary` and `review list` honest.
+/// `to_summary` and `spur list` honest.
 pub fn mutate_review<F>(
     repo: &Path,
     ref_name: &str,
@@ -376,17 +376,17 @@ where
     Err("Failed to save review after repeated version conflicts.".to_owned())
 }
 
-/// Resolve a `--source` flag (or `$REVIEW_SOURCE`) to a [`Source`], defaulting
+/// Resolve a `--source` flag (or `$SPUR_SOURCE`) to a [`Source`], defaulting
 /// to `cli`. Shared by the comment and status commands so an agent
-/// harness can export `REVIEW_SOURCE=agent` once and have every mutation it
+/// harness can export `SPUR_SOURCE=agent` once and have every mutation it
 /// makes attributed correctly.
 pub fn resolve_source(arg: Option<super::comments::SourceArg>) -> Result<Source, String> {
     if let Some(arg) = arg {
         return Ok(Source::from(arg));
     }
-    match std::env::var("REVIEW_SOURCE") {
+    match std::env::var("SPUR_SOURCE") {
         Ok(value) => super::comments::parse_source_str(&value).ok_or_else(|| {
-            format!("Invalid $REVIEW_SOURCE value '{value}' (expected one of: ui, cli, agent, github, gitlab)")
+            format!("Invalid $SPUR_SOURCE value '{value}' (expected one of: ui, cli, agent, github, gitlab)")
         }),
         Err(_) => Ok(Source::Cli),
     }
@@ -602,34 +602,34 @@ mod tests {
 
     #[test]
     fn effective_spec_falls_through_blank_levels() {
-        let _lock = crate::review::central::tests::ENV_LOCK.lock().unwrap();
-        let (_guard, _review_home, repo) = crate::review::central::tests::setup_test();
-        std::env::remove_var("REVIEW_SPEC");
+        let _lock = crate::home::tests::ENV_LOCK.lock().unwrap();
+        let (_guard, _spur_home, repo) = crate::home::tests::setup_test();
+        std::env::remove_var("SPUR_SPEC");
 
         // Nothing set at any level: auto-detect.
         assert_eq!(effective_spec(repo.path(), None), None);
 
-        // A blank explicit flag falls through to $REVIEW_SPEC, not taken literally.
-        std::env::set_var("REVIEW_SPEC", "from-env");
+        // A blank explicit flag falls through to $SPUR_SPEC, not taken literally.
+        std::env::set_var("SPUR_SPEC", "from-env");
         assert_eq!(
             effective_spec(repo.path(), Some("  ")),
             Some("from-env".to_owned())
         );
 
-        // A non-blank explicit flag still wins over $REVIEW_SPEC.
+        // A non-blank explicit flag still wins over $SPUR_SPEC.
         assert_eq!(
             effective_spec(repo.path(), Some("from-flag")),
             Some("from-flag".to_owned())
         );
 
         // Blank at both the flag and the env var falls through to the stored default.
-        std::env::set_var("REVIEW_SPEC", "  ");
+        std::env::set_var("SPUR_SPEC", "  ");
         storage::write_default_spec(repo.path(), "from-default").unwrap();
         assert_eq!(
             effective_spec(repo.path(), Some("")),
             Some("from-default".to_owned())
         );
 
-        std::env::remove_var("REVIEW_SPEC");
+        std::env::remove_var("SPUR_SPEC");
     }
 }

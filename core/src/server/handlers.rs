@@ -25,7 +25,7 @@ use crate::sources::traits::{
 };
 use crate::symbols::{FileSymbolDiff, Symbol, SymbolDefinition};
 use crate::trust::patterns::TrustCategory;
-use crate::work::{self, Attachment, Removal, WorkspaceView};
+use crate::workspace::{self, Attachment, Removal, WorkspaceView};
 
 pub(super) type ApiResult<T> = Result<Json<T>, (StatusCode, String)>;
 
@@ -130,16 +130,16 @@ pub fn build_api_router() -> Router {
         .route("/api/review/root", post(review_root))
         .route("/api/review/storage-path", post(review_storage_path))
         .route("/api/review/freshness", post(review_freshness))
-        // Work queue
-        .route("/api/work/list", post(work_list))
-        .route("/api/work/add", post(work_add))
-        .route("/api/work/remove", post(work_remove))
-        .route("/api/work/nest", post(work_nest))
-        .route("/api/work/rename", post(work_rename))
-        .route("/api/work/move", post(work_move))
-        .route("/api/work/attach", post(work_attach))
-        .route("/api/work/detach", post(work_detach))
-        .route("/api/work/route", post(work_route))
+        // Workspace queue
+        .route("/api/work/list", post(workspace_list))
+        .route("/api/work/add", post(workspace_add))
+        .route("/api/work/remove", post(workspace_remove))
+        .route("/api/work/nest", post(workspace_nest))
+        .route("/api/work/rename", post(workspace_rename))
+        .route("/api/work/move", post(workspace_move))
+        .route("/api/work/attach", post(workspace_attach))
+        .route("/api/work/detach", post(workspace_detach))
+        .route("/api/work/route", post(workspace_route))
         // Classification
         .route("/api/classify/static", post(classify_static))
         .route("/api/files/move-pairs", post(files_move_pairs))
@@ -988,7 +988,7 @@ async fn review_list_global() -> ApiResult<Vec<GlobalReviewSummary>> {
 
 async fn review_root() -> ApiResult<String> {
     blocking(|| {
-        crate::review::central::get_central_root()
+        crate::home::get_central_root()
             .map(|p| p.to_string_lossy().to_string())
             .map_err(Into::into)
     })
@@ -997,7 +997,7 @@ async fn review_root() -> ApiResult<String> {
 
 async fn review_storage_path(Json(req): Json<RepoPathRequest>) -> ApiResult<String> {
     blocking(move || {
-        crate::review::central::get_repo_storage_dir(&PathBuf::from(&req.repo_path))
+        crate::home::get_repo_storage_dir(&PathBuf::from(&req.repo_path))
             .map(|p| p.to_string_lossy().to_string())
             .map_err(Into::into)
     })
@@ -1016,7 +1016,7 @@ async fn review_freshness(
 }
 
 // ============================================================
-// Work queue handlers
+// Workspace queue handlers
 //
 // Same shapes as the Tauri `work_*` commands; see `ApiClient` for why every
 // mutation answers with the full list.
@@ -1024,7 +1024,7 @@ async fn review_freshness(
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct WorkAddRequest {
+struct WorkspaceAddRequest {
     #[serde(default)]
     title: Option<String>,
     #[serde(default)]
@@ -1033,7 +1033,7 @@ struct WorkAddRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct WorkRenameRequest {
+struct WorkspaceRenameRequest {
     id: String,
     /// Absent (or empty) clears the stored title and resumes derivation.
     #[serde(default)]
@@ -1042,7 +1042,7 @@ struct WorkRenameRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct WorkMoveRequest {
+struct WorkspaceMoveRequest {
     id: String,
     /// 0-based, matching the array the frontend reordered.
     position: usize,
@@ -1055,7 +1055,7 @@ struct WorkMoveRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct WorkRouteRequest {
+struct WorkspaceRouteRequest {
     repo_path: String,
     r#ref: String,
     #[serde(default)]
@@ -1073,7 +1073,7 @@ struct RouteLanding {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct WorkAttachRequest {
+struct WorkspaceAttachRequest {
     id: String,
     /// The `{path, refName}` pair, deserialized as the `Attachment` it becomes
     /// rather than respelled field by field.
@@ -1083,7 +1083,7 @@ struct WorkAttachRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct WorkRemoveRequest {
+struct WorkspaceRemoveRequest {
     id: String,
     /// Take everything nested under it too. The app asks the human first and
     /// sends the answer; absent means the safe reading, "promote the children".
@@ -1093,7 +1093,7 @@ struct WorkRemoveRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct WorkNestRequest {
+struct WorkspaceNestRequest {
     id: String,
     /// The workspace it goes under; null takes it out to the top level.
     #[serde(default)]
@@ -1102,7 +1102,7 @@ struct WorkNestRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct WorkDetachRequest {
+struct WorkspaceDetachRequest {
     id: String,
     path: String,
 }
@@ -1110,15 +1110,20 @@ struct WorkDetachRequest {
 /// Deliberately never cleans up. Cleanup needs the daemon's answer to "what is
 /// running", and web mode has no daemon to ask — an empty set here would mean
 /// "nothing is live" and reap every router-made workspace the desktop app is
-/// using. See `work::cleanup`: a caller that cannot answer must not reap.
-async fn work_list() -> ApiResult<Vec<WorkspaceView>> {
-    blocking(|| Ok(work::views(work::list_with_liveness(None)?.workspaces))).await
+/// using. See `workspace::cleanup`: a caller that cannot answer must not reap.
+async fn workspace_list() -> ApiResult<Vec<WorkspaceView>> {
+    blocking(|| {
+        Ok(workspace::views(
+            workspace::list_with_liveness(None)?.workspaces,
+        ))
+    })
+    .await
 }
 
-async fn work_add(Json(req): Json<WorkAddRequest>) -> ApiResult<Vec<WorkspaceView>> {
+async fn workspace_add(Json(req): Json<WorkspaceAddRequest>) -> ApiResult<Vec<WorkspaceView>> {
     blocking(move || {
-        Ok(work::views(
-            work::add(req.title.as_deref(), req.attachments)?
+        Ok(workspace::views(
+            workspace::add(req.title.as_deref(), req.attachments)?
                 .0
                 .workspaces,
         ))
@@ -1126,24 +1131,28 @@ async fn work_add(Json(req): Json<WorkAddRequest>) -> ApiResult<Vec<WorkspaceVie
     .await
 }
 
-async fn work_remove(Json(req): Json<WorkRemoveRequest>) -> ApiResult<Vec<WorkspaceView>> {
+async fn workspace_remove(
+    Json(req): Json<WorkspaceRemoveRequest>,
+) -> ApiResult<Vec<WorkspaceView>> {
     blocking(move || {
         let mode = if req.recursive {
             Removal::Subtree
         } else {
             Removal::PromoteChildren
         };
-        Ok(work::views(work::remove(&req.id, mode)?.0.workspaces))
+        Ok(workspace::views(
+            workspace::remove(&req.id, mode)?.0.workspaces,
+        ))
     })
     .await
 }
 
 /// Nest a workspace under another, or — with a null `parentId` — take it back
 /// out to the top level.
-async fn work_nest(Json(req): Json<WorkNestRequest>) -> ApiResult<Vec<WorkspaceView>> {
+async fn workspace_nest(Json(req): Json<WorkspaceNestRequest>) -> ApiResult<Vec<WorkspaceView>> {
     blocking(move || {
-        Ok(work::views(
-            work::set_parent(&req.id, req.parent_id.as_deref())?
+        Ok(workspace::views(
+            workspace::set_parent(&req.id, req.parent_id.as_deref())?
                 .0
                 .workspaces,
         ))
@@ -1151,19 +1160,12 @@ async fn work_nest(Json(req): Json<WorkNestRequest>) -> ApiResult<Vec<WorkspaceV
     .await
 }
 
-async fn work_rename(Json(req): Json<WorkRenameRequest>) -> ApiResult<Vec<WorkspaceView>> {
+async fn workspace_rename(
+    Json(req): Json<WorkspaceRenameRequest>,
+) -> ApiResult<Vec<WorkspaceView>> {
     blocking(move || {
-        Ok(work::views(
-            work::rename(&req.id, req.title.as_deref())?.0.workspaces,
-        ))
-    })
-    .await
-}
-
-async fn work_move(Json(req): Json<WorkMoveRequest>) -> ApiResult<Vec<WorkspaceView>> {
-    blocking(move || {
-        Ok(work::views(
-            work::move_workspace(&req.id, req.position, req.keep_parent)?
+        Ok(workspace::views(
+            workspace::rename(&req.id, req.title.as_deref())?
                 .0
                 .workspaces,
         ))
@@ -1171,19 +1173,10 @@ async fn work_move(Json(req): Json<WorkMoveRequest>) -> ApiResult<Vec<WorkspaceV
     .await
 }
 
-async fn work_attach(Json(req): Json<WorkAttachRequest>) -> ApiResult<Vec<WorkspaceView>> {
+async fn workspace_move(Json(req): Json<WorkspaceMoveRequest>) -> ApiResult<Vec<WorkspaceView>> {
     blocking(move || {
-        Ok(work::views(
-            work::attach(&req.id, req.attachment)?.0.workspaces,
-        ))
-    })
-    .await
-}
-
-async fn work_detach(Json(req): Json<WorkDetachRequest>) -> ApiResult<Vec<WorkspaceView>> {
-    blocking(move || {
-        Ok(work::views(
-            work::detach(&req.id, std::path::Path::new(&req.path))?
+        Ok(workspace::views(
+            workspace::move_workspace(&req.id, req.position, req.keep_parent)?
                 .0
                 .workspaces,
         ))
@@ -1191,17 +1184,41 @@ async fn work_detach(Json(req): Json<WorkDetachRequest>) -> ApiResult<Vec<Worksp
     .await
 }
 
-/// The routing front door, for parity with the app's `work_route`.
-async fn work_route(Json(req): Json<WorkRouteRequest>) -> ApiResult<RouteLanding> {
+async fn workspace_attach(
+    Json(req): Json<WorkspaceAttachRequest>,
+) -> ApiResult<Vec<WorkspaceView>> {
+    blocking(move || {
+        Ok(workspace::views(
+            workspace::attach(&req.id, req.attachment)?.0.workspaces,
+        ))
+    })
+    .await
+}
+
+async fn workspace_detach(
+    Json(req): Json<WorkspaceDetachRequest>,
+) -> ApiResult<Vec<WorkspaceView>> {
+    blocking(move || {
+        Ok(workspace::views(
+            workspace::detach(&req.id, std::path::Path::new(&req.path))?
+                .0
+                .workspaces,
+        ))
+    })
+    .await
+}
+
+/// The routing front door, for parity with the app's `workspace_route`.
+async fn workspace_route(Json(req): Json<WorkspaceRouteRequest>) -> ApiResult<RouteLanding> {
     blocking(move || {
         let location =
-            work::router::location_of_ref(std::path::Path::new(&req.repo_path), &req.r#ref);
-        let landing = work::router::land(&location, req.workspace_id.as_deref())?;
-        let queue = work::list()?.workspaces;
+            workspace::router::location_of_ref(std::path::Path::new(&req.repo_path), &req.r#ref);
+        let landing = workspace::router::land(&location, req.workspace_id.as_deref())?;
+        let queue = workspace::list()?.workspaces;
         Ok(RouteLanding {
-            workspace: work::view_of(&queue, landing.workspace),
+            workspace: workspace::view_of(&queue, landing.workspace),
             created: landing.created,
-            workspaces: work::views(queue),
+            workspaces: workspace::views(queue),
         })
     })
     .await
@@ -1290,8 +1307,7 @@ async fn activity_list() -> ApiResult<Vec<RepoLocalActivity>> {
 
 async fn activity_register(Json(req): Json<RepoPathRequest>) -> ApiResult<bool> {
     blocking(move || {
-        crate::review::central::register_repo_if_valid(&PathBuf::from(&req.repo_path))
-            .map_err(Into::into)
+        crate::home::register_repo_if_valid(&PathBuf::from(&req.repo_path)).map_err(Into::into)
     })
     .await
 }
@@ -1299,7 +1315,7 @@ async fn activity_register(Json(req): Json<RepoPathRequest>) -> ApiResult<bool> 
 async fn activity_unregister(Json(req): Json<RepoPathRequest>) -> ApiResult<()> {
     blocking(move || -> anyhow::Result<()> {
         let path = PathBuf::from(&req.repo_path);
-        crate::review::central::unregister_repo(&path)?;
+        crate::home::unregister_repo(&path)?;
         // Drop cached activity so a re-register doesn't surface stale data.
         crate::service::activity_cache::invalidate(&path);
         Ok(())
@@ -1327,7 +1343,7 @@ async fn misc_resolve_repo_path(
     Json(req): Json<ResolveRepoPathRequest>,
 ) -> ApiResult<Option<String>> {
     blocking(move || {
-        let repos = crate::review::central::list_registered_repos()?;
+        let repos = crate::home::list_registered_repos()?;
         for repo_entry in &repos {
             let source = match LocalGitSource::new(PathBuf::from(&repo_entry.path)) {
                 Ok(s) => s,
@@ -1425,7 +1441,7 @@ async fn push_unsubscribe(Json(req): Json<PushUnsubscribeRequest>) -> ApiResult<
 
 async fn push_test() -> ApiResult<crate::push::SendReport> {
     crate::push::send_to_all(&crate::push::NotificationPayload {
-        title: "Review".to_owned(),
+        title: "Spur".to_owned(),
         body: "Test notification".to_owned(),
         url: Some("/".to_owned()),
         tag: None,
@@ -1569,12 +1585,12 @@ async fn events_sse(
 
     let repo_path = PathBuf::from(&params.repo_path);
     let repo_path_str = params.repo_path.clone();
-    // The central root, watched alongside this repo so `review workspace ...` edits
+    // The central root, watched alongside this repo so `spur workspace ...` edits
     // reach the browser. `categorize_change` needs it to tell the app's own
     // global state apart from a repo's files.
     // Canonical, because the paths it is compared against arrive from the OS
     // already resolved — see `canonical_central_root`.
-    let central_root = crate::review::central::canonical_central_root().ok();
+    let central_root = crate::home::canonical_central_root().ok();
 
     // Spawn the watcher in a blocking context. When `tx` is dropped
     // (because the SSE connection closed), the debouncer is dropped too.
@@ -1600,7 +1616,7 @@ async fn events_sse(
                     let mut git_state_changed = false;
                     let mut index_lock_changed = false;
                     let mut working_tree_changed = false;
-                    let mut work_changed = false;
+                    let mut workspaces_changed = false;
                     let mut changed_paths: std::collections::BTreeSet<String> =
                         std::collections::BTreeSet::new();
 
@@ -1619,7 +1635,7 @@ async fn events_sse(
                             ChangeKind::ReviewState => review_changed = true,
                             ChangeKind::GitState => git_state_changed = true,
                             ChangeKind::IndexLock => index_lock_changed = true,
-                            ChangeKind::WorkQueue => work_changed = true,
+                            ChangeKind::Workspaces => workspaces_changed = true,
                             ChangeKind::WorkingTree => {
                                 working_tree_changed = true;
                                 let rel = crate::service::util::repo_relative_path(
@@ -1641,12 +1657,12 @@ async fn events_sse(
                                 .data(&repo_for_closure),
                         );
                     }
-                    if work_changed {
+                    if workspaces_changed {
                         let _ = tx_clone.blocking_send(
                             Event::default()
-                                .event(crate::service::EVENT_WORK_CHANGED)
+                                .event(crate::service::EVENT_WORKSPACES_CHANGED)
                                 // The event is the whole message — the client
-                                // re-reads `work.json` itself. It still needs a
+                                // re-reads `workspaces.json` itself. It still needs a
                                 // payload: EventSource does not dispatch an
                                 // event whose data buffer is empty, so `""`
                                 // would never reach the page at all.
@@ -1725,7 +1741,7 @@ async fn events_sse(
             .watch(&repo_path, RecursiveMode::Recursive);
 
         // Also watch central storage for review state changes
-        if let Ok(central_dir) = crate::review::central::get_repo_storage_dir(&repo_path) {
+        if let Ok(central_dir) = crate::home::get_repo_storage_dir(&repo_path) {
             if central_dir.exists() {
                 let _ = debouncer
                     .watcher()
@@ -1734,9 +1750,9 @@ async fn events_sse(
         }
 
         // …and the central root itself (non-recursively) for the global work
-        // queue, so `review workspace ...` edits reach the browser. The watch is on
+        // queue, so `spur workspace ...` edits reach the browser. The watch is on
         // the directory because the atomic temp+rename write replaces
-        // `work.json`'s inode on every save.
+        // `workspaces.json`'s inode on every save.
         if let Some(root) = central_root.as_deref() {
             if std::fs::create_dir_all(root).is_ok() {
                 let _ = debouncer.watcher().watch(root, RecursiveMode::NonRecursive);

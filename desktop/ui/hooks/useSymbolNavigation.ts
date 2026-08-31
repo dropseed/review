@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import type { TokenEventBase } from "@pierre/diffs";
 import { getApiClient } from "../api";
 import { getPlatformServices } from "../platform";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { getAllHunksFromState } from "../stores/selectors/hunkData";
 import type {
   SymbolDefinition,
@@ -38,9 +38,9 @@ export interface SymbolNavigationState {
  */
 function navigateToFileAndLine(filePath: string, lineNumber: number): void {
   const { guideContentMode, navigateToBrowse, setSelectedFile } =
-    useReviewStore.getState();
+    useSpurStore.getState();
 
-  useReviewStore.setState({ isProgrammaticNavigation: true });
+  useSpurStore.setState({ isProgrammaticNavigation: true });
 
   if (guideContentMode !== null) {
     navigateToBrowse(filePath);
@@ -48,13 +48,13 @@ function navigateToFileAndLine(filePath: string, lineNumber: number): void {
     setSelectedFile(filePath);
   }
 
-  useReviewStore.setState({
+  useSpurStore.setState({
     scrollTarget: { type: "line", filePath, lineNumber },
   });
 
   // Clear the flag after the route sync has a chance to read it
   setTimeout(() => {
-    useReviewStore.setState({ isProgrammaticNavigation: false });
+    useSpurStore.setState({ isProgrammaticNavigation: false });
   }, 0);
 }
 
@@ -158,7 +158,7 @@ export function useSymbolNavigation(scrollNode: HTMLDivElement | null) {
     (def: SymbolDefinition) => {
       if (def.isExternal) {
         // External file: open via read-only external viewer
-        useReviewStore.getState().setExternalFile(def.filePath, def.startLine);
+        useSpurStore.getState().setExternalFile(def.filePath, def.startLine);
       } else {
         navigateToFileAndLine(def.filePath, def.startLine);
       }
@@ -185,7 +185,7 @@ export function useSymbolNavigation(scrollNode: HTMLDivElement | null) {
       const controller = new AbortController();
       abortRef.current = controller;
 
-      const state = useReviewStore.getState();
+      const state = useSpurStore.getState();
       const { repoPath, symbolDiffs, comparison } = state;
       if (!repoPath || !comparison) return;
       const hunks = getAllHunksFromState(state);
@@ -204,7 +204,7 @@ export function useSymbolNavigation(scrollNode: HTMLDivElement | null) {
 
         const api = getApiClient();
 
-        const { selectedFile, externalFilePath } = useReviewStore.getState();
+        const { selectedFile, externalFilePath } = useSpurStore.getState();
         const currentFile = externalFilePath ?? selectedFile;
         const lspDefs =
           lsp && currentFile

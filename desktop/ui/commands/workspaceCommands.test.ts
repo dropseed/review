@@ -1,6 +1,6 @@
 import { vi, describe, it, expect, afterEach } from "vitest";
 
-// `routeWorkspace` is the backend's router (`work_route`); what it decides has
+// `routeWorkspace` is the backend's router (`workspace_route`); what it decides has
 // its own tests on both sides. Here it only has to answer, so the landing can
 // be checked against it.
 const { routeWorkspace, listWorkspaces } = vi.hoisted(() => ({
@@ -24,7 +24,7 @@ import {
   landWorkspace,
   workspaceCommands,
 } from "./workspaceCommands";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { toAccelerator } from "./shortcuts";
 import { attachment, workspace } from "../test/fixtures";
 import type { LocalBranchInfo, Workspace } from "../types";
@@ -67,7 +67,7 @@ function repoActivity(repoPath: string, branches: LocalBranchInfo[]) {
 }
 
 function seed(items: Workspace[], branches = [branch("feature")]): void {
-  useReviewStore.setState({
+  useSpurStore.setState({
     workspaces: items,
     localActivity: [
       repoActivity(REPO, branches),
@@ -77,7 +77,7 @@ function seed(items: Workspace[], branches = [branch("feature")]): void {
 }
 
 afterEach(() => {
-  useReviewStore.setState({
+  useSpurStore.setState({
     workspaces: [],
     localActivity: [],
     focusedWorkspaceId: null,
@@ -110,7 +110,7 @@ describe("landing something from outside the app", () => {
     expect(await landWorkspace(REPO, "feature")).toBe(landed);
 
     expect(routeWorkspace).toHaveBeenCalledWith(REPO, "feature", undefined);
-    expect(useReviewStore.getState().focusedWorkspaceId).toBe("cli");
+    expect(useSpurStore.getState().focusedWorkspaceId).toBe("cli");
   });
 
   /**
@@ -153,7 +153,7 @@ describe("landing something from outside the app", () => {
 
     await landWorkspace(REPO, "feature");
 
-    expect(useReviewStore.getState().workspaces).toEqual([landed]);
+    expect(useSpurStore.getState().workspaces).toEqual([landed]);
     expect(listWorkspaces).not.toHaveBeenCalled();
   });
 
@@ -166,17 +166,17 @@ describe("landing something from outside the app", () => {
 
     await landWorkspace(REPO, "feature");
 
-    expect(useReviewStore.getState().workspaces).toBe(before);
+    expect(useSpurStore.getState().workspaces).toBe(before);
   });
 
   /** Routing is the one thing that can fail, and it costs the focus only. */
   it("leaves the focus alone when routing fails", async () => {
     seed([item("a")]);
-    useReviewStore.setState({ focusedWorkspaceId: "a" });
+    useSpurStore.setState({ focusedWorkspaceId: "a" });
     routeWorkspace.mockRejectedValue(new Error("no daemon"));
 
     expect(await landWorkspace(REPO, "feature")).toBeNull();
-    expect(useReviewStore.getState().focusedWorkspaceId).toBe("a");
+    expect(useSpurStore.getState().focusedWorkspaceId).toBe("a");
   });
 });
 
@@ -215,7 +215,7 @@ describe("⌘1–9 over the workspace queue", () => {
     seed([item("a")]);
     focusWorkspace(item("a"));
     expect(activateReviewKey).toHaveBeenCalledWith(REPO, "feature");
-    expect(useReviewStore.getState().focusedWorkspaceId).toBe("a");
+    expect(useSpurStore.getState().focusedWorkspaceId).toBe("a");
   });
 
   /**
@@ -276,22 +276,22 @@ describe("⌘1–9 over the workspace queue", () => {
   it("drops the explicit focus when the repo on screen moves out of it", () => {
     seed([item("a"), item("b", { attachments: [attachment(OTHER, "other")] })]);
     focusWorkspace(item("a"));
-    expect(useReviewStore.getState().focusedWorkspaceId).toBe("a");
+    expect(useSpurStore.getState().focusedWorkspaceId).toBe("a");
 
-    useReviewStore
+    useSpurStore
       .getState()
       .setActiveReviewKey({ repoPath: OTHER, ref: "other" });
-    expect(useReviewStore.getState().focusedWorkspaceId).toBeNull();
+    expect(useSpurStore.getState().focusedWorkspaceId).toBeNull();
   });
 
   /** A ref is a hint: another branch of the same repo is still that tab. */
   it("keeps the explicit focus across branches of a repo it shows", () => {
     seed([item("a")]);
     focusWorkspace(item("a"));
-    useReviewStore
+    useSpurStore
       .getState()
       .setActiveReviewKey({ repoPath: REPO, ref: "something-else" });
-    expect(useReviewStore.getState().focusedWorkspaceId).toBe("a");
+    expect(useSpurStore.getState().focusedWorkspaceId).toBe("a");
   });
 
   it("stages the intent when the attached branch is gone", () => {

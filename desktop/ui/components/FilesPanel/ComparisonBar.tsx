@@ -8,7 +8,7 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { getApiClient } from "../../api";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { isCheckedOut } from "../../stores/selectors/checkout";
 import type { BaseReason, CommitEntry } from "../../types";
 import {
@@ -215,29 +215,29 @@ const NO_COMMITS: CommitEntry[] = [];
  * the Git tab all belong to a working tree.
  */
 export function ComparisonBar(): ReactNode {
-  const repoPath = useReviewStore((s) => s.repoPath);
-  const reviewComparison = useReviewStore((s) => s.reviewComparison);
-  const viewpoint = useReviewStore((s) => s.viewpoint);
-  const setViewpoint = useReviewStore((s) => s.setViewpoint);
-  const checkedOut = useReviewStore((s) => isCheckedOut(s, s.comparison));
+  const repoPath = useSpurStore((s) => s.repoPath);
+  const reviewComparison = useSpurStore((s) => s.reviewComparison);
+  const viewpoint = useSpurStore((s) => s.viewpoint);
+  const setViewpoint = useSpurStore((s) => s.setViewpoint);
+  const checkedOut = useSpurStore((s) => isCheckedOut(s, s.comparison));
   // Uncommitted work needs the *review's* head to actually be checked out,
   // deliberately rather than whatever slice is on screen: offering it is about
   // the branch the review is of.
-  const showUncommitted = useReviewStore((s) =>
+  const showUncommitted = useSpurStore((s) =>
     isCheckedOut(s, s.reviewComparison),
   );
-  const attribution = useReviewStore((s) => s.attribution);
-  const attributionLoading = useReviewStore((s) => s.attributionLoading);
-  const attributionLoaded = useReviewStore((s) => s.attributionLoaded);
-  const loadAttribution = useReviewStore((s) => s.loadAttribution);
+  const attribution = useSpurStore((s) => s.attribution);
+  const attributionLoading = useSpurStore((s) => s.attributionLoading);
+  const attributionLoaded = useSpurStore((s) => s.attributionLoaded);
+  const loadAttribution = useSpurStore((s) => s.loadAttribution);
   // Identity-stable per the slice, so the branch lookups below are rebuilt when
   // this repo's activity changes rather than when any repo's does.
-  const repoActivity = useReviewStore((s) =>
+  const repoActivity = useSpurStore((s) =>
     s.localActivity.find((r) => r.repoPath === s.repoPath),
   );
-  const baseReason = useReviewStore((s) => s.baseReason);
-  const reviewRef = useReviewStore((s) => s.reviewRef);
-  const setBaseOverride = useReviewStore((s) => s.setBaseOverride);
+  const baseReason = useSpurStore((s) => s.baseReason);
+  const reviewRef = useSpurStore((s) => s.reviewRef);
+  const setBaseOverride = useSpurStore((s) => s.setBaseOverride);
 
   // Controlled so the rows that are *not* a choice of comparison — expanding
   // History, extending a range with shift — can keep the menu open.

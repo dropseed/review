@@ -26,8 +26,10 @@
 
 use std::path::{Path, PathBuf};
 
-use super::{mutate, push_new, register_attachments, Attachment, WorkError, WorkState, Workspace};
-use crate::review::central;
+use super::{
+    mutate, push_new, register_attachments, Attachment, Workspace, WorkspaceError, WorkspacesState,
+};
+use crate::home;
 use crate::sources::local_git::current_branch_or_head;
 
 /// What a directory resolves to, resolved once.
@@ -43,7 +45,7 @@ pub struct Location {
     /// — or the directory itself when it isn't in a repository. This is what a
     /// terminal started here belongs to.
     pub working_tree: PathBuf,
-    /// The repository's main working tree, already `central::repo_root`
+    /// The repository's main working tree, already `home::repo_root`
     /// normalized. Attachments are keyed by it, so [`Location::attachment`]
     /// builds one directly instead of re-resolving what is already canonical.
     pub root: PathBuf,
@@ -85,7 +87,7 @@ pub struct Landing {
 /// Total by design — a path outside any repository resolves to itself with no
 /// ref, because "not a repo" is not a reason to have nowhere to go.
 pub fn locate(cwd: &Path) -> Location {
-    let working_tree = central::enclosing_working_tree(cwd);
+    let working_tree = home::enclosing_working_tree(cwd);
     let ref_name = working_tree
         .as_deref()
         .and_then(current_branch_or_head)
@@ -100,7 +102,7 @@ pub fn locate(cwd: &Path) -> Location {
     Location {
         // Total for non-repo paths too, where it just canonicalizes — which is
         // exactly the identity a directory attachment needs.
-        root: central::repo_root(&working_tree),
+        root: home::repo_root(&working_tree),
         working_tree,
         ref_name,
     }
@@ -110,7 +112,7 @@ pub fn locate(cwd: &Path) -> Location {
 ///
 /// The one place the routing decision is made; [`route_to`] runs it inside its
 /// own mutation rather than reading the queue a second time.
-pub fn preview_in(state: &WorkState, location: &Location) -> RouteResult {
+pub fn preview_in(state: &WorkspacesState, location: &Location) -> RouteResult {
     let attachment = location.attachment();
     match state.first_attached(&attachment.path) {
         Some(workspace) => RouteResult::Existing(workspace.clone()),
@@ -125,7 +127,7 @@ pub fn preview_in(state: &WorkState, location: &Location) -> RouteResult {
 /// is in hand. The working tree is the repository's own, because a caller naming
 /// a branch is naming the repository rather than some checkout of it.
 pub fn location_of_ref(repo_path: &Path, ref_name: &str) -> Location {
-    let root = central::repo_root(repo_path);
+    let root = home::repo_root(repo_path);
     Location {
         working_tree: root.clone(),
         root,
@@ -134,12 +136,12 @@ pub fn location_of_ref(repo_path: &Path, ref_name: &str) -> Location {
 }
 
 /// [`preview_in`] for a caller that has only a path.
-pub fn preview(cwd: &Path) -> Result<RouteResult, WorkError> {
+pub fn preview(cwd: &Path) -> Result<RouteResult, WorkspaceError> {
     Ok(preview_in(&super::list()?, &locate(cwd)))
 }
 
 /// Resolve `cwd` to its workspace and commit that: the single front door.
-pub fn route_to(cwd: &Path, explicit: Option<&str>) -> Result<Landing, WorkError> {
+pub fn route_to(cwd: &Path, explicit: Option<&str>) -> Result<Landing, WorkspaceError> {
     land(&locate(cwd), explicit)
 }
 
@@ -155,7 +157,7 @@ pub fn route_to(cwd: &Path, explicit: Option<&str>) -> Result<Landing, WorkError
 /// Locating happened once, before this; only the queue read-modify-write can be
 /// retried, and a retry costs a couple of string clones rather than another walk
 /// up the filesystem and another `git` invocation.
-pub fn land(location: &Location, explicit: Option<&str>) -> Result<Landing, WorkError> {
+pub fn land(location: &Location, explicit: Option<&str>) -> Result<Landing, WorkspaceError> {
     if let Some(query) = explicit {
         return Ok(Landing {
             workspace: super::get(query)?,
@@ -201,9 +203,9 @@ pub fn land(location: &Location, explicit: Option<&str>) -> Result<Landing, Work
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::review::central::tests::{setup_test, ENV_LOCK};
+    use crate::home::tests::{setup_test, ENV_LOCK};
     use crate::test_git::git;
-    use crate::work::{add, attach, list, move_workspace};
+    use crate::workspace::{add, attach, list, move_workspace};
     use tempfile::TempDir;
 
     /// A repo on `trunk` with one commit, plus a `feature` branch.
@@ -369,7 +371,7 @@ mod tests {
         // …and an unknown id is an error, not a silent new workspace.
         assert!(matches!(
             route_to(repo.path(), Some("nope")),
-            Err(WorkError::NotFound(_))
+            Err(WorkspaceError::NotFound(_))
         ));
     }
 

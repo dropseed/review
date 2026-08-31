@@ -21,7 +21,7 @@ vi.mock("../../platform", () => ({
   }),
 }));
 
-import { useReviewStore } from "../index";
+import { useSpurStore } from "../index";
 
 const matches: SearchMatch[] = [
   {
@@ -35,7 +35,7 @@ const matches: SearchMatch[] = [
 
 beforeEach(() => {
   searchFileContents.mockReset();
-  useReviewStore.setState({
+  useSpurStore.setState({
     repoPath: "/repo-a",
     searchQuery: "foo",
     searchResults: [],
@@ -54,15 +54,15 @@ describe("performSearch", () => {
       }),
     );
 
-    const promise = useReviewStore.getState().performSearch("foo");
+    const promise = useSpurStore.getState().performSearch("foo");
 
     // Simulate the user typing a new query while the request is in flight.
-    useReviewStore.getState().setSearchQuery("bar");
+    useSpurStore.getState().setSearchQuery("bar");
 
     resolveFetch!(matches);
     await promise;
 
-    const state = useReviewStore.getState();
+    const state = useSpurStore.getState();
     expect(state.searchResults).toEqual([]);
     expect(state.searchLoading).toBe(true);
   });
@@ -75,15 +75,15 @@ describe("performSearch", () => {
       }),
     );
 
-    const promise = useReviewStore.getState().performSearch("foo");
+    const promise = useSpurStore.getState().performSearch("foo");
 
     // Simulate toggling case-sensitivity while the request is in flight.
-    useReviewStore.setState({ searchCaseSensitive: true } as never);
+    useSpurStore.setState({ searchCaseSensitive: true } as never);
 
     resolveFetch!(matches);
     await promise;
 
-    const state = useReviewStore.getState();
+    const state = useSpurStore.getState();
     expect(state.searchResults).toEqual([]);
   });
 
@@ -95,23 +95,23 @@ describe("performSearch", () => {
       }),
     );
 
-    const promise = useReviewStore.getState().performSearch("foo");
+    const promise = useSpurStore.getState().performSearch("foo");
 
-    useReviewStore.setState({ repoPath: "/repo-b" } as never);
+    useSpurStore.setState({ repoPath: "/repo-b" } as never);
 
     resolveFetch!(matches);
     await promise;
 
-    const state = useReviewStore.getState();
+    const state = useSpurStore.getState();
     expect(state.searchResults).toEqual([]);
   });
 
   it("applies the response when the query and repo haven't changed", async () => {
     searchFileContents.mockResolvedValue(matches);
 
-    await useReviewStore.getState().performSearch("foo");
+    await useSpurStore.getState().performSearch("foo");
 
-    const state = useReviewStore.getState();
+    const state = useSpurStore.getState();
     expect(state.searchResults).toEqual(matches);
     expect(state.searchLoading).toBe(false);
   });

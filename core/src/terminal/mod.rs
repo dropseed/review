@@ -25,7 +25,7 @@ pub use wire::{Phase, SessionStatus, TerminalId, TerminalSummary};
 ///
 /// Unconditional, like the wire types: both halves of that contract have to
 /// agree on the spelling, and only one of them links a PTY stack.
-pub const TERMINAL_ID_ENV: &str = "REVIEW_TERMINAL_ID";
+pub const TERMINAL_ID_ENV: &str = "SPUR_TERMINAL_ID";
 
 /// How long to wait between typing a message and pressing Enter on it.
 ///
@@ -67,7 +67,7 @@ pub const PASTE_END: &str = "\x1b[201~";
 /// - **Anything already carrying an escape**, since a `ESC [ 201 ~` of its own
 ///   would close the bracket early. That covers prose from a software keyboard,
 ///   which has none — and text a caller has *already* bracketed itself
-///   (`review terminal send --paste`), which must not be bracketed twice.
+///   (`spur terminal send --paste`), which must not be bracketed twice.
 ///
 /// One function for every surface that submits, like [`SUBMIT_SETTLE_MS`]
 /// above it. The frontend keeps a documented copy in
@@ -93,7 +93,7 @@ const ESC: u8 = 0x1b;
 /// The whole shape of a submit, in one place, because both surfaces that offer
 /// one owe the same three things — the bracketing above, the pause of
 /// [`SUBMIT_SETTLE_MS`], and an Enter that is a **separate write**. The web
-/// server holds it for a phone whose own timers iOS freezes; `review terminal
+/// server holds it for a phone whose own timers iOS freezes; `spur terminal
 /// send --submit` holds it for a shell. Neither is a different act.
 ///
 /// `write` is called twice and each call must be one complete write: the

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { useSidebarResize } from "../../hooks/useSidebarResize";
 import { SidebarResizeHandle } from "../ui/sidebar-resize-handle";
 import { FilesPanel } from "./index";
@@ -23,7 +23,7 @@ export function FilesPanelDock({
   full?: boolean;
   availablePx?: number;
 } = {}): ReactNode {
-  const stored = useReviewStore((s) => s.filesPanelCollapsed);
+  const stored = useSpurStore((s) => s.filesPanelCollapsed);
   // `full` is the phone: the panel *is* the code half there, so it fills it and
   // the persisted collapse has no say — a preference about how to share a row
   // means nothing in a layout with one column. Reading it would let a desktop

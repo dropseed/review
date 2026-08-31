@@ -17,7 +17,7 @@ import {
   FilesPanelProvider,
   useFileSelection,
 } from "./FilesPanelContext";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 
 function hunk(filePath: string, hash: string): DiffHunk {
   return {
@@ -34,7 +34,7 @@ function hunk(filePath: string, hash: string): DiffHunk {
 }
 
 function setDiff(files: Record<string, DiffHunk[]>) {
-  useReviewStore.setState({
+  useSpurStore.setState({
     filesByPath: Object.fromEntries(
       Object.entries(files).map(([path, hunks]) => [
         path,
@@ -67,7 +67,7 @@ function mount() {
 
 beforeEach(() => {
   cleanup();
-  useReviewStore.setState({
+  useSpurStore.setState({
     adhocGroup: null,
     guideContentMode: null,
     comparison: null,
@@ -85,7 +85,7 @@ describe("FileSelectionProvider rolling diff", () => {
       api().handleRowClick("b.ts", ORDER, CLICK, "needs-review");
     });
 
-    const state = useReviewStore.getState();
+    const state = useSpurStore.getState();
     expect(state.guideContentMode).toBe("adhoc-group");
     expect(state.adhocGroup?.hunkIds).toEqual(["a.ts:old", "b.ts:1"]);
   });
@@ -106,16 +106,15 @@ describe("FileSelectionProvider rolling diff", () => {
       setDiff({ "a.ts": [hunk("a.ts", "new")], "b.ts": [hunk("b.ts", "1")] });
     });
 
-    expect(useReviewStore.getState().adhocGroup?.hunkIds).toEqual([
+    expect(useSpurStore.getState().adhocGroup?.hunkIds).toEqual([
       "a.ts:new",
       "b.ts:1",
     ]);
     // And the two approve paths still agree about what's selected.
-    expect(useReviewStore.getState().adhocGroup?.hunkIds).toEqual(
+    expect(useSpurStore.getState().adhocGroup?.hunkIds).toEqual(
       ["a.ts", "b.ts"].flatMap(
         (p) =>
-          useReviewStore.getState().filesByPath[p]?.hunks.map((h) => h.id) ??
-          [],
+          useSpurStore.getState().filesByPath[p]?.hunks.map((h) => h.id) ?? [],
       ),
     );
   });
@@ -131,12 +130,12 @@ describe("FileSelectionProvider rolling diff", () => {
 
     const other = { title: "Guide group", hunkIds: ["a.ts:old"] };
     act(() => {
-      useReviewStore.getState().openAdhocGroup(other);
+      useSpurStore.getState().openAdhocGroup(other);
     });
     act(() => {
       setDiff({ "a.ts": [hunk("a.ts", "new")], "b.ts": [hunk("b.ts", "1")] });
     });
 
-    expect(useReviewStore.getState().adhocGroup).toBe(other);
+    expect(useSpurStore.getState().adhocGroup).toBe(other);
   });
 });

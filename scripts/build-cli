@@ -2,15 +2,15 @@
 set -e
 cd "$(dirname "$0")/.."
 
-# Build the review CLI binary and place it in desktop/tauri/binaries/ with
+# Build the Spur CLI binary and place it in desktop/tauri/binaries/ with
 # the target-triple suffix required by Tauri's externalBin (sidecar) feature.
 
 TARGET="${TAURI_TARGET_TRIPLE:-$(rustc -vV | sed -n 's/host: //p')}"
 
-echo "Building review CLI for $TARGET..."
-cargo build --release --target "$TARGET" -p review --features "cli,push,symbols-all" --bin review
+echo "Building Spur CLI for $TARGET..."
+cargo build --release --target "$TARGET" -p spur --features "cli,push,symbols-all" --bin spur
 
 mkdir -p desktop/tauri/binaries
-cp "target/$TARGET/release/review" "desktop/tauri/binaries/review-cli-$TARGET"
+cp "target/$TARGET/release/spur" "desktop/tauri/binaries/spur-cli-$TARGET"
 
-echo "Sidecar binary ready: desktop/tauri/binaries/review-cli-$TARGET"
+echo "Sidecar binary ready: desktop/tauri/binaries/spur-cli-$TARGET"

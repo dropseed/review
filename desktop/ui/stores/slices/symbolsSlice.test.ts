@@ -22,7 +22,7 @@ vi.mock("../../platform", () => ({
   }),
 }));
 
-import { useReviewStore } from "../index";
+import { useSpurStore } from "../index";
 import { repoSymbolsResetState, symbolsResetState } from "./symbolsSlice";
 
 const files = [
@@ -35,7 +35,7 @@ const files = [
 beforeEach(() => {
   getRepoSymbols.mockReset();
   getFileSymbolDiffs.mockReset();
-  useReviewStore.setState({
+  useSpurStore.setState({
     repoPath: "/repo-a",
     ...repoSymbolsResetState,
   } as never);
@@ -50,10 +50,10 @@ describe("loadRepoSymbols", () => {
       }),
     );
 
-    const promise = useReviewStore.getState().loadRepoSymbols();
+    const promise = useSpurStore.getState().loadRepoSymbols();
 
     // Simulate switching to a different repo while the request is in flight.
-    useReviewStore.setState({
+    useSpurStore.setState({
       repoPath: "/repo-b",
       ...repoSymbolsResetState,
     } as never);
@@ -61,7 +61,7 @@ describe("loadRepoSymbols", () => {
     resolveFetch!([{ path: "old.ts", symbols: [] }]);
     await promise;
 
-    const state = useReviewStore.getState();
+    const state = useSpurStore.getState();
     expect(state.repoSymbols).toEqual([]);
     expect(state.repoSymbolsLoaded).toBe(false);
   });
@@ -69,9 +69,9 @@ describe("loadRepoSymbols", () => {
   it("applies the response when the repo hasn't changed", async () => {
     getRepoSymbols.mockResolvedValue([{ path: "a.ts", symbols: [] }]);
 
-    await useReviewStore.getState().loadRepoSymbols();
+    await useSpurStore.getState().loadRepoSymbols();
 
-    const state = useReviewStore.getState();
+    const state = useSpurStore.getState();
     expect(state.repoSymbols).toEqual([{ path: "a.ts", symbols: [] }]);
     expect(state.repoSymbolsLoading).toBe(false);
     expect(state.repoSymbolsLoaded).toBe(true);
@@ -85,10 +85,10 @@ describe("loadRepoSymbols", () => {
       }),
     );
 
-    const promise = useReviewStore.getState().loadRepoSymbols();
+    const promise = useSpurStore.getState().loadRepoSymbols();
 
     // Simulate switching to a different repo while the request is in flight.
-    useReviewStore.setState({
+    useSpurStore.setState({
       repoPath: "/repo-b",
       ...repoSymbolsResetState,
     } as never);
@@ -96,7 +96,7 @@ describe("loadRepoSymbols", () => {
     rejectFetch!(new Error("network error"));
     await promise;
 
-    const state = useReviewStore.getState();
+    const state = useSpurStore.getState();
     expect(state.repoSymbolsLoading).toBe(false);
     expect(state.repoSymbolsLoaded).toBe(false);
   });
@@ -104,9 +104,9 @@ describe("loadRepoSymbols", () => {
   it("settles loading/loaded when the repo hasn't changed and the fetch fails", async () => {
     getRepoSymbols.mockRejectedValue(new Error("network error"));
 
-    await useReviewStore.getState().loadRepoSymbols();
+    await useSpurStore.getState().loadRepoSymbols();
 
-    const state = useReviewStore.getState();
+    const state = useSpurStore.getState();
     expect(state.repoSymbolsLoading).toBe(false);
     expect(state.repoSymbolsLoaded).toBe(true);
   });
@@ -114,7 +114,7 @@ describe("loadRepoSymbols", () => {
 
 describe("loadSymbols", () => {
   beforeEach(() => {
-    useReviewStore.setState({
+    useSpurStore.setState({
       comparison: { base: "main", head: "a", key: "main..a" },
       files,
       ...symbolsResetState,
@@ -124,7 +124,7 @@ describe("loadSymbols", () => {
   it("asks only for the files the comparison changed", async () => {
     getFileSymbolDiffs.mockResolvedValue([]);
 
-    await useReviewStore.getState().loadSymbols();
+    await useSpurStore.getState().loadSymbols();
 
     expect(getFileSymbolDiffs).toHaveBeenCalledWith("/repo-a", ["a.ts"], {
       base: "main",
@@ -141,10 +141,10 @@ describe("loadSymbols", () => {
       }),
     );
 
-    const promise = useReviewStore.getState().loadSymbols();
+    const promise = useSpurStore.getState().loadSymbols();
 
     // Simulate switching comparisons while the request is in flight.
-    useReviewStore.setState({
+    useSpurStore.setState({
       comparison: { base: "main", head: "b", key: "main..b" },
       ...symbolsResetState,
     } as never);
@@ -152,7 +152,7 @@ describe("loadSymbols", () => {
     rejectFetch!(new Error("network error"));
     await promise;
 
-    const state = useReviewStore.getState();
+    const state = useSpurStore.getState();
     expect(state.symbolDiffs).toEqual([]);
     expect(state.symbolsLoaded).toBe(false);
   });
@@ -160,9 +160,9 @@ describe("loadSymbols", () => {
   it("settles loading/loaded when the comparison hasn't changed and the fetch fails", async () => {
     getFileSymbolDiffs.mockRejectedValue(new Error("network error"));
 
-    await useReviewStore.getState().loadSymbols();
+    await useSpurStore.getState().loadSymbols();
 
-    const state = useReviewStore.getState();
+    const state = useSpurStore.getState();
     expect(state.symbolsLoading).toBe(false);
     expect(state.symbolsLoaded).toBe(true);
   });

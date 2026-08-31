@@ -26,7 +26,7 @@ vi.mock("../../api", () => ({
   }),
 }));
 
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { leaf, makeTab, splitLeaf } from "../Terminal/pane-tree";
 import type { Workspace } from "../../types";
 import { attachment, workspace } from "../../test/fixtures";
@@ -35,7 +35,7 @@ import {
   terminalActions,
   workActionVerb,
   workspaceActions,
-  type WorkAction,
+  type WorkspaceAction,
 } from "./workspace-actions";
 import { describeWorkspace } from "./workspace-status";
 import type { WorkspaceContext } from "./workspace-status";
@@ -58,10 +58,10 @@ const EMPTY_CONTEXT: WorkspaceContext = {
   shipped: new Map(),
 };
 
-function cardActions(items: Workspace[], index: number): WorkAction[] {
+function cardActions(items: Workspace[], index: number): WorkspaceAction[] {
   // The move verbs are a function of the *queue* — they reorder a card among
   // its siblings — so the store has to be holding the list they are about.
-  useReviewStore.setState({ workspaces: items });
+  useSpurStore.setState({ workspaces: items });
   return workspaceActions({
     workspace: items[index],
     index,
@@ -71,7 +71,7 @@ function cardActions(items: Workspace[], index: number): WorkAction[] {
 }
 
 /** Every verb id a noun offers, submenu contents included, verbs only. */
-function verbs(actions: WorkAction[]): string[] {
+function verbs(actions: WorkspaceAction[]): string[] {
   return flattenWorkActions(actions).map((action) => workActionVerb(action.id));
 }
 
@@ -80,7 +80,7 @@ function verbs(actions: WorkAction[]): string[] {
  * runnable half, so the first runnable match is what a click would reach — for
  * "move this ref to…", the first other item.
  */
-function run(actions: WorkAction[], verb: string): void {
+function run(actions: WorkspaceAction[], verb: string): void {
   const action = flattenWorkActions(actions).find(
     (candidate) => workActionVerb(candidate.id) === verb && candidate.run,
   );
@@ -89,7 +89,7 @@ function run(actions: WorkAction[], verb: string): void {
 }
 
 afterEach(() => {
-  useReviewStore.setState({
+  useSpurStore.setState({
     workspaces: [],
     terminalTabs: [],
     terminalSessions: {},
@@ -109,7 +109,7 @@ afterEach(() => {
 const DRAG_PARITY: {
   gesture: string;
   noun: string;
-  actions: () => WorkAction[];
+  actions: () => WorkspaceAction[];
   verb: string;
 }[] = [
   {
@@ -240,7 +240,7 @@ describe("the terminal menu is one menu", () => {
 describe("a menu verb runs the drag's own mutation", () => {
   it("moves a card to the position the drag would have put it", async () => {
     const items = [item("one"), item("two"), item("three")];
-    useReviewStore.setState({ workspaces: items });
+    useSpurStore.setState({ workspaces: items });
 
     // Card 0 moved down lands on row 1 — the row index counts the list after
     // the card has been lifted out — and keeps whatever it is nested under,
@@ -297,7 +297,7 @@ describe("a menu verb runs the drag's own mutation", () => {
 
   it("closes a repo through the slice the tab bar writes with", async () => {
     const items = [item("one")];
-    useReviewStore.setState({ workspaces: items });
+    useSpurStore.setState({ workspaces: items });
 
     run(cardActions(items, 0), "workspace.repo.remove");
 
@@ -308,7 +308,7 @@ describe("a menu verb runs the drag's own mutation", () => {
 
   it("attaches a terminal to the item its verb names", async () => {
     const items = [item("one")];
-    useReviewStore.setState({
+    useSpurStore.setState({
       workspaces: items,
       terminalTabs: [makeTab("tabA", "a")],
     });
@@ -329,7 +329,7 @@ describe("a menu verb runs the drag's own mutation", () => {
 
   it("attaches the tab a split's panes belong to, not the pane named", async () => {
     const items = [item("one")];
-    useReviewStore.setState({
+    useSpurStore.setState({
       workspaces: items,
       terminalTabs: [
         {
@@ -361,7 +361,7 @@ describe("what a noun declines to offer", () => {
     const items = [item("one"), item("two")];
     const first = cardActions(items, 0);
     const last = cardActions(items, 1);
-    const find = (actions: WorkAction[], verb: string) =>
+    const find = (actions: WorkspaceAction[], verb: string) =>
       flattenWorkActions(actions).find((a) => workActionVerb(a.id) === verb);
 
     expect(find(first, "workspace.moveUp")?.disabled).toBe(true);

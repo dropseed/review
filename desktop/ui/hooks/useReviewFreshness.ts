@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { usePollWhileVisible } from "./usePollWhileVisible";
 
 /** Polling interval for freshness checks (60 seconds). */
@@ -14,8 +14,8 @@ const POLL_INTERVAL_MS = 60_000;
  * once per review.
  */
 export function useReviewFreshness() {
-  const checkReviewsFreshness = useReviewStore((s) => s.checkReviewsFreshness);
-  const hasReviews = useReviewStore((s) => s.globalReviews.length > 0);
+  const checkReviewsFreshness = useSpurStore((s) => s.checkReviewsFreshness);
+  const hasReviews = useSpurStore((s) => s.globalReviews.length > 0);
 
   usePollWhileVisible(
     useCallback(() => {

@@ -1,6 +1,6 @@
 import { toast } from "sonner";
 import { getApiClient } from "../../api";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { getErrorMessage } from "../../utils/errors";
 
 /**
@@ -16,7 +16,7 @@ import { getErrorMessage } from "../../utils/errors";
  */
 export async function openCommitView(hash: string): Promise<void> {
   const { repoPath, comparison, setViewpoint, setFilesPanelTab } =
-    useReviewStore.getState();
+    useSpurStore.getState();
   // A peek borrows the tab's comparison and gives it back. Without one there
   // is nothing to borrow, and nothing would load in its place.
   if (!repoPath || !comparison) return;

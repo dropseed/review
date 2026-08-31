@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { isTextEntry } from "../commands/useCommandDispatch";
 import { matchesEvent } from "../commands/shortcuts";
 
@@ -29,7 +29,7 @@ export function useKeyboardNavigation() {
         return;
       }
 
-      const state = useReviewStore.getState();
+      const state = useSpurStore.getState();
 
       // Escape: dismiss overlay views in priority order (terminal overview >
       // search > working-tree rolling diff > split view). SearchView handles

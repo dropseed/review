@@ -19,7 +19,7 @@ import {
   expandedLeafIds,
   type DropEdge,
 } from "../components/Terminal/pane-tree";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import {
   findTabForTerminal,
   tabSessionIds,
@@ -431,7 +431,7 @@ export function useTerminalFileDrop(): void {
               void applyWorkDrop(workTarget, {
                 kind: "terminal",
                 sessionIds: tabSessionIds(
-                  useReviewStore.getState().terminalTabs,
+                  useSpurStore.getState().terminalTabs,
                   terminalId,
                 ),
               });
@@ -454,7 +454,7 @@ export function useTerminalFileDrop(): void {
               stripTabs.find((t) => inRect(t.rect, pt.x, pt.y)) ?? null;
             forgetStrip();
             if (tabHit && tabHit.index !== source.index) {
-              useReviewStore.getState().moveTab(source.index, tabHit.index);
+              useSpurStore.getState().moveTab(source.index, tabHit.index);
             }
             return;
           }
@@ -462,7 +462,7 @@ export function useTerminalFileDrop(): void {
             const source = carried;
             carried = null;
             setDraggedPane(null);
-            const state = useReviewStore.getState();
+            const state = useSpurStore.getState();
             if (workTarget) {
               forgetStrip();
               // The pane's whole tab, like every other terminal drop: a pane
@@ -505,7 +505,7 @@ export function useTerminalFileDrop(): void {
           // about to be typed at that prompt, and inserting it into a shell the
           // user can't see reads as the drop having gone nowhere. Focusing is
           // what unfolds a pane, so this is the same one call.
-          const store = useReviewStore.getState();
+          const store = useSpurStore.getState();
           const tab = findTabForTerminal(store.terminalTabs, terminalId);
           if (tab && !expandedLeafIds(tab.root).includes(terminalId)) {
             store.setFocusedTerminalPane(tab.id, terminalId);

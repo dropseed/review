@@ -13,7 +13,7 @@ vi.mock("../../platform", () => ({
 
 import { CompactStage } from "./CompactStage";
 import { TooltipProvider } from "../ui/tooltip";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 
 /** jsdom answers no media query on its own, and this tree asks two. */
 function stubMatchMedia(reducedMotion = false): void {
@@ -43,7 +43,7 @@ beforeEach(() => stubMatchMedia());
 
 afterEach(() => {
   cleanup();
-  useReviewStore.setState({
+  useSpurStore.setState({
     terminalTabs: [],
     terminalSessions: {},
     activeTabId: null,
@@ -60,7 +60,7 @@ describe("the compact navigation stack", () => {
    * terminal, and the code half is a screen you push onto it.
    */
   it("keeps the terminal mounted while the code half is pushed over it", () => {
-    useReviewStore.setState({ contentFocus: "code" });
+    useSpurStore.setState({ contentFocus: "code" });
     show();
 
     // The terminal panel's own strip is proof it is still rendered — an
@@ -71,14 +71,14 @@ describe("the compact navigation stack", () => {
 
   /** Popped, the code screen is off to the right and out of reach. */
   it("makes the popped code screen inert, and the pushed one live", () => {
-    useReviewStore.setState({ contentFocus: "split" });
+    useSpurStore.setState({ contentFocus: "split" });
     show();
 
     const popped = screen.getByTestId("code-half").parentElement;
     expect(popped?.hasAttribute("inert")).toBe(true);
 
     cleanup();
-    useReviewStore.setState({ contentFocus: "code" });
+    useSpurStore.setState({ contentFocus: "code" });
     show();
 
     const pushed = screen.getByTestId("code-half").parentElement;
@@ -90,7 +90,7 @@ describe("the compact navigation stack", () => {
    * the screen, and drawing it as a push would promise a back that goes nowhere.
    */
   it("draws the code half flat when there is no terminal to push over", () => {
-    useReviewStore.setState({ contentFocus: "code" });
+    useSpurStore.setState({ contentFocus: "code" });
     show(false);
 
     expect(screen.queryByLabelText("New terminal tab")).toBeNull();
@@ -105,7 +105,7 @@ describe("the compact navigation stack", () => {
    */
   it("crossfades instead of sliding under reduced motion", () => {
     stubMatchMedia(true);
-    useReviewStore.setState({ contentFocus: "split" });
+    useSpurStore.setState({ contentFocus: "split" });
     show();
 
     const popped = screen.getByTestId("code-half").parentElement;

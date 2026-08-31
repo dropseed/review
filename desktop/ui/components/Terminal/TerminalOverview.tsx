@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { clsx } from "clsx";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import {
   useTabGlance,
   useTabsByWorkspaceId,
@@ -33,8 +33,8 @@ const COLUMN_WIDTH = "w-[28rem]";
  * gets them back the same way when the view closes.
  */
 export function TerminalOverview(): ReactNode {
-  const terminalTabs = useReviewStore((s) => s.terminalTabs);
-  const setTerminalOverview = useReviewStore((s) => s.setTerminalOverview);
+  const terminalTabs = useSpurStore((s) => s.terminalTabs);
+  const setTerminalOverview = useSpurStore((s) => s.setTerminalOverview);
   const byWorkspace = useTabsByWorkspaceId();
   const workspaces = useWorkspaces();
 
@@ -147,10 +147,8 @@ function OverviewTab({
   workspace: Workspace;
   tab: TerminalTab;
 }): ReactNode {
-  const activeTabId = useReviewStore((s) => s.activeTabId);
-  const setFocusedTerminalPane = useReviewStore(
-    (s) => s.setFocusedTerminalPane,
-  );
+  const activeTabId = useSpurStore((s) => s.activeTabId);
+  const setFocusedTerminalPane = useSpurStore((s) => s.setFocusedTerminalPane);
   const glance = useTabGlance(tab.id);
 
   return (

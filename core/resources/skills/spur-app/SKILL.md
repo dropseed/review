@@ -1,12 +1,12 @@
 ---
-description: Work with the Review desktop app through its `review` CLI — help a human get through a large diff or PR (triage hunks, trust-list the trivial ones, walk the rest as approve/reject/save decisions, leave comments, build a guide), drive the app's terminal sessions (start, send, peek, wait), and read or feed their work queue. Use whenever asked to help review a branch or PR, run something in a Review terminal, check what an agent in the app is doing, or see what the human is working on next.
+description: Work with the Spur desktop app through its `spur` CLI — help a human get through a large diff or PR (triage hunks, trust-list the trivial ones, walk the rest as approve/reject/save decisions, leave comments, build a guide), drive the app's terminal sessions (start, send, peek, wait), and read or feed their workspace queue. Use whenever asked to help review a branch or PR, run something in a Spur terminal, check what an agent in the app is doing, or see what the human is working on next.
 user_invocable: true
 ---
 
-# Working with the Review app
+# Working with the Spur app
 
-`review` is the CLI side of the Review desktop app. Everything it writes lands
-live in the app — state goes to `~/.review/`, a file watcher picks it up, and
+`spur` is the CLI side of the Spur desktop app. Everything it writes lands
+live in the app — state goes to `~/.spur/`, a file watcher picks it up, and
 the human watches your decisions appear without reopening anything.
 
 Three surfaces, one binary:
@@ -31,23 +31,23 @@ Not to do the review for them.
 ## 1. Get oriented before you read anything
 
 ```
-review use                            # what comparison am I on?
-review status                         # how many hunks, how many done
-review hunks --status unreviewed --json   # no --diff yet — just the shape
+spur use                            # what comparison am I on?
+spur status                         # how many hunks, how many done
+spur hunks --status unreviewed --json   # no --diff yet — just the shape
 ```
 
 Need a different comparison than the stored default? Scope it to yourself
-first: `export REVIEW_SPEC=<spec>` (or `-s <spec>` per command). Both are
+first: `export SPUR_SPEC=<spec>` (or `-s <spec>` per command). Both are
 session-local and persist **nothing** — the human's app is unaffected.
 
-`review use <spec>` and `review change-base <base>` are different animals:
+`spur use <spec>` and `spur change-base <base>` are different animals:
 durable repo settings that decide what the *human* lands on when they open the
 app — today and weeks from now. A base pinned to a commit keeps accumulating
 every change since, so a stale pin quietly becomes a giant rolling diff.
 Set them only when the human asked to work against that comparison, tell them
-it stays until cleared, and clear it yourself (`review use --clear`,
-`review change-base --clear`) once its purpose is done. **Never pin a base
-just so the app shows your own work** — that's what `$REVIEW_SPEC` is for, or
+it stays until cleared, and clear it yourself (`spur use --clear`,
+`spur change-base --clear`) once its purpose is done. **Never pin a base
+just so the app shows your own work** — that's what `$SPUR_SPEC` is for, or
 ask the human to open the comparison.
 
 Count hunks per file. Scan the classification labels. Then tell the human in
@@ -60,11 +60,11 @@ review. Want me to start by trust-listing the formatting?"*
 The trust list auto-approves any hunk matching a pattern. Use it for classes of
 change that are mechanically obvious once you've sampled a few.
 
-- Look at a few hunks in a category (e.g. `review hunks --label "imports:*" --diff`).
+- Look at a few hunks in a category (e.g. `spur hunks --label "imports:*" --diff`).
 - If they're all the same shape and clearly fine, **propose** adding the pattern:
   *"I'd like to trust `imports:added` and `formatting:whitespace` — that would
   auto-approve 38 hunks. OK?"*
-- After yes: `review trust add "imports:added"`. The hunks flip immediately.
+- After yes: `spur trust add "imports:added"`. The hunks flip immediately.
 
 This is how you make a 142-hunk diff become a 60-hunk diff in 30 seconds.
 
@@ -78,13 +78,13 @@ made, not the way the filesystem happens to lay it out. The desktop app renders
 the guide and lets them step through it group by group.
 
 You build the guide; the app only displays it. Compose it from the hunk IDs you
-already pulled with `review hunks`:
+already pulled with `spur hunks`:
 
 ```
-review guide clear                              # start fresh
-review guide add "Refactor the auth module" auth.rs:1a2b core/session.rs:9f3c
-review guide add "Wire the new flag through callers" cli.rs:4d5e api.rs:77a0
-review guide show                               # what's grouped, what's left
+spur guide clear                              # start fresh
+spur guide add "Refactor the auth module" auth.rs:1a2b core/session.rs:9f3c
+spur guide add "Wire the new flag through callers" cli.rs:4d5e api.rs:77a0
+spur guide show                               # what's grouped, what's left
 ```
 
 Each `add` lands live in the app — the human watches the guide fill in. `show`
@@ -97,7 +97,7 @@ overhead that only pays off when the structure is genuinely hard to follow.
 For everything that's left, work **file by file** in small batches (≈5–10 hunks
 at a time). For each batch:
 
-- Pull the actual diffs yourself: `review hunks --file <path> --diff`. Don't
+- Pull the actual diffs yourself: `spur hunks --file <path> --diff`. Don't
   paste them at the human — *you* read them.
 - Bring the human a compact list. For each hunk:
   - One-line description of what it does.
@@ -105,16 +105,16 @@ at a time). For each batch:
     to it in the desktop app if they want to look).
   - Your recommendation: approve / reject / save / "your call".
 - Ask for confirmations or overrides as a batch, not one at a time.
-- Then act: `review approve <ids>`, `review reject <ids> --reason "…"`,
-  `review save <ids> --reason "…"`. A mark you got wrong is recoverable —
-  `review history` shows the versions and `review undo` puts one back.
+- Then act: `spur approve <ids>`, `spur reject <ids> --reason "…"`,
+  `spur save <ids> --reason "…"`. A mark you got wrong is recoverable —
+  `spur history` shows the versions and `spur undo` puts one back.
 
 Example of what to send the human:
 
 > Next batch (`plain-admin/views/`, 6 hunks):
-> - [Checkbox.html:e9a1](review://open?repo=…&hunk=…) — wraps input in a
+> - [Checkbox.html:e9a1](spur://open?repo=…&hunk=…) — wraps input in a
 >   span for styling. **Approve.**
-> - [Input.html:42c0](review://open?repo=…&hunk=…) — adds `autocomplete="off"`
+> - [Input.html:42c0](spur://open?repo=…&hunk=…) — adds `autocomplete="off"`
 >   to all text inputs. **Your call** — intentional UX choice?
 > - …
 >
@@ -124,7 +124,7 @@ Example of what to send the human:
 
 If a hunk genuinely needs careful thought from the human (architectural
 question, business-logic call, "is this the right abstraction"), don't stall the
-queue — `review save <id> --reason "…"` it with a short note capturing the
+queue — `spur save <id> --reason "…"` it with a short note capturing the
 question, and move on. Batch the saved ones at the end as "things I left for
 you" so they can sit down with the desktop app and a coffee for those.
 
@@ -134,21 +134,21 @@ If you want the human to look at one specific line later — *not* a whole-hunk
 question, but "look at line 42, this name is misleading" — drop a comment:
 
 ```
-review comment add path/to/file.rs:42 "this name is misleading — `cache` suggests memoization"
-review comment add path/to/file.rs:10-15 "consider extracting; same shape repeats 3x in this file"
+spur comment add path/to/file.rs:42 "this name is misleading — `cache` suggests memoization"
+spur comment add path/to/file.rs:10-15 "consider extracting; same shape repeats 3x in this file"
 ```
 
-Leaving more than one or two? Batch them instead — `review comments submit`
+Leaving more than one or two? Batch them instead — `spur comments submit`
 takes a JSON array (a file, or stdin) and lands them all in a single mutation:
 
 ```
-review comments submit --example      # the JSON shape, written nowhere
-review comments submit comments.json  # or pipe the array on stdin
+spur comments submit --example      # the JSON shape, written nowhere
+spur comments submit comments.json  # or pipe the array on stdin
 ```
 
 Comments show up live on the lines in the desktop app, attributed to you
 (`author` defaults to the repo's git user, or whatever the agent harness has set
-via `$REVIEW_AUTHOR`). Use them sparingly — comments are for line-specific notes
+via `$SPUR_AUTHOR`). Use them sparingly — comments are for line-specific notes
 the human will want context on, not for general review decisions, and not for
 restating the obvious. If the question is "should this whole hunk land?", use
 `save --reason` instead; that keeps it in the decision queue.
@@ -156,15 +156,15 @@ restating the obvious. If the question is "should this whole hunk land?", use
 To check what's outstanding (yours or anyone else's):
 
 ```
-review comments --unresolved
-review comments --author claude       # just yours
-review comment resolve <comment-id>   # when an issue is addressed
+spur comments --unresolved
+spur comments --author claude       # just yours
+spur comment resolve <comment-id>   # when an issue is addressed
 ```
 
 A few rules the CLI enforces strictly, so a script doesn't fail silently:
 
 - Line numbers are **1-based** — `path:0` is rejected.
-- `$REVIEW_SOURCE`, if set, must be one of `ui`, `cli`, `agent`, `github`,
+- `$SPUR_SOURCE`, if set, must be one of `ui`, `cli`, `agent`, `github`,
   `gitlab` — a typo is a hard error, not a silent fallback.
 - `resolve` / `unresolve` / `delete` are idempotent: re-running one prints
   `Already resolved` / `Already unresolved` / `Already deleted` and exits 0
@@ -173,18 +173,18 @@ A few rules the CLI enforces strictly, so a script doesn't fail silently:
 ## 7. Hand off cleanly
 
 ```
-review status                         # final tally
+spur status                         # final tally
 ```
 
 End by telling the human exactly what's left for them and where to find it (the
 saved hunks are in the app's filters). The review note is the human's own space
-— read it for context (`review note show`) but never write it. Anything you need
+— read it for context (`spur note show`) but never write it. Anything you need
 to persist belongs in agent-attributed surfaces: comments or `save --reason`.
 
 ## Two reflexes to maintain
 
-- **Don't reuse hunk IDs across families.** `review hunks` IDs are for
-  `approve` / `reject` / `save`. `review changes` IDs are for `stage` /
+- **Don't reuse hunk IDs across families.** `spur hunks` IDs are for
+  `approve` / `reject` / `save`. `spur changes` IDs are for `stage` /
   `unstage`. The same change can have a different ID in each because the diff
   context differs. Always list from the family you're about to act on.
 - **Always link, never just name.** When you mention a specific hunk to the
@@ -193,15 +193,15 @@ to persist belongs in agent-attributed surfaces: comments or `save --reason`.
 
 ## Staging hunks to git (separate flow)
 
-`review changes` / `stage` / `unstage` are the *other* hunk family — they apply
+`spur changes` / `stage` / `unstage` are the *other* hunk family — they apply
 individual hunks to the git index. Use them when the human asks to commit only
 part of their working tree, not whole files:
 
 ```
-review changes --json --diff
-review stage   <id>...                 # git add just these hunks
-review unstage <id>...
-review stage   path/to/file            # whole file
+spur changes --json --diff
+spur stage   <id>...                 # git add just these hunks
+spur unstage <id>...
+spur stage   path/to/file            # whole file
 ```
 
 After staging, commit with normal `git`.
@@ -210,26 +210,26 @@ After staging, commit with normal `git`.
 
 # Part 2 — Driving the app's terminals
 
-The Review desktop app embeds terminal sessions that live in a `review-daemon`
-process (they survive the app quitting). `review terminal` talks to that same
+The Spur desktop app embeds terminal sessions that live in a `spur-daemon`
+process (they survive the app quitting). `spur terminal` talks to that same
 daemon, so everything you do here shows up live in the app — and everything the
 human sees in the app, you can see too.
 
-Run `review terminal list --all` first. If it errors with "daemon is not
-running", the Review app isn't open — ask the human to open it; you can't start
+Run `spur terminal list --all` first. If it errors with "daemon is not
+running", the Spur app isn't open — ask the human to open it; you can't start
 the daemon yourself.
 
 ```
-review terminal list [--all|--repo PATH] [--json]     # sessions + phase + workspace + cwd
-review terminal start [--id NAME] [--cwd DIR] [--workspace ID] [--json]
-review terminal whoami [ID] [--json]                  # which session am I in?
-review terminal move <id>... --workspace <ID>         # reattribute sessions
-review terminal send <id> [TEXT|--file PATH] [--paste] [--key KEY]... [--enter|--submit]
-review terminal peek <id> [--scrollback N]            # what's on screen right now
-review terminal log <id> [-n N]                       # everything it has printed
-review terminal wait <id> [--until <phase|exit>] [--match REGEX] [--new-only] [--timeout SECS]
-review terminal resize <id> --cols N --rows M
-review terminal kill <id>...
+spur terminal list [--all|--repo PATH] [--json]     # sessions + phase + workspace + cwd
+spur terminal start [--id NAME] [--cwd DIR] [--workspace ID] [--json]
+spur terminal whoami [ID] [--json]                  # which session am I in?
+spur terminal move <id>... --workspace <ID>         # reattribute sessions
+spur terminal send <id> [TEXT|--file PATH] [--paste] [--key KEY]... [--enter|--submit]
+spur terminal peek <id> [--scrollback N]            # what's on screen right now
+spur terminal log <id> [-n N]                       # everything it has printed
+spur terminal wait <id> [--until <phase|exit>] [--match REGEX] [--new-only] [--timeout SECS]
+spur terminal resize <id> --cols N --rows M
+spur terminal kill <id>...
 ```
 
 Ids accept any unique prefix and resolve across all repos. `--json` on
@@ -245,18 +245,18 @@ instead, which lands the session there and attaches nothing. See Part 3 for the
 queue those ids come from.
 
 **If you are running inside a Review terminal, you can name yourself.** Every
-session's shell carries `$REVIEW_TERMINAL_ID`, and `review terminal whoami`
+session's shell carries `$SPUR_TERMINAL_ID`, and `spur terminal whoami`
 turns that into the answer to "what workspace am I in?" — the session's id,
 phase, cwd, and its workspace's id and title:
 
 ```
-review terminal whoami            # this session
-review terminal whoami --json     # the summary plus workspace: {id, title}
+spur terminal whoami            # this session
+spur terminal whoami --json     # the summary plus workspace: {id, title}
 ```
 
 Ask rather than remember: a session's workspace can change under you (the human
 dragging your terminal onto another card), which is why the id is exported and
-the workspace is not. `review terminal move <id>... --workspace <id>` does that
+the workspace is not. `spur terminal move <id>... --workspace <id>` does that
 same move from the CLI; it only reattributes sessions and writes nothing to the
 queue.
 
@@ -269,7 +269,7 @@ row goes to that branch *and* starts a terminal there in one gesture.
 - **Don't type into a session you didn't start** unless the human asked you to.
   Sessions in `list` include the human's own shells and running agents; `peek`
   is always safe, `send` is not.
-- **Start your own session for your own work** — `review terminal start --id
+- **Start your own session for your own work** — `spur terminal start --id
   <task-name>` — and `kill` it when you're done. Naming it makes the app's
   sidebar legible for the human.
 
@@ -292,9 +292,9 @@ phase check is race-free (a snapshot is taken after subscribing), so it's fine
 if the command finishes before the wait starts:
 
 ```
-review terminal send my-task 'cargo test' --enter
-review terminal wait my-task --timeout 600
-review terminal peek my-task            # read the result / exit status
+spur terminal send my-task 'cargo test' --enter
+spur terminal wait my-task --timeout 600
+spur terminal peek my-task            # read the result / exit status
 ```
 
 `list --json` also carries `lastExitCode` per session.
@@ -303,8 +303,8 @@ review terminal peek my-task            # read the result / exit status
 its startup line:
 
 ```
-review terminal send dev-server 'npm run dev' --enter
-review terminal wait dev-server --match 'Listening on|ready in' --timeout 120
+spur terminal send dev-server 'npm run dev' --enter
+spur terminal wait dev-server --match 'Listening on|ready in' --timeout 120
 ```
 
 `--match` tests the current screen first and then watches for new output, so it
@@ -319,10 +319,10 @@ again after you triggered a restart.
 **Read what's on screen, or everything it has printed:**
 
 ```
-review terminal peek my-task            # the whole visible screen
-review terminal peek my-task --scrollback 50   # plus 50 rows above it
-review terminal log my-task             # the session's full output history
-review terminal log my-task -n 100      # just the last 100 lines
+spur terminal peek my-task            # the whole visible screen
+spur terminal peek my-task --scrollback 50   # plus 50 rows above it
+spur terminal log my-task             # the session's full output history
+spur terminal log my-task -n 100      # just the last 100 lines
 ```
 
 `peek` is the terminal's grid rendered as text, exactly as the human sees it —
@@ -333,22 +333,22 @@ full-screen TUI comes out as what it drew, not as the bytes that drew it. Reach
 for it when a command printed more than the window holds.
 
 Both need the daemon the current app ships; if `log` or `--scrollback` reports
-that the daemon speaks an older protocol, ask the human to relaunch the Review
+that the daemon speaks an older protocol, ask the human to relaunch the Spur
 app and use plain `peek` meanwhile.
 
 **Check on an agent or long task the human asked about** — read-only, any
 session:
 
 ```
-review terminal list --all
-review terminal peek 7e0d               # prefix of the id from list
+spur terminal list --all
+spur terminal peek 7e0d               # prefix of the id from list
 ```
 
 **Drive an interactive prompt** — send keys without text:
 
 ```
-review terminal send my-task --key down --key enter
-review terminal send my-task --key ctrl-c          # interrupt
+spur terminal send my-task --key down --key enter
+spur terminal send my-task --key ctrl-c          # interrupt
 ```
 
 **Type into a TUI (Claude Code, an agent, anything with autocomplete)** — use
@@ -358,9 +358,9 @@ slash command is read as *accepting the popup's highlighted entry* rather than
 submitting what you typed:
 
 ```
-review terminal send agent-1 'summarize what you just did' --submit
-review terminal send agent-1 '/compact' --submit --settle-ms 1000
-review terminal peek agent-1                       # confirm it took the input
+spur terminal send agent-1 'summarize what you just did' --submit
+spur terminal send agent-1 '/compact' --submit --settle-ms 1000
+spur terminal peek agent-1                       # confirm it took the input
 ```
 
 `--settle-ms` only delays the Enter; it does nothing for the text itself. Text
@@ -378,26 +378,26 @@ for a program with paste mode on (Claude Code, most editors); a plain shell
 would show the markers as text:
 
 ```
-review terminal send agent-1 --file prompt.md --paste --submit
-cat prompt.md | review terminal send agent-1 --file - --paste --submit
+spur terminal send agent-1 --file prompt.md --paste --submit
+cat prompt.md | spur terminal send agent-1 --file - --paste --submit
 ```
 
 **Wait for a session to end** (you sent `exit`, or a one-shot command shell):
 
 ```
-review terminal wait my-task --until exit
+spur terminal wait my-task --until exit
 ```
 
 ## Wrap up
 
-Kill the sessions you started (`review terminal kill <id>`), leave everyone
+Kill the sessions you started (`spur terminal kill <id>`), leave everyone
 else's alone, and tell the human what ran where — session ids included, so they
 can peek at the scrollback in the app.
 
 ## Reaching the human's phone
 
 ```
-review notify "Tests green on feature/x" --body "3 hunks still need you" --url /
+spur notify "Tests green on feature/x" --body "3 hunks still need you" --url /
 ```
 
 Sends a push notification to every device the human has subscribed in the
@@ -411,9 +411,9 @@ errors with a hint when no device is subscribed.
 
 # Part 3 — Workspaces
 
-`review workspace` is the global, cross-repo list of what the human intends to
+`spur workspace` is the global, cross-repo list of what the human intends to
 work on, in their order. It's the "Working on" section at the top of the app's
-sidebar, stored at `~/.review/work.json`; every change lands live through the
+sidebar, stored at `~/.spur/workspaces.json`; every change lands live through the
 file watcher.
 
 An item — a **workspace** — is a container that becomes whatever is put in it:
@@ -423,14 +423,14 @@ by joining against those attachments, so the queue stays stable while the world
 underneath it moves.
 
 ```
-review workspace [list] [--json]                   # priority order, top first
-review workspace add ["title"]                     # title optional
-review workspace attach <id> [PATH] [--ref REF]    # show a repo in a workspace
-review workspace detach <id> [PATH]
-review workspace rename <id> ["title"]             # no title = derive one
-review workspace nest <id> --under <id>            # make it a sub-workspace
-review workspace unnest <id>                       # back to the top level
-review workspace resolve [DIR] [--json]            # what DIR routes to
+spur workspace [list] [--json]                   # priority order, top first
+spur workspace add ["title"]                     # title optional
+spur workspace attach <id> [PATH] [--ref REF]    # show a repo in a workspace
+spur workspace detach <id> [PATH]
+spur workspace rename <id> ["title"]             # no title = derive one
+spur workspace nest <id> --under <id>            # make it a sub-workspace
+spur workspace unnest <id>                       # back to the top level
+spur workspace resolve [DIR] [--json]            # what DIR routes to
 ```
 
 `--json` is global to the subcommand (either side of it) and gives you
@@ -494,7 +494,7 @@ next. When someone asks "what should I work on?", or when you're about to start
 something on your own initiative, read the queue first:
 
 ```
-review workspace list --json
+spur workspace list --json
 ```
 
 Act on the top item that isn't already handled, and say which one you took. If
@@ -508,8 +508,8 @@ an item, and attach the repo so the app can join terminals, PRs, and review
 state onto it:
 
 ```
-review workspace add "Fix the flaky terminal wait test"
-review workspace attach 3f9a ~/code/other-repo --ref fix/flaky-wait
+spur workspace add "Fix the flaky terminal wait test"
+spur workspace attach 3f9a ~/code/other-repo --ref fix/flaky-wait
 ```
 
 If what you're adding is one piece of something already on the queue, nest it
@@ -517,7 +517,7 @@ under that instead of leaving it as a peer — it keeps the human's list readabl
 and says what the work belongs to:
 
 ```
-review workspace nest 3f9a --under a1b2
+spur workspace nest 3f9a --under a1b2
 ```
 
 `add` **always appends to the end** — the newest thing is the least prioritized
@@ -530,10 +530,10 @@ it.
 
 ## What is the human's, not yours
 
-- **Never reorder.** `review workspace reorder` exists for the human (they drag
+- **Never reorder.** `spur workspace reorder` exists for the human (they drag
   the list in the app). Their ordering is their prioritization; silently promoting your
   own item steals that decision.
-- **Never remove.** `review workspace remove` is the human's acknowledgment moment —
+- **Never remove.** `spur workspace remove` is the human's acknowledgment moment —
   taking something off the queue is how they register that it's done or
   abandoned. An agent deleting it means they never see it land. (It takes
   `--recursive` for the sub-workspaces; without it they come up a level and
@@ -551,39 +551,39 @@ them do it.
 # Command reference
 
 Review state (operates on a review of a ref; the base is derived automatically,
-override with a `base..ref` spec — transient — or `review change-base`, which
+override with a `base..ref` spec — transient — or `spur change-base`, which
 persists until cleared). `-s`/`--repo` are global — accepted anywhere within a
 command:
 
 ```
-review hunks   [--status|--file|--label|--hunk] [--json] [--diff]
-review approve|reject|save|unmark <hunk-id>... [--reason TEXT] [--source ui|cli|agent|github|gitlab]
-review status                          # progress + overall state
-review list                            # all saved reviews
-review history [--json]                # this review's saved versions + what each changed
-review undo [--to N]                   # restore one as a new version — the safety net
+spur hunks   [--status|--file|--label|--hunk] [--json] [--diff]
+spur approve|reject|save|unmark <hunk-id>... [--reason TEXT] [--source ui|cli|agent|github|gitlab]
+spur status                          # progress + overall state
+spur list                            # all saved reviews
+spur history [--json]                # this review's saved versions + what each changed
+spur undo [--to N]                   # restore one as a new version — the safety net
                                        # under any bulk mark; undo is itself undoable
-review use [<spec>] [--clear]          # show/set the repo's default comparison
-                                       # — durable; prefer $REVIEW_SPEC / -s
+spur use [<spec>] [--clear]          # show/set the repo's default comparison
+                                       # — durable; prefer $SPUR_SPEC / -s
                                        # for your own session
-review change-base <new-base> [--clear]  # pin/unpin the review's base — durable,
+spur change-base <new-base> [--clear]  # pin/unpin the review's base — durable,
                                        # decides what the app shows the human
-review note show                       # the human's note — read-only for agents
-review trust list|add|remove [<pattern>]
-review comments [--file GLOB] [--unresolved|--resolved] [--author NAME]
-review comments submit [FILE|-] [--author NAME] [--source ...] [--example]
-review comment add <file>:<line>[-<end>] "<text>" [--side new|old|file]
-review comment edit|resolve|unresolve|delete <comment-id>
-review guide show [--json]             # the guided-review grouping + ungrouped hunks
-review guide add "<title>" <hunk-id>... [--desc TEXT]
-review guide clear                     # drop the guide
+spur note show                       # the human's note — read-only for agents
+spur trust list|add|remove [<pattern>]
+spur comments [--file GLOB] [--unresolved|--resolved] [--author NAME]
+spur comments submit [FILE|-] [--author NAME] [--source ...] [--example]
+spur comment add <file>:<line>[-<end>] "<text>" [--side new|old|file]
+spur comment edit|resolve|unresolve|delete <comment-id>
+spur guide show [--json]             # the guided-review grouping + ungrouped hunks
+spur guide add "<title>" <hunk-id>... [--desc TEXT]
+spur guide clear                     # drop the guide
 ```
 
 Git index (working tree):
 
 ```
-review changes [--staged|--unstaged|--file GLOB|--label PATTERN|--hunk ID] [--json] [--diff]
-review stage|unstage <hunk-id|file>...
+spur changes [--staged|--unstaged|--file GLOB|--label PATTERN|--hunk ID] [--json] [--diff]
+spur stage|unstage <hunk-id|file>...
 ```
 
 Deep links:

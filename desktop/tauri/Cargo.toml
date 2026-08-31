@@ -1,13 +1,13 @@
 [package]
-name = "review-desktop"
+name = "spur-desktop"
 version = "0.0.165"
 description = "A diff review desktop app"
 license = "FSL-1.1-MIT"
 edition = "2021"
-default-run = "review-desktop"
+default-run = "spur-desktop"
 
 [lib]
-name = "review_desktop"
+name = "spur_desktop"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]
@@ -16,12 +16,12 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 # Core library
 # `terminal-types` is the wire contract only (TerminalSummary, SessionStatus) —
-# the PTYs themselves live in the `review-daemon` process, which this app talks
+# the PTYs themselves live in the `spur-daemon` process, which this app talks
 # to through `daemon-client`, so none of the PTY crates are linked here.
 # `server` is safe to link here for the same reason `terminal-types` is: it
 # reaches PTYs through `daemon-client`, never by owning them, so it pulls in no
 # PTY crates and needs no Zig. It is what the tailnet toggle hosts in-process.
-review = { path = "../../core", features = [
+spur = { path = "../../core", features = [
     "symbols-dev",
     "lsp",
     "terminal-types",
@@ -88,7 +88,7 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
 
 [features]
 default = []
-symbols-all = ["review/symbols-all"]
+symbols-all = ["spur/symbols-all"]
 
 [lints]
 workspace = true

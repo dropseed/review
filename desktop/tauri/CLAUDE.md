@@ -4,7 +4,7 @@ This crate wraps the `core` library into a Tauri desktop application.
 
 ## Structure
 
-- `src/desktop/commands.rs` — All `#[tauri::command]` handlers. Thin wrappers that delegate to `review` crate.
+- `src/desktop/commands.rs` — All `#[tauri::command]` handlers. Thin wrappers that delegate to `spur` crate.
 - `src/desktop/mod.rs` — App setup: plugins, menus, window management, Sentry init, single-instance handling.
 - `src/desktop/watchers.rs` — File system watcher using `notify`. Emits events to frontend on repo/review state changes.
 - `src/lib.rs` — Crate root, delegates to `desktop::run()`.

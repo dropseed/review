@@ -761,7 +761,7 @@ export class HttpClient implements ApiClient {
     await this.post("/api/activity/unregister", { repoPath });
   }
 
-  // ----- Work items -----
+  // ----- Workspaces -----
 
   async listWorkspaces(): Promise<Workspace[]> {
     // No `focused`: a thin client can't answer liveness, so the server never
@@ -875,7 +875,7 @@ export class HttpClient implements ApiClient {
         // which the next transition corrects. Guessing would not.
       }
     });
-    this.eventSource.addEventListener("work-changed", () => {
+    this.eventSource.addEventListener("workspaces-changed", () => {
       this.workChangedCallbacks.forEach((cb) => cb());
     });
     this.eventSource.addEventListener("repo-activity-changed", (e) => {
@@ -940,8 +940,8 @@ export class HttpClient implements ApiClient {
   }
 
   /**
-   * Work-item changes. This stream only exists while a repo watcher is running
-   * and is scoped to that repo, but `work.json` is global and the CLI can edit
+   * Workspace changes. This stream only exists while a repo watcher is running
+   * and is scoped to that repo, but `workspaces.json` is global and the CLI can edit
    * it with no repo open at all — `useWorkspaceSync` carries the focus/visibility
    * backstop that covers what the stream misses, for both transports.
    */

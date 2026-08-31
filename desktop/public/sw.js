@@ -1,8 +1,8 @@
 /**
- * Review's service worker — the app shell, and web push.
+ * Spur's service worker — the app shell, and web push.
  *
  * The shell is cached; the data never is. This app is a window onto a local
- * `review-server` (git state, terminals, the work queue), so caching an API
+ * `spur-server` (git state, terminals, the work queue), so caching an API
  * answer would only buy the chance to show a stale one. What it does cache is
  * the part that is identical no matter what the server says: `index.html` and
  * this build's hashed JS/CSS. A Home-Screen launch over a tailnet that is slow,
@@ -32,7 +32,7 @@ const BUILD_ID = "dev";
 const PRECACHE = [];
 
 /** One cache per build — `activate` deletes every other one. */
-const CACHE = `review-shell-${BUILD_ID}`;
+const CACHE = `spur-shell-${BUILD_ID}`;
 
 /** The navigation the cache stands in for. */
 const SHELL = "/index.html";
@@ -53,7 +53,7 @@ const OFFLINE_PAGE = `<!doctype html>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Review is offline</title>
+    <title>Spur is offline</title>
     <style>
       html, body { height: 100%; margin: 0; background: #0c0a09; color: #d6d3d1;
         font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
@@ -67,8 +67,8 @@ const OFFLINE_PAGE = `<!doctype html>
   </head>
   <body>
     <main>
-      <h1>Review needs its server</h1>
-      <p>This app talks to a <code>review-server</code> on your machine. Reconnect to
+      <h1>Spur needs its server</h1>
+      <p>This app talks to a <code>spur-server</code> on your machine. Reconnect to
         the network it is served on, then try again.</p>
       <button onclick="location.reload()">Retry</button>
     </main>
@@ -99,7 +99,7 @@ self.addEventListener("activate", (event) => {
       const names = await caches.keys();
       await Promise.all(
         names
-          .filter((name) => name.startsWith("review-shell-") && name !== CACHE)
+          .filter((name) => name.startsWith("spur-shell-") && name !== CACHE)
           .map((name) => caches.delete(name)),
       );
       await self.clients.claim();
@@ -210,7 +210,7 @@ self.addEventListener("push", (event) => {
 
   const { title, body, url, tag } = payload;
   event.waitUntil(
-    self.registration.showNotification(title || "Review", {
+    self.registration.showNotification(title || "Spur", {
       body: body || "Something needs your attention.",
       tag,
       icon: "/icons/icon-192.png",

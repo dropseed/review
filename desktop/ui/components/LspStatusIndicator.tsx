@@ -1,5 +1,5 @@
 import { type ReactNode, useState } from "react";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { getApiClient } from "../api";
 import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
 import { SimpleTooltip } from "./ui/tooltip";
@@ -39,9 +39,9 @@ function aggregateColor(statuses: LspServerStatus[]): string {
 }
 
 export function LspStatusIndicator(): ReactNode {
-  const statuses = useReviewStore((s) => s.lspServerStatuses);
-  const setLspServerStatuses = useReviewStore((s) => s.setLspServerStatuses);
-  const repoPath = useReviewStore((s) => s.repoPath);
+  const statuses = useSpurStore((s) => s.lspServerStatuses);
+  const setLspServerStatuses = useSpurStore((s) => s.setLspServerStatuses);
+  const repoPath = useSpurStore((s) => s.repoPath);
   const [restarting, setRestarting] = useState<string | null>(null);
 
   if (statuses.length === 0) return null;

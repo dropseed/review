@@ -1,6 +1,6 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { clsx } from "clsx";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import {
   repoOnScreen,
   useFocusedWorkspace,
@@ -45,8 +45,8 @@ export function CodeHalfHeader({
   const workspace = useFocusedWorkspace();
   // Nothing to take the stage from when the terminal half isn't there.
   const docked = useTerminalDockPresent();
-  const selectedFile = useReviewStore((s) => s.selectedFile);
-  const setContentFocus = useReviewStore((s) => s.setContentFocus);
+  const selectedFile = useSpurStore((s) => s.selectedFile);
+  const setContentFocus = useSpurStore((s) => s.setContentFocus);
   const compact = useIsCompact();
 
   // At phone width this half is a *pushed* screen over the terminal (see
@@ -69,7 +69,7 @@ export function CodeHalfHeader({
         <NavBack
           label="Files"
           large={compact}
-          onClick={() => useReviewStore.setState({ selectedFile: null })}
+          onClick={() => useSpurStore.setState({ selectedFile: null })}
         />
         <span
           className={clsx(
@@ -167,9 +167,9 @@ function RepoTabs({
   compact?: boolean;
 }): ReactNode {
   const ctx = useWorkspaceContext();
-  const activeReviewKey = useReviewStore((s) => s.activeReviewKey);
-  const repoPath = useReviewStore((s) => s.repoPath);
-  const detachWorkspace = useReviewStore((s) => s.detachWorkspace);
+  const activeReviewKey = useSpurStore((s) => s.activeReviewKey);
+  const repoPath = useSpurStore((s) => s.repoPath);
+  const detachWorkspace = useSpurStore((s) => s.detachWorkspace);
 
   const repos = useMemo(
     () => describeWorkspace(workspace, ctx).repos,

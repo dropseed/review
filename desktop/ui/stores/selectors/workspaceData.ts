@@ -189,7 +189,7 @@ export function showingRepo(
 /**
  * Where a branch would land, without landing there.
  *
- * The mirror of `work::router::land` — and the *only* implementation of the
+ * The mirror of `workspace::router::land` — and the *only* implementation of the
  * question in the frontend, which is the point: a row that promises "joins X"
  * and then does something else is worse than no preview at all. A wrong guess
  * is harmless here in a way it wasn't under exclusive claims: the terminal can

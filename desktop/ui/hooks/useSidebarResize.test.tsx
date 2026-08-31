@@ -12,7 +12,7 @@ vi.mock("../platform", () => ({
 }));
 
 import { useSidebarResize } from "./useSidebarResize";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { SIDEBAR_LIMITS } from "../utils/resize";
 
 /** Frames under manual control — the drag's store write is rAF-throttled. */
@@ -35,7 +35,7 @@ beforeEach(() => {
   vi.stubGlobal("cancelAnimationFrame", (id: number) => {
     frames[id - 1] = () => {};
   });
-  useReviewStore.setState({ filesPanelWidth: CANONICAL } as never);
+  useSpurStore.setState({ filesPanelWidth: CANONICAL } as never);
 });
 
 afterEach(() => {
@@ -60,10 +60,10 @@ describe("useSidebarResize", () => {
     act(() => {
       fireEvent.mouseMove(document, { clientX: window.innerWidth - 480 });
     });
-    expect(useReviewStore.getState().filesPanelWidth).toBe(CANONICAL);
+    expect(useSpurStore.getState().filesPanelWidth).toBe(CANONICAL);
 
     act(() => runFrames());
-    expect(useReviewStore.getState().filesPanelWidth).toBe(30);
+    expect(useSpurStore.getState().filesPanelWidth).toBe(30);
   });
 
   it("drops a frame still in flight when the drag ends", () => {
@@ -81,10 +81,10 @@ describe("useSidebarResize", () => {
 
     // The handle's double-click has already snapped the panel back.
     act(() => {
-      useReviewStore.getState().setSidebarWidth("filesPanelWidth", CANONICAL);
+      useSpurStore.getState().setSidebarWidth("filesPanelWidth", CANONICAL);
     });
 
     act(() => runFrames());
-    expect(useReviewStore.getState().filesPanelWidth).toBe(CANONICAL);
+    expect(useSpurStore.getState().filesPanelWidth).toBe(CANONICAL);
   });
 });

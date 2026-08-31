@@ -1,7 +1,7 @@
 import { toast } from "sonner";
 import { getApiClient } from "../../api";
 import { getPlatformServices } from "../../platform";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import type { WorktreeStatus } from "../../types";
 import type { RepoChoice } from "./repo-choices";
 import { sessionsUnder } from "./worktree-facts";
@@ -26,7 +26,7 @@ export async function createWorktreeIn(
   if (!checkout.created) {
     toast.info(`"${checkout.branch}" already has a worktree — opening it.`);
   }
-  await useReviewStore.getState().loadLocalActivity();
+  await useSpurStore.getState().loadLocalActivity();
   return {
     // The repo at a ref, exactly as a worktree row from the sidebar tree: a
     // workspace shows a path once, and the tab is the repository.
@@ -48,7 +48,7 @@ export async function createWorktreeIn(
  * so, and resolving it is the user's.
  *
  * Nothing is detached afterwards, and nothing can be left dangling: every
- * attachment names a *repository root* (`work::normalize_repo_path` resolves a
+ * attachment names a *repository root* (`workspace::normalize_repo_path` resolves a
  * worktree to the repo it belongs to), so no workspace can be pointed at the
  * directory this removes. A tab showing the repo at this branch stays valid —
  * the branch outlives its checkout, and `refName` was only ever a view hint.
@@ -63,7 +63,7 @@ export async function removeWorktreeAt(
   repoPath: string,
   worktree: WorktreeStatus,
 ): Promise<boolean> {
-  const store = useReviewStore.getState();
+  const store = useSpurStore.getState();
   const terminals = sessionsUnder(store.terminalSessions, worktree.path).length;
 
   const label = worktree.branch ?? "a detached HEAD";

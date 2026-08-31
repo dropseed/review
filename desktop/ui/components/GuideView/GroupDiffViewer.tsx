@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { useHunkById } from "../../stores/selectors/hunks";
 import { computeGroupFiles } from "../../stores/selectors/groups";
 import { getApiClient } from "../../api";
@@ -466,18 +466,18 @@ export function GroupDiffViewer({
   headerBadge,
   onClose,
 }: GroupDiffViewerProps): ReactNode {
-  const repoPath = useReviewStore((s) => s.repoPath);
-  const comparison = useReviewStore((s) => s.comparison);
-  const reviewState = useReviewStore((s) => s.reviewState);
-  const stagedFilePaths = useReviewStore((s) => s.stagedFilePaths);
+  const repoPath = useSpurStore((s) => s.repoPath);
+  const comparison = useSpurStore((s) => s.comparison);
+  const reviewState = useSpurStore((s) => s.reviewState);
+  const stagedFilePaths = useSpurStore((s) => s.stagedFilePaths);
 
-  const approveHunkIds = useReviewStore((s) => s.approveHunkIds);
-  const rejectHunkIds = useReviewStore((s) => s.rejectHunkIds);
-  const unapproveHunkIds = useReviewStore((s) => s.unapproveHunkIds);
-  const diffViewMode = useReviewStore((s) => s.diffViewMode);
-  const setDiffViewMode = useReviewStore((s) => s.setDiffViewMode);
-  const codeTheme = useReviewStore((s) => s.codeTheme);
-  const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
+  const approveHunkIds = useSpurStore((s) => s.approveHunkIds);
+  const rejectHunkIds = useSpurStore((s) => s.rejectHunkIds);
+  const unapproveHunkIds = useSpurStore((s) => s.unapproveHunkIds);
+  const diffViewMode = useSpurStore((s) => s.diffViewMode);
+  const setDiffViewMode = useSpurStore((s) => s.setDiffViewMode);
+  const codeTheme = useSpurStore((s) => s.codeTheme);
+  const navigateToBrowse = useSpurStore((s) => s.navigateToBrowse);
 
   const [fileStates, setFileStates] = useState<Map<string, FileLoadState>>(
     new Map(),

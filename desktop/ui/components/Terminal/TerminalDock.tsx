@@ -1,6 +1,6 @@
 import { type ReactNode, useCallback, useRef, useState } from "react";
 import { clsx } from "clsx";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { ResizeHandle } from "../ContentArea/ResizeHandle";
 import { DiffRail } from "../ContentArea/DiffRail";
 import { TerminalPanel } from "./TerminalPanel";
@@ -34,10 +34,10 @@ import { CompactStage } from "../Stage/CompactStage";
  * know whether the terminal is there at all.
  */
 export function TerminalDock({ children }: { children: ReactNode }): ReactNode {
-  const contentFocus = useReviewStore((s) => s.contentFocus);
-  const terminalOverview = useReviewStore((s) => s.terminalOverview);
-  const terminalPanelWidth = useReviewStore((s) => s.terminalPanelWidth);
-  const setTerminalPanelWidth = useReviewStore((s) => s.setTerminalPanelWidth);
+  const contentFocus = useSpurStore((s) => s.contentFocus);
+  const terminalOverview = useSpurStore((s) => s.terminalOverview);
+  const terminalPanelWidth = useSpurStore((s) => s.terminalPanelWidth);
+  const setTerminalPanelWidth = useSpurStore((s) => s.setTerminalPanelWidth);
 
   // A workspace showing a repo keeps its dock whether or not it is running
   // anything — the strip's own "+" is how a shell gets started in it.
@@ -88,7 +88,7 @@ export function TerminalDock({ children }: { children: ReactNode }): ReactNode {
       Math.min(TERMINAL_PANEL_WIDTH_MAX, Math.round(rowWidth / 2)),
     );
     const { next, remember } = toggleToCanonical(
-      useReviewStore.getState().terminalPanelWidth,
+      useSpurStore.getState().terminalPanelWidth,
       even,
       rememberedTerminalWidth.current,
       even,

@@ -1,5 +1,5 @@
 import { type ReactNode } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { useWorkspaces } from "../../stores/selectors/workspaces";
 import {
   findTabForTerminal,
@@ -17,14 +17,14 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
 } from "../ui/dropdown-menu";
-import { terminalActions, type WorkAction } from "./workspace-actions";
+import { terminalActions, type WorkspaceAction } from "./workspace-actions";
 
 /**
  * The renderers for `work-actions`.
  *
  * Three of them because the sidebar opens menus three ways — right-click, an
  * overflow dropdown, and the hand-rolled portal the branch rows still use — and
- * one of them because what each renders is the same `WorkAction[]`. A verb
+ * one of them because what each renders is the same `WorkspaceAction[]`. A verb
  * added to a noun appears in whichever channels that noun offers, without
  * anyone deciding again what it means.
  */
@@ -35,7 +35,7 @@ const DANGER_CLASS = "text-status-rejected/90 focus:text-status-rejected";
 export function ContextActionItems({
   actions,
 }: {
-  actions: WorkAction[];
+  actions: WorkspaceAction[];
 }): ReactNode {
   return (
     <>
@@ -71,7 +71,7 @@ export function ContextActionItems({
 export function DropdownActionItems({
   actions,
 }: {
-  actions: WorkAction[];
+  actions: WorkspaceAction[];
 }): ReactNode {
   return (
     <>
@@ -113,10 +113,10 @@ export function DropdownActionItems({
  * "where is this" is a question about the tab rather than about whichever pane
  * the caller happened to list first.
  */
-export function useTerminalActions(sessionIds: string[]): WorkAction[] {
+export function useTerminalActions(sessionIds: string[]): WorkspaceAction[] {
   const workspaces = useWorkspaces();
-  const terminalTabs = useReviewStore((s) => s.terminalTabs);
-  const terminalSessions = useReviewStore((s) => s.terminalSessions);
+  const terminalTabs = useSpurStore((s) => s.terminalTabs);
+  const terminalSessions = useSpurStore((s) => s.terminalSessions);
   const tab = findTabForTerminal(terminalTabs, sessionIds[0]);
   const attachedItemId = tab ? tabWorkspaceId({ terminalSessions }, tab) : null;
 

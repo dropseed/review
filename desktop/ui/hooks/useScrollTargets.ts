@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
-import { useReviewStore } from "../stores";
-import type { ReviewStore } from "../stores/types";
+import { useSpurStore } from "../stores";
+import type { SpurStore } from "../stores/types";
 import type { DiffHunk } from "../types";
 import { hunkIdBelongsToFile } from "../types";
 import { getLastChangedLine } from "../components/FileViewer/hunkUtils";
@@ -36,7 +36,7 @@ function useHunkTargetConsumer(
 
     let raf = requestAnimationFrame(() => consumeRef.current());
 
-    const unsubscribe = useReviewStore.subscribe((state, prevState) => {
+    const unsubscribe = useSpurStore.subscribe((state, prevState) => {
       if (
         state.scrollTarget !== prevState.scrollTarget &&
         state.scrollTarget?.type === "hunk"
@@ -71,7 +71,7 @@ interface HunkScrollTargetOptions {
  * Otherwise a pane claims any target its file renders.
  */
 function paneAllowsClaim(
-  state: ReviewStore,
+  state: SpurStore,
   pane: "primary" | "secondary" | undefined,
   filePath: string,
 ): boolean {
@@ -102,7 +102,7 @@ export function useHunkScrollTarget({
   const hunksKey = useMemo(() => hunks.map((h) => h.id).join(","), [hunks]);
 
   useHunkTargetConsumer(enabled, hunksKey, function tryConsume(): void {
-    const state = useReviewStore.getState();
+    const state = useSpurStore.getState();
     const target = state.scrollTarget;
     if (!target || target.type !== "hunk") return;
 
@@ -200,7 +200,7 @@ export function useHunkBlockScrollTarget(
     root !== null,
     `${idsKey}|${contentKey ?? ""}`,
     function tryConsume(): void {
-      const state = useReviewStore.getState();
+      const state = useSpurStore.getState();
       const target = state.scrollTarget;
       if (!target || target.type !== "hunk") return;
       if (!idsRef.current.includes(target.hunkId)) return;

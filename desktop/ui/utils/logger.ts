@@ -37,7 +37,7 @@ function formatMessage(level: string, args: unknown[]): string {
 //
 // Each line used to go out as its own dynamic import + `invoke`, so two logs a
 // microtask apart raced: whichever IPC call the backend served first won, and
-// `~/.review/app.log` — the file `scripts/traces` reads — could show them out
+// `~/.spur/app.log` — the file `scripts/traces` reads — could show them out
 // of order. That is the wrong thing to hand someone debugging a race. Batching
 // makes the order the file shows the order the calls happened in.
 let pending: string[] = [];

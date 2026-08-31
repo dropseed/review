@@ -114,11 +114,11 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       "/api": {
-        // $REVIEW_PORT is the one override for the backend port (see
+        // $SPUR_PORT is the one override for the backend port (see
         // server::DEFAULT_PORT) — honored here too so an isolated dev
         // backend doesn't get silently proxied into whatever holds 7787
         // (an installed app with remote access on is exactly that).
-        target: `http://127.0.0.1:${process.env.REVIEW_PORT ?? "7787"}`,
+        target: `http://127.0.0.1:${process.env.SPUR_PORT ?? "7787"}`,
         // Allow WebSocket upgrades (terminal PTY sockets in web mode).
         ws: true,
       },

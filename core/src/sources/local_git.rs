@@ -3,7 +3,7 @@ use super::traits::{
     StatusEntry,
 };
 use crate::diff::parser::{parse_diff, LineType};
-use crate::review::central;
+use crate::home;
 use log::info;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -192,7 +192,7 @@ pub struct WorktreeInfo {
     pub commit_hash: String,
     /// True when the worktree is in detached HEAD state (no branch).
     pub is_detached: bool,
-    /// True when the worktree path is under `~/.review/worktrees/` (managed by Review).
+    /// True when the worktree path is under `~/.spur/worktrees/` (managed by Review).
     pub is_review_managed: bool,
 }
 
@@ -291,7 +291,7 @@ impl LocalGitSource {
         // The same predicate the registry uses, not a second copy of it: "the
         // index took this" and "this can be diffed" have to name one set, or a
         // repo gets a sidebar row it cannot open.
-        if !crate::review::central::is_working_tree(&repo_path) {
+        if !crate::home::is_working_tree(&repo_path) {
             return Err(LocalGitError::NotARepo);
         }
         Ok(Self {
@@ -1292,7 +1292,7 @@ impl LocalGitSource {
         // Compute the review-managed worktree prefix for detection.
         // Any worktree under <central-root>/worktrees/ is review-managed.
         // Canonicalize the root to handle symlinks (e.g., /var -> /private/var on macOS).
-        let review_worktree_prefix = central::get_central_root().ok().map(|root| {
+        let review_worktree_prefix = home::get_central_root().ok().map(|root| {
             // Canonicalize the root (which exists), then append "worktrees".
             // The worktrees dir itself may not exist yet, so we can't canonicalize it directly.
             let canonical_root = root.canonicalize().unwrap_or(root);
@@ -1479,10 +1479,10 @@ impl LocalGitSource {
             });
         }
 
-        let base_dir = central::get_worktree_base_dir(&self.repo_path)
+        let base_dir = home::get_worktree_base_dir(&self.repo_path)
             .map_err(|e| LocalGitError::Git(format!("Failed to compute worktree base dir: {e}")))?;
         std::fs::create_dir_all(&base_dir)?;
-        let path = free_worktree_path(&base_dir, &central::sanitize_path_component(branch));
+        let path = free_worktree_path(&base_dir, &home::sanitize_path_component(branch));
         let path_str = path.to_string_lossy().to_string();
 
         let branch_ref = format!("refs/heads/{branch}");
@@ -1524,7 +1524,7 @@ impl LocalGitSource {
         Ok(())
     }
 
-    /// Create a review-managed worktree at `~/.review/worktrees/<repo-hash>/<name>/`.
+    /// Create a review-managed worktree at `~/.spur/worktrees/<repo-hash>/<name>/`.
     ///
     /// Uses `--detach` to avoid "branch already checked out" conflicts.
     /// The ref is resolved internally to a commit SHA, eliminating TOCTOU races.
@@ -1536,13 +1536,13 @@ impl LocalGitSource {
         // Resolve the ref to a commit SHA atomically
         let commit_sha = self.resolve_ref_or_empty_tree(git_ref);
 
-        let base_dir = central::get_worktree_base_dir(&self.repo_path)
+        let base_dir = home::get_worktree_base_dir(&self.repo_path)
             .map_err(|e| LocalGitError::Git(format!("Failed to compute worktree base dir: {e}")))?;
 
         // Ensure the parent directory exists
         std::fs::create_dir_all(&base_dir)?;
 
-        let sanitized = central::sanitize_path_component(name);
+        let sanitized = home::sanitize_path_component(name);
         let worktree_path = base_dir.join(&sanitized);
         let path_str = worktree_path.to_string_lossy();
         self.run_git(&["worktree", "add", "--detach", &path_str, &commit_sha])
@@ -1574,7 +1574,7 @@ impl LocalGitSource {
     /// then `git worktree remove --force` to remove the worktree.
     /// Validate that a worktree path is under the review-managed directory.
     fn validate_review_worktree_path(&self, worktree_path: &str) -> Result<(), LocalGitError> {
-        let base_dir = central::get_worktree_base_dir(&self.repo_path)
+        let base_dir = home::get_worktree_base_dir(&self.repo_path)
             .map_err(|e| LocalGitError::Git(format!("Failed to compute worktree base dir: {e}")))?;
         let canonical_base = canonical_or_self(base_dir);
         let canonical_wt = canonical_or_self(worktree_path);
@@ -3720,10 +3720,10 @@ fn build_selective_patch(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::review::central::tests::{setup_test, EnvGuard};
+    use crate::home::tests::{setup_test, EnvGuard};
 
-    /// Set up a temp git repo with REVIEW_HOME for worktree tests.
-    /// Returns (env_guard, review_home, repo_dir, source, head_sha). Caller must hold ENV_LOCK.
+    /// Set up a temp git repo with SPUR_HOME for worktree tests.
+    /// Returns (env_guard, spur_home, repo_dir, source, head_sha). Caller must hold ENV_LOCK.
     fn setup_worktree_test() -> (
         EnvGuard,
         tempfile::TempDir,
@@ -3731,19 +3731,19 @@ mod tests {
         LocalGitSource,
         String,
     ) {
-        let (env, review_home, repo_dir) = setup_test();
+        let (env, spur_home, repo_dir) = setup_test();
         let repo_path = repo_dir.path();
         run_git_cmd(repo_path, &["init"]).unwrap();
         run_git_cmd(repo_path, &["commit", "--allow-empty", "-m", "init"]).unwrap();
 
         let source = LocalGitSource::new(repo_path.to_path_buf()).unwrap();
         let head_sha = source.resolve_ref_or_empty_tree("HEAD");
-        (env, review_home, repo_dir, source, head_sha)
+        (env, spur_home, repo_dir, source, head_sha)
     }
 
     /// A repo with one commit on `main`, a `v1` tag on it, then a second
     /// commit on `feature` that adds a file and deletes another. Nothing here
-    /// touches `$REVIEW_HOME`, so no lock is needed.
+    /// touches `$SPUR_HOME`, so no lock is needed.
     fn setup_ref_browse_repo() -> (tempfile::TempDir, LocalGitSource) {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path();
@@ -3981,26 +3981,26 @@ mod tests {
     #[test]
     fn split_remote_url_handles_every_form_git_hands_out() {
         for url in [
-            "https://github.com/dropseed/review.git",
-            "https://github.com/dropseed/review",
-            "git@github.com:dropseed/review.git",
-            "git@github.com:dropseed/review",
-            "ssh://git@github.com/dropseed/review.git",
+            "https://github.com/dropseed/spur.git",
+            "https://github.com/dropseed/spur",
+            "git@github.com:dropseed/spur.git",
+            "git@github.com:dropseed/spur",
+            "ssh://git@github.com/dropseed/spur.git",
             // Ports belong to the transport, not the identity of the repo.
-            "ssh://git@github.com:22/dropseed/review.git",
-            "https://github.com:443/dropseed/review.git",
+            "ssh://git@github.com:22/dropseed/spur.git",
+            "https://github.com:443/dropseed/spur.git",
         ] {
             assert_eq!(
                 split_remote_url(url),
-                Some(("github.com", "dropseed/review")),
+                Some(("github.com", "dropseed/spur")),
                 "failed on {url}"
             );
         }
 
         // GitHub's SSH-over-443 endpoint is a different host name.
         assert_eq!(
-            split_remote_url("ssh://git@ssh.github.com:443/dropseed/review.git"),
-            Some(("ssh.github.com", "dropseed/review"))
+            split_remote_url("ssh://git@ssh.github.com:443/dropseed/spur.git"),
+            Some(("ssh.github.com", "dropseed/spur"))
         );
     }
 
@@ -4009,8 +4009,8 @@ mod tests {
     #[test]
     fn split_remote_url_does_not_read_an_scp_path_as_a_port() {
         assert_eq!(
-            split_remote_url("git@github.com:22/dropseed/review.git"),
-            Some(("github.com", "22/dropseed/review"))
+            split_remote_url("git@github.com:22/dropseed/spur.git"),
+            Some(("github.com", "22/dropseed/spur"))
         );
     }
 
@@ -4116,10 +4116,10 @@ mod tests {
     /// it — and `git branch` stays clean.
     #[test]
     fn test_pr_refs_are_namespaced_and_enumerable() {
-        use crate::review::central::tests::ENV_LOCK;
+        use crate::home::tests::ENV_LOCK;
 
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, repo_dir, source, head_sha) = setup_worktree_test();
+        let (_env, _spur_home, repo_dir, source, head_sha) = setup_worktree_test();
         let repo_path = repo_dir.path();
 
         assert_eq!(LocalGitSource::pr_ref(42), "refs/review/pr/42");
@@ -4162,10 +4162,10 @@ mod tests {
     /// matches the repo's configured `user.email`.
     #[test]
     fn test_last_commit_by_user_flag() {
-        use crate::review::central::tests::ENV_LOCK;
+        use crate::home::tests::ENV_LOCK;
 
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, repo_dir) = setup_test();
+        let (_env, _spur_home, repo_dir) = setup_test();
         let repo_path = repo_dir.path();
 
         run_git_cmd(repo_path, &["init"]).unwrap();
@@ -4215,10 +4215,10 @@ mod tests {
 
     #[test]
     fn test_worktree_create_and_remove() {
-        use crate::review::central::tests::ENV_LOCK;
+        use crate::home::tests::ENV_LOCK;
 
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, _repo_dir, source, _head_sha) = setup_worktree_test();
+        let (_env, _spur_home, _repo_dir, source, _head_sha) = setup_worktree_test();
 
         let wt = source
             .create_review_worktree("test-branch", "HEAD")
@@ -4243,10 +4243,10 @@ mod tests {
 
     #[test]
     fn test_worktree_create_duplicate_errors() {
-        use crate::review::central::tests::ENV_LOCK;
+        use crate::home::tests::ENV_LOCK;
 
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, _repo_dir, source, _head_sha) = setup_worktree_test();
+        let (_env, _spur_home, _repo_dir, source, _head_sha) = setup_worktree_test();
 
         source.create_review_worktree("dup-test", "HEAD").unwrap();
 
@@ -4287,10 +4287,10 @@ mod tests {
     /// worktree of its own.
     #[test]
     fn worktree_for_branch_creates_a_new_branch() {
-        use crate::review::central::tests::ENV_LOCK;
+        use crate::home::tests::ENV_LOCK;
 
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, _repo_dir, source, head_sha) = setup_worktree_test();
+        let (_env, _spur_home, _repo_dir, source, head_sha) = setup_worktree_test();
 
         let checkout = source.worktree_for_branch("feature/new-thing").unwrap();
         assert!(checkout.created);
@@ -4312,10 +4312,10 @@ mod tests {
     /// A branch that exists but is checked out nowhere gets checked out.
     #[test]
     fn worktree_for_branch_checks_out_an_existing_branch() {
-        use crate::review::central::tests::ENV_LOCK;
+        use crate::home::tests::ENV_LOCK;
 
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, repo_dir, source, _head_sha) = setup_worktree_test();
+        let (_env, _spur_home, repo_dir, source, _head_sha) = setup_worktree_test();
         run_git_cmd(repo_dir.path(), &["branch", "already-here"]).unwrap();
 
         let checkout = source.worktree_for_branch("already-here").unwrap();
@@ -4332,10 +4332,10 @@ mod tests {
     /// root itself.
     #[test]
     fn worktree_for_branch_routes_to_an_existing_checkout() {
-        use crate::review::central::tests::ENV_LOCK;
+        use crate::home::tests::ENV_LOCK;
 
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, repo_dir, source, _head_sha) = setup_worktree_test();
+        let (_env, _spur_home, repo_dir, source, _head_sha) = setup_worktree_test();
 
         let first = source.worktree_for_branch("shared").unwrap();
         assert!(first.created);
@@ -4357,10 +4357,10 @@ mod tests {
 
     #[test]
     fn remove_worktree_refuses_uncommitted_changes() {
-        use crate::review::central::tests::ENV_LOCK;
+        use crate::home::tests::ENV_LOCK;
 
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, _repo_dir, source, _head_sha) = setup_worktree_test();
+        let (_env, _spur_home, _repo_dir, source, _head_sha) = setup_worktree_test();
 
         let checkout = source.worktree_for_branch("dirty-one").unwrap();
         let stray = std::path::Path::new(&checkout.path).join("scratch.txt");
@@ -4387,10 +4387,10 @@ mod tests {
 
     #[test]
     fn remove_worktree_refuses_the_main_checkout_and_foreign_paths() {
-        use crate::review::central::tests::ENV_LOCK;
+        use crate::home::tests::ENV_LOCK;
 
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, repo_dir, source, _head_sha) = setup_worktree_test();
+        let (_env, _spur_home, repo_dir, source, _head_sha) = setup_worktree_test();
 
         let main = repo_dir.path().to_string_lossy().to_string();
         let err = source.remove_worktree(&main).unwrap_err();
@@ -4416,11 +4416,11 @@ mod tests {
     /// via its unprefixed name (`feature`) even when no local branch exists.
     #[test]
     fn test_resolve_ref_falls_back_to_origin() {
-        use crate::review::central::tests::ENV_LOCK;
+        use crate::home::tests::ENV_LOCK;
         use crate::sources::traits::Comparison;
 
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, repo_dir, _source, base_sha) = setup_worktree_test();
+        let (_env, _spur_home, repo_dir, _source, base_sha) = setup_worktree_test();
         let repo_path = repo_dir.path();
 
         // Commit a new file, point `refs/remotes/origin/feature-x` at it,
@@ -4465,11 +4465,11 @@ mod tests {
     /// beyond the base (the diff lives entirely in the worktree's working tree).
     #[test]
     fn test_diff_includes_linked_worktree_changes() {
-        use crate::review::central::tests::ENV_LOCK;
+        use crate::home::tests::ENV_LOCK;
         use crate::sources::traits::Comparison;
 
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, repo_dir, _source, _head_sha) = setup_worktree_test();
+        let (_env, _spur_home, repo_dir, _source, _head_sha) = setup_worktree_test();
         let repo_path = repo_dir.path();
 
         // Commit a tracked file so the worktree branch has something to modify.
@@ -4546,11 +4546,11 @@ mod tests {
     /// as diff noise.
     #[test]
     fn diff_base_ref_is_merge_base_when_head_is_behind_base() {
-        use crate::review::central::tests::ENV_LOCK;
+        use crate::home::tests::ENV_LOCK;
         use crate::sources::traits::Comparison;
 
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, repo_dir, _source, _head_sha) = setup_worktree_test();
+        let (_env, _spur_home, repo_dir, _source, _head_sha) = setup_worktree_test();
         let repo_path = repo_dir.path();
 
         // Fork point both branches share.
@@ -4594,11 +4594,11 @@ mod tests {
     /// introduced happen to survive unchanged.
     #[test]
     fn test_attribution_ignores_whitespace_only_lines() {
-        use crate::review::central::tests::ENV_LOCK;
+        use crate::home::tests::ENV_LOCK;
         use crate::sources::traits::Comparison;
 
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, repo_dir, _source, _head_sha) = setup_worktree_test();
+        let (_env, _spur_home, repo_dir, _source, _head_sha) = setup_worktree_test();
         let repo_path = repo_dir.path();
 
         std::fs::write(repo_path.join("file.txt"), "line1\nline2\n").unwrap();
@@ -4652,11 +4652,11 @@ mod tests {
     /// whitespace-only fallback rather than end up unattributed.
     #[test]
     fn test_attribution_whitespace_only_hunk_falls_back_to_blame() {
-        use crate::review::central::tests::ENV_LOCK;
+        use crate::home::tests::ENV_LOCK;
         use crate::sources::traits::Comparison;
 
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, repo_dir, _source, _head_sha) = setup_worktree_test();
+        let (_env, _spur_home, repo_dir, _source, _head_sha) = setup_worktree_test();
         let repo_path = repo_dir.path();
 
         std::fs::write(repo_path.join("file.txt"), "a\nb\n").unwrap();
@@ -4694,11 +4694,11 @@ mod tests {
     /// stale, committed-head blame.
     #[test]
     fn test_attribution_blames_working_tree_when_head_is_checked_out() {
-        use crate::review::central::tests::ENV_LOCK;
+        use crate::home::tests::ENV_LOCK;
         use crate::sources::traits::Comparison;
 
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, repo_dir, source, _head_sha) = setup_worktree_test();
+        let (_env, _spur_home, repo_dir, source, _head_sha) = setup_worktree_test();
         let repo_path = repo_dir.path();
 
         std::fs::write(repo_path.join("file.txt"), "line1\nline2\nline3\n").unwrap();
@@ -4758,10 +4758,10 @@ mod tests {
     /// that was touched but ended up unchanged.
     #[test]
     fn is_diff_active_agrees_with_shortstat_on_committed_comparisons() {
-        use crate::review::central::tests::ENV_LOCK;
+        use crate::home::tests::ENV_LOCK;
 
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, repo_dir) = setup_test();
+        let (_env, _spur_home, repo_dir) = setup_test();
         let repo_path = repo_dir.path();
         run_git_cmd(repo_path, &["init"]).unwrap();
         run_git_cmd(repo_path, &["config", "user.email", "t@example.com"]).unwrap();
@@ -4816,10 +4816,10 @@ mod tests {
     /// untracked-files check has to run even when the quiet diff is clean.
     #[test]
     fn is_diff_active_working_tree_counts_untracked_only_changes() {
-        use crate::review::central::tests::ENV_LOCK;
+        use crate::home::tests::ENV_LOCK;
 
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, repo_dir, source, _head_sha) = setup_worktree_test();
+        let (_env, _spur_home, repo_dir, source, _head_sha) = setup_worktree_test();
         let repo_path = repo_dir.path();
 
         let current_branch = source.get_current_branch().unwrap();
@@ -4842,10 +4842,10 @@ mod tests {
     /// sidebar — otherwise the repo lists zero branches and its row does nothing.
     #[test]
     fn unborn_branch_is_listed_with_its_working_tree_stats() {
-        use crate::review::central::tests::ENV_LOCK;
+        use crate::home::tests::ENV_LOCK;
 
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, repo_dir) = setup_test();
+        let (_env, _spur_home, repo_dir) = setup_test();
         let repo_path = repo_dir.path();
         run_git_cmd(repo_path, &["init", "-b", "trunk"]).unwrap();
         std::fs::write(repo_path.join("a.txt"), "hello\n").unwrap();
@@ -4911,10 +4911,10 @@ mod tests {
     /// unpushed branch's every commit, which is one count with two derivations.
     #[test]
     fn list_branches_ahead_reports_unpushed_commits_per_branch() {
-        use crate::review::central::tests::ENV_LOCK;
+        use crate::home::tests::ENV_LOCK;
 
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, repo_dir) = setup_test();
+        let (_env, _spur_home, repo_dir) = setup_test();
         let repo_path = repo_dir.path();
 
         let remote_dir = tempfile::tempdir().unwrap();
@@ -4964,10 +4964,10 @@ mod tests {
     /// exists to prevent.
     #[test]
     fn a_default_branch_holding_unpushed_commits_is_listed_while_another_is_current() {
-        use crate::review::central::tests::ENV_LOCK;
+        use crate::home::tests::ENV_LOCK;
 
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, repo_dir) = setup_test();
+        let (_env, _spur_home, repo_dir) = setup_test();
         let repo_path = repo_dir.path();
 
         let remote_dir = tempfile::tempdir().unwrap();

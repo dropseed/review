@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { basename } from "../Sidebar/terminal-status-format";
 import { activeTabTarget, openTerminalTab } from "./newTab";
 import type { Workspace } from "../../types";
@@ -21,7 +21,7 @@ export function StartTerminal({
 }): ReactNode {
   // What `activeTabTarget` reads, so the sentence follows the repo tab you
   // switch to rather than freezing on the one that was open when it mounted.
-  useReviewStore((s) => s.activeReviewKey?.repoPath);
+  useSpurStore((s) => s.activeReviewKey?.repoPath);
   const repoPath = activeTabTarget(workspace)?.repoPath ?? null;
 
   return (

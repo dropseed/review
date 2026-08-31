@@ -1,4 +1,4 @@
-//! `review changes`, `review stage`, `review unstage` — git-index operations.
+//! `spur changes`, `spur stage`, `spur unstage` — git-index operations.
 //!
 //! These commands work on the working tree and the git index directly. They
 //! do not read or write review state, so they need no saved review.
@@ -87,7 +87,7 @@ struct StageResultJson {
     failed: Vec<String>,
 }
 
-/// `review changes` — list uncommitted working-tree changes as hunks.
+/// `spur changes` — list uncommitted working-tree changes as hunks.
 pub fn run_changes(args: ChangesArgs) -> Result<(), String> {
     let repo_path = get_repo_path(&args.repo)?;
     let source = LocalGitSource::new(PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
@@ -243,8 +243,8 @@ fn print_changes_human(rows: &[ChangeRow]) {
             }
         }
     }
-    println!("\nStage:   review stage <hunk-id|file>...");
-    println!("Unstage: review unstage <hunk-id|file>...");
+    println!("\nStage:   spur stage <hunk-id|file>...");
+    println!("Unstage: spur unstage <hunk-id|file>...");
 }
 
 /// Record the same failure against every hash in `hashes`, e.g.
@@ -286,7 +286,7 @@ fn group_stage_targets(targets: &[String]) -> (BTreeMap<String, Vec<String>>, Ve
     (hunks_by_file, whole_files)
 }
 
-/// `review stage` / `review unstage` — apply hunks (or whole files) to or
+/// `spur stage` / `spur unstage` — apply hunks (or whole files) to or
 /// from the git index. `unstage` reverses the direction.
 pub fn run_stage(args: StageArgs, unstage: bool) -> Result<(), String> {
     let repo_path = get_repo_path(&args.repo)?;

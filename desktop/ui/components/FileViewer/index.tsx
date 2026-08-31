@@ -6,7 +6,7 @@ import {
   useCallback,
   useRef,
 } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { readContextKeys } from "../../commands/contextKeys";
 import { activeHistoricRef, viewOnly } from "../../stores/selectors/viewpoint";
 import { getApiClient } from "../../api";
@@ -110,18 +110,18 @@ export function FileViewer({
     gitStatus,
   } = useFileViewerState(filePath);
 
-  const externalFilePath = useReviewStore((s) => s.externalFilePath);
+  const externalFilePath = useSpurStore((s) => s.externalFilePath);
   const isExternalFile = externalFilePath !== null;
 
   const isWorkingTreeMode = workingTreeDiffFile === filePath;
-  const workingTreeDiffMode = useReviewStore((s) => s.workingTreeDiffMode);
-  const isStandaloneFile = useReviewStore((s) => s.isStandaloneFile);
+  const workingTreeDiffMode = useSpurStore((s) => s.workingTreeDiffMode);
+  const isStandaloneFile = useSpurStore((s) => s.isStandaloneFile);
 
   // The ref this file is being *read at*, when that isn't the working tree's
   // revision. Kept apart from `viewOnly` below because this one names a ref and
   // has to exclude the three modes that read a file off disk regardless of it —
   // what to fetch, and what to fetch it from, is a per-file question.
-  const browseAtRef = useReviewStore(activeHistoricRef);
+  const browseAtRef = useSpurStore(activeHistoricRef);
   const pinnedRef =
     !isExternalFile && !isStandaloneFile && !isWorkingTreeMode
       ? browseAtRef
@@ -129,10 +129,10 @@ export function FileViewer({
 
   // Nothing here can be decided on or annotated — see `viewOnly` for the three
   // ways to get there. The affordance goes rather than half-working.
-  const isViewOnly = useReviewStore(viewOnly);
-  const isSplitActive = useReviewStore((s) => s.secondaryFile) !== null;
-  const splitOrientation = useReviewStore((s) => s.splitOrientation);
-  const showOutline = useReviewStore((s) => s.showOutline);
+  const isViewOnly = useSpurStore(viewOnly);
+  const isSplitActive = useSpurStore((s) => s.secondaryFile) !== null;
+  const splitOrientation = useSpurStore((s) => s.splitOrientation);
+  const showOutline = useSpurStore((s) => s.showOutline);
 
   const [preferredViewMode, setViewMode] = useDiffViewMode(
     filePath,
@@ -242,7 +242,7 @@ export function FileViewer({
 
   // Stable callbacks for split/close actions
   const handleSplitOrRotate = useCallback(() => {
-    const state = useReviewStore.getState();
+    const state = useSpurStore.getState();
     if (state.secondaryFile !== null) {
       state.setSplitOrientation(
         state.splitOrientation === "horizontal" ? "vertical" : "horizontal",
@@ -256,11 +256,11 @@ export function FileViewer({
   }, [filePath]);
 
   const handleClose = useCallback(() => {
-    useReviewStore.getState().setSelectedFile(null);
+    useSpurStore.getState().setSelectedFile(null);
   }, []);
 
   const handleExitWorkingTreeMode = useCallback(() => {
-    useReviewStore.setState({
+    useSpurStore.setState({
       workingTreeDiffFile: null,
       workingTreeDiffMode: null,
     });
@@ -296,7 +296,7 @@ export function FileViewer({
   // Cmd+Click opens in split view; plain click navigates the current pane.
   const handleNavigateToFile = useCallback(
     (repoRelativePath: string, options?: { openInSplit?: boolean }) => {
-      const state = useReviewStore.getState();
+      const state = useSpurStore.getState();
       const inDiff = state.flatFileList.includes(repoRelativePath);
 
       if (options?.openInSplit && inDiff) {
@@ -348,7 +348,7 @@ export function FileViewer({
   }, []);
 
   // Must be before early returns to comply with React hooks rules.
-  const stagedFilePaths = useReviewStore((s) => s.stagedFilePaths);
+  const stagedFilePaths = useSpurStore((s) => s.stagedFilePaths);
   const reviewProgress = useMemo(() => {
     const total = fileHunks.length;
     if (total === 0) return { reviewed: 0, total: 0 };
@@ -370,7 +370,7 @@ export function FileViewer({
 
   // Handle scrollTarget (type "line") from search/symbol navigation.
   // Wait until file content is loaded before applying the scroll.
-  const scrollTarget = useReviewStore((s) => s.scrollTarget);
+  const scrollTarget = useSpurStore((s) => s.scrollTarget);
   useEffect(() => {
     if (
       scrollTarget?.type === "line" &&
@@ -379,7 +379,7 @@ export function FileViewer({
       fileContent
     ) {
       setHighlightLine(scrollTarget.lineNumber);
-      useReviewStore.getState().clearScrollTarget();
+      useSpurStore.getState().clearScrollTarget();
 
       const timeout = setTimeout(() => {
         setHighlightLine(null);
@@ -490,7 +490,7 @@ export function FileViewer({
           !isExternalFile &&
           !pinnedRef
         ) {
-          useReviewStore.getState().syncFileHunks(filePath, result.hunks);
+          useSpurStore.getState().syncFileHunks(filePath, result.hunks);
         }
       })
       .catch((err) => {
@@ -633,7 +633,7 @@ export function FileViewer({
       } else {
         const hunk = fileHunks[localIndex];
         if (!hunk) return;
-        useReviewStore.setState({
+        useSpurStore.setState({
           focusedHunkId: hunk.id,
           scrollTarget: { type: "hunk", hunkId: hunk.id },
         });
@@ -662,7 +662,7 @@ export function FileViewer({
   });
 
   // Check if file is gitignored (from the file tree's allFiles)
-  const isGitignored = useReviewStore((s) =>
+  const isGitignored = useSpurStore((s) =>
     hasFileStatus(s.allFiles, filePath, "gitignored"),
   );
 
@@ -865,7 +865,7 @@ export function FileViewer({
         isExternalFile={isExternalFile}
         onCloseExternalFile={
           isExternalFile
-            ? () => useReviewStore.getState().goBackExternalFile()
+            ? () => useSpurStore.getState().goBackExternalFile()
             : undefined
         }
       />

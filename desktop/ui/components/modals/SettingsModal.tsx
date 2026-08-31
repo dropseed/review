@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import {
   CODE_FONT_SIZE_DEFAULT,
   CODE_FONT_SIZE_MIN,
@@ -211,7 +211,7 @@ function Segmented<T extends string | number>({
  * refresh, none of which any other section reads.
  */
 function BackgroundSessionsSection({ isOpen }: { isOpen: boolean }): ReactNode {
-  const terminalsSupported = useReviewStore((s) => s.terminalsSupported);
+  const terminalsSupported = useSpurStore((s) => s.terminalsSupported);
   // Background sessions (governance) — every live terminal session across
   // every repo/window, so forgotten sessions in the daemon don't accumulate
   // invisibly.
@@ -377,7 +377,7 @@ function BackgroundSessionsSection({ isOpen }: { isOpen: boolean }): ReactNode {
 }
 
 /**
- * The `review` CLI's install state, and the button that changes it.
+ * The `spur` CLI's install state, and the button that changes it.
  *
  * Hidden entirely in a dev build, where the binary on PATH is whatever the
  * developer built rather than something this dialog should be managing.
@@ -496,9 +496,9 @@ function CommandLineSection({ isOpen }: { isOpen: boolean }): ReactNode {
 
 /** Language servers discovered for the open repo, each toggleable. */
 function LanguageServersSection({ isOpen }: { isOpen: boolean }): ReactNode {
-  const repoPath = useReviewStore((s) => s.repoPath);
-  const lspDisabledLanguages = useReviewStore((s) => s.lspDisabledLanguages);
-  const setLspDisabledLanguages = useReviewStore(
+  const repoPath = useSpurStore((s) => s.repoPath);
+  const lspDisabledLanguages = useSpurStore((s) => s.lspDisabledLanguages);
+  const setLspDisabledLanguages = useSpurStore(
     (s) => s.setLspDisabledLanguages,
   );
   const [discoveredServers, setDiscoveredServers] = useState<
@@ -557,41 +557,39 @@ export function SettingsModal({
   isOpen,
   onClose,
 }: SettingsModalProps): ReactNode {
-  const codeFontSize = useReviewStore((s) => s.codeFontSize);
-  const setCodeFontSize = useReviewStore((s) => s.setCodeFontSize);
-  const codeFontFamily = useReviewStore((s) => s.codeFontFamily);
-  const setCodeFontFamily = useReviewStore((s) => s.setCodeFontFamily);
-  const terminalFontFamily = useReviewStore((s) => s.terminalFontFamily);
-  const setTerminalFontFamily = useReviewStore((s) => s.setTerminalFontFamily);
-  const terminalFontSize = useReviewStore((s) => s.terminalFontSize);
-  const setTerminalFontSize = useReviewStore((s) => s.setTerminalFontSize);
-  const terminalFontWeight = useReviewStore((s) => s.terminalFontWeight);
-  const setTerminalFontWeight = useReviewStore((s) => s.setTerminalFontWeight);
-  const terminalLineHeight = useReviewStore((s) => s.terminalLineHeight);
-  const setTerminalLineHeight = useReviewStore((s) => s.setTerminalLineHeight);
-  const terminalLetterSpacing = useReviewStore((s) => s.terminalLetterSpacing);
-  const setTerminalLetterSpacing = useReviewStore(
+  const codeFontSize = useSpurStore((s) => s.codeFontSize);
+  const setCodeFontSize = useSpurStore((s) => s.setCodeFontSize);
+  const codeFontFamily = useSpurStore((s) => s.codeFontFamily);
+  const setCodeFontFamily = useSpurStore((s) => s.setCodeFontFamily);
+  const terminalFontFamily = useSpurStore((s) => s.terminalFontFamily);
+  const setTerminalFontFamily = useSpurStore((s) => s.setTerminalFontFamily);
+  const terminalFontSize = useSpurStore((s) => s.terminalFontSize);
+  const setTerminalFontSize = useSpurStore((s) => s.setTerminalFontSize);
+  const terminalFontWeight = useSpurStore((s) => s.terminalFontWeight);
+  const setTerminalFontWeight = useSpurStore((s) => s.setTerminalFontWeight);
+  const terminalLineHeight = useSpurStore((s) => s.terminalLineHeight);
+  const setTerminalLineHeight = useSpurStore((s) => s.setTerminalLineHeight);
+  const terminalLetterSpacing = useSpurStore((s) => s.terminalLetterSpacing);
+  const setTerminalLetterSpacing = useSpurStore(
     (s) => s.setTerminalLetterSpacing,
   );
-  const terminalLaunchCommand = useReviewStore((s) => s.terminalLaunchCommand);
-  const setTerminalLaunchCommand = useReviewStore(
+  const terminalLaunchCommand = useSpurStore((s) => s.terminalLaunchCommand);
+  const setTerminalLaunchCommand = useSpurStore(
     (s) => s.setTerminalLaunchCommand,
   );
-  const uiTheme = useReviewStore((s) => s.uiTheme);
-  const setUiTheme = useReviewStore((s) => s.setUiTheme);
-  const matchVscodeTheme = useReviewStore((s) => s.matchVscodeTheme);
-  const setMatchVscodeTheme = useReviewStore((s) => s.setMatchVscodeTheme);
-  const resolvedVscodeTheme = useReviewStore((s) => s.resolvedVscodeTheme);
-  const sentryEnabled = useReviewStore((s) => s.sentryEnabled);
-  const setSentryEnabled = useReviewStore((s) => s.setSentryEnabled);
-  const soundEffectsEnabled = useReviewStore((s) => s.soundEffectsEnabled);
-  const setSoundEffectsEnabled = useReviewStore(
-    (s) => s.setSoundEffectsEnabled,
-  );
-  const terminalNotificationsEnabled = useReviewStore(
+  const uiTheme = useSpurStore((s) => s.uiTheme);
+  const setUiTheme = useSpurStore((s) => s.setUiTheme);
+  const matchVscodeTheme = useSpurStore((s) => s.matchVscodeTheme);
+  const setMatchVscodeTheme = useSpurStore((s) => s.setMatchVscodeTheme);
+  const resolvedVscodeTheme = useSpurStore((s) => s.resolvedVscodeTheme);
+  const sentryEnabled = useSpurStore((s) => s.sentryEnabled);
+  const setSentryEnabled = useSpurStore((s) => s.setSentryEnabled);
+  const soundEffectsEnabled = useSpurStore((s) => s.soundEffectsEnabled);
+  const setSoundEffectsEnabled = useSpurStore((s) => s.setSoundEffectsEnabled);
+  const terminalNotificationsEnabled = useSpurStore(
     (s) => s.terminalNotificationsEnabled,
   );
-  const setTerminalNotificationsEnabled = useReviewStore(
+  const setTerminalNotificationsEnabled = useSpurStore(
     (s) => s.setTerminalNotificationsEnabled,
   );
 

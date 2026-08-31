@@ -18,7 +18,7 @@ vi.mock("../platform", () => ({
   }),
 }));
 
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { useWorkspaceSync } from "./useWorkspaceSync";
 import { workspace as makeWorkspace } from "../test/fixtures";
 
@@ -28,7 +28,7 @@ function item(id: string) {
 
 beforeEach(() => {
   listWorkspaces.mockReset();
-  useReviewStore.setState({ workspaces: [] });
+  useSpurStore.setState({ workspaces: [] });
 });
 
 afterEach(() => cleanup());
@@ -40,20 +40,20 @@ describe("useWorkspaceSync", () => {
     renderHook(() => useWorkspaceSync());
 
     await waitFor(() =>
-      expect(useReviewStore.getState().workspaces).toEqual([item("a")]),
+      expect(useSpurStore.getState().workspaces).toEqual([item("a")]),
     );
   });
 
   it("leaves the list alone when a read fails", async () => {
-    useReviewStore.setState({ workspaces: [item("a")] });
+    useSpurStore.setState({ workspaces: [item("a")] });
     listWorkspaces.mockRejectedValue(new Error("backend not ready"));
 
     renderHook(() => useWorkspaceSync());
 
     await waitFor(() => expect(listWorkspaces).toHaveBeenCalled());
-    // A failed read is not evidence of an empty queue — the `review` CLI is
+    // A failed read is not evidence of an empty queue — the `spur` CLI is
     // writing the same file, and the app must not blank the list on a blip.
-    expect(useReviewStore.getState().workspaces).toEqual([item("a")]);
+    expect(useSpurStore.getState().workspaces).toEqual([item("a")]);
   });
 
   it("re-reads on focus, so a queue the CLI changed catches up", async () => {
@@ -67,7 +67,7 @@ describe("useWorkspaceSync", () => {
     });
 
     await waitFor(() =>
-      expect(useReviewStore.getState().workspaces).toEqual([item("a")]),
+      expect(useSpurStore.getState().workspaces).toEqual([item("a")]),
     );
   });
 });

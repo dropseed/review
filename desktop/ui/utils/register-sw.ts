@@ -36,7 +36,7 @@ export function registerServiceWorker(): void {
         .keys()
         .then((names) =>
           names
-            .filter((name) => name.startsWith("review-shell-"))
+            .filter((name) => name.startsWith("spur-shell-"))
             .forEach((name) => void caches.delete(name)),
         )
         .catch(() => {});

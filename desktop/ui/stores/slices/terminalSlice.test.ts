@@ -1233,7 +1233,7 @@ describe("ingestTabs", () => {
 });
 
 describe("checkout attribution", () => {
-  // Review-managed worktrees live under ~/.review/worktrees, outside the repo.
+  // Review-managed worktrees live under ~/.spur/worktrees, outside the repo.
   const FEATURE_WT = "/home/.review/worktrees/r/feature";
   const activity: RepoLocalActivity[] = [
     {

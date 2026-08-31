@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect } from "react";
 import { clsx } from "clsx";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { Sidebar } from "./index";
 
 /**
@@ -32,7 +32,7 @@ export function QueueDrawer({
   // you are already in — changes no id, and the drawer used to just sit there.
   // `focusWorkspace` stamps a fresh timestamp object every time it runs, so this
   // fires on a re-tap as well.
-  const focusStamp = useReviewStore((s) => s.workspaceSeenAt);
+  const focusStamp = useSpurStore((s) => s.workspaceSeenAt);
   useEffect(() => {
     onClose();
   }, [focusStamp, onClose]);

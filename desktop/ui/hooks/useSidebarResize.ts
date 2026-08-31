@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import {
   SIDEBAR_LIMITS,
   clampSidebarWidth,
@@ -81,8 +81,8 @@ export function useSidebarResize({
   availablePx,
 }: UseSidebarResizeOptions): UseSidebarResizeReturn {
   const widthKey = SIDEBAR_LIMITS[sidebarPosition].key;
-  const chosenWidth = useReviewStore((s) => s[widthKey]);
-  const setSidebarWidth = useReviewStore((s) => s.setSidebarWidth);
+  const chosenWidth = useSpurStore((s) => s[widthKey]);
+  const setSidebarWidth = useSpurStore((s) => s.setSidebarWidth);
 
   const [isResizing, setIsResizing] = useState(false);
   const isResizingRef = useRef(false);
@@ -92,7 +92,7 @@ export function useSidebarResize({
   // The root font size follows the code-font preference (`--ui-scale`), so the
   // rem→px conversion the window clamp needs has to be re-read when that
   // changes — there's no resize event for a font-size change.
-  const codeFontSize = useReviewStore((s) => s.codeFontSize);
+  const codeFontSize = useSpurStore((s) => s.codeFontSize);
   const [rootFontPx, setRootFontPx] = useState(16);
   useLayoutEffect(() => {
     setRootFontPx(rootFontSize());

@@ -1,8 +1,8 @@
-import type { ReviewStore } from "../types";
+import type { SpurStore } from "../types";
 import type { EphemeralView } from "../../types/viewpoint";
 import { headIsWorkingTree } from "./checkout";
 
-type ViewpointState = Pick<ReviewStore, "viewpoint">;
+type ViewpointState = Pick<SpurStore, "viewpoint">;
 
 /**
  * The commit being peeked at right now, or null when the tab is showing a
@@ -16,7 +16,7 @@ export function ephemeralView(state: ViewpointState): EphemeralView | null {
 }
 
 type WorkingTreeState = Pick<
-  ReviewStore,
+  SpurStore,
   | "comparison"
   | "reviewComparison"
   | "currentBranch"
@@ -49,7 +49,7 @@ export function historicRef(
  * revision *and* the tab condition together, so they are asked for together.
  */
 export function activeHistoricRef(
-  state: WorkingTreeState & ViewpointState & Pick<ReviewStore, "filesPanelTab">,
+  state: WorkingTreeState & ViewpointState & Pick<SpurStore, "filesPanelTab">,
 ): string | null {
   return state.filesPanelTab === "browse" ? historicRef(state) : null;
 }
@@ -68,7 +68,7 @@ export function activeHistoricRef(
 export function viewOnly(
   state: WorkingTreeState &
     ViewpointState &
-    Pick<ReviewStore, "readOnlyPreview" | "filesPanelTab">,
+    Pick<SpurStore, "readOnlyPreview" | "filesPanelTab">,
 ): boolean {
   return (
     state.readOnlyPreview ||

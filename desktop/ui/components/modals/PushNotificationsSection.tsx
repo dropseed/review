@@ -53,7 +53,7 @@ export function PushNotificationsSection(): ReactNode {
       } else {
         setNote(
           Notification.permission === "denied"
-            ? "This browser is blocking notifications for Review. Allow them in its site settings, then try again."
+            ? "This browser is blocking notifications for Spur. Allow them in its site settings, then try again."
             : "Notifications weren't allowed, so nothing is subscribed.",
         );
       }
@@ -96,7 +96,7 @@ export function PushNotificationsSection(): ReactNode {
         <p className="text-xxs text-fg-faint leading-relaxed">
           {import.meta.env.DEV
             ? "Not available in dev mode — the service worker that receives pushes is only registered in production builds."
-            : "This browser hasn't registered Review's service worker. Reload the page and reopen this panel."}
+            : "This browser hasn't registered Spur's service worker. Reload the page and reopen this panel."}
         </p>
       ) : (
         <>

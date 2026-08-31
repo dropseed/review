@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ReviewStore } from "./types";
+import type { SpurStore } from "./types";
 import { getApiClient } from "../api";
 import { getPlatformServices } from "../platform";
 
@@ -29,7 +29,7 @@ const apiClient = getApiClient();
 const platform = getPlatformServices();
 
 // Combined store with injected dependencies
-export const useReviewStore = create<ReviewStore>()((...args) => ({
+export const useSpurStore = create<SpurStore>()((...args) => ({
   ...createPreferencesSlice(platform.storage)(...args),
   ...createNavigationSlice(...args),
   ...createOverlaySlice(...args),

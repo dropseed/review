@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { getApiClient } from "../api";
 import { isTauriEnvironment } from "../api/client";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { useDebounce } from "./useDebounce";
 import type { LspServerStatus } from "../types";
 
@@ -15,7 +15,7 @@ const ROOT_SETTLE_MS = 250;
 
 /** Publish the servers the user hasn't turned off. */
 function publishStatuses(discovered: LspServerStatus[], disabled: string[]) {
-  useReviewStore
+  useSpurStore
     .getState()
     .setLspServerStatuses(
       discovered.filter((s) => !disabled.includes(s.language)),
@@ -52,10 +52,10 @@ function initOncePerRoot(root: string): Promise<LspServerStatus[]> {
 
 export function useLspClient() {
   const lspRoot = useDebounce(
-    useReviewStore((s) => s.worktreePath ?? s.repoPath),
+    useSpurStore((s) => s.worktreePath ?? s.repoPath),
     ROOT_SETTLE_MS,
   );
-  const lspDisabledLanguages = useReviewStore((s) => s.lspDisabledLanguages);
+  const lspDisabledLanguages = useSpurStore((s) => s.lspDisabledLanguages);
 
   // What the backend last reported for this root, unfiltered — so toggling a
   // language in settings re-filters what we already know instead of paying
@@ -73,10 +73,7 @@ export function useLspClient() {
         for (const s of statuses) {
           console.log(`[lsp] ${s.name} (${s.language}): ${s.state}`);
         }
-        publishStatuses(
-          statuses,
-          useReviewStore.getState().lspDisabledLanguages,
-        );
+        publishStatuses(statuses, useSpurStore.getState().lspDisabledLanguages);
       })
       .catch((err: unknown) => {
         if (!cancelled) {

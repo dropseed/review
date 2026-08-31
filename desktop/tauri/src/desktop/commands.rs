@@ -10,32 +10,32 @@
 )]
 
 use log::{debug, error, info, warn};
-use review::classify::{self, ClassifyResponse};
-use review::diff::parser::DiffHunk;
-use review::lsp::client::LspClient;
-use review::lsp::registry;
-use review::review::state::{ReviewState, ReviewSummary};
-use review::review::storage::{self, GlobalReviewSummary};
-use review::service::pr::ReviewTierInfo;
-use review::service::usage::AgentUsage;
-use review::service::viewer_prs::ViewerPrSnapshot;
-use review::service::worktrees::RepoWorktrees;
-use review::service::{
+use serde::Serialize;
+use spur::classify::{self, ClassifyResponse};
+use spur::diff::parser::DiffHunk;
+use spur::lsp::client::LspClient;
+use spur::lsp::registry;
+use spur::review::state::{ReviewState, ReviewSummary};
+use spur::review::storage::{self, GlobalReviewSummary};
+use spur::service::pr::ReviewTierInfo;
+use spur::service::usage::AgentUsage;
+use spur::service::viewer_prs::ViewerPrSnapshot;
+use spur::service::worktrees::RepoWorktrees;
+use spur::service::{
     CommitOutputLine, CommitResult, ExpandedContextResult, FileContent, RepoFileSymbols,
     RepoLocalActivity, ReviewFreshnessInput, ReviewFreshnessResult, VscodeThemeDetection,
 };
-use review::sources::github::{GhCliProvider, GitHubPrRef, GitHubProvider, PullRequest};
-use review::sources::local_git::{
+use spur::sources::github::{GhCliProvider, GitHubPrRef, GitHubProvider, PullRequest};
+use spur::sources::local_git::{
     CommitComparison, DiffShortStat, HunkAttribution, LocalGitSource, RemoteInfo, SearchMatch,
     WorktreeCheckout, WorktreeInfo,
 };
-use review::sources::traits::{
+use spur::sources::traits::{
     BranchList, CommitDetail, CommitEntry, Comparison, FileEntry, GitStatusSummary,
 };
-use review::symbols::{self, FileSymbolDiff, Symbol};
-use review::trust::patterns::TrustCategory;
-use review::work::{Attachment, WorkspaceView};
-use serde::Serialize;
+use spur::symbols::{self, FileSymbolDiff, Symbol};
+use spur::trust::patterns::TrustCategory;
+use spur::workspace::{Attachment, WorkspaceView};
 use std::collections::{HashMap, HashSet};
 use tokio::sync::Mutex as TokioMutex;
 
@@ -92,7 +92,7 @@ pub(crate) struct LspServerHandle {
 /// into one indexed workspace per review the user ever opened.
 const MAX_WARM_LSP_ROOTS: usize = 3;
 
-// Types are now imported from review::service::{FileContent, ...}
+// Types are now imported from spur::service::{FileContent, ...}
 
 // --- Tauri Commands ---
 
@@ -170,7 +170,7 @@ pub fn list_pull_requests(repo_path: String) -> Result<Vec<PullRequest>, String>
 pub async fn get_viewer_prs(refresh: bool) -> Result<ViewerPrSnapshot, String> {
     blocking_infallible(move || {
         let t0 = Instant::now();
-        let snapshot = review::service::viewer_prs::get_viewer_prs(refresh);
+        let snapshot = spur::service::viewer_prs::get_viewer_prs(refresh);
         info!(
             "get_viewer_prs refresh={} -> {} prs in {:?}",
             refresh,
@@ -195,7 +195,7 @@ pub fn list_files_sync(
     repo_path: String,
     comparison: Comparison,
 ) -> Result<Vec<FileEntry>, String> {
-    review::service::files::list_files(&PathBuf::from(&repo_path), &comparison)
+    spur::service::files::list_files(&PathBuf::from(&repo_path), &comparison)
         .map_err(|e| e.to_string())
 }
 
@@ -212,7 +212,7 @@ pub fn list_all_files_sync(
     repo_path: String,
     comparison: Comparison,
 ) -> Result<Vec<FileEntry>, String> {
-    review::service::files::list_all_files(&PathBuf::from(&repo_path), &comparison)
+    spur::service::files::list_all_files(&PathBuf::from(&repo_path), &comparison)
         .map_err(|e| e.to_string())
 }
 
@@ -223,7 +223,7 @@ pub async fn list_repo_files(repo_path: String) -> Result<Vec<FileEntry>, String
 
 /// Synchronous implementation of `list_repo_files`, callable from blocking contexts.
 pub fn list_repo_files_sync(repo_path: String) -> Result<Vec<FileEntry>, String> {
-    review::service::files::list_repo_files(&PathBuf::from(&repo_path)).map_err(|e| e.to_string())
+    spur::service::files::list_repo_files(&PathBuf::from(&repo_path)).map_err(|e| e.to_string())
 }
 
 /// List the repository's files as of a ref — a read-only peek, no checkout.
@@ -233,7 +233,7 @@ pub async fn list_files_at_ref(
     git_ref: String,
 ) -> Result<Vec<FileEntry>, String> {
     blocking(move || {
-        review::service::files::list_files_at_ref(&PathBuf::from(&repo_path), &git_ref)
+        spur::service::files::list_files_at_ref(&PathBuf::from(&repo_path), &git_ref)
             .map_err(|e| e.to_string())
     })
     .await
@@ -252,7 +252,7 @@ pub fn list_directory_contents_sync(
     repo_path: String,
     dir_path: String,
 ) -> Result<Vec<FileEntry>, String> {
-    review::service::files::list_directory_contents(&PathBuf::from(&repo_path), &dir_path)
+    spur::service::files::list_directory_contents(&PathBuf::from(&repo_path), &dir_path)
         .map_err(|e| e.to_string())
 }
 
@@ -263,12 +263,8 @@ pub async fn get_file_content(
     comparison: Comparison,
 ) -> Result<FileContent, String> {
     blocking(move || {
-        review::service::files::get_file_content(
-            &PathBuf::from(&repo_path),
-            &file_path,
-            &comparison,
-        )
-        .map_err(|e| e.to_string())
+        spur::service::files::get_file_content(&PathBuf::from(&repo_path), &file_path, &comparison)
+            .map_err(|e| e.to_string())
     })
     .await
 }
@@ -289,7 +285,7 @@ pub fn get_all_hunks_sync(
     comparison: Comparison,
     file_paths: Vec<String>,
 ) -> Result<Vec<DiffHunk>, String> {
-    review::service::files::get_all_hunks(&PathBuf::from(&repo_path), &comparison, &file_paths)
+    spur::service::files::get_all_hunks(&PathBuf::from(&repo_path), &comparison, &file_paths)
         .map_err(|e| e.to_string())
 }
 
@@ -299,9 +295,9 @@ pub async fn get_files_delta(
     repo_path: String,
     comparison: Comparison,
     file_paths: Vec<String>,
-) -> Result<review::service::FilesDelta, String> {
+) -> Result<spur::service::FilesDelta, String> {
     blocking(move || {
-        review::service::files::files_delta(&PathBuf::from(&repo_path), &comparison, &file_paths)
+        spur::service::files::files_delta(&PathBuf::from(&repo_path), &comparison, &file_paths)
             .map_err(|e| e.to_string())
     })
     .await
@@ -312,9 +308,9 @@ pub async fn get_files_delta(
 pub async fn get_comparison_move_pairs(
     repo_path: String,
     comparison: Comparison,
-) -> Result<Vec<review::diff::parser::MovePair>, String> {
+) -> Result<Vec<spur::diff::parser::MovePair>, String> {
     blocking(move || {
-        review::service::files::comparison_move_pairs(&PathBuf::from(&repo_path), &comparison)
+        spur::service::files::comparison_move_pairs(&PathBuf::from(&repo_path), &comparison)
             .map_err(|e| e.to_string())
     })
     .await
@@ -338,9 +334,9 @@ pub fn resolve_review(
     repo_path: String,
     r#ref: String,
     base_override: Option<String>,
-) -> Result<review::service::targets::ResolvedReview, String> {
+) -> Result<spur::service::targets::ResolvedReview, String> {
     let t0 = Instant::now();
-    let resolved = review::service::targets::resolve(
+    let resolved = spur::service::targets::resolve(
         &PathBuf::from(&repo_path),
         &r#ref,
         base_override.as_deref(),
@@ -367,10 +363,10 @@ pub fn load_review_state(repo_path: String, r#ref: String) -> Result<ReviewState
 pub fn reconcile_review_state(
     state: ReviewState,
     hunks: Vec<DiffHunk>,
-) -> Result<review::service::review_io::ReviewLoadResult, String> {
+) -> Result<spur::service::review_io::ReviewLoadResult, String> {
     let t0 = Instant::now();
     let key = state.ref_name.clone();
-    let result = review::service::review_io::reconcile_review(state, &hunks);
+    let result = spur::service::review_io::reconcile_review(state, &hunks);
     info!(
         "reconcile_review_state {key} carried={} in {:?}",
         result.carried_forward,
@@ -390,12 +386,9 @@ pub fn save_review_state(
     // Reconciles against the hunks the UI already loaded (when present) so stable
     // keys are (re)stamped and decisions carry across hunk-ID drift — without a
     // second `git diff`.
-    let version = review::service::review_io::save_review(
-        &PathBuf::from(&repo_path),
-        state,
-        hunks.as_deref(),
-    )
-    .map_err(|e| e.to_string())?;
+    let version =
+        spur::service::review_io::save_review(&PathBuf::from(&repo_path), state, hunks.as_deref())
+            .map_err(|e| e.to_string())?;
     info!("save_review_state {key} v{version} in {:?}", t0.elapsed());
     Ok(version)
 }
@@ -412,8 +405,8 @@ pub fn set_base_override(
     repo_path: String,
     r#ref: String,
     base_override: Option<String>,
-) -> Result<review::service::targets::ResolvedReview, String> {
-    review::service::targets::set_base_override(&PathBuf::from(&repo_path), &r#ref, base_override)
+) -> Result<spur::service::targets::ResolvedReview, String> {
+    spur::service::targets::set_base_override(&PathBuf::from(&repo_path), &r#ref, base_override)
         .map_err(|e| e.to_string())
 }
 
@@ -445,33 +438,33 @@ pub fn list_all_reviews_global() -> Result<Vec<GlobalReviewSummary>, String> {
 
 #[tauri::command]
 pub fn get_review_root() -> Result<String, String> {
-    review::review::central::get_central_root()
+    spur::home::get_central_root()
         .map(|p| p.to_string_lossy().to_string())
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn get_review_storage_path(repo_path: String) -> Result<String, String> {
-    review::review::central::get_repo_storage_dir(&PathBuf::from(&repo_path))
+    spur::home::get_repo_storage_dir(&PathBuf::from(&repo_path))
         .map(|p| p.to_string_lossy().to_string())
         .map_err(|e| e.to_string())
 }
 
 // ============================================================
-// Work queue
+// Workspace queue
 //
 // The queue is global and cross-repo, so none of these take a repo path — only
 // the attachments a workspace holds do. See `ApiClient` for why every mutation
 // returns the full list.
 //
-// `work_list` talks to the terminal daemon as well, because one fact about a
-// workspace lives there rather than in `work.json`: whether anything is running
+// `workspace_list` talks to the terminal daemon as well, because one fact about a
+// workspace lives there rather than in `workspaces.json`: whether anything is running
 // in it (cleanup). It degrades to "leave it alone" when the daemon has not been
 // contacted yet.
 // ============================================================
 
 /// What the daemon can say about the queue, or `None` when nobody can say —
-/// see `work::cleanup` for why the difference matters.
+/// see `workspace::cleanup` for why the difference matters.
 async fn live_workspaces(terminals: &TerminalState) -> Option<HashSet<String>> {
     terminals.connected().await?.live_workspaces().await.ok()
 }
@@ -498,19 +491,19 @@ fn in_use(live: Option<HashSet<String>>, focused: Option<String>) -> Option<Hash
 /// `focused` is the workspace the stage is showing, so the read that cleans up
 /// does not reap it out from under the human. Absent when nothing is focused.
 #[tauri::command]
-pub async fn work_list(
+pub async fn workspace_list(
     terminals: tauri::State<'_, TerminalState>,
     focused: Option<String>,
 ) -> Result<Vec<WorkspaceView>, String> {
     let t0 = Instant::now();
-    // The read that cleans up: this and `review workspace list` are the two places
+    // The read that cleans up: this and `spur workspace list` are the two places
     // that hold the queue and the liveness answer at once.
     let live = live_workspaces(&terminals).await;
     let in_use = in_use(live, focused);
-    let state = review::work::list_with_liveness(in_use.as_ref()).map_err(|e| e.to_string())?;
-    let views = review::work::views(state.workspaces);
+    let state = spur::workspace::list_with_liveness(in_use.as_ref()).map_err(|e| e.to_string())?;
+    let views = spur::workspace::views(state.workspaces);
     info!(
-        "work_list -> {} workspaces in {:?}",
+        "workspace_list -> {} workspaces in {:?}",
         views.len(),
         t0.elapsed()
     );
@@ -518,15 +511,15 @@ pub async fn work_list(
 }
 
 #[tauri::command]
-pub fn work_add(
+pub fn workspace_add(
     title: Option<String>,
     attachments: Vec<Attachment>,
 ) -> Result<Vec<WorkspaceView>, String> {
     let t0 = Instant::now();
     let (state, item) =
-        review::work::add(title.as_deref(), attachments).map_err(|e| e.to_string())?;
-    info!("work_add {} in {:?}", item.id, t0.elapsed());
-    Ok(review::work::views(state.workspaces))
+        spur::workspace::add(title.as_deref(), attachments).map_err(|e| e.to_string())?;
+    info!("workspace_add {} in {:?}", item.id, t0.elapsed());
+    Ok(spur::workspace::views(state.workspaces))
 }
 
 /// Remove a workspace. `recursive` takes everything nested under it as well —
@@ -535,91 +528,107 @@ pub fn work_add(
 /// answer here. Absent means the safe reading: the children come up a level
 /// and stay in the queue.
 #[tauri::command]
-pub fn work_remove(id: String, recursive: Option<bool>) -> Result<Vec<WorkspaceView>, String> {
+pub fn workspace_remove(id: String, recursive: Option<bool>) -> Result<Vec<WorkspaceView>, String> {
     let t0 = Instant::now();
     let mode = if recursive.unwrap_or(false) {
-        review::work::Removal::Subtree
+        spur::workspace::Removal::Subtree
     } else {
-        review::work::Removal::PromoteChildren
+        spur::workspace::Removal::PromoteChildren
     };
-    let (state, removed) = review::work::remove(&id, mode).map_err(|e| e.to_string())?;
+    let (state, removed) = spur::workspace::remove(&id, mode).map_err(|e| e.to_string())?;
     info!(
-        "work_remove {} (+{} nested) in {:?}",
+        "workspace_remove {} (+{} nested) in {:?}",
         removed.workspace.id,
         removed.descendants.len(),
         t0.elapsed()
     );
-    Ok(review::work::views(state.workspaces))
+    Ok(spur::workspace::views(state.workspaces))
 }
 
 /// Put a workspace under another — the sidebar's card-onto-card drop. A null
 /// `parentId` takes it back out to the top level.
 #[tauri::command]
-pub fn work_nest(id: String, parent_id: Option<String>) -> Result<Vec<WorkspaceView>, String> {
+pub fn workspace_nest(id: String, parent_id: Option<String>) -> Result<Vec<WorkspaceView>, String> {
     let t0 = Instant::now();
     let (state, item) =
-        review::work::set_parent(&id, parent_id.as_deref()).map_err(|e| e.to_string())?;
+        spur::workspace::set_parent(&id, parent_id.as_deref()).map_err(|e| e.to_string())?;
     info!(
-        "work_nest {} under {:?} in {:?}",
+        "workspace_nest {} under {:?} in {:?}",
         item.id,
         item.parent_id,
         t0.elapsed()
     );
-    Ok(review::work::views(state.workspaces))
+    Ok(spur::workspace::views(state.workspaces))
 }
 
 /// Retitle an item. An absent (or empty) `title` clears the stored one and the
 /// title goes back to being derived.
 #[tauri::command]
-pub fn work_rename(id: String, title: Option<String>) -> Result<Vec<WorkspaceView>, String> {
+pub fn workspace_rename(id: String, title: Option<String>) -> Result<Vec<WorkspaceView>, String> {
     let t0 = Instant::now();
-    let (state, item) = review::work::rename(&id, title.as_deref()).map_err(|e| e.to_string())?;
-    info!("work_rename {} in {:?}", item.id, t0.elapsed());
-    Ok(review::work::views(state.workspaces))
+    let (state, item) =
+        spur::workspace::rename(&id, title.as_deref()).map_err(|e| e.to_string())?;
+    info!("workspace_rename {} in {:?}", item.id, t0.elapsed());
+    Ok(spur::workspace::views(state.workspaces))
 }
 
 /// Reorder an item. `position` is 0-based, matching the array the frontend
-/// dragged (the CLI's `review workspace reorder` is the 1-based surface).
+/// dragged (the CLI's `spur workspace reorder` is the 1-based surface).
 ///
 /// `keepParent` is the card menu's move verbs: reorder among the siblings and
 /// leave the nesting alone. Without it the row lands at the depth of the row it
 /// displaces, which is what a drag means.
 #[tauri::command]
-pub fn work_move(
+pub fn workspace_move(
     id: String,
     position: usize,
     keep_parent: Option<bool>,
 ) -> Result<Vec<WorkspaceView>, String> {
     let t0 = Instant::now();
-    let (state, item) = review::work::move_workspace(&id, position, keep_parent.unwrap_or(false))
-        .map_err(|e| e.to_string())?;
-    info!("work_move {} -> {position} in {:?}", item.id, t0.elapsed());
-    Ok(review::work::views(state.workspaces))
+    let (state, item) =
+        spur::workspace::move_workspace(&id, position, keep_parent.unwrap_or(false))
+            .map_err(|e| e.to_string())?;
+    info!(
+        "workspace_move {} -> {position} in {:?}",
+        item.id,
+        t0.elapsed()
+    );
+    Ok(spur::workspace::views(state.workspaces))
 }
 
 /// Show a repo in a workspace — opening a repo tab. Nothing is exclusive, so
 /// this cannot fail on another workspace showing the same repo.
 #[tauri::command]
-pub fn work_attach(
+pub fn workspace_attach(
     id: String,
     path: String,
     r#ref: Option<String>,
 ) -> Result<Vec<WorkspaceView>, String> {
     let t0 = Instant::now();
     let (state, item) =
-        review::work::attach(&id, Attachment::new(&path, r#ref)).map_err(|e| e.to_string())?;
-    info!("work_attach {} {} in {:?}", item.id, path, t0.elapsed());
-    Ok(review::work::views(state.workspaces))
+        spur::workspace::attach(&id, Attachment::new(&path, r#ref)).map_err(|e| e.to_string())?;
+    info!(
+        "workspace_attach {} {} in {:?}",
+        item.id,
+        path,
+        t0.elapsed()
+    );
+    Ok(spur::workspace::views(state.workspaces))
 }
 
 /// Stop showing a repo — closing a repo tab.
 #[tauri::command]
-pub fn work_detach(id: String, path: String) -> Result<Vec<WorkspaceView>, String> {
+pub fn workspace_detach(id: String, path: String) -> Result<Vec<WorkspaceView>, String> {
     let t0 = Instant::now();
     let (state, item) =
-        review::work::detach(&id, std::path::Path::new(&path)).map_err(|e| e.to_string())?;
-    info!("work_detach {} {} in {:?}", item.id, path, t0.elapsed());
-    Ok(review::work::views(state.workspaces))
+        spur::workspace::detach(&id, std::path::Path::new(&path)).map_err(|e| e.to_string())?;
+    info!(
+        "workspace_detach {} {} in {:?}",
+        item.id,
+        path,
+        t0.elapsed()
+    );
+    Ok(spur::workspace::views(state.workspaces))
 }
 
 /// Where a repo+branch landed, as the frontend reads it.
@@ -629,8 +638,8 @@ pub struct RouteLanding {
     workspace: WorkspaceView,
     /// Whether getting here minted the workspace.
     created: bool,
-    /// The whole queue as it now stands — the same thing `work_add` and
-    /// `work_attach` return, and for the same reason. Routing can add a
+    /// The whole queue as it now stands — the same thing `workspace_add` and
+    /// `workspace_attach` return, and for the same reason. Routing can add a
     /// workspace, so the caller needs the new list; it already had to be read
     /// here to resolve `workspace`'s ancestry, and handing it back is what
     /// spares the frontend a second round trip for a list this call was holding
@@ -648,37 +657,40 @@ pub struct RouteLanding {
 /// mirrored, and *commits* it.
 ///
 /// `workspace_id` names a workspace explicitly, which lands there and writes
-/// nothing — attaching the repo is `work_attach`'s job.
+/// nothing — attaching the repo is `workspace_attach`'s job.
 #[tauri::command]
-pub async fn work_route(
+pub async fn workspace_route(
     repo_path: String,
     r#ref: String,
     workspace_id: Option<String>,
 ) -> Result<RouteLanding, String> {
     let t0 = Instant::now();
-    let location = review::work::router::location_of_ref(std::path::Path::new(&repo_path), &r#ref);
+    let location =
+        spur::workspace::router::location_of_ref(std::path::Path::new(&repo_path), &r#ref);
     // Off the UI thread: landing is a read-modify-write of the queue file, and
     // path normalization touches the filesystem.
     let landing = tokio::task::spawn_blocking(move || {
-        review::work::router::land(&location, workspace_id.as_deref())
+        spur::workspace::router::land(&location, workspace_id.as_deref())
     })
     .await
     .map_err(|e| format!("routing panicked: {e}"))?
     .map_err(|e| e.to_string())?;
 
     info!(
-        "work_route {} {} -> {} (created: {}) in {:?}",
+        "workspace_route {} {} -> {} (created: {}) in {:?}",
         repo_path,
         r#ref,
         landing.workspace.id,
         landing.created,
         t0.elapsed()
     );
-    let queue = review::work::list().map_err(|e| e.to_string())?.workspaces;
+    let queue = spur::workspace::list()
+        .map_err(|e| e.to_string())?
+        .workspaces;
     Ok(RouteLanding {
-        workspace: review::work::view_of(&queue, landing.workspace),
+        workspace: spur::workspace::view_of(&queue, landing.workspace),
         created: landing.created,
-        workspaces: review::work::views(queue),
+        workspaces: spur::workspace::views(queue),
     })
 }
 
@@ -757,7 +769,7 @@ pub fn remove_review_worktree(repo_path: String, worktree_path: String) -> Resul
 pub async fn list_worktree_status(repo_paths: Vec<String>) -> Result<Vec<RepoWorktrees>, String> {
     blocking(move || {
         let t0 = std::time::Instant::now();
-        let result = review::service::worktrees::status(&repo_paths);
+        let result = spur::service::worktrees::status(&repo_paths);
         info!(
             "list_worktree_status {} repos in {:?}",
             result.len(),
@@ -776,7 +788,7 @@ pub async fn create_worktree(
 ) -> Result<WorktreeCheckout, String> {
     blocking(move || {
         let t0 = std::time::Instant::now();
-        let result = review::service::worktrees::create(&PathBuf::from(&repo_path), &branch)
+        let result = spur::service::worktrees::create(&PathBuf::from(&repo_path), &branch)
             .map_err(|e| e.to_string())?;
         info!(
             "create_worktree branch={} path={} created={} in {:?}",
@@ -796,7 +808,7 @@ pub async fn create_worktree(
 pub async fn remove_worktree(repo_path: String, worktree_path: String) -> Result<(), String> {
     blocking(move || {
         let t0 = std::time::Instant::now();
-        review::service::worktrees::remove(&PathBuf::from(&repo_path), &worktree_path)
+        spur::service::worktrees::remove(&PathBuf::from(&repo_path), &worktree_path)
             .map_err(|e| e.to_string())?;
         info!(
             "remove_worktree path={} in {:?}",
@@ -810,7 +822,7 @@ pub async fn remove_worktree(repo_path: String, worktree_path: String) -> Result
 
 #[tauri::command]
 pub fn get_review_tier(repo_path: String, r#ref: String) -> Result<ReviewTierInfo, String> {
-    review::service::pr::tier(&PathBuf::from(&repo_path), &r#ref).map_err(|e| e.to_string())
+    spur::service::pr::tier(&PathBuf::from(&repo_path), &r#ref).map_err(|e| e.to_string())
 }
 
 /// Rate-limit usage for the coding agents installed on this machine.
@@ -818,7 +830,7 @@ pub fn get_review_tier(repo_path: String, r#ref: String) -> Result<ReviewTierInf
 /// `force` bypasses the service-side cache, for the refresh button.
 #[tauri::command]
 pub async fn get_agent_usage(force: bool) -> Result<Vec<AgentUsage>, String> {
-    blocking(move || review::service::usage::report(force).map_err(|e| e.to_string())).await
+    blocking(move || spur::service::usage::report(force).map_err(|e| e.to_string())).await
 }
 
 /// Listed → Fetched: pull a PR's head (and base) so its diff can be read locally.
@@ -826,8 +838,8 @@ pub async fn get_agent_usage(force: bool) -> Result<Vec<AgentUsage>, String> {
 pub async fn fetch_pull_request(repo_path: String, pr: GitHubPrRef) -> Result<String, String> {
     blocking(move || {
         let t0 = std::time::Instant::now();
-        let result = review::service::pr::fetch(&PathBuf::from(&repo_path), &pr)
-            .map_err(|e| e.to_string())?;
+        let result =
+            spur::service::pr::fetch(&PathBuf::from(&repo_path), &pr).map_err(|e| e.to_string())?;
         info!(
             "fetch_pull_request #{} -> {} in {:?}",
             pr.number,
@@ -845,7 +857,7 @@ pub async fn fetch_pull_request(repo_path: String, pr: GitHubPrRef) -> Result<St
 pub async fn materialize_review(repo_path: String, r#ref: String) -> Result<String, String> {
     blocking(move || {
         let t0 = std::time::Instant::now();
-        let path = review::service::pr::materialize(&PathBuf::from(&repo_path), &r#ref)
+        let path = spur::service::pr::materialize(&PathBuf::from(&repo_path), &r#ref)
             .map_err(|e| e.to_string())?;
         info!(
             "materialize_review ref={} -> {} in {:?}",
@@ -861,14 +873,14 @@ pub async fn materialize_review(repo_path: String, r#ref: String) -> Result<Stri
 /// Materialized → Fetched: drop the worktree, keep the review record.
 #[tauri::command]
 pub fn release_review_worktree(repo_path: String, r#ref: String) -> Result<(), String> {
-    review::service::pr::release(&PathBuf::from(&repo_path), &r#ref).map_err(|e| e.to_string())
+    spur::service::pr::release(&PathBuf::from(&repo_path), &r#ref).map_err(|e| e.to_string())
 }
 
 /// Reclaim disk from PR reviews whose PR has merged or closed.
 #[tauri::command]
 pub async fn reclaim_closed_prs(repo_path: String) -> Result<Vec<String>, String> {
     blocking(move || {
-        review::service::pr::reclaim_closed(&PathBuf::from(&repo_path)).map_err(|e| e.to_string())
+        spur::service::pr::reclaim_closed(&PathBuf::from(&repo_path)).map_err(|e| e.to_string())
     })
     .await
 }
@@ -901,12 +913,12 @@ pub fn update_worktree_head(
 
 #[tauri::command]
 pub fn list_all_local_activity() -> Result<Vec<RepoLocalActivity>, String> {
-    review::service::activity::list_all_local_activity().map_err(|e| e.to_string())
+    spur::service::activity::list_all_local_activity().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn register_repo(app: tauri::AppHandle, repo_path: String) -> Result<bool, String> {
-    let registered = review::review::central::register_repo_if_valid(&PathBuf::from(&repo_path))
+    let registered = spur::home::register_repo_if_valid(&PathBuf::from(&repo_path))
         .map_err(|e| e.to_string())?;
     if registered {
         if let Err(e) = super::watchers::start_local_activity_watcher_for(&repo_path, app) {
@@ -918,8 +930,7 @@ pub fn register_repo(app: tauri::AppHandle, repo_path: String) -> Result<bool, S
 
 #[tauri::command]
 pub fn unregister_repo(repo_path: String) -> Result<(), String> {
-    review::review::central::unregister_repo(&PathBuf::from(&repo_path))
-        .map_err(|e| e.to_string())?;
+    spur::home::unregister_repo(&PathBuf::from(&repo_path)).map_err(|e| e.to_string())?;
     super::watchers::stop_local_activity_watcher(&repo_path);
     Ok(())
 }
@@ -1004,7 +1015,7 @@ pub async fn git_commit(
     });
 
     let result = tokio::task::spawn_blocking(move || {
-        review::service::commit::git_commit_streaming(
+        spur::service::commit::git_commit_streaming(
             &PathBuf::from(&repo_path),
             &message,
             move |line| {
@@ -1040,7 +1051,7 @@ pub fn get_working_tree_file_content(
     file_path: String,
     cached: bool,
 ) -> Result<FileContent, String> {
-    review::service::files::get_working_tree_file_content(
+    spur::service::files::get_working_tree_file_content(
         &PathBuf::from(&repo_path),
         &file_path,
         cached,
@@ -1122,9 +1133,9 @@ pub fn classify_hunks_static(hunks: Vec<DiffHunk>) -> ClassifyResponse {
     result
 }
 
-/// Validate that a path is within .git/review/ or ~/.review/ for security
+/// Validate that a path is within .git/review/ or ~/.spur/ for security
 fn validate_review_path(path: &str) -> Result<PathBuf, String> {
-    review::service::util::validate_review_path(path).map_err(|e| e.to_string())
+    spur::service::util::validate_review_path(path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1164,7 +1175,7 @@ pub fn get_expanded_context(
     start_line: u32,
     end_line: u32,
 ) -> Result<ExpandedContextResult, String> {
-    review::service::files::get_expanded_context(
+    spur::service::files::get_expanded_context(
         &PathBuf::from(&repo_path),
         &file_path,
         &comparison,
@@ -1176,17 +1187,17 @@ pub fn get_expanded_context(
 
 #[tauri::command]
 pub fn match_trust_pattern(label: String, pattern: String) -> bool {
-    review::trust::matches_pattern(&label, &pattern)
+    spur::trust::matches_pattern(&label, &pattern)
 }
 
 #[tauri::command]
 pub fn get_trust_taxonomy() -> Vec<TrustCategory> {
-    review::trust::patterns::get_trust_taxonomy()
+    spur::trust::patterns::get_trust_taxonomy()
 }
 
 #[tauri::command]
 pub fn should_skip_file(path: String) -> bool {
-    review::filters::should_skip_file(&path)
+    spur::filters::should_skip_file(&path)
 }
 
 // File watching
@@ -1200,7 +1211,7 @@ pub fn stop_file_watcher(app: tauri::AppHandle, repo_path: String) {
     super::watchers::stop_watching(&repo_path, app);
 }
 
-/// Consume a pending CLI open request (signal file written by the `review` CLI).
+/// Consume a pending CLI open request (signal file written by the `spur` CLI).
 /// Returns `Some(CliOpenRequest)` on cold start when the CLI launched the app,
 /// or `None` if there is no pending request.
 #[tauri::command]
@@ -1233,7 +1244,7 @@ pub async fn get_file_symbol_diffs(
     comparison: Comparison,
 ) -> Result<Vec<FileSymbolDiff>, String> {
     blocking(move || {
-        review::service::symbols::get_file_symbol_diffs(
+        spur::service::symbols::get_file_symbol_diffs(
             &PathBuf::from(&repo_path),
             &file_paths,
             &comparison,
@@ -1246,7 +1257,7 @@ pub async fn get_file_symbol_diffs(
 #[tauri::command]
 pub async fn get_repo_symbols(repo_path: String) -> Result<Vec<RepoFileSymbols>, String> {
     blocking(move || {
-        review::service::symbols::get_repo_symbols(&PathBuf::from(&repo_path))
+        spur::service::symbols::get_repo_symbols(&PathBuf::from(&repo_path))
             .map_err(|e| e.to_string())
     })
     .await
@@ -1259,7 +1270,7 @@ pub async fn get_file_symbols(
     git_ref: Option<String>,
 ) -> Result<Option<Vec<Symbol>>, String> {
     blocking(move || {
-        review::service::symbols::get_file_symbols(
+        spur::service::symbols::get_file_symbols(
             &PathBuf::from(&repo_path),
             &file_path,
             git_ref.as_deref(),
@@ -1276,7 +1287,7 @@ pub async fn find_symbol_definitions(
     git_ref: Option<String>,
 ) -> Result<Vec<symbols::SymbolDefinition>, String> {
     blocking(move || {
-        review::service::symbols::find_symbol_definitions(
+        spur::service::symbols::find_symbol_definitions(
             &PathBuf::from(&repo_path),
             &symbol_name,
             git_ref.as_deref(),
@@ -1293,7 +1304,7 @@ pub fn search_file_contents(
     case_sensitive: bool,
     max_results: usize,
 ) -> Result<Vec<SearchMatch>, String> {
-    review::service::files::search_file_contents(
+    spur::service::files::search_file_contents(
         &PathBuf::from(&repo_path),
         &query,
         case_sensitive,
@@ -1308,7 +1319,7 @@ pub fn search_file_contents(
 pub async fn check_reviews_freshness(
     reviews: Vec<ReviewFreshnessInput>,
 ) -> Vec<ReviewFreshnessResult> {
-    review::service::freshness::check_reviews_freshness(reviews).await
+    spur::service::freshness::check_reviews_freshness(reviews).await
 }
 
 // --- Dev mode detection ---
@@ -1320,7 +1331,7 @@ pub fn is_dev_mode() -> bool {
 
 #[tauri::command]
 pub fn is_git_repo(path: String) -> bool {
-    review::service::util::is_git_repo(&PathBuf::from(&path))
+    spur::service::util::is_git_repo(&PathBuf::from(&path))
 }
 
 // --- Standalone file support ---
@@ -1333,8 +1344,7 @@ pub fn path_is_file(path: String) -> bool {
 #[tauri::command]
 pub async fn read_raw_file(path: String) -> Result<FileContent, String> {
     blocking(move || {
-        review::service::files::read_raw_file(std::path::Path::new(&path))
-            .map_err(|e| e.to_string())
+        spur::service::files::read_raw_file(std::path::Path::new(&path)).map_err(|e| e.to_string())
     })
     .await
 }
@@ -1347,7 +1357,7 @@ pub async fn get_file_content_at_ref(
     git_ref: String,
 ) -> Result<FileContent, String> {
     blocking(move || {
-        review::service::files::get_file_content_at_ref(
+        spur::service::files::get_file_content_at_ref(
             &PathBuf::from(&repo_path),
             &file_path,
             &git_ref,
@@ -1359,7 +1369,7 @@ pub async fn get_file_content_at_ref(
 
 // --- CLI sidecar install ---
 
-/// Well-known install location for the `review` CLI symlink.
+/// Well-known install location for the `spur` CLI symlink.
 const CLI_SYMLINK_PATH: &str = "/usr/local/bin/review";
 
 #[derive(Debug, Serialize)]
@@ -1412,7 +1422,7 @@ pub fn install_cli(app: tauri::AppHandle) -> Result<String, String> {
     use tauri::Manager;
 
     // The sidecar binary lives next to the main binary inside the app bundle:
-    //   Review.app/Contents/MacOS/review-cli
+    //   Spur.app/Contents/MacOS/spur-cli
     let resource_dir = app
         .path()
         .resource_dir()
@@ -1423,7 +1433,7 @@ pub fn install_cli(app: tauri::AppHandle) -> Result<String, String> {
         .parent()
         .ok_or("Could not determine app bundle path")?
         .join("MacOS")
-        .join("review-cli");
+        .join("spur-cli");
 
     if !sidecar_path.exists() {
         return Err(format!(
@@ -1524,7 +1534,7 @@ pub async fn generate_commit_message(
         let mut on_text = |text: &str| {
             let _ = tx.blocking_send(text.to_owned());
         };
-        review::ai::commit_message::generate_commit_message_streaming(
+        spur::ai::commit_message::generate_commit_message_streaming(
             &staged_diff,
             &recent_messages,
             &repo_path,
@@ -1556,9 +1566,9 @@ pub async fn generate_commit_message(
 
 // --- Settings file I/O ---
 
-/// Return the path to `~/.review/settings.json` (respects `$REVIEW_HOME`).
+/// Return the path to `~/.spur/settings.json` (respects `$SPUR_HOME`).
 fn settings_path() -> Result<PathBuf, String> {
-    let root = review::review::central::get_central_root().map_err(|e| e.to_string())?;
+    let root = spur::home::get_central_root().map_err(|e| e.to_string())?;
     Ok(root.join("settings.json"))
 }
 
@@ -1620,7 +1630,7 @@ pub fn open_settings_file(app: tauri::AppHandle) -> Result<(), String> {
 /// Detect the active VS Code theme by reading VS Code settings and extension files.
 #[tauri::command]
 pub fn detect_vscode_theme() -> Result<VscodeThemeDetection, String> {
-    review::service::vscode::detect_vscode_theme().map_err(|e| e.to_string())
+    spur::service::vscode::detect_vscode_theme().map_err(|e| e.to_string())
 }
 
 // --- Window background color ---
@@ -1642,7 +1652,7 @@ pub fn set_window_background_color(
 #[tauri::command]
 pub async fn list_directory_plain(dir_path: String) -> Result<Vec<FileEntry>, String> {
     blocking(move || {
-        review::service::files::list_directory_plain(std::path::Path::new(&dir_path))
+        spur::service::files::list_directory_plain(std::path::Path::new(&dir_path))
             .map_err(|e| e.to_string())
     })
     .await
@@ -1669,11 +1679,11 @@ pub async fn lsp_goto_definition(
     file_path: String,
     line: u32,
     character: u32,
-) -> Result<Vec<review::symbols::SymbolDefinition>, String> {
+) -> Result<Vec<spur::symbols::SymbolDefinition>, String> {
     let key = find_lsp_key_for_file(&state, &repo_path, &file_path).await?;
     let client = get_lsp_client(&state, &key).await?;
 
-    review::service::symbols::find_definitions_via_lsp(
+    spur::service::symbols::find_definitions_via_lsp(
         &client,
         &PathBuf::from(&repo_path),
         &file_path,
@@ -1695,7 +1705,7 @@ pub async fn lsp_hover(
     let key = find_lsp_key_for_file(&state, &repo_path, &file_path).await?;
     let client = get_lsp_client(&state, &key).await?;
 
-    let hover = review::service::symbols::find_hover_via_lsp(
+    let hover = spur::service::symbols::find_hover_via_lsp(
         &client,
         &PathBuf::from(&repo_path),
         &file_path,
@@ -1718,11 +1728,11 @@ pub async fn lsp_find_references(
     file_path: String,
     line: u32,
     character: u32,
-) -> Result<Vec<review::symbols::SymbolDefinition>, String> {
+) -> Result<Vec<spur::symbols::SymbolDefinition>, String> {
     let key = find_lsp_key_for_file(&state, &repo_path, &file_path).await?;
     let client = get_lsp_client(&state, &key).await?;
 
-    review::service::symbols::find_references_via_lsp(
+    spur::service::symbols::find_references_via_lsp(
         &client,
         &PathBuf::from(&repo_path),
         &file_path,

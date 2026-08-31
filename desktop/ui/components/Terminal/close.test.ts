@@ -28,7 +28,7 @@ import {
   undoCloseTerminal,
   UNDO_CLOSE_TIMEOUT_MS,
 } from "./close";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { collectLeafIds, makeTab, splitLeaf } from "./pane-tree";
 import { attachment, terminalStatus, workspace } from "../../test/fixtures";
 
@@ -92,21 +92,21 @@ function seed(
   const sessions: Record<string, TerminalSessionInfo> = {};
   for (const id of sessionIds) sessions[id] = session(id, "ws-1");
 
-  useReviewStore.setState({
+  useSpurStore.setState({
     workspaces: [item],
     terminalSessions: sessions,
     terminalStatuses: {},
     terminalExited: {},
     killTerminal: async (id: string) => {
-      const next = { ...useReviewStore.getState().terminalSessions };
+      const next = { ...useSpurStore.getState().terminalSessions };
       delete next[id];
-      useReviewStore.setState({ terminalSessions: next });
+      useSpurStore.setState({ terminalSessions: next });
     },
     removeWorkspace: async (id: string, cascade?: boolean) => {
       REMOVED.push(id);
       CASCADED.push(Boolean(cascade));
-      useReviewStore.setState({
-        workspaces: useReviewStore
+      useSpurStore.setState({
+        workspaces: useSpurStore
           .getState()
           .workspaces.filter((entry) => entry.id !== id),
       });
@@ -121,17 +121,17 @@ function seed(
 function seedNested(childSessionIds: string[] = ["t2"]): void {
   seed({ title: "the migration" }, ["t1"]);
   const child = workspace("ws-2", { parentId: "ws-1", title: "sub-task" });
-  const sessions = { ...useReviewStore.getState().terminalSessions };
+  const sessions = { ...useSpurStore.getState().terminalSessions };
   for (const id of childSessionIds) sessions[id] = session(id, "ws-2");
-  useReviewStore.setState({
-    workspaces: [...useReviewStore.getState().workspaces, child],
+  useSpurStore.setState({
+    workspaces: [...useSpurStore.getState().workspaces, child],
     terminalSessions: sessions,
   });
 }
 
 describe("closing the last terminal in a workspace", () => {
   beforeEach(() => {
-    useReviewStore.setState({ focusedWorkspaceId: null });
+    useSpurStore.setState({ focusedWorkspaceId: null });
   });
 
   it("drops a workspace nobody named or built out", async () => {
@@ -167,7 +167,7 @@ describe("closing the last terminal in a workspace", () => {
     // `killTerminal` happened to drop its session first — so a kill that
     // resolves without touching the map reaps exactly the same.
     seed({}, ["t1"]);
-    useReviewStore.setState({ killTerminal: async () => {} });
+    useSpurStore.setState({ killTerminal: async () => {} });
     await closeTerminalPane("t1");
     await lapse();
     expect(REMOVED).toEqual(["ws-1"]);
@@ -201,7 +201,7 @@ describe("⌘W picks a terminal", () => {
     document.body.innerHTML = "";
     confirm.mockClear();
     confirm.mockResolvedValue(true);
-    useReviewStore.setState({
+    useSpurStore.setState({
       workspaces: [workspace("ws-1", { title: "kept" })],
       focusedWorkspaceId: "ws-1",
       terminalTabs: [makeTab("tab-1", "t1")],
@@ -304,7 +304,7 @@ describe("asking before killing a busy shell", () => {
   beforeEach(() => seed({ title: "kept" }, ["t1"]));
 
   const status = (overrides: Partial<ReturnType<typeof terminalStatus>>) =>
-    useReviewStore.setState({
+    useSpurStore.setState({
       terminalStatuses: {
         t1: terminalStatus("idle", { id: "t1", ...overrides }),
       },
@@ -340,12 +340,12 @@ describe("asking before killing a busy shell", () => {
     status({ phase: "working", runningCommand: "npm test" });
     confirm.mockResolvedValue(false);
     expect(await closeTerminalPane("t1")).toBe(false);
-    expect(useReviewStore.getState().terminalSessions.t1).toBeDefined();
+    expect(useSpurStore.getState().terminalSessions.t1).toBeDefined();
   });
 
   it("says nothing about a session that has already exited", async () => {
     status({ phase: "working", runningCommand: "npm test" });
-    useReviewStore.setState({ terminalExited: { t1: 0 } });
+    useSpurStore.setState({ terminalExited: { t1: 0 } });
     expect(await closeTerminalPane("t1")).toBe(true);
     expect(confirm).not.toHaveBeenCalled();
   });
@@ -357,13 +357,13 @@ describe("removing a workspace", () => {
     // A workspace with someone's title on it — the reap never touches this
     // one, so what removes it is the removal itself.
     expect(await removeWorkspaceAndTerminals("ws-1")).toBe(true);
-    expect(Object.keys(useReviewStore.getState().terminalSessions)).toEqual([]);
+    expect(Object.keys(useSpurStore.getState().terminalSessions)).toEqual([]);
     expect(REMOVED).toEqual(["ws-1"]);
   });
 
   it("asks first, naming what is running", async () => {
     seed({ title: "the migration" }, ["t1"]);
-    useReviewStore.setState({
+    useSpurStore.setState({
       terminalStatuses: {
         t1: { runningCommand: "npm test", title: "claude" } as never,
       },
@@ -378,7 +378,7 @@ describe("removing a workspace", () => {
     seed({ title: "the migration" }, ["t1"]);
     confirm.mockResolvedValue(false);
     expect(await removeWorkspaceAndTerminals("ws-1")).toBe(false);
-    expect(Object.keys(useReviewStore.getState().terminalSessions)).toEqual([
+    expect(Object.keys(useSpurStore.getState().terminalSessions)).toEqual([
       "t1",
     ]);
     expect(REMOVED).toEqual([]);
@@ -392,7 +392,7 @@ describe("removing a workspace", () => {
 
     // ...nor for panes whose shell has already exited.
     seed({ title: "the migration" }, ["t1"]);
-    useReviewStore.setState({ terminalExited: { t1: {} as never } });
+    useSpurStore.setState({ terminalExited: { t1: {} as never } });
     await removeWorkspaceAndTerminals("ws-1");
     expect(confirm).not.toHaveBeenCalled();
     expect(REMOVED).toEqual(["ws-1"]);
@@ -400,14 +400,14 @@ describe("removing a workspace", () => {
 
   it("leaves another workspace's terminals alone", async () => {
     seed({ title: "the migration" }, ["t1", "t2"]);
-    useReviewStore.setState({
+    useSpurStore.setState({
       terminalSessions: {
-        ...useReviewStore.getState().terminalSessions,
+        ...useSpurStore.getState().terminalSessions,
         t3: session("t3", "ws-2"),
       },
     });
     await removeWorkspaceAndTerminals("ws-1");
-    expect(Object.keys(useReviewStore.getState().terminalSessions)).toEqual([
+    expect(Object.keys(useSpurStore.getState().terminalSessions)).toEqual([
       "t3",
     ]);
   });
@@ -421,7 +421,7 @@ describe("removing a workspace with nested children", () => {
     expect(await removeWorkspaceAndTerminals("ws-1")).toBe(true);
     expect(REMOVED).toEqual(["ws-1"]);
     expect(CASCADED).toEqual([true]);
-    expect(Object.keys(useReviewStore.getState().terminalSessions)).toEqual([]);
+    expect(Object.keys(useSpurStore.getState().terminalSessions)).toEqual([]);
   });
 
   it("keeps the nested workspaces when asked to, removing this one alone", async () => {
@@ -434,7 +434,7 @@ describe("removing a workspace with nested children", () => {
     expect(CASCADED).toEqual([false]);
     // ws-2 was never asked about beyond staying in the queue, so its own
     // terminal is never touched.
-    expect(Object.keys(useReviewStore.getState().terminalSessions)).toEqual([
+    expect(Object.keys(useSpurStore.getState().terminalSessions)).toEqual([
       "t2",
     ]);
   });
@@ -445,7 +445,7 @@ describe("removing a workspace with nested children", () => {
     expect(await removeWorkspaceAndTerminals("ws-1")).toBe(false);
     expect(REMOVED).toEqual([]);
     expect(
-      Object.keys(useReviewStore.getState().terminalSessions).sort(),
+      Object.keys(useSpurStore.getState().terminalSessions).sort(),
     ).toEqual(["t1", "t2"]);
   });
 });
@@ -467,7 +467,7 @@ describe("undoing a close", () => {
       for (const id of collectLeafIds(tab.root))
         sessions[id] = session(id, "ws-1");
     }
-    useReviewStore.setState({
+    useSpurStore.setState({
       workspaces: [workspace("ws-1", { title: "kept" })],
       focusedWorkspaceId: "ws-1",
       terminalTabs: tabs,
@@ -477,15 +477,15 @@ describe("undoing a close", () => {
       terminalExited: {},
       killTerminal: async (id: string) => {
         KILLED.push(id);
-        const next = { ...useReviewStore.getState().terminalSessions };
+        const next = { ...useSpurStore.getState().terminalSessions };
         delete next[id];
-        useReviewStore.setState({ terminalSessions: next });
+        useSpurStore.setState({ terminalSessions: next });
       },
       removeWorkspace: async () => {},
     });
   }
 
-  const tabIds = () => useReviewStore.getState().terminalTabs.map((t) => t.id);
+  const tabIds = () => useSpurStore.getState().terminalTabs.map((t) => t.id);
 
   /** One tab holding two panes side by side. */
   function splitTab(): TerminalTab {
@@ -509,7 +509,7 @@ describe("undoing a close", () => {
     await closeTerminalPane("t1");
     expect(tabIds()).toEqual([]);
     expect(KILLED).toEqual([]);
-    expect(useReviewStore.getState().terminalSessions.t1).toBeDefined();
+    expect(useSpurStore.getState().terminalSessions.t1).toBeDefined();
     expect(hasPendingClose()).toBe(true);
     expect(toasted).toHaveBeenCalledWith(
       "Closed terminal",
@@ -530,7 +530,7 @@ describe("undoing a close", () => {
     await closeTerminalPane("t1");
     expect(undoCloseTerminal()).toBe(true);
     expect(tabIds()).toEqual(["tab-1"]);
-    expect(useReviewStore.getState().activeTabId).toBe("tab-1");
+    expect(useSpurStore.getState().activeTabId).toBe("tab-1");
     await lapse();
     expect(KILLED).toEqual([]);
   });
@@ -549,7 +549,7 @@ describe("undoing a close", () => {
     await closeTerminalTab(split);
     expect(tabIds()).toEqual([]);
     expect(undoCloseTerminal()).toBe(true);
-    const restored = useReviewStore.getState().terminalTabs;
+    const restored = useSpurStore.getState().terminalTabs;
     expect(restored.map((t) => collectLeafIds(t.root))).toEqual([["t1", "t2"]]);
   });
 
@@ -557,10 +557,10 @@ describe("undoing a close", () => {
     panel([splitTab()]);
     await closeTerminalPane("t1");
     expect(
-      useReviewStore.getState().terminalTabs.map((t) => collectLeafIds(t.root)),
+      useSpurStore.getState().terminalTabs.map((t) => collectLeafIds(t.root)),
     ).toEqual([["t2"]]);
     expect(undoCloseTerminal()).toBe(true);
-    const back = useReviewStore.getState().terminalTabs;
+    const back = useSpurStore.getState().terminalTabs;
     expect(back.map((t) => t.id)).toEqual(["tab-1"]);
     expect(collectLeafIds(back[0].root)).toEqual(["t1", "t2"]);
     expect(back[0].focused).toBe("t1");
@@ -579,18 +579,18 @@ describe("undoing a close", () => {
     panel([splitTab()]);
     await closeTerminalPane("t1");
     // A split opened in the thinned tab while the undo window was still open.
-    useReviewStore.setState({
+    useSpurStore.setState({
       terminalSessions: {
-        ...useReviewStore.getState().terminalSessions,
+        ...useSpurStore.getState().terminalSessions,
         t9: session("t9", "ws-1"),
       },
-      terminalTabs: useReviewStore.getState().terminalTabs.map((tab) => ({
+      terminalTabs: useSpurStore.getState().terminalTabs.map((tab) => ({
         ...tab,
         root: splitLeaf(tab.root, "t2", "t9", "row"),
       })),
     });
     expect(undoCloseTerminal()).toBe(true);
-    const back = useReviewStore.getState().terminalTabs;
+    const back = useSpurStore.getState().terminalTabs;
     expect(back).toHaveLength(1);
     expect(collectLeafIds(back[0].root).sort()).toEqual(["t1", "t2", "t9"]);
   });
@@ -601,7 +601,7 @@ describe("undoing a close", () => {
     await lapse();
     expect(KILLED).toEqual(["t1"]);
     expect(
-      useReviewStore.getState().terminalTabs.map((t) => collectLeafIds(t.root)),
+      useSpurStore.getState().terminalTabs.map((t) => collectLeafIds(t.root)),
     ).toEqual([["t2"]]);
   });
 
@@ -617,10 +617,10 @@ describe("undoing a close", () => {
 
   it("does not hold a shell that already exited", async () => {
     panel();
-    useReviewStore.setState({ terminalExited: { t1: 0 } });
+    useSpurStore.setState({ terminalExited: { t1: 0 } });
     await closeTerminalPane("t1");
     expect(hasPendingClose()).toBe(false);
-    expect(useReviewStore.getState().terminalSessions.t1).toBeUndefined();
+    expect(useSpurStore.getState().terminalSessions.t1).toBeUndefined();
   });
 
   it("goes through at once when the window is on its way out", async () => {

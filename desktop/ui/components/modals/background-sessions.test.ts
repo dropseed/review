@@ -12,9 +12,9 @@ function makeSession(
 ): TerminalSessionInfo {
   return {
     id: "t1",
-    repoPath: "/Users/dave/Developer/dropseed/review",
+    repoPath: "/Users/dave/Developer/dropseed/spur",
     workspaceId: null,
-    cwd: "/Users/dave/Developer/dropseed/review",
+    cwd: "/Users/dave/Developer/dropseed/spur",
     title: null,
     cols: 80,
     rows: 24,
@@ -45,7 +45,7 @@ describe("toBackgroundSessionRow", () => {
 
   it("derives the repo name from the repo path basename", () => {
     const row = toBackgroundSessionRow(makeSession());
-    expect(row.repoName).toBe("review");
+    expect(row.repoName).toBe("spur");
   });
 
   it("omits the cwd label when cwd is just the repo root", () => {
@@ -56,9 +56,9 @@ describe("toBackgroundSessionRow", () => {
   it("shows the cwd basename when it differs from the repo root", () => {
     const row = toBackgroundSessionRow(
       makeSession({
-        cwd: "/Users/dave/Developer/dropseed/review/.worktrees/feature",
+        cwd: "/Users/dave/Developer/dropseed/spur/.worktrees/feature",
         status: makeStatus({
-          cwd: "/Users/dave/Developer/dropseed/review/.worktrees/feature",
+          cwd: "/Users/dave/Developer/dropseed/spur/.worktrees/feature",
         }),
       }),
     );

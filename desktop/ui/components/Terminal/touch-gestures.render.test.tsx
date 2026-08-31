@@ -78,7 +78,7 @@ vi.mock("./registry", () => ({
 }));
 
 import { TerminalPane } from "./TerminalPane";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { PINCH_STEP_RATIO } from "./touch-gestures";
 
 const CELL_WIDTH = mocks.cellWidth;
@@ -158,7 +158,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
-  useReviewStore.setState({ terminalFontSize: 13 });
+  useSpurStore.setState({ terminalFontSize: 13 });
   vi.clearAllMocks();
 });
 
@@ -240,11 +240,11 @@ describe("a pinch on a terminal", () => {
     // localStorage and refits every owner terminal in the app, and a fit
     // resizes the PTY every client shares.
     expect(mocks.previewFontSize).toHaveBeenCalledWith("t1", 16);
-    expect(useReviewStore.getState().terminalFontSize).toBe(13);
+    expect(useSpurStore.getState().terminalFontSize).toBe(13);
     expect(mocks.requestFit).not.toHaveBeenCalled();
 
     touch("touchend", [], [{ clientX: 100, clientY: 300 }]);
-    expect(useReviewStore.getState().terminalFontSize).toBe(16);
+    expect(useSpurStore.getState().terminalFontSize).toBe(16);
     await settle();
     expect(mocks.requestFit).toHaveBeenCalledTimes(1);
   });
@@ -263,7 +263,7 @@ describe("a pinch on a terminal", () => {
     // into the next one.
     await settle();
 
-    expect(useReviewStore.getState().terminalFontSize).toBe(11);
+    expect(useSpurStore.getState().terminalFontSize).toBe(11);
   });
 
   it("leaves the grid alone when the fingers only rested there", async () => {
@@ -279,7 +279,7 @@ describe("a pinch on a terminal", () => {
     await settle();
 
     expect(mocks.previewFontSize).not.toHaveBeenCalled();
-    expect(useReviewStore.getState().terminalFontSize).toBe(13);
+    expect(useSpurStore.getState().terminalFontSize).toBe(13);
     expect(mocks.requestFit).not.toHaveBeenCalled();
   });
 

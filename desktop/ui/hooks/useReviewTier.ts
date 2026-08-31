@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { getApiClient } from "../api";
 
 /**
@@ -19,12 +19,12 @@ const sweptRepos = new Set<string>();
  * changes; promotions and releases update it themselves through the store.
  */
 export function useReviewTier(): void {
-  const repoPath = useReviewStore((s) => s.repoPath);
-  const reviewRef = useReviewStore((s) => s.reviewRef);
+  const repoPath = useSpurStore((s) => s.repoPath);
+  const reviewRef = useSpurStore((s) => s.reviewRef);
 
   useEffect(() => {
     if (!repoPath || !reviewRef) return;
-    void useReviewStore.getState().loadReviewTier();
+    void useSpurStore.getState().loadReviewTier();
   }, [repoPath, reviewRef]);
 
   // Reclaim disk from PRs that merged or closed while we weren't looking.
@@ -40,7 +40,7 @@ export function useReviewTier(): void {
         console.info(
           `[tier] Reclaimed ${refs.length} closed PR review(s): ${refs.join(", ")}`,
         );
-        const store = useReviewStore.getState();
+        const store = useSpurStore.getState();
         void store.loadLocalActivity();
         void store.loadGlobalReviews();
       })

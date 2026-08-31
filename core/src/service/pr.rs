@@ -229,7 +229,7 @@ pub fn reclaim_closed(repo_path: &Path) -> anyhow::Result<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::review::central::tests::{setup_test, ENV_LOCK};
+    use crate::home::tests::{setup_test, ENV_LOCK};
     use crate::review::state::ReviewState;
     use std::path::PathBuf;
     use std::process::Command;
@@ -253,7 +253,7 @@ mod tests {
     #[test]
     fn tier_tracks_what_is_actually_on_disk() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, repo_dir) = setup_test();
+        let (_env, _spur_home, repo_dir) = setup_test();
         let repo_path = repo_dir.path();
         run_git_cmd(repo_path, &["init"]);
         run_git_cmd(repo_path, &["commit", "--allow-empty", "-m", "init"]);
@@ -313,7 +313,7 @@ mod tests {
     #[test]
     fn non_pr_review_is_always_at_least_fetched() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, repo_dir) = setup_test();
+        let (_env, _spur_home, repo_dir) = setup_test();
         let repo_path = repo_dir.path();
         run_git_cmd(repo_path, &["init"]);
         run_git_cmd(repo_path, &["commit", "--allow-empty", "-m", "init"]);
@@ -331,7 +331,7 @@ mod tests {
     #[test]
     fn a_ref_checked_out_at_the_repo_root_is_already_materialized() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (_env, _review_home, repo_dir) = setup_test();
+        let (_env, _spur_home, repo_dir) = setup_test();
         let repo_path = repo_dir.path();
         run_git_cmd(repo_path, &["init"]);
         run_git_cmd(repo_path, &["commit", "--allow-empty", "-m", "init"]);

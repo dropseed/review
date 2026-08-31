@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { getApiClient } from "../api";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import {
   fingerprintsMatch,
   probeDiff,
@@ -23,7 +23,7 @@ import { flattenFiles } from "../stores/types";
 export async function hasDrifted(
   restored: RestoredComparison,
 ): Promise<boolean> {
-  const { repoPath, comparison, loadGitStatus } = useReviewStore.getState();
+  const { repoPath, comparison, loadGitStatus } = useSpurStore.getState();
   if (!repoPath || !comparison) return true;
 
   const [before, after] = await Promise.all([
@@ -33,7 +33,7 @@ export async function hasDrifted(
   ]);
   if (!fingerprintsMatch(before, after)) return true;
   return (
-    statusFingerprint(useReviewStore.getState().gitStatus) !== restored.status
+    statusFingerprint(useSpurStore.getState().gitStatus) !== restored.status
   );
 }
 
@@ -48,9 +48,9 @@ export function useComparisonLoader(
   comparisonReady: number,
   setInitialLoading: (loading: boolean) => void,
 ): void {
-  const repoPath = useReviewStore((s) => s.repoPath);
-  const comparisonKey = useReviewStore((s) => s.comparison?.key);
-  const isStandaloneFile = useReviewStore((s) => s.isStandaloneFile);
+  const repoPath = useSpurStore((s) => s.repoPath);
+  const comparisonKey = useSpurStore((s) => s.comparison?.key);
+  const isStandaloneFile = useSpurStore((s) => s.isStandaloneFile);
 
   // Tracks the repo the cached gitUser belongs to, so a branch/comparison
   // switch within the same repo doesn't needlessly clear it.
@@ -60,7 +60,7 @@ export function useComparisonLoader(
   useEffect(() => {
     if (!repoPath || comparisonKey || isStandaloneFile) return;
 
-    const { loadRepoFiles, loadCurrentBranch } = useReviewStore.getState();
+    const { loadRepoFiles, loadCurrentBranch } = useSpurStore.getState();
 
     let cancelled = false;
 
@@ -93,7 +93,7 @@ export function useComparisonLoader(
         if (!cancelled) {
           // Also populate flatFileList so useFileRouteSync can resolve a
           // deep-linked standalone file (e.g. /standalone/browse/file/<name>).
-          useReviewStore.setState({
+          useSpurStore.setState({
             allFiles: files,
             allFilesLoading: false,
             flatFileList: flattenFiles(files),
@@ -132,7 +132,7 @@ export function useComparisonLoader(
       classifyStaticHunks,
       restoreGuideFromState,
       restoreNavigationSnapshot,
-    } = useReviewStore.getState();
+    } = useSpurStore.getState();
 
     // Clear stale search results from previous comparison
     clearSearch();
@@ -144,7 +144,7 @@ export function useComparisonLoader(
     // clearing it there would just cause a needless null flicker.
     if (gitUserRepoRef.current !== repoPath) {
       gitUserRepoRef.current = repoPath;
-      useReviewStore.setState({ gitUser: null });
+      useSpurStore.setState({ gitUser: null });
     }
 
     async function loadData(): Promise<void> {
@@ -155,16 +155,16 @@ export function useComparisonLoader(
         // refuses to refill it) — so running any of it would at best do
         // nothing and at worst reconcile the review's decisions against a
         // comparison the review isn't of.
-        if (ephemeralView(useReviewStore.getState())) {
+        if (ephemeralView(useSpurStore.getState())) {
           await Promise.all([loadFiles(), loadGitStatus()]);
           return;
         }
 
         // A comparison restored from the snapshot cache is already on screen.
         // What is owed is proof that it is still the right answer.
-        const restored = useReviewStore.getState().restoredComparison;
+        const restored = useSpurStore.getState().restoredComparison;
         if (restored && restored.key === comparisonKey) {
-          useReviewStore.setState({ restoredComparison: null });
+          useSpurStore.setState({ restoredComparison: null });
           setInitialLoading(false);
 
           // The probe's git subprocesses and the review-state file read have
@@ -182,7 +182,7 @@ export function useComparisonLoader(
             // pipeline runs in refresh mode — its own reconcile included —
             // so the snapshot on screen is corrected in place rather than
             // replaced by a skeleton.
-            await useReviewStore.getState().refresh();
+            await useSpurStore.getState().refresh();
           } else {
             await reconcileReviewState();
             if (cancelled) return;
@@ -223,7 +223,7 @@ export function useComparisonLoader(
           reviewState: loadedReviewState,
           worktreePath: currentWorktreePath,
           comparison,
-        } = useReviewStore.getState();
+        } = useSpurStore.getState();
         if (loadedReviewState?.worktreePath && !currentWorktreePath) {
           const client = getApiClient();
           const wtPath = loadedReviewState.worktreePath;
@@ -238,13 +238,13 @@ export function useComparisonLoader(
             ]);
             if (cancelled) return;
             const { setWorktreePath, setWorktreeStale } =
-              useReviewStore.getState();
+              useSpurStore.getState();
             setWorktreePath(wtPath);
             setWorktreeStale(!!branchTipSha && worktreeSha !== branchTipSha);
           } catch {
             // resolveRef failed — worktree directory is missing
             console.warn(`Worktree directory missing: ${wtPath}`);
-            useReviewStore.getState().setWorktreePath(null);
+            useSpurStore.getState().setWorktreePath(null);
             if (comparison) {
               client
                 .saveReviewState(currentRepoPath, {

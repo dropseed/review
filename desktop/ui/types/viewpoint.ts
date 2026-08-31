@@ -29,7 +29,7 @@ export interface EphemeralView {
 }
 
 /**
- * `review` is the review's own comparison; `range` narrows within it and keeps
+ * `spur` is the review's own comparison; `range` narrows within it and keeps
  * the review attached (decisions still persist, `reviewComparison` still names
  * the branch); `commit` detaches — the review state is null for its whole
  * duration and nothing is written.

@@ -192,7 +192,7 @@ export const createGroupingSlice: SliceCreatorWithClient<GroupingSlice> =
       const reviewKey = makeReviewKey(repoPath, reviewRef);
       const generated = reviewState?.guide?.state;
       if (!generated || generated.groups.length === 0) {
-        // The guide went away (e.g. `review guide clear`). Drop the derived
+        // The guide went away (e.g. `spur guide clear`). Drop the derived
         // cache too, or guide mode keeps listing groups that no longer exist.
         get().removeGroupingEntry(reviewKey);
         return;

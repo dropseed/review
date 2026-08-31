@@ -27,7 +27,7 @@ vi.mock("./GitStatusPanel", () => ({ GitStatusPanel: () => null }));
 
 import { FilesPanel } from "./index";
 import { TooltipProvider } from "../ui/tooltip";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 
 const FILE = "a.ts";
 
@@ -71,7 +71,7 @@ function reviewState(
 }
 
 function seedStore(state: Partial<ReviewState> | null, extra: object = {}) {
-  useReviewStore.setState({
+  useSpurStore.setState({
     repoPath: "/repo",
     comparison: makeComparison("main", "feature"),
     allFiles: [

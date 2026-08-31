@@ -5,7 +5,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
 import { ProgressRing } from "./ui/progress-ring";
 import { RailSeparator, railTooltipSide, type RailEdge } from "./ui/rail";
 import { ClaudeIcon, CodexIcon, RefreshIcon, CheckIcon } from "./ui/icons";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { formatSeconds } from "../utils/format-age";
 import {
   pacePercent,
@@ -224,7 +224,7 @@ interface AgentSnapshot {
  * render because half of it is relative to now.
  */
 function useAgentSnapshot(agent: AgentUsage): AgentSnapshot {
-  const usagePinnedWindows = useReviewStore((s) => s.usagePinnedWindows);
+  const usagePinnedWindows = useSpurStore((s) => s.usagePinnedWindows);
   const pinnedLabel = usagePinnedWindows[agent.id];
   const headline = headlineWindow(agent.windows, pinnedLabel);
 
@@ -365,7 +365,7 @@ function UsageDetails({
   onRefresh: () => void;
   refreshing: boolean;
 }): ReactNode {
-  const setUsagePinnedWindow = useReviewStore((s) => s.setUsagePinnedWindow);
+  const setUsagePinnedWindow = useSpurStore((s) => s.setUsagePinnedWindow);
   const { headline, nowSeconds, expired, muted, pinnedLabel } = snapshot;
   if (!headline) return null;
 

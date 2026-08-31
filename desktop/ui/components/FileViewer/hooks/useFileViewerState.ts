@@ -1,4 +1,4 @@
-import { useReviewStore } from "../../../stores";
+import { useSpurStore } from "../../../stores";
 import { useFileHunks } from "../../../stores/selectors/hunks";
 
 /**
@@ -8,32 +8,32 @@ import { useFileHunks } from "../../../stores/selectors/hunks";
  */
 export function useFileViewerState(filePath: string | null) {
   // Git / comparison context
-  const comparison = useReviewStore((s) => s.comparison);
-  const repoPath = useReviewStore((s) => s.repoPath);
-  const workingTreePath = useReviewStore((s) => s.worktreePath ?? s.repoPath);
-  const fileVersion = useReviewStore((s) =>
+  const comparison = useSpurStore((s) => s.comparison);
+  const repoPath = useSpurStore((s) => s.repoPath);
+  const workingTreePath = useSpurStore((s) => s.worktreePath ?? s.repoPath);
+  const fileVersion = useSpurStore((s) =>
     filePath ? (s.fileVersions[filePath] ?? 0) : 0,
   );
 
   // Preferences
-  const codeTheme = useReviewStore((s) => s.codeTheme);
-  const codeFontSize = useReviewStore((s) => s.codeFontSize);
-  const codeFontFamily = useReviewStore((s) => s.codeFontFamily);
+  const codeTheme = useSpurStore((s) => s.codeTheme);
+  const codeFontSize = useSpurStore((s) => s.codeFontSize);
+  const codeFontFamily = useSpurStore((s) => s.codeFontFamily);
 
   // Review state
-  const reviewState = useReviewStore((s) => s.reviewState);
+  const reviewState = useSpurStore((s) => s.reviewState);
   const fileHunks = useFileHunks(filePath);
 
   // Working tree diff (Git panel)
-  const workingTreeDiffFile = useReviewStore((s) => s.workingTreeDiffFile);
-  const gitStatus = useReviewStore((s) => s.gitStatus);
+  const workingTreeDiffFile = useSpurStore((s) => s.workingTreeDiffFile);
+  const gitStatus = useSpurStore((s) => s.gitStatus);
 
   // Annotations
-  const addAnnotation = useReviewStore((s) => s.addAnnotation);
-  const updateAnnotation = useReviewStore((s) => s.updateAnnotation);
-  const deleteAnnotation = useReviewStore((s) => s.deleteAnnotation);
-  const resolveAnnotation = useReviewStore((s) => s.resolveAnnotation);
-  const unresolveAnnotation = useReviewStore((s) => s.unresolveAnnotation);
+  const addAnnotation = useSpurStore((s) => s.addAnnotation);
+  const updateAnnotation = useSpurStore((s) => s.updateAnnotation);
+  const deleteAnnotation = useSpurStore((s) => s.deleteAnnotation);
+  const resolveAnnotation = useSpurStore((s) => s.resolveAnnotation);
+  const unresolveAnnotation = useSpurStore((s) => s.unresolveAnnotation);
 
   return {
     comparison,

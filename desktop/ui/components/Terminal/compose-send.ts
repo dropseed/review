@@ -2,7 +2,7 @@
  * The two rules a composed message goes out under, kept where both the bar and
  * the transport that applies them can read them.
  *
- * This is `review terminal send --submit`, in the browser. Enter is written as
+ * This is `spur terminal send --submit`, in the browser. Enter is written as
  * a *second* write, after a settle delay, rather than a `\r` appended to the
  * text: a TUI with an autocomplete popup open reads a newline arriving in the
  * same write as the text as accepting the highlighted entry, not as submitting

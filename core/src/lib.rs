@@ -2,7 +2,7 @@
 //!
 //! This crate provides:
 //! - Git diff parsing and hunk extraction (`diff`)
-//! - Review state management and persistence (`review`)
+//! - Review state management and persistence (`spur`)
 //! - Trust pattern matching and taxonomy (`trust`)
 //! - Claude-based hunk classification (`classify`)
 //! - Git source abstraction (`sources`)
@@ -20,12 +20,13 @@ pub mod ai;
 pub mod classify;
 pub mod diff;
 pub mod filters;
+pub mod home;
 pub mod process;
 pub mod review;
 pub mod sources;
 pub mod symbols;
 pub mod trust;
-pub mod work;
+pub mod workspace;
 
 // Service layer — shared business logic for Tauri and Axum
 pub mod service;
@@ -62,7 +63,7 @@ pub mod cli;
 pub mod server;
 
 // Web Push subscriptions and delivery. The server registers them; the CLI
-// (`review notify`, when built with `push`) sends to them.
+// (`spur notify`, when built with `push`) sends to them.
 #[cfg(feature = "push")]
 pub mod push;
 

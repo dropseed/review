@@ -347,7 +347,7 @@ function WorktreeFacts({
         </span>
       )}
       {worktree.isReviewManaged && (
-        <span className="text-fg-faint/70" title="Review made this worktree">
+        <span className="text-fg-faint/70" title="Spur made this worktree">
           review
         </span>
       )}

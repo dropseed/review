@@ -19,7 +19,7 @@ vi.mock("./TerminalPane", () => ({
 
 import { TerminalOverview } from "./TerminalOverview";
 import { makeTab } from "./pane-tree";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import {
   terminalSession,
   terminalStatus,
@@ -28,7 +28,7 @@ import {
 
 /** Two workspaces, one terminal each — the case the row exists for. */
 function twoWorkspaces() {
-  useReviewStore.setState({
+  useSpurStore.setState({
     workspaces: [workspace("w1", { title: "First" }), workspace("w2")],
     terminalTabs: [makeTab("tab-a", "a"), makeTab("tab-b", "b")],
     terminalSessions: {
@@ -45,7 +45,7 @@ function twoWorkspaces() {
 
 afterEach(() => {
   cleanup();
-  useReviewStore.setState({
+  useSpurStore.setState({
     workspaces: [],
     focusedWorkspaceId: null,
     terminalTabs: [],
@@ -60,7 +60,7 @@ afterEach(() => {
 describe("the terminal overview", () => {
   it("draws a column for every workspace's terminals, not just the focused one", () => {
     twoWorkspaces();
-    useReviewStore.setState({ focusedWorkspaceId: "w1" });
+    useSpurStore.setState({ focusedWorkspaceId: "w1" });
     render(<TerminalOverview />);
 
     expect(screen.getByText("agent")).toBeDefined();
@@ -76,7 +76,7 @@ describe("the terminal overview", () => {
 
     fireEvent.click(screen.getByText("zsh"));
 
-    const state = useReviewStore.getState();
+    const state = useSpurStore.getState();
     expect(state.focusedWorkspaceId).toBe("w2");
     // The tab you pointed at, rather than that workspace's most recent one.
     expect(state.activeTabId).toBe("tab-b");
@@ -90,11 +90,11 @@ describe("the terminal overview", () => {
 
     fireEvent.click(screen.getByLabelText("Close terminal overview"));
 
-    expect(useReviewStore.getState().terminalOverview).toBe(false);
+    expect(useSpurStore.getState().terminalOverview).toBe(false);
   });
 
   it("says nothing is running rather than showing an empty row", () => {
-    useReviewStore.setState({ terminalOverview: true });
+    useSpurStore.setState({ terminalOverview: true });
     render(<TerminalOverview />);
 
     expect(screen.getByText("Nothing is running.")).toBeDefined();

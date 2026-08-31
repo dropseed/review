@@ -1,8 +1,8 @@
-import type { ReviewStore } from "../types";
+import type { SpurStore } from "../types";
 import type { Comparison } from "../../types";
 
 type CheckoutState = Pick<
-  ReviewStore,
+  SpurStore,
   "reviewComparison" | "currentBranch" | "gitStatus" | "worktreePath"
 >;
 
@@ -49,7 +49,7 @@ export function isCheckedOut(
 
 /** The same question asked of the diff on screen. */
 export function headIsWorkingTree(
-  state: CheckoutState & Pick<ReviewStore, "comparison">,
+  state: CheckoutState & Pick<SpurStore, "comparison">,
 ): boolean {
   return isCheckedOut(state, state.comparison);
 }

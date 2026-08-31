@@ -1,5 +1,5 @@
 import { type ReactNode, useCallback, useRef } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import {
   SIDEBAR_LIMITS,
   clampSidebarWidth,
@@ -22,8 +22,8 @@ export function SidebarResizeHandle({
   const panel: SidebarPosition = position === "left" ? "right" : "left";
   const limits = SIDEBAR_LIMITS[panel];
 
-  const width = useReviewStore((s) => s[limits.key]);
-  const setSidebarWidth = useReviewStore((s) => s.setSidebarWidth);
+  const width = useSpurStore((s) => s[limits.key]);
+  const setSidebarWidth = useSpurStore((s) => s.setSidebarWidth);
   const rememberedRef = useRef<number | null>(null);
 
   // Double-click snaps the panel to its default width, and double-clicking

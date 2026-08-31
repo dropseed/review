@@ -18,7 +18,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 ZIG_VERSION=0.16.0
-MARKERS=~/.cache/review-remote-setup
+MARKERS=~/.cache/spur-remote-setup
 mkdir -p "$MARKERS"
 
 # --- Zig ---------------------------------------------------------------------
@@ -132,6 +132,6 @@ fi
 
 echo
 echo "Done. Everything builds now, e.g.:"
-echo "  cargo build -p review --features daemon --bin review-daemon"
-echo "  cargo build -p review --features cli,push --bin review"
+echo "  cargo build -p spur --features daemon --bin spur-daemon"
+echo "  cargo build -p spur --features cli,push --bin spur"
 echo "  scripts/dev-web"

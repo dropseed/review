@@ -55,7 +55,7 @@ vi.mock("../platform", () => ({
   }),
 }));
 
-import { useReviewStore } from "./index";
+import { useSpurStore } from "./index";
 import {
   invalidateSnapshots,
   snapshotKeys,
@@ -102,7 +102,7 @@ const status = (branch: string): GitStatusSummary => ({
 
 /** A settled review, exactly as the pipeline leaves it. */
 function seedLoaded(repoPath: string, comparison: Comparison, ref: string) {
-  useReviewStore.setState({
+  useSpurStore.setState({
     repoPath,
     comparison,
     reviewComparison: comparison,
@@ -161,7 +161,7 @@ beforeEach(() => {
 describe("snapshot on leave", () => {
   it("captures the comparison-scoped state a load computes", async () => {
     seedLoaded(REPO_A, featureA, "feature-a");
-    useReviewStore
+    useSpurStore
       .getState()
       .switchReview(REPO_B, resolved(featureB, "feature-b"));
 
@@ -170,7 +170,7 @@ describe("snapshot on leave", () => {
 
   it("does not capture a commit-range narrowing", () => {
     seedLoaded(REPO_A, featureA, "feature-a");
-    useReviewStore.setState({
+    useSpurStore.setState({
       viewpoint: {
         kind: "range",
         range: {
@@ -183,7 +183,7 @@ describe("snapshot on leave", () => {
       },
     } as never);
 
-    useReviewStore
+    useSpurStore
       .getState()
       .switchReview(REPO_B, resolved(featureB, "feature-b"));
 
@@ -192,7 +192,7 @@ describe("snapshot on leave", () => {
 
   it("does not capture a commit peek", () => {
     seedLoaded(REPO_A, featureA, "feature-a");
-    useReviewStore.getState().setViewpoint({
+    useSpurStore.getState().setViewpoint({
       kind: "commit",
       view: {
         hash: "abc123",
@@ -203,7 +203,7 @@ describe("snapshot on leave", () => {
       },
     });
 
-    useReviewStore
+    useSpurStore
       .getState()
       .switchReview(REPO_B, resolved(featureB, "feature-b"));
 
@@ -212,9 +212,9 @@ describe("snapshot on leave", () => {
 
   it("does not capture a standalone file", () => {
     seedLoaded(REPO_A, featureA, "feature-a");
-    useReviewStore.setState({ isStandaloneFile: true } as never);
+    useSpurStore.setState({ isStandaloneFile: true } as never);
 
-    useReviewStore
+    useSpurStore
       .getState()
       .switchReview(REPO_B, resolved(featureB, "feature-b"));
 
@@ -223,11 +223,11 @@ describe("snapshot on leave", () => {
 
   it("does not capture a load still in flight", () => {
     seedLoaded(REPO_A, featureA, "feature-a");
-    useReviewStore.setState({
+    useSpurStore.setState({
       loadingProgress: { current: 0, total: 1, phase: "files" },
     } as never);
 
-    useReviewStore
+    useSpurStore
       .getState()
       .switchReview(REPO_B, resolved(featureB, "feature-b"));
 
@@ -238,16 +238,16 @@ describe("snapshot on leave", () => {
 describe("restore on return", () => {
   it("paints the cached diff instead of the reset state", () => {
     seedLoaded(REPO_A, featureA, "feature-a");
-    useReviewStore
+    useSpurStore
       .getState()
       .switchReview(REPO_B, resolved(featureB, "feature-b"));
-    expect(useReviewStore.getState().flatFileList).toEqual([]);
+    expect(useSpurStore.getState().flatFileList).toEqual([]);
 
-    useReviewStore
+    useSpurStore
       .getState()
       .switchReview(REPO_A, resolved(featureA, "feature-a"));
 
-    const s = useReviewStore.getState();
+    const s = useSpurStore.getState();
     expect(s.flatFileList).toEqual(["a.ts"]);
     expect(s.files).toEqual(tree);
     expect(s.filesByPath["a.ts"].contentHash).toBe("h1");
@@ -263,32 +263,32 @@ describe("restore on return", () => {
 
   it("takes the identity from the review being switched to, not the cache", () => {
     seedLoaded(REPO_A, featureA, "feature-a");
-    useReviewStore
+    useSpurStore
       .getState()
       .switchReview(REPO_B, resolved(featureB, "feature-b"));
-    useReviewStore.getState().switchReview(REPO_A, {
+    useSpurStore.getState().switchReview(REPO_A, {
       ref: "feature-a",
       baseOverride: "origin/main",
       comparison: featureA,
       baseReason: "override",
     });
 
-    const s = useReviewStore.getState();
+    const s = useSpurStore.getState();
     expect(s.reviewBaseOverride).toBe("origin/main");
     expect(s.baseReason).toBe("override");
   });
 
   it("is consumed by the restore, and written again on the next leave", () => {
     seedLoaded(REPO_A, featureA, "feature-a");
-    useReviewStore
+    useSpurStore
       .getState()
       .switchReview(REPO_B, resolved(featureB, "feature-b"));
-    useReviewStore
+    useSpurStore
       .getState()
       .switchReview(REPO_A, resolved(featureA, "feature-a"));
     expect(snapshotKeys()).toEqual([]);
 
-    useReviewStore
+    useSpurStore
       .getState()
       .switchReview(REPO_B, resolved(featureB, "feature-b"));
     expect(snapshotKeys()).toEqual([`${REPO_A} ${featureA.key}`]);
@@ -296,11 +296,11 @@ describe("restore on return", () => {
 
   it("leaves a first visit on the reset state", () => {
     seedLoaded(REPO_A, featureA, "feature-a");
-    useReviewStore
+    useSpurStore
       .getState()
       .switchReview(REPO_B, resolved(featureB, "feature-b"));
 
-    const s = useReviewStore.getState();
+    const s = useSpurStore.getState();
     expect(s.restoredComparison).toBeNull();
     expect(s.loadingProgress).toEqual({
       current: 0,
@@ -313,11 +313,11 @@ describe("restore on return", () => {
 describe("invalidation", () => {
   it("drops a repo's entries by prefix", () => {
     seedLoaded(REPO_A, featureA, "feature-a");
-    useReviewStore
+    useSpurStore
       .getState()
       .switchReview(REPO_B, resolved(featureB, "feature-b"));
     seedLoaded(REPO_B, featureB, "feature-b");
-    useReviewStore
+    useSpurStore
       .getState()
       .switchReview(REPO_A, resolved(featureA, "feature-a"));
 

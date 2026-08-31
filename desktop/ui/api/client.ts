@@ -442,7 +442,7 @@ export interface ApiClient {
   /** List all reviews across all registered repos */
   listAllReviewsGlobal(): Promise<GlobalReviewSummary[]>;
 
-  /** Get the central storage root (~/.review/) */
+  /** Get the central storage root (~/.spur/) */
   getReviewRoot(): Promise<string>;
 
   /** Get the central storage path for a repo */
@@ -541,13 +541,13 @@ export interface ApiClient {
   /** Unregister a repo from the central index */
   unregisterRepo(repoPath: string): Promise<void>;
 
-  // ----- Work items -----
+  // ----- Workspaces -----
   //
   // Every mutation returns the full list rather than a delta: list order is
   // priority order, so a reorder or a removal changes entries the caller never
   // named, and the canonical list is the only answer that can't drift. The
   // caller reconciles against it instead of replaying its own optimistic edit,
-  // which keeps it correct when a `review workspace` command or another window wrote
+  // which keeps it correct when a `spur workspace` command or another window wrote
   // in between. Both transports and the two Rust backends follow this; they
   // don't restate it.
 
@@ -632,7 +632,7 @@ export interface ApiClient {
     workspaceId?: string,
   ): Promise<RouteLanding>;
 
-  /** Subscribe to external changes to ~/.review/work.json (returns unsubscribe fn) */
+  /** Subscribe to external changes to ~/.spur/workspaces.json (returns unsubscribe fn) */
   onWorkChanged(callback: () => void): () => void;
 
   // ----- File watcher -----
@@ -665,7 +665,7 @@ export interface ApiClient {
 
   // ----- Window/App -----
 
-  /** Consume a pending CLI open request (cold start from `review` CLI) */
+  /** Consume a pending CLI open request (cold start from `spur` CLI) */
   consumeCliRequest(): Promise<{
     repoPath: string;
     ref: string | null;
@@ -909,7 +909,7 @@ export interface ApiClient {
 
   /**
    * Type a composed message and submit it, as two writes with a settle
-   * between — `review terminal send --submit`, for the phone's compose bar.
+   * between — `spur terminal send --submit`, for the phone's compose bar.
    *
    * A newline arriving in the same write as the text is ambiguous to a TUI with
    * an open autocomplete popup (Claude Code's slash commands): it reads as

@@ -72,7 +72,7 @@ pub fn save_review(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::review::central::tests::{setup_test, ENV_LOCK};
+    use crate::home::tests::{setup_test, ENV_LOCK};
     use crate::review::state::{Attributed, HunkState, HunkStatus, Source};
 
     /// The ref a test review is keyed by.
@@ -150,7 +150,7 @@ mod tests {
         );
     }
 
-    /// Saving a review is review state and nothing else: the work queue has no
+    /// Saving a review is review state and nothing else: the workspace queue has no
     /// seam here, and a review of a branch nobody is working on stays a review.
     #[test]
     fn saving_a_review_never_touches_the_work_queue() {
@@ -162,7 +162,7 @@ mod tests {
         state.hunks.insert(a.id.clone(), approved_with_key(None));
 
         save_review(repo.path(), state, Some(&[a])).unwrap();
-        assert!(crate::work::list().unwrap().workspaces.is_empty());
+        assert!(crate::workspace::list().unwrap().workspaces.is_empty());
     }
 
     #[test]

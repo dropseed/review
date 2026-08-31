@@ -1,6 +1,6 @@
 import { type ReactNode, useCallback } from "react";
 import { Virtualizer } from "@pierre/diffs/react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { GroupDiffViewer } from "../GuideView/GroupDiffViewer";
 import type { HunkGroup } from "../../types";
 
@@ -19,14 +19,14 @@ interface MultiFileDiffViewerProps {
 export function MultiFileDiffViewer({
   group: groupProp,
 }: MultiFileDiffViewerProps): ReactNode {
-  const guideContentMode = useReviewStore((s) => s.guideContentMode);
-  const activeEntry = useReviewStore((s) => s.getActiveGroupingEntry());
+  const guideContentMode = useSpurStore((s) => s.guideContentMode);
+  const activeEntry = useSpurStore((s) => s.getActiveGroupingEntry());
   const reviewGroups = activeEntry.reviewGroups;
-  const activeGroupIndex = useReviewStore((s) => s.activeGroupIndex);
-  const adhocGroup = useReviewStore((s) => s.adhocGroup);
+  const activeGroupIndex = useSpurStore((s) => s.activeGroupIndex);
+  const adhocGroup = useSpurStore((s) => s.adhocGroup);
 
   const handleClose = useCallback(() => {
-    useReviewStore.setState({
+    useSpurStore.setState({
       guideContentMode: null,
       selectedFile: null,
       adhocGroup: null,

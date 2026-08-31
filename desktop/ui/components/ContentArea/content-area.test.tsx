@@ -21,7 +21,7 @@ vi.mock("./MultiFileDiffViewer", () => ({
 }));
 
 import { ContentArea } from "./index";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { makeComparison } from "../../types";
 
 function hunk(id: string, filePath: string) {
@@ -37,7 +37,7 @@ function hunk(id: string, filePath: string) {
 }
 
 function seed(extra: object = {}) {
-  useReviewStore.setState({
+  useSpurStore.setState({
     repoPath: "/repo",
     comparison: makeComparison("main", "feature"),
     selectedFile: null,

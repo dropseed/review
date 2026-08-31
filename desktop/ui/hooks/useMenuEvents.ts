@@ -86,7 +86,7 @@ export function useMenuEvents() {
         const errorMsg =
           typeof payload === "string"
             ? payload
-            : "Failed to install the CLI. Try running:\n  sudo ln -sf /Applications/Review.app/Contents/MacOS/review-cli /usr/local/bin/review";
+            : "Failed to install the CLI. Try running:\n  sudo ln -sf /Applications/Spur.app/Contents/MacOS/spur-cli /usr/local/bin/review";
         platform.dialogs.message(errorMsg, {
           title: "CLI Install Failed",
           kind: "error",

@@ -29,7 +29,7 @@ import { initSentry } from "./utils/sentry";
 import { initializeLogger, initLogPath } from "./utils/logger";
 import { installDevtools } from "./utils/devtools";
 import { registerServiceWorker } from "./utils/register-sw";
-import { useReviewStore } from "./stores";
+import { useSpurStore } from "./stores";
 
 import { resolveLanguages } from "@pierre/diffs";
 import { WorkerPoolContextProvider, useWorkerPool } from "@pierre/diffs/react";
@@ -55,7 +55,7 @@ const commonLanguages = [
 
 function WorkerPoolThemeSync(): null {
   const pool = useWorkerPool();
-  const codeTheme = useReviewStore((s) => s.codeTheme);
+  const codeTheme = useSpurStore((s) => s.codeTheme);
 
   useEffect(() => {
     // setRenderOptions destructures with defaults, so every field we care
@@ -72,8 +72,8 @@ function WorkerPoolThemeSync(): null {
 
 /** Load preferences and gate app content to avoid a theme flash. */
 function PreferencesGate({ children }: { children: React.ReactNode }) {
-  const loadPreferences = useReviewStore((s) => s.loadPreferences);
-  const loaded = useReviewStore((s) => s.preferencesLoaded);
+  const loadPreferences = useSpurStore((s) => s.loadPreferences);
+  const loaded = useSpurStore((s) => s.preferencesLoaded);
 
   useEffect(() => {
     loadPreferences().then(() => {
@@ -88,11 +88,11 @@ function PreferencesGate({ children }: { children: React.ReactNode }) {
 // Initialize Sentry early (events are dropped until user opts in)
 initSentry();
 
-// Initialize file logging (patches console.*, writes to ~/.review/app.log)
+// Initialize file logging (patches console.*, writes to ~/.spur/app.log)
 initializeLogger();
 initLogPath();
 
-// Initialize React Scan perf log (writes to ~/.review/react-scan.jsonl)
+// Initialize React Scan perf log (writes to ~/.spur/react-scan.jsonl)
 initReactScanLog({ clear: true });
 
 // Expose the store on window in dev builds only.
@@ -113,7 +113,7 @@ resolveLanguages([...commonLanguages]).catch((err) => {
 function App() {
   // Safe to read synchronously here — PreferencesGate guarantees
   // loadPreferences() has completed before this component mounts.
-  const codeTheme = useReviewStore((s) => s.codeTheme);
+  const codeTheme = useSpurStore((s) => s.codeTheme);
 
   return (
     <WorkerPoolContextProvider

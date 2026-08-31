@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { getApiClient } from "../../api";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { activeHistoricRef } from "../../stores/selectors/viewpoint";
 import type { FileEntry } from "../../types";
 
@@ -30,8 +30,8 @@ const WORKING_TREE: BrowseRefTree = {
  * a repo nobody is browsing is never listed at all.
  */
 export function useBrowseRefTree(): BrowseRefTree {
-  const repoPath = useReviewStore((s) => s.repoPath);
-  const ref = useReviewStore(activeHistoricRef);
+  const repoPath = useSpurStore((s) => s.repoPath);
+  const ref = useSpurStore(activeHistoricRef);
   const [state, setState] = useState<BrowseRefTree>(WORKING_TREE);
 
   useEffect(() => {

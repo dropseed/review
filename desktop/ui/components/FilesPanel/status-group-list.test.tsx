@@ -25,7 +25,7 @@ import { StatusGroupList } from "./StatusGroupList";
 import type { StatusGroupListProps } from "./StatusGroupList";
 import { TooltipProvider } from "../ui/tooltip";
 import { FilesPanelProvider } from "./FilesPanelContext";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { makeComparison } from "../../types";
 import type { DiffHunk } from "../../types";
 import type { ProcessedFileEntry } from "./types";
@@ -59,7 +59,7 @@ const entry = {
 
 /** A comparison of three changed hunks with no review state — a peek. */
 function seed(): void {
-  useReviewStore.setState({
+  useSpurStore.setState({
     repoPath: "/repo",
     comparison: makeComparison("main", "feature"),
     files: [entry],
@@ -125,7 +125,7 @@ function draw(over: Partial<StatusGroupListProps> = {}): void {
 
 afterEach(() => {
   cleanup();
-  useReviewStore.setState({
+  useSpurStore.setState({
     repoPath: null,
     comparison: null,
     files: [],

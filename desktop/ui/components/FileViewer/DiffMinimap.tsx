@@ -11,7 +11,7 @@ import { memo, useCallback, useEffect, useRef } from "react";
 import type { ReviewState } from "../../types";
 import { isHunkTrusted } from "../../types";
 import { usePrefersReducedMotion } from "../../hooks";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { cancelCodeViewScroll } from "./FileCodeView";
 
 /** A marker renders no shorter than this, and its click target matches. */
@@ -111,7 +111,7 @@ export const DiffMinimap = memo(function DiffMinimap({
   const prefersReducedMotion = usePrefersReducedMotion();
 
   // Subscribe to focused hunk ID directly.
-  const focusedHunkId = useReviewStore((s) => s.focusedHunkId);
+  const focusedHunkId = useSpurStore((s) => s.focusedHunkId);
 
   // Self-manage scroll tracking
   useEffect(() => {

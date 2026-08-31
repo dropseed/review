@@ -5,7 +5,7 @@
 //! directly, skipping tree-sitter parsing and symbol diffing.
 
 use super::FileSymbolDiff;
-use crate::review::central;
+use crate::home;
 use crate::sources::traits::Comparison;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -35,8 +35,8 @@ pub fn compute_hash(input: &str) -> String {
 
 /// Return the cache file path for a given repo + comparison.
 fn cache_path(repo_path: &Path, comparison: &Comparison) -> Result<PathBuf> {
-    let cache_dir = central::get_repo_cache_dir(repo_path)?;
-    let filename = format!("{}.json", central::sanitize_path_component(&comparison.key));
+    let cache_dir = home::get_repo_cache_dir(repo_path)?;
+    let filename = format!("{}.json", home::sanitize_path_component(&comparison.key));
     Ok(cache_dir.join("symbol-cache").join(filename))
 }
 

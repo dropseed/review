@@ -22,7 +22,7 @@
 //! Both agents already broadcast the answer in the OSC 0 title, animating a
 //! spinner frame into it while they work and dropping it when they hand control
 //! back (`◑ Fix the parser` → `Fix the parser` for Claude Code, `⠼ review` →
-//! `review` for Codex). The first spinner frame promotes the title to
+//! `spur` for Codex). The first spinner frame promotes the title to
 //! `agent_phase`, an authority that outranks both `base_phase` sources; any
 //! OSC 133 mark demotes it again, because only the shell emits those, so one
 //! arriving means the agent has exited.

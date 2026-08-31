@@ -570,16 +570,16 @@ mod tests {
     #[test]
     fn the_gh_host_comes_from_the_remote_url() {
         for (url, expected) in [
-            ("git@github.com:dropseed/review.git", "github.com"),
-            ("https://github.com/dropseed/review.git", "github.com"),
-            ("ssh://git@github.com:22/dropseed/review.git", "github.com"),
+            ("git@github.com:dropseed/spur.git", "github.com"),
+            ("https://github.com/dropseed/spur.git", "github.com"),
+            ("ssh://git@github.com:22/dropseed/spur.git", "github.com"),
             (
-                "ssh://git@ssh.github.com:443/dropseed/review.git",
+                "ssh://git@ssh.github.com:443/dropseed/spur.git",
                 "github.com",
             ),
-            ("https://GitHub.com/DropSeed/Review", "github.com"),
+            ("https://GitHub.com/DropSeed/Spur", "github.com"),
             (
-                "git@github.dropseed.dev:dropseed/review.git",
+                "git@github.dropseed.dev:dropseed/spur.git",
                 "github.dropseed.dev",
             ),
             ("https://ghe.example.com/org/repo.git", "ghe.example.com"),
@@ -633,14 +633,14 @@ mod tests {
                 "number": 29,
                 "title": "Say when a repo is dirty, not when git last moved",
                 "isDraft": false,
-                "url": "https://github.com/dropseed/review/pull/29",
+                "url": "https://github.com/dropseed/spur/pull/29",
                 "updatedAt": "2026-08-01T16:10:34Z",
                 "reviewDecision": null,
                 "headRefName": "claude/git-status-sidebar-reliability-4jlhjx",
                 "baseRefName": "master",
                 "repository": {
-                  "nameWithOwner": "dropseed/review",
-                  "url": "https://github.com/dropseed/review",
+                  "nameWithOwner": "dropseed/spur",
+                  "url": "https://github.com/dropseed/spur",
                   "isArchived": false
                 },
                 "headRepository": { "nameWithOwner": "davegaeddert/review" },
@@ -681,7 +681,7 @@ mod tests {
         assert!(!prs[1].is_draft);
         // A fork PR: base and head repos are different, and the join needs the
         // head one to find the clone that actually has the branch.
-        assert_eq!(prs[1].repo_name_with_owner, "dropseed/review");
+        assert_eq!(prs[1].repo_name_with_owner, "dropseed/spur");
         assert_eq!(
             prs[1].head_repo_name_with_owner.as_deref(),
             Some("davegaeddert/review")
@@ -694,10 +694,10 @@ mod tests {
     fn a_deleted_head_repo_parses_as_no_head_repo() {
         let body = r#"{"data":{"viewer":{"pullRequests":{"totalCount":1,"nodes":[{
           "number": 5, "title": "Orphan", "isDraft": false,
-          "url": "https://github.com/dropseed/review/pull/5",
+          "url": "https://github.com/dropseed/spur/pull/5",
           "updatedAt": "2026-08-01T16:10:34Z", "reviewDecision": null,
           "headRefName": "gone", "baseRefName": "master",
-          "repository": { "nameWithOwner": "dropseed/review", "url": "https://github.com/dropseed/review" },
+          "repository": { "nameWithOwner": "dropseed/spur", "url": "https://github.com/dropseed/spur" },
           "headRepository": null,
           "commits": { "nodes": [] }
         }]}}}}"#;
@@ -722,11 +722,11 @@ mod tests {
           "commits": { "nodes": [] }
         },{
           "number": 2, "title": "Live", "isDraft": false,
-          "url": "https://github.com/dropseed/review/pull/2",
+          "url": "https://github.com/dropseed/spur/pull/2",
           "updatedAt": "2026-08-01T16:10:34Z", "reviewDecision": null,
           "headRefName": "work", "baseRefName": "master",
-          "repository": { "nameWithOwner": "dropseed/review", "url": "https://github.com/dropseed/review", "isArchived": false },
-          "headRepository": { "nameWithOwner": "dropseed/review" },
+          "repository": { "nameWithOwner": "dropseed/spur", "url": "https://github.com/dropseed/spur", "isArchived": false },
+          "headRepository": { "nameWithOwner": "dropseed/spur" },
           "commits": { "nodes": [] }
         }]}}}}"#;
         let (prs, truncated) = parse_viewer_prs(body.as_bytes()).unwrap();

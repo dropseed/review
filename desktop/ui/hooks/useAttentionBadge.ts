@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import {
   getTerminalsByWorkspaceId,
   type WorkspaceTerminals,
@@ -44,9 +44,9 @@ export function unansweredWorkspaceIds(
  * Mounted once, at the shell.
  */
 export function useAttentionBadge(): void {
-  const workspaces = useReviewStore((s) => s.workspaces);
-  const terminals = useReviewStore(getTerminalsByWorkspaceId);
-  const seenAt = useReviewStore((s) => s.workspaceSeenAt);
+  const workspaces = useSpurStore((s) => s.workspaces);
+  const terminals = useSpurStore(getTerminalsByWorkspaceId);
+  const seenAt = useSpurStore((s) => s.workspaceSeenAt);
   // The derived answer, not the raw id: a workspace reached by opening its repo
   // is on screen without ever having been named, and that is looking at it.
   const focused = useFocusedWorkspace();
@@ -67,7 +67,7 @@ export function useAttentionBadge(): void {
 
   useEffect(() => {
     if (!answerable || !document.hasFocus()) return;
-    const store = useReviewStore.getState();
+    const store = useSpurStore.getState();
     store.markWorkspaceSeen(
       answerable,
       store.workspaces.map((entry) => entry.id),

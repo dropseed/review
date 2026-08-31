@@ -5,7 +5,7 @@ import {
   findMatchingPattern,
   describeTrustedLabel,
 } from "../../../types";
-import { useReviewStore } from "../../../stores";
+import { useSpurStore } from "../../../stores";
 import { useIsFocusedHunk } from "../../../hooks";
 import {
   DropdownMenu,
@@ -472,7 +472,7 @@ export function HunkAnnotationPanel({
           totalHunksInFile > 1 && (
             <div className="flex items-center gap-1 text-fg-faint select-none">
               <button
-                onClick={() => useReviewStore.getState().prevHunk()}
+                onClick={() => useSpurStore.getState().prevHunk()}
                 className="invisible group-data-[scroll-focused]/panel:visible hover:text-fg-secondary transition-colors"
                 aria-label="Previous hunk"
                 tabIndex={isFocused ? 0 : -1}
@@ -483,7 +483,7 @@ export function HunkAnnotationPanel({
                 {hunkPosition}/{totalHunksInFile}
               </span>
               <button
-                onClick={() => useReviewStore.getState().nextHunk()}
+                onClick={() => useSpurStore.getState().nextHunk()}
                 className="invisible group-data-[scroll-focused]/panel:visible hover:text-fg-secondary transition-colors"
                 aria-label="Next hunk"
                 tabIndex={isFocused ? 0 : -1}

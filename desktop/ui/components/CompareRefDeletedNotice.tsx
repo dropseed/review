@@ -1,7 +1,7 @@
 import { type ReactNode, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Comparison } from "../types";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { WarningIcon } from "./ui/icons";
 import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
 import { ChangeBaseMenu } from "./Sidebar/ChangeBaseMenu";
@@ -23,10 +23,10 @@ export function CompareRefDeletedNotice({
   comparison,
   missingRefs,
 }: CompareRefDeletedNoticeProps): ReactNode {
-  const deleteGlobalReview = useReviewStore((s) => s.deleteGlobalReview);
+  const deleteGlobalReview = useSpurStore((s) => s.deleteGlobalReview);
   // This notice only renders for the active review, so its identity is the
   // store's current review ref.
-  const reviewRef = useReviewStore((s) => s.reviewRef);
+  const reviewRef = useSpurStore((s) => s.reviewRef);
   const navigate = useNavigate();
   const [changeBaseOpen, setChangeBaseOpen] = useState(false);
   const removingRef = useRef(false);

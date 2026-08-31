@@ -1,6 +1,6 @@
 import { toast } from "sonner";
 import { getApiClient } from "../api";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { getSidebarTree } from "../stores/selectors/sidebar";
 import {
   allSidebarRows,
@@ -21,7 +21,7 @@ import type { Command } from "./types";
 let cache: { tree: RepoNode[]; commands: Command[] } | null = null;
 
 export function reviewCommands(): Command[] {
-  const tree = getSidebarTree(useReviewStore.getState());
+  const tree = getSidebarTree(useSpurStore.getState());
   // Every keystroke in the palette re-resolves every dynamic source, and this
   // one allocates a command, a keywords array and a closure per row in every
   // repo. The tree is already cached on its own inputs, so its identity is what
@@ -48,7 +48,7 @@ export function reviewCommands(): Command[] {
         }
         // Read at press time, not at build time — these commands outlive the
         // render that produced them now.
-        const store = useReviewStore.getState();
+        const store = useSpurStore.getState();
         store.saveNavigationSnapshot();
         // The palette calls `run` and drops the promise, so a rejection here
         // would surface as an unhandled one and the command as a silent no-op.
@@ -60,7 +60,7 @@ export function reviewCommands(): Command[] {
               baseOverride,
             );
             store.setActiveReviewKey({ repoPath: row.repoPath, ref: row.ref });
-            if (row.repoPath !== useReviewStore.getState().repoPath) {
+            if (row.repoPath !== useSpurStore.getState().repoPath) {
               store.switchReview(row.repoPath, resolved);
             } else {
               store.setComparison(resolved);

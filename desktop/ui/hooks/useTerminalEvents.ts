@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { getApiClient } from "../api";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { installTerminalWindowFocus } from "../components/Terminal/window-focus";
 import { usePollWhileVisible } from "./usePollWhileVisible";
 
@@ -8,7 +8,7 @@ import { usePollWhileVisible } from "./usePollWhileVisible";
  * How often the session list is re-asked when nothing has said to.
  *
  * It used to be 15s, and it was how sessions were *discovered*: one is born
- * outside this window as often as in it — the phone's PWA, `review terminal
+ * outside this window as often as in it — the phone's PWA, `spur terminal
  * start`, another client — and nothing on the daemon's wire announced it. The
  * events channel is that announcement, so discovery is no longer a poll and
  * this is a backstop, at the same five minutes `useWorkspaceSync` uses for the
@@ -36,8 +36,8 @@ const LIST_POLL_MS = 5 * 60 * 1000;
  * frame after it, is the list at any later moment.
  */
 export function useTerminalEvents(): void {
-  const repoPath = useReviewStore((s) => s.repoPath);
-  const terminalsSupported = useReviewStore((s) => s.terminalsSupported);
+  const repoPath = useSpurStore((s) => s.repoPath);
+  const terminalsSupported = useSpurStore((s) => s.terminalsSupported);
 
   // The list request in flight, and whether something asked for another one
   // while it was out — see `refreshSessions`.
@@ -53,7 +53,7 @@ export function useTerminalEvents(): void {
   // changes so a backend that gains/loses support is re-detected.
   useEffect(() => {
     const client = getApiClient();
-    const store = useReviewStore.getState();
+    const store = useSpurStore.getState();
     store.hydrateTerminalPrefs();
     client
       .terminalsAvailable()
@@ -77,7 +77,7 @@ export function useTerminalEvents(): void {
    * same data.
    */
   const refreshSessions = useCallback(function refresh(): void {
-    if (!useReviewStore.getState().terminalsSupported) return;
+    if (!useSpurStore.getState().terminalsSupported) return;
     // One list in flight at a time, with a trailing re-run for whatever asked
     // while it was out. Four things call this — mount, `sessionsInvalidated`,
     // window focus and the backstop poll — and at launch two of them fire
@@ -91,7 +91,7 @@ export function useTerminalEvents(): void {
     getApiClient()
       .terminalList()
       .then((sessions) => {
-        const store = useReviewStore.getState();
+        const store = useSpurStore.getState();
         store.ingestTerminalList(sessions);
         for (const session of sessions) {
           store.ensureTerminalSubscription(session.id);
@@ -124,7 +124,7 @@ export function useTerminalEvents(): void {
     // inside applyTerminalStatus, where every write passes and prev is still
     // prev.
     const unsubStatusChanged = client.onTerminalStatusChanged((status) => {
-      useReviewStore.getState().applyTerminalStatus(status);
+      useSpurStore.getState().applyTerminalStatus(status);
     });
 
     // A session born anywhere. Ingesting a one-element list is exactly right:
@@ -132,7 +132,7 @@ export function useTerminalEvents(): void {
     // holds into one of its own, and none of it touches the sessions the frame
     // didn't mention.
     const unsubStarted = client.onTerminalStarted((session) => {
-      const store = useReviewStore.getState();
+      const store = useSpurStore.getState();
       store.ingestTerminalList([session]);
       store.ensureTerminalSubscription(session.id);
     });
@@ -142,15 +142,15 @@ export function useTerminalEvents(): void {
     // whose card is sitting in the queue unopened is exactly the one whose
     // finishing a person wants to see.
     const unsubExited = client.onTerminalExited((exit) => {
-      useReviewStore.getState().applyTerminalExit(exit);
+      useSpurStore.getState().applyTerminalExit(exit);
     });
     const unsubAssigned = client.onTerminalWorkspaceAssigned(
       ({ id, workspaceId }) => {
-        useReviewStore.getState().applyTerminalWorkspace(id, workspaceId);
+        useSpurStore.getState().applyTerminalWorkspace(id, workspaceId);
       },
     );
     const unsubRemoved = client.onTerminalRemoved(({ id }) => {
-      useReviewStore.getState().applyTerminalRemoved(id);
+      useSpurStore.getState().applyTerminalRemoved(id);
     });
 
     // The stream admitting it may have missed something — on every (re)connect

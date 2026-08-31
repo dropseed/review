@@ -29,4 +29,4 @@ ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
 (cd desktop && npm install)
 
 # Build core Rust crate (desktop crate requires sidecar binary, built separately)
-cargo build -p review
+cargo build -p spur

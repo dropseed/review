@@ -3,7 +3,7 @@ import { refFromReviewPath, refFromUrlSegment } from "./useRepositoryInit";
 
 describe("refFromReviewPath", () => {
   it("reads the ref off a bare review URL", () => {
-    expect(refFromReviewPath("/dropseed/review/review/master")).toBe("master");
+    expect(refFromReviewPath("/dropseed/spur/review/master")).toBe("master");
   });
 
   /**
@@ -14,7 +14,7 @@ describe("refFromReviewPath", () => {
    */
   it("reads the ref off a URL that continues into a file", () => {
     expect(
-      refFromReviewPath("/dropseed/review/review/master/file/core/src/lib.rs"),
+      refFromReviewPath("/dropseed/spur/review/master/file/core/src/lib.rs"),
     ).toBe("master");
   });
 
@@ -25,13 +25,13 @@ describe("refFromReviewPath", () => {
    */
   it("reads a non-default branch off a file URL", () => {
     expect(
-      refFromReviewPath("/dropseed/review/review/feature-x/file/README.md"),
+      refFromReviewPath("/dropseed/spur/review/feature-x/file/README.md"),
     ).toBe("feature-x");
   });
 
   it("decodes a ref that had to be encoded to fit in one segment", () => {
     expect(
-      refFromReviewPath("/dropseed/review/review/feature%2Flogin/file/a.ts"),
+      refFromReviewPath("/dropseed/spur/review/feature%2Flogin/file/a.ts"),
     ).toBe("feature/login");
     expect(refFromReviewPath("/o/r/review/release%2Fv1.2")).toBe(
       "release/v1.2",
@@ -39,7 +39,7 @@ describe("refFromReviewPath", () => {
   });
 
   it("names no ref for routes that carry none", () => {
-    expect(refFromReviewPath("/dropseed/review/browse/core/src/lib.rs")).toBe(
+    expect(refFromReviewPath("/dropseed/spur/browse/core/src/lib.rs")).toBe(
       null,
     );
     expect(refFromReviewPath("/standalone/browse/x.ts")).toBe(null);
@@ -49,7 +49,7 @@ describe("refFromReviewPath", () => {
 
   /** A repo literally called "review" must not be mistaken for the route. */
   it("takes the segment after /review/, not a repo of that name", () => {
-    expect(refFromReviewPath("/dropseed/review/review/master")).toBe("master");
+    expect(refFromReviewPath("/dropseed/spur/review/master")).toBe("master");
   });
 });
 

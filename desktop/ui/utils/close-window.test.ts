@@ -15,14 +15,14 @@ vi.mock("../platform", () => ({
 }));
 
 import { closeWindowWithConfirmation, closeWindowPrompt } from "./close-window";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 
 describe("closing the window", () => {
   beforeEach(() => {
     confirm.mockReset();
     close.mockReset();
     close.mockResolvedValue(undefined);
-    useReviewStore.setState({ terminalSessions: {}, terminalExited: {} });
+    useSpurStore.setState({ terminalSessions: {}, terminalExited: {} });
   });
 
   it("asks before closing", async () => {
@@ -62,7 +62,7 @@ describe("closing the window", () => {
 
   it("counts only terminals still alive", async () => {
     confirm.mockResolvedValue(false);
-    useReviewStore.setState({
+    useSpurStore.setState({
       terminalSessions: {
         t1: { id: "t1" },
         t2: { id: "t2" },

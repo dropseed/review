@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useReviewStore } from "../../../stores";
+import { useSpurStore } from "../../../stores";
 import {
   type DiffViewMode,
   resolveViewModeForFile,
@@ -14,10 +14,10 @@ export function useDiffViewMode(
   filePath: string,
   isSplitActive?: boolean,
 ): [DiffViewMode, (mode: DiffViewMode) => void] {
-  const storeViewMode = useReviewStore((s) =>
+  const storeViewMode = useSpurStore((s) =>
     resolveViewModeForFile(filePath, s.diffViewMode, s.diffViewModeByExtension),
   );
-  const setForFile = useReviewStore((s) => s.setDiffViewModeForFile);
+  const setForFile = useSpurStore((s) => s.setDiffViewModeForFile);
 
   // Per-pane override — old/new is always ephemeral (never persisted);
   // in split view, all toggles are independent between panes.

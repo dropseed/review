@@ -1,6 +1,6 @@
-//! Lifecycle of the `review-daemon` process that owns the terminal PTYs.
+//! Lifecycle of the `spur-daemon` process that owns the terminal PTYs.
 //!
-//! Terminals do not live in this process. A separate `review-daemon` holds the
+//! Terminals do not live in this process. A separate `spur-daemon` holds the
 //! one `SessionManager` and serves it over a `0600` Unix socket, so quitting —
 //! or crashing — the desktop app leaves running shells alone. Everything here is
 //! about *finding* that daemon: attach to a live one, respawn it when the app
@@ -16,13 +16,13 @@ use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Result};
 use log::{error, info, warn};
-use review::daemon::{features, socket_path, DaemonClient, Op, VersionInfo, PROTOCOL_VERSION};
+use spur::daemon::{features, socket_path, DaemonClient, Op, VersionInfo, PROTOCOL_VERSION};
 use tauri::{AppHandle, Manager};
 
 /// Where a spawned daemon's stdout/stderr are appended.
 const LOG_FILE: &str = "daemon.log";
 /// Sidecar binary name (Tauri strips the target triple when bundling).
-const BINARY_NAME: &str = "review-daemon";
+const BINARY_NAME: &str = "spur-daemon";
 
 /// How long to keep retrying the first connect to a daemon we just spawned.
 const SPAWN_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -184,10 +184,10 @@ pub async fn ensure_daemon(app: &AppHandle) -> Result<DaemonClient> {
     // file rebuilt underneath a live daemon reads as a mismatch rather than
     // letting the old process impersonate the new build. Never gate this on the
     // build profile — the app is debug-built while the sidecar is release-built,
-    // so the two would disagree forever. See `review::daemon::build_identity`.
+    // so the two would disagree forever. See `spur::daemon::build_identity`.
     let expected_identity = resolve_daemon_binary(app).map_or_else(
         |_| app_version.clone(),
-        |binary| review::daemon::build_identity(&app_version, &binary),
+        |binary| spur::daemon::build_identity(&app_version, &binary),
     );
 
     // One probe answers everything: a live daemon replies to `Version`, a
@@ -316,7 +316,7 @@ async fn stop_daemon(client: DaemonClient, socket: &Path) {
 /// Shelling out to `/bin/kill` rather than `libc::kill`: the workspace denies
 /// `unsafe_code`, and this path runs at most once per app update.
 async fn sigterm_from_pid_file(socket: &Path) {
-    let pid_file = review::daemon::pid_path(socket);
+    let pid_file = spur::daemon::pid_path(socket);
     let Ok(contents) = std::fs::read_to_string(&pid_file) else {
         return;
     };
@@ -379,7 +379,7 @@ fn next_poll_gap(gap: Duration) -> Duration {
     (gap * 2).min(POLL_INTERVAL_MAX)
 }
 
-/// Start a detached `review-daemon`.
+/// Start a detached `spur-daemon`.
 ///
 /// Two deliberate departures from how this app spawns anything else:
 /// `process_group(0)` puts the daemon in its own group, so a signal aimed at the
@@ -413,7 +413,7 @@ fn spawn_daemon(app: &AppHandle, socket: &Path) -> Result<()> {
     // spawns. The daemon's logger is opt-in via `RUST_LOG`, so default it to
     // something that makes daemon.log worth having.
     if let Some(home) = socket.parent() {
-        command.env("REVIEW_HOME", home);
+        command.env("SPUR_HOME", home);
     }
     if std::env::var_os("RUST_LOG").is_none() {
         command.env("RUST_LOG", "info");
@@ -443,13 +443,13 @@ fn spawn_daemon(app: &AppHandle, socket: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Locate the `review-daemon` binary, preferring the bundled sidecar.
+/// Locate the `spur-daemon` binary, preferring the bundled sidecar.
 fn resolve_daemon_binary(app: &AppHandle) -> Result<PathBuf> {
     let mut candidates: Vec<PathBuf> = Vec::new();
 
     // 1. Production bundle: the sidecar sits next to the main binary, at
-    //    Review.app/Contents/MacOS/review-daemon (resource_dir is
-    //    Contents/Resources). Same shape `install_cli` uses for review-cli.
+    //    Spur.app/Contents/MacOS/spur-daemon (resource_dir is
+    //    Contents/Resources). Same shape `install_cli` uses for spur-cli.
     if let Ok(resources) = app.path().resource_dir() {
         if let Some(contents) = resources.parent() {
             candidates.push(contents.join("MacOS").join(BINARY_NAME));

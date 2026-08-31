@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { agentKind } from "./agent-kind";
 import { clsx } from "clsx";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { PhaseDot } from "../Sidebar/PhaseDot";
 import { phaseSummary } from "../Sidebar/terminal-status-format";
 import { RICH_TOOLTIP_CLASS, SimpleTooltip } from "../ui/tooltip";
@@ -43,9 +43,9 @@ export function CollapsedPane({
   onExpand,
   onClose,
 }: CollapsedPaneProps): ReactNode {
-  const session = useReviewStore((s) => s.terminalSessions[id]);
-  const status = useReviewStore((s) => s.terminalStatuses[id]);
-  const dead = useReviewStore((s) => id in s.terminalExited);
+  const session = useSpurStore((s) => s.terminalSessions[id]);
+  const status = useSpurStore((s) => s.terminalStatuses[id]);
+  const dead = useSpurStore((s) => id in s.terminalExited);
 
   const title = sessionTitle(status, session);
   const phase = status?.phase ?? "idle";

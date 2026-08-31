@@ -1,5 +1,5 @@
 import { type ReactNode, useState } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 
 /**
  * Renaming a workspace in place, wherever its name is shown.
@@ -29,7 +29,7 @@ export function WorkspaceTitleInput({
   onDone: () => void;
   className?: string;
 }): ReactNode {
-  const renameWorkspace = useReviewStore((s) => s.renameWorkspace);
+  const renameWorkspace = useSpurStore((s) => s.renameWorkspace);
   const [value, setValue] = useState(title ?? "");
 
   const commit = (next: string | null): void => {

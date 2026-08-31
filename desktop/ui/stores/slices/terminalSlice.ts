@@ -13,7 +13,7 @@ import {
   notifyTerminalAttention,
 } from "../../utils/terminal-notifications";
 import { signalAttention } from "../../utils/attention";
-import type { ReviewStore, SliceCreatorWithClientAndStorage } from "../types";
+import type { SpurStore, SliceCreatorWithClientAndStorage } from "../types";
 import { createDebouncedFn } from "../types";
 import {
   type TerminalTab,
@@ -409,7 +409,7 @@ export function buildCheckoutIndex(
  * listing is already the app's answer to "what exists", and asking the
  * filesystem per session per render would not be.
  *
- * Review-managed worktrees live outside the repo (`~/.review/worktrees/...`),
+ * Review-managed worktrees live outside the repo (`~/.spur/worktrees/...`),
  * so removing one leaves its shells matching nothing and they are flagged. A
  * hand-made worktree nested *under* the repo root still matches the root after
  * removal, so it is quietly adopted by the root row instead of flagged.
@@ -508,7 +508,7 @@ export function sameTerminalStatus(
  */
 function escalateAttention(
   state: Pick<
-    ReviewStore,
+    SpurStore,
     "terminalSessions" | "workspaces" | "terminalNotificationsEnabled"
   >,
   prev: TerminalStatus | undefined,
@@ -1105,7 +1105,7 @@ type TabAttribution = Pick<TerminalSlice, "terminalTabs" | "terminalSessions">;
  * that tab's workspace right after it lands.
  *
  * The answer comes from the session, which is the daemon's record, not this
- * window's: a reload, a second window, and the `review` CLI all read the same
+ * window's: a reload, a second window, and the `spur` CLI all read the same
  * attribution instead of three copies that agree by habit.
  */
 export function tabWorkspaceId(
@@ -1231,7 +1231,7 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
    * move a pane: a tab reducer added later persists by construction instead of
    * by remembering to.
    */
-  const set = (partial: Partial<ReviewStore>): void => {
+  const set = (partial: Partial<SpurStore>): void => {
     write(partial);
     if (LAYOUT_KEYS.some((key) => key in partial)) saveLayout();
   };
@@ -1442,7 +1442,7 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
         });
         // A workspace the router just invented is one the queue has never
         // listed, and a terminal is drawn under its workspace or nowhere — so
-        // the list is re-read rather than waited for. (The work.json watcher
+        // the list is re-read rather than waited for. (The workspaces.json watcher
         // would get there too; this makes the new card land with the shell.)
         if (workspace.created) void get().loadWorkspaces();
         runLaunchCommand(session.id);

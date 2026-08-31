@@ -1,7 +1,7 @@
 //! Review-state subcommands: `hunks`, `approve`/`reject`/`save`/`unmark`,
 //! `status`, `list`, `trust`, and `note`.
 //!
-//! These commands read and write the saved review JSON under `~/.review/`.
+//! These commands read and write the saved review JSON under `~/.spur/`.
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -232,7 +232,7 @@ struct ChangeBaseResultJson {
     comparison: String,
 }
 
-/// `review hunks` — list a comparison's hunks with their review status.
+/// `spur hunks` — list a comparison's hunks with their review status.
 pub fn run_hunks(args: HunksArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
     let view = load_review_view(&repo, args.target.spec.as_deref())?;
@@ -366,7 +366,7 @@ fn print_hunks_human(comparison: &str, total: usize, counts: &Counts, rows: &[Hu
     }
 }
 
-/// `review approve` / `reject` / `save` — set a status on hunks.
+/// `spur approve` / `reject` / `save` — set a status on hunks.
 pub fn run_mark(args: MarkArgs, status: HunkStatus) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
     let (review, hunks, live_ids) = load_for_mutation(&repo, args.target.spec.as_deref())?;
@@ -378,12 +378,12 @@ pub fn run_mark(args: MarkArgs, status: HunkStatus) -> Result<(), String> {
 
     let existed = storage::review_exists(&repo, &review.ref_name).unwrap_or(false);
     // Blank is treated the same as omitted, rather than storing a
-    // whitespace-only reason that `review hunks` would then print as a
+    // whitespace-only reason that `spur hunks` would then print as a
     // dangling "reason: " line.
     let reason = args.reason.as_deref().and_then(non_blank);
     let source = resolve_source(args.source)?;
     let result = mutate_review(&repo, &review.ref_name, &hunks, |state| {
-        // Keep the total and per-hunk labels fresh so `review list` and the
+        // Keep the total and per-hunk labels fresh so `spur list` and the
         // desktop app show accurate progress.
         state.total_diff_hunks = total_hunks;
         sync_classification(state, &classification);
@@ -421,7 +421,7 @@ pub fn run_mark(args: MarkArgs, status: HunkStatus) -> Result<(), String> {
     Ok(())
 }
 
-/// `review unmark` — clear the status of hunks.
+/// `spur unmark` — clear the status of hunks.
 pub fn run_unmark(args: MarkArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
     let (review, hunks, live_ids) = load_for_mutation(&repo, args.target.spec.as_deref())?;
@@ -474,7 +474,7 @@ pub fn run_unmark(args: MarkArgs) -> Result<(), String> {
     Ok(())
 }
 
-/// `review status` — show review progress for a comparison.
+/// `spur status` — show review progress for a comparison.
 pub fn run_status(args: StatusArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
     let view = load_review_view(&repo, args.target.spec.as_deref())?;
@@ -510,7 +510,7 @@ pub fn run_status(args: StatusArgs) -> Result<(), String> {
     Ok(())
 }
 
-/// `review list` — list saved reviews.
+/// `spur list` — list saved reviews.
 pub fn run_list(args: ListArgs) -> Result<(), String> {
     if args.all {
         let reviews = storage::list_all_reviews_global().map_err(|e| e.to_string())?;
@@ -571,7 +571,7 @@ fn review_label(ref_name: &str, base_override: Option<&str>) -> String {
     }
 }
 
-/// `review delete` — remove a saved review.
+/// `spur delete` — remove a saved review.
 pub fn run_delete(args: DeleteArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
     let review = resolve_review_arg(&repo, args.target.spec.as_deref())?;
@@ -590,7 +590,7 @@ pub fn run_delete(args: DeleteArgs) -> Result<(), String> {
     Ok(())
 }
 
-/// `review change-base` — pin (or, with `--clear`, drop) a review's base
+/// `spur change-base` — pin (or, with `--clear`, drop) a review's base
 /// override. The base is a derived setting, not identity, so this is a plain
 /// in-place edit: it sets the `base_override` field and re-resolves the diff.
 /// No re-key, no rename — the review's identity is its ref.
@@ -642,7 +642,7 @@ fn validate_note_append(text: &str) -> Result<(), String> {
     reject_blank("text", text)
 }
 
-/// `review trust` — inspect or edit the trust list.
+/// `spur trust` — inspect or edit the trust list.
 pub fn run_trust(args: TrustArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
 
@@ -703,7 +703,7 @@ pub fn run_trust(args: TrustArgs) -> Result<(), String> {
     Ok(())
 }
 
-/// `review note` — read or edit the free-form review notes.
+/// `spur note` — read or edit the free-form review notes.
 pub fn run_note(args: NoteArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
 

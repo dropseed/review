@@ -23,7 +23,7 @@ vi.mock("../../platform", () => ({
 
 import { ComparisonBar } from "./ComparisonBar";
 import { TooltipProvider } from "../ui/tooltip";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { makeComparison } from "../../types";
 import { REVIEW_VIEWPOINT } from "../../types/viewpoint";
 import type { CommitEntry, LocalBranchInfo } from "../../types";
@@ -63,7 +63,7 @@ function branch(name: string, over: Partial<LocalBranchInfo>): LocalBranchInfo {
  * shape, so each test only says what it changes about it.
  */
 function seed(branches: LocalBranchInfo[]): void {
-  useReviewStore.setState({
+  useSpurStore.setState({
     repoPath: REPO,
     currentBranch: "feature",
     worktreePath: null,
@@ -95,7 +95,7 @@ function trigger(): HTMLElement {
 
 /** The range the bar just narrowed to, read off the viewpoint it set. */
 function pickedRange(): CommitRange | null {
-  const { viewpoint } = useReviewStore.getState();
+  const { viewpoint } = useSpurStore.getState();
   return viewpoint.kind === "range" ? viewpoint.range : null;
 }
 
@@ -113,7 +113,7 @@ function openMenu(): void {
 
 afterEach(() => {
   cleanup();
-  useReviewStore.setState({
+  useSpurStore.setState({
     repoPath: null,
     currentBranch: null,
     viewpoint: REVIEW_VIEWPOINT,
@@ -152,7 +152,7 @@ describe("the bar's two lines", () => {
 
   it("names the picked slice instead once there is one", () => {
     seed([branch("feature", { isCurrent: true, unpushedCommits: 2 })]);
-    useReviewStore.setState({
+    useSpurStore.setState({
       viewpoint: {
         kind: "range",
         range: {
@@ -184,7 +184,7 @@ describe("the bar's two lines", () => {
    */
   it("names a pull request's own comparison", () => {
     seed([branch("feature", { isCurrent: true })]);
-    useReviewStore.setState({
+    useSpurStore.setState({
       baseReason: "pullRequest",
       comparison: makeComparison("main", "refs/review/pr/7"),
       reviewComparison: makeComparison("main", "refs/review/pr/7"),
@@ -210,7 +210,7 @@ describe("the bar's two lines", () => {
    */
   it("falls back to a derived name rather than crashing on an unknown arm", () => {
     seed([branch("feature", { isCurrent: true })]);
-    useReviewStore.setState({
+    useSpurStore.setState({
       baseReason: "somethingNewerThanThisApp" as never,
     });
     render(
@@ -240,7 +240,7 @@ describe("the bar's two lines", () => {
 
     cleanup();
     seed([branch("feature", { isCurrent: true })]);
-    useReviewStore.setState({
+    useSpurStore.setState({
       viewpoint: {
         kind: "commit",
         view: {
@@ -265,14 +265,14 @@ describe("the bar's two lines", () => {
     expect(screen.getByText("vs its parent")).toBeDefined();
 
     fireEvent.click(screen.getByLabelText("Back to feature"));
-    expect(useReviewStore.getState().viewpoint.kind).toBe("review");
+    expect(useSpurStore.getState().viewpoint.kind).toBe("review");
   });
 
   /** The diff of a merge looks complete and isn't — the other parents' changes
    *  are simply not in it, and only the bar is left to say so. */
   it("says which parent a merge is being shown against", () => {
     seed([branch("feature", { isCurrent: true })]);
-    useReviewStore.setState({
+    useSpurStore.setState({
       viewpoint: {
         kind: "commit",
         view: {
@@ -400,7 +400,7 @@ describe("a stale base", () => {
    */
   it("is still reported on a review with nothing else to choose", () => {
     seed([branch("master", { isCurrent: true, behindUpstream: 12 })]);
-    useReviewStore.setState({
+    useSpurStore.setState({
       baseReason: "trunkWorkingTree",
       currentBranch: "master",
       comparison: makeComparison("master", "master"),
@@ -422,7 +422,7 @@ describe("a pinned base", () => {
    */
   it("names itself by the commit it is pinned to, and how far it has grown", () => {
     seed([branch("feature", { isCurrent: true })]);
-    useReviewStore.setState({
+    useSpurStore.setState({
       baseReason: "override",
       comparison: makeComparison("e14efa9", "feature"),
       reviewComparison: makeComparison("e14efa9", "feature"),
@@ -444,7 +444,7 @@ describe("a pinned base", () => {
   it("escapes by picking whole branch, which is what clearing it means", () => {
     const setBaseOverride = vi.fn().mockResolvedValue(null);
     seed([branch("feature", { isCurrent: true })]);
-    useReviewStore.setState({
+    useSpurStore.setState({
       baseReason: "override",
       reviewRef: "feature",
       comparison: makeComparison("e14efa9", "feature"),
@@ -467,7 +467,7 @@ describe("a pinned base", () => {
   it("escapes a trunk pin by picking uncommitted, where clearing lands", () => {
     const setBaseOverride = vi.fn().mockResolvedValue(null);
     seed([branch("main", { isCurrent: true })]);
-    useReviewStore.setState({
+    useSpurStore.setState({
       currentBranch: "main",
       baseReason: "override",
       reviewRef: "main",
@@ -487,7 +487,7 @@ describe("a pinned base", () => {
 
   it("says nothing about pinning when the base was derived", () => {
     seed([branch("feature", { isCurrent: true })]);
-    useReviewStore.setState({ baseReason: "branchVsDefault" });
+    useSpurStore.setState({ baseReason: "branchVsDefault" });
     openMenu();
 
     expect(screen.queryByText(/pinned/)).toBeNull();
@@ -502,7 +502,7 @@ describe("uncommitted work", () => {
    */
   it("is declared as part of the whole branch when it is folded in", () => {
     seed([branch("feature", { isCurrent: true })]);
-    useReviewStore.setState({ baseReason: "branchVsDefault" });
+    useSpurStore.setState({ baseReason: "branchVsDefault" });
     openMenu();
 
     expect(
@@ -517,7 +517,7 @@ describe("uncommitted work", () => {
    */
   it("is the whole of a trunk review, not a slice of one", () => {
     seed([branch("master", { isCurrent: true })]);
-    useReviewStore.setState({
+    useSpurStore.setState({
       baseReason: "trunkWorkingTree",
       currentBranch: "master",
       comparison: makeComparison("master", "master"),
@@ -533,7 +533,7 @@ describe("uncommitted work", () => {
 
   it("is not mentioned when the branch isn't checked out anywhere", () => {
     seed([branch("feature", {})]);
-    useReviewStore.setState({ currentBranch: "something-else" });
+    useSpurStore.setState({ currentBranch: "something-else" });
     openMenu();
 
     expect(screen.queryByText(/Uncommitted work is included/)).toBeNull();

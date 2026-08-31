@@ -1,4 +1,4 @@
-use crate::review::central;
+use crate::home;
 use crate::review::state::HunkStatus;
 use crate::review::storage;
 use crate::service::targets::{self, BaseReason, ResolvedReview};
@@ -22,10 +22,10 @@ mod url;
 mod workspace;
 
 #[derive(Debug, Parser)]
-#[command(name = "review")]
+#[command(name = "spur")]
 #[command(author, version, about = "Review diffs more efficiently", long_about = None)]
 pub struct Cli {
-    /// Override the data directory (default: ~/.review/, env: REVIEW_HOME)
+    /// Override the data directory (default: ~/.spur/, env: SPUR_HOME)
     #[arg(long, global = true)]
     pub home: Option<String>,
 
@@ -142,10 +142,10 @@ pub enum Commands {
     /// Show, author, or clear the review guide (an agent-authored hunk grouping)
     Guide(guide::GuideArgs),
 
-    /// Print a `review://` deep link for a file or hunk
+    /// Print a `spur://` deep link for a file or hunk
     Url(url::UrlArgs),
 
-    /// Install the review-app skill for Claude Code and Codex
+    /// Install the spur-app skill for Claude Code and Codex
     Skill(skill::SkillArgs),
 
     /// Set (or show/clear) the default comparison so commands don't need `-s`
@@ -159,15 +159,12 @@ pub enum Commands {
     Terminal(terminal::TerminalArgs),
 
     /// Inspect and edit your workspaces — the global "Working on" queue, in order
-    // `work` stays as an alias. The command was named for the queue before the
-    // thing in it had a name; every noun under it was already `workspace`.
-    #[command(alias = "work")]
     Workspace(workspace::WorkspaceArgs),
 }
 
-/// `review use [spec]` — the repo's stored default comparison. With a spec,
+/// `spur use [spec]` — the repo's stored default comparison. With a spec,
 /// set it; with `--clear`, remove it; with neither, show it. Every data
-/// command falls back to this when `--spec`/`$REVIEW_SPEC` are absent.
+/// command falls back to this when `--spec`/`$SPUR_SPEC` are absent.
 #[derive(Debug, clap::Args)]
 pub struct UseArgs {
     /// Repository path (defaults to the current directory)
@@ -190,12 +187,12 @@ pub(crate) fn get_repo_path(repo: &Option<String>) -> Result<String, String> {
     }
 
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-    crate::review::central::enclosing_working_tree(&cwd)
+    crate::home::enclosing_working_tree(&cwd)
         .map(|p| p.to_string_lossy().to_string())
         .ok_or_else(|| "Not a git repository. Use --repo to specify a repository path.".to_owned())
 }
 
-/// `review use` — get, set, or clear the repo's default comparison.
+/// `spur use` — get, set, or clear the repo's default comparison.
 fn run_use(args: UseArgs) -> Result<(), String> {
     use serde_json::json;
     let repo = PathBuf::from(get_repo_path(&args.repo)?);
@@ -214,7 +211,7 @@ fn run_use(args: UseArgs) -> Result<(), String> {
 
     match args.spec {
         Some(spec) => {
-            // Validate that the spec parses before storing it, so `review use`
+            // Validate that the spec parses before storing it, so `spur use`
             // can't leave every later command pointed at an unparseable ref.
             let (ref_name, _base) = parse_review_spec(&spec)?;
             storage::write_default_spec(&repo, &spec).map_err(|e| e.to_string())?;
@@ -222,7 +219,7 @@ fn run_use(args: UseArgs) -> Result<(), String> {
                 common::print_json(&json!({ "default": spec, "ref": ref_name }));
             } else {
                 println!("Default comparison set to {spec} (ref {ref_name}).");
-                println!("Commands now target it without `-s`; `review use --clear` to undo.");
+                println!("Commands now target it without `-s`; `spur use --clear` to undo.");
             }
         }
         None => {
@@ -261,11 +258,15 @@ fn resolve_open_path(path: Option<String>) -> Result<(String, Option<String>), S
 pub fn run(cli: Cli) -> Result<(), String> {
     let has_home_override = cli.home.is_some();
 
-    // Set REVIEW_HOME early so all storage calls use the override
+    // Set SPUR_HOME early so all storage calls use the override
     if let Some(home) = &cli.home {
         let absolute = resolve_absolute(Path::new(home))?;
-        std::env::set_var("REVIEW_HOME", &absolute);
+        std::env::set_var("SPUR_HOME", &absolute);
     }
+
+    // After the override, so `--home` is honoured: an instance pointed
+    // elsewhere is not the default home and has nothing to migrate.
+    crate::home::migrate_legacy_home();
 
     match cli.command {
         Some(Commands::Start {
@@ -330,7 +331,7 @@ pub fn run(cli: Cli) -> Result<(), String> {
 fn warn_home_override(has_home_override: bool) {
     if has_home_override {
         eprintln!(
-            "Note: --home only takes effect on a fresh launch. If Review is already running, quit it first."
+            "Note: --home only takes effect on a fresh launch. If Spur is already running, quit it first."
         );
     }
 }
@@ -339,7 +340,7 @@ fn warn_home_override(has_home_override: bool) {
 ///
 /// Opening a repo root (no specific file) lands on the current branch's review
 /// — base derived by the ladder — so `review .` in a worktree or feature branch
-/// shows that branch's review, matching `review start` and launching the app in
+/// shows that branch's review, matching `spur start` and launching the app in
 /// the repo. On the default branch the comparison is degenerate (base == head,
 /// nothing to diff), so we fall back to browse mode, which still has the file
 /// tree to show. A specific file also opens in browse mode, focused on that file.
@@ -354,7 +355,7 @@ fn run_open(path: Option<String>, has_home_override: bool) -> Result<(), String>
 
     if let Some(review) = &review {
         // Persist the review so it shows up under its parent in the sidebar,
-        // mirroring `review start`. Best-effort — a failure here shouldn't stop
+        // mirroring `spur start`. Best-effort — a failure here shouldn't stop
         // the app from opening.
         let _ = storage::ensure_review_exists(
             Path::new(&repo_path),
@@ -390,8 +391,8 @@ fn default_open_review(repo_path: &str) -> Option<ResolvedReview> {
     Some(review)
 }
 
-/// `review start [spec]` — resolve a comparison, persist review state, open the app.
-/// What to review, selected by the mutually-exclusive `review start` flags. New
+/// `spur start [spec]` — resolve a comparison, persist review state, open the app.
+/// What to review, selected by the mutually-exclusive `spur start` flags. New
 /// target kinds (e.g. `--patch`, `--pr`) become a variant here rather than
 /// another argument threaded through `run_start`.
 enum StartTarget {
@@ -583,9 +584,9 @@ fn open_app(
     // The reliable channel for the already-running case, where `open -a`
     // activates the app but drops `--args`. Not `let _ =`: a write that failed
     // and went unreported is the case where the app comes to the front showing
-    // whatever it was showing before and the CLI still says "Opened Review app
+    // whatever it was showing before and the CLI still says "Opened Spur app
     // for ..." — the exact report that sends someone looking in the wrong place.
-    central::write_open_request(&central::OpenRequest {
+    home::write_open_request(&home::OpenRequest {
         repo_path: repo_path.to_owned(),
         ref_name: review_ref.map(ToOwned::to_owned),
         focused_file: focused_file.map(ToOwned::to_owned),
@@ -595,7 +596,7 @@ fn open_app(
     .map_err(|e| {
         format!(
             "Could not write the open request '{}': {e}",
-            central::open_request_path().display()
+            home::open_request_path().display()
         )
     })?;
 
@@ -617,9 +618,9 @@ fn open_app(
                 .env("USER", std::env::var("USER").unwrap_or_default())
                 .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin");
 
-            // Forward REVIEW_HOME so the app uses the same data directory
-            if let Ok(review_home) = std::env::var("REVIEW_HOME") {
-                cmd.env("REVIEW_HOME", review_home);
+            // Forward SPUR_HOME so the app uses the same data directory
+            if let Ok(spur_home) = std::env::var("SPUR_HOME") {
+                cmd.env("SPUR_HOME", spur_home);
             }
 
             cmd.arg("-a").arg(app_path).arg("--args").arg(repo_path);
@@ -651,13 +652,13 @@ fn open_app(
 
         // Common locations for the app bundle
         let home_apps = std::env::var("HOME")
-            .map(|h| PathBuf::from(h).join("Applications/Review.app"))
+            .map(|h| PathBuf::from(h).join("Applications/Spur.app"))
             .unwrap_or_default();
-        let app_locations = [PathBuf::from("/Applications/Review.app"), home_apps];
+        let app_locations = [PathBuf::from("/Applications/Spur.app"), home_apps];
 
         for app_path in &app_locations {
             if try_open(app_path).is_some() {
-                println!("Opened Review app for {repo_path}");
+                println!("Opened Spur app for {repo_path}");
                 return Ok(());
             }
         }
@@ -666,11 +667,11 @@ fn open_app(
         let dev_app = std::env::current_exe().ok().and_then(|p| {
             p.parent()?
                 .parent()
-                .map(|p| p.join("bundle/macos/Review.app"))
+                .map(|p| p.join("bundle/macos/Spur.app"))
         });
         if let Some(ref app_path) = dev_app {
             if try_open(app_path).is_some() {
-                println!("Opened Review app for {repo_path}");
+                println!("Opened Spur app for {repo_path}");
                 return Ok(());
             }
         }
@@ -679,11 +680,11 @@ fn open_app(
     #[cfg(target_os = "linux")]
     {
         // Try to find review in PATH or common locations
-        let binary_names = ["review", "Review"];
+        let binary_names = ["spur", "Spur"];
         for name in &binary_names {
             if let Ok(status) = Command::new(name).arg(repo_path).status() {
                 if status.success() {
-                    println!("Opened Review for {}", repo_path);
+                    println!("Opened Spur for {}", repo_path);
                     return Ok(());
                 }
             }
@@ -693,15 +694,15 @@ fn open_app(
     #[cfg(target_os = "windows")]
     {
         // Try to find Review.exe
-        if let Ok(status) = Command::new("Review.exe").arg(repo_path).status() {
+        if let Ok(status) = Command::new("Spur.exe").arg(repo_path).status() {
             if status.success() {
-                println!("Opened Review for {}", repo_path);
+                println!("Opened Spur for {}", repo_path);
                 return Ok(());
             }
         }
     }
 
-    Err("Could not open Review app. Make sure it is installed and in your PATH.".to_owned())
+    Err("Could not open Spur app. Make sure it is installed and in your PATH.".to_owned())
 }
 
 #[cfg(test)]
@@ -733,7 +734,7 @@ mod tests {
             .comparison
     }
 
-    /// Resolve a `review start` target to its comparison (test-only).
+    /// Resolve a `spur start` target to its comparison (test-only).
     fn start_comparison(dir: &Path, target: StartTarget) -> Comparison {
         target.resolve(dir).unwrap().comparison
     }

@@ -840,7 +840,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       // "Clear feedback" only wipes the human's own unresolved UI-authored
       // comments plus the notes. Preserve: resolved annotations (audit
       // trail), comments from other sources (agent / cli / imported PR
-      // review comments), and legacy annotations with no `source` field —
+      // spur comments), and legacy annotations with no `source` field —
       // those predate authorship tracking and must not be silently lost.
       const keep = (reviewState?.annotations ?? []).filter(
         (a) => a.resolvedAt || a.source !== "ui",
@@ -976,7 +976,7 @@ export const createReviewSlice: SliceCreatorWithClient<ReviewSlice> =
       // Working-tree-only edits: only refresh what working-tree edits can
       // actually change. Review state, the global reviews list, and review
       // freshness are not affected by working-tree content (they track
-      // SHAs, file metadata, and review-state files in `~/.review/`),
+      // SHAs, file metadata, and review-state files in `~/.spur/`),
       // so refetching them here was producing re-renders for no gain.
       // Freshness for working-tree comparisons still runs via the
       // watcher's separately-debounced `checkReviewsFreshness` trigger.

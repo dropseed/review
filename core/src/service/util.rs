@@ -31,7 +31,7 @@ pub fn resolve_open_target(target: &Path) -> (String, Option<String>) {
         target.clone()
     };
 
-    match crate::review::central::enclosing_working_tree(&search_start) {
+    match crate::home::enclosing_working_tree(&search_start) {
         Some(repo_root) => {
             let focused_file = if target.is_file() {
                 target
@@ -167,7 +167,7 @@ pub fn reject_relative_path_traversal(file_path: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Validate that a path is within .git/review/ or ~/.review/ for security.
+/// Validate that a path is within .git/review/ or ~/.spur/ for security.
 pub fn validate_review_path(path: &str) -> anyhow::Result<PathBuf> {
     let path_buf = PathBuf::from(path);
 
@@ -189,15 +189,15 @@ pub fn validate_review_path(path: &str) -> anyhow::Result<PathBuf> {
         return Ok(path_buf);
     }
 
-    // Allow writes to the central ~/.review/ directory
-    if let Ok(root) = crate::review::central::get_central_root() {
+    // Allow writes to the central ~/.spur/ directory
+    if let Ok(root) = crate::home::get_central_root() {
         let root = Path::new(&root.to_string_lossy().replace('\\', "/")).to_path_buf();
         if normalized.starts_with(&root) {
             return Ok(path_buf);
         }
     }
 
-    bail!("Security error: writes are only allowed to .git/review/ or ~/.review/ directory");
+    bail!("Security error: writes are only allowed to .git/review/ or ~/.spur/ directory");
 }
 
 /// Convert raw file bytes into a FileContent struct, handling image/SVG/text detection.
@@ -343,16 +343,16 @@ mod tests {
     #[test]
     fn validate_review_path_rejects_lookalike_git_review_component() {
         // `my.git` is a single path component, not a `.git` directory
-        // followed by `review` — the old substring check let this through.
+        // followed by `spur` — the old substring check let this through.
         assert!(validate_review_path("/tmp/my.git/review/x").is_err());
     }
 
     #[test]
     fn validate_review_path_rejects_central_root_lookalike_sibling() {
-        let _lock = crate::review::central::tests::ENV_LOCK.lock().unwrap();
-        let (_guard, review_home, _repo) = crate::review::central::tests::setup_test();
+        let _lock = crate::home::tests::ENV_LOCK.lock().unwrap();
+        let (_guard, spur_home, _repo) = crate::home::tests::setup_test();
 
-        let root = review_home.path();
+        let root = spur_home.path();
         assert!(validate_review_path(root.join("state.json").to_str().unwrap()).is_ok());
 
         // A sibling directory whose name merely has the root as a string

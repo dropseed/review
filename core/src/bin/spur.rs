@@ -1,5 +1,5 @@
 use clap::Parser;
-use review::cli::{run, Cli};
+use spur::cli::{run, Cli};
 
 fn main() {
     let cli = Cli::parse();

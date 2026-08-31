@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { useSidebarTree } from "../../hooks/useSidebarTree";
 import { getTabsByWorkspaceId } from "../../stores/selectors/terminals";
 import {
@@ -94,7 +94,7 @@ export function shortPath(path: string): string {
  */
 export function useRepoChoices(): RepoChoice[] {
   const tree = useSidebarTree();
-  const repoMetadata = useReviewStore((s) => s.repoMetadata);
+  const repoMetadata = useSpurStore((s) => s.repoMetadata);
 
   return useMemo(
     () =>
@@ -149,7 +149,7 @@ export async function openRepoIn(
   workspace: Workspace,
   choice: RepoChoice,
 ): Promise<void> {
-  const store = useReviewStore.getState();
+  const store = useSpurStore.getState();
   const ok = await store.attachWorkspace(
     workspace.id,
     choice.path,
@@ -167,7 +167,7 @@ export async function openRepoIn(
     ref: choice.refName ?? CHECKOUT_REF,
   });
 
-  const running = getTabsByWorkspaceId(useReviewStore.getState())[workspace.id];
+  const running = getTabsByWorkspaceId(useSpurStore.getState())[workspace.id];
   if (running && running.length > 0) return;
   // Named here too rather than left to `activeTabTarget`, for the extra reason
   // that the store's notion of the active tab is a render behind the attach
@@ -227,7 +227,7 @@ export async function openFolderInFocusedWorkspace(): Promise<void> {
   if (!choice) return;
 
   const workspace =
-    focusedWorkspaceIn(useReviewStore.getState()) ?? (await newWorkspace());
+    focusedWorkspaceIn(useSpurStore.getState()) ?? (await newWorkspace());
   if (!workspace) return;
 
   await openRepoIn(workspace, choice);

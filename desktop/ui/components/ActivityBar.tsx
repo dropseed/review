@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import type { Activity } from "../stores/slices/activitySlice";
 
 interface ActivityRowProps {
@@ -37,7 +37,7 @@ function ActivityRow({ activity }: ActivityRowProps): ReactNode {
 }
 
 export function ActivityBar(): ReactNode {
-  const activities = useReviewStore((s) => s.activities);
+  const activities = useSpurStore((s) => s.activities);
   const [expanded, setExpanded] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const expandedRef = useRef(expanded);

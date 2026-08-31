@@ -1,15 +1,21 @@
-//! `review skill` — install the bundled skill for Claude Code and/or Codex.
+//! `spur skill` — install the bundled skill for Claude Code and/or Codex.
 
 use clap::{Args, Subcommand};
 
 /// The bundled skill, embedded into the binary at build time so the shipped
 /// CLI can install it without the source repo present.
-const SKILL_NAME: &str = "review-app";
-const SKILL_CONTENTS: &str = include_str!("../../resources/skills/review-app/SKILL.md");
+const SKILL_NAME: &str = "spur-app";
+const SKILL_CONTENTS: &str = include_str!("../../resources/skills/spur-app/SKILL.md");
 
 /// Skills earlier versions installed, now folded into [`SKILL_NAME`]. Removed on
-/// install so an upgraded CLI doesn't leave three overlapping skills behind.
-const SUPERSEDED: &[&str] = &["review-guide", "review-terminals"];
+/// install so an upgraded CLI doesn't leave overlapping skills behind.
+///
+/// `review-app` is this same skill under the app's old name, and leaving it in
+/// place is worse than leaving a merely redundant one: every command in it
+/// spells the CLI `review`, which after the rename is either absent or a stale
+/// binary resolving a home Spur no longer writes to. An agent reading it would
+/// drive the wrong instance.
+const SUPERSEDED: &[&str] = &["review-app", "review-guide", "review-terminals"];
 
 #[derive(Debug, Args)]
 pub struct SkillArgs {

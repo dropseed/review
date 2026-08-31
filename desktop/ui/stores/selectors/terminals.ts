@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useReviewStore } from "../index";
+import { useSpurStore } from "../index";
 import {
   findTab,
   selectTabsByWorkspaceId,
@@ -190,7 +190,7 @@ function sameTerminals(a: WorkspaceTerminals, b: WorkspaceTerminals): boolean {
 
 /** [`getTabsByWorkspaceId`] as a hook. */
 export function useTabsByWorkspaceId(): Record<string, string[]> {
-  return useReviewStore(getTabsByWorkspaceId);
+  return useSpurStore(getTabsByWorkspaceId);
 }
 
 /** [`getTerminalsByWorkspaceId`] as a hook. */
@@ -198,7 +198,7 @@ export function useTerminalsByWorkspaceId(): Record<
   string,
   WorkspaceTerminals
 > {
-  return useReviewStore(getTerminalsByWorkspaceId);
+  return useSpurStore(getTerminalsByWorkspaceId);
 }
 
 /**
@@ -209,7 +209,7 @@ export function useTerminalsByWorkspaceId(): Record<
  * so the filtered array is stable between status ticks.
  */
 export function useWorkspaceTabs(workspaceId: string | null): TerminalTab[] {
-  const tabs = useReviewStore((s) => s.terminalTabs);
+  const tabs = useSpurStore((s) => s.terminalTabs);
   const byWorkspace = useTabsByWorkspaceId();
 
   return useMemo(() => {
@@ -296,7 +296,7 @@ export interface TabRowGlance extends TabGlance {
  * rule was pasted into every row that listed one.
  */
 export function useTabGlance(tabId: string): TabRowGlance | null {
-  return useReviewStore((s) => getTabGlances(s)[tabId] ?? null);
+  return useSpurStore((s) => getTabGlances(s)[tabId] ?? null);
 }
 
 let glanceCache: {
@@ -388,13 +388,13 @@ function sameGlance(a: TabRowGlance, b: TabRowGlance): boolean {
  * disagree.
  */
 export function useTerminalDockPresent(): boolean {
-  const terminalsSupported = useReviewStore((s) => s.terminalsSupported);
-  const terminalTabs = useReviewStore((s) => s.terminalTabs);
-  const repoPath = useReviewStore((s) => s.repoPath);
+  const terminalsSupported = useSpurStore((s) => s.terminalsSupported);
+  const terminalTabs = useSpurStore((s) => s.terminalTabs);
+  const repoPath = useSpurStore((s) => s.repoPath);
   const focused = useFocusedWorkspace();
   // Just the boolean, not the whole roll-up: subscribing to the roll-up would
   // re-render every consumer on any status tick in any workspace.
-  const hasTabs = useReviewStore(
+  const hasTabs = useSpurStore(
     (s) => (getTabsByWorkspaceId(s)[focused?.id ?? ""] ?? []).length > 0,
   );
 

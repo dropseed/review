@@ -1,4 +1,4 @@
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 
 /**
  * Returns whether a specific hunk is currently focused.
@@ -8,5 +8,5 @@ import { useReviewStore } from "../stores";
  * focus — rather than on every focusedHunkId update.
  */
 export function useIsFocusedHunk(hunkId: string): boolean {
-  return useReviewStore((s) => s.focusedHunkId === hunkId);
+  return useSpurStore((s) => s.focusedHunkId === hunkId);
 }

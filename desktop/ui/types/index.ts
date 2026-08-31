@@ -218,7 +218,7 @@ export interface ViewerPr {
   updatedAt: string;
   headRefName: string;
   baseRefName: string;
-  repoNameWithOwner: string; // the BASE repo — "dropseed/review"
+  repoNameWithOwner: string; // the BASE repo — "dropseed/spur"
   repoUrl: string;
   /**
    * The head (fork) repo the branch lives in, null when it has been deleted.
@@ -744,13 +744,13 @@ export interface Attachment {
   /**
    * Whether the path is a git repository, derived backend-side on every read —
    * so `git init` in an attached directory flips it with no write to
-   * `work.json`.
+   * `workspaces.json`.
    */
   isGitRepo: boolean;
 }
 
-// One workspace: a unit of intent in the work queue. Stored in
-// ~/.review/work.json; array order is priority order, so the list is never
+// One workspace: a unit of intent in the workspace queue. Stored in
+// ~/.spur/workspaces.json; array order is priority order, so the list is never
 // re-sorted on read.
 //
 // A container that becomes what you put in it: the attachments are the code
@@ -1148,7 +1148,7 @@ export interface TerminalSessionInfo {
  * Where routing a repo+branch landed — the answer ⌘K's Enter acts on.
  *
  * `workspaces` is the whole queue as the route left it, the same way
- * `work_attach` answers, so a landing needs no second read to show its own
+ * `workspace_attach` answers, so a landing needs no second read to show its own
  * result: the workspace it picked may be one the frontend's list has never
  * held, and the route may have attached to one it has.
  */

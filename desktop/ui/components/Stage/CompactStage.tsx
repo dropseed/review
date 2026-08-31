@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useRef } from "react";
 import { clsx } from "clsx";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 import { lockAxis } from "../Terminal/touch-gestures";
 import { TerminalPanel } from "../Terminal/TerminalPanel";
@@ -42,8 +42,8 @@ export function CompactStage({
   /** The code half. */
   children: ReactNode;
 }): ReactNode {
-  const contentFocus = useReviewStore((s) => s.contentFocus);
-  const setContentFocus = useReviewStore((s) => s.setContentFocus);
+  const contentFocus = useSpurStore((s) => s.contentFocus);
+  const setContentFocus = useSpurStore((s) => s.setContentFocus);
   const reduced = usePrefersReducedMotion();
   const pushed = codePushed(contentFocus, docked);
 

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 
 /**
  * Mouse back/forward button support for file navigation.
@@ -10,13 +10,13 @@ import { useReviewStore } from "../stores";
  * reviews, overlays) is intentionally out of scope.
  */
 export function useMouseNavigation() {
-  const selectedFile = useReviewStore((s) => s.selectedFile);
+  const selectedFile = useSpurStore((s) => s.selectedFile);
 
   // Record every file the user lands on. recordFileVisit dedupes the current
   // entry, so stepping through history doesn't re-push what we just visited.
   useEffect(() => {
     if (selectedFile) {
-      useReviewStore.getState().recordFileVisit(selectedFile);
+      useSpurStore.getState().recordFileVisit(selectedFile);
     }
   }, [selectedFile]);
 
@@ -45,9 +45,7 @@ export function useMouseNavigation() {
         )
       )
         return;
-      useReviewStore
-        .getState()
-        .navigateFileHistory(event.button === 3 ? -1 : 1);
+      useSpurStore.getState().navigateFileHistory(event.button === 3 ? -1 : 1);
     };
 
     window.addEventListener("mousedown", suppress);

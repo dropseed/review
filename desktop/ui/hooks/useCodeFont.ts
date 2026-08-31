@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { DEFAULT_VIRTUAL_FILE_METRICS } from "@pierre/diffs";
 import type { VirtualFileMetrics } from "@pierre/diffs";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 
 /**
  * Single source of truth for code font geometry. The line height injected
@@ -11,8 +11,8 @@ import { useReviewStore } from "../stores";
  * the bottom gets cut off.
  */
 export function useCodeFont(): { lineHeight: number; fontCSS: string } {
-  const codeFontSize = useReviewStore((s) => s.codeFontSize);
-  const codeFontFamily = useReviewStore((s) => s.codeFontFamily);
+  const codeFontSize = useSpurStore((s) => s.codeFontSize);
+  const codeFontFamily = useSpurStore((s) => s.codeFontFamily);
   return useMemo(() => {
     const lineHeight = Math.round(codeFontSize * 1.5);
     return {

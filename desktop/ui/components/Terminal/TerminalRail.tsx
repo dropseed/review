@@ -1,5 +1,5 @@
 import { type ReactNode } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { useFocusedWorkspace } from "../../stores/selectors/workspaces";
 import { useWorkspaceTabs } from "../../stores/selectors/terminals";
 import type { TerminalTab } from "../../stores/slices/terminalSlice";
@@ -23,16 +23,16 @@ import { TerminalGlanceCard } from "./TerminalGlanceCard";
  * rail is drawn; a second copy of it here would be the same verb twice.
  */
 export function TerminalRail(): ReactNode {
-  const terminalSessions = useReviewStore((s) => s.terminalSessions);
-  const terminalStatuses = useReviewStore((s) => s.terminalStatuses);
-  const terminalExited = useReviewStore((s) => s.terminalExited);
-  const activeTabId = useReviewStore((s) => s.activeTabId);
+  const terminalSessions = useSpurStore((s) => s.terminalSessions);
+  const terminalStatuses = useSpurStore((s) => s.terminalStatuses);
+  const terminalExited = useSpurStore((s) => s.terminalExited);
+  const activeTabId = useSpurStore((s) => s.activeTabId);
   // The same scoping the open panel applies, through the same selector — the
   // rail is the panel, narrow, and the two must not list different terminals.
   const focusedWorkspace = useFocusedWorkspace();
   const tabs = useWorkspaceTabs(focusedWorkspace?.id ?? null);
-  const toggleTerminalPanel = useReviewStore((s) => s.toggleTerminalPanel);
-  const setActiveTab = useReviewStore((s) => s.setActiveTab);
+  const toggleTerminalPanel = useSpurStore((s) => s.toggleTerminalPanel);
+  const setActiveTab = useSpurStore((s) => s.setActiveTab);
 
   const showTab = (tab: TerminalTab) => {
     setActiveTab(tab.id);

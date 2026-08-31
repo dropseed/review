@@ -1,5 +1,5 @@
 import { memo, useMemo, type JSX } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { viewOnly } from "../../stores/selectors/viewpoint";
 import { useAllHunks } from "../../stores/selectors/hunks";
 import type { DiffViewMode } from "../../stores/slices/preferencesSlice";
@@ -73,9 +73,9 @@ function SimilarFilesButton({
   onNavigateToFile: (path: string) => void;
 }): JSX.Element | null {
   const hunks = useAllHunks();
-  const reviewState = useReviewStore((s) => s.reviewState);
-  const approveHunkIds = useReviewStore((s) => s.approveHunkIds);
-  const rejectHunkIds = useReviewStore((s) => s.rejectHunkIds);
+  const reviewState = useSpurStore((s) => s.reviewState);
+  const approveHunkIds = useSpurStore((s) => s.approveHunkIds);
+  const rejectHunkIds = useSpurStore((s) => s.rejectHunkIds);
 
   const basename = filePath.split("/").pop() ?? "";
   const matchCount = useMemo(() => {
@@ -210,8 +210,8 @@ function MenuViewModeSection<T extends string>({
  * subscription doesn't re-render the whole toolbar.
  */
 function OutlineMenuItem(): JSX.Element {
-  const showOutline = useReviewStore((s) => s.showOutline);
-  const toggleOutline = useReviewStore((s) => s.toggleOutline);
+  const showOutline = useSpurStore((s) => s.showOutline);
+  const toggleOutline = useSpurStore((s) => s.toggleOutline);
 
   return (
     <DropdownMenuCheckboxItem
@@ -225,8 +225,8 @@ function OutlineMenuItem(): JSX.Element {
 }
 
 function OutlineToggleButton() {
-  const showOutline = useReviewStore((s) => s.showOutline);
-  const toggleOutline = useReviewStore((s) => s.toggleOutline);
+  const showOutline = useSpurStore((s) => s.showOutline);
+  const toggleOutline = useSpurStore((s) => s.toggleOutline);
 
   return (
     <SimpleTooltip content="Symbol outline">
@@ -380,15 +380,15 @@ export const FileViewerToolbar = memo(function FileViewerToolbar({
   onCloseExternalFile,
 }: FileViewerToolbarProps) {
   const routerNavigate = useNavigate();
-  const canGoBack = useReviewStore((s) => s.canGoBack);
+  const canGoBack = useSpurStore((s) => s.canGoBack);
 
-  const repoPath = useReviewStore((s) => s.repoPath);
-  const revealDirectoryInTree = useReviewStore((s) => s.revealDirectoryInTree);
-  const approveAllFileHunks = useReviewStore((s) => s.approveAllFileHunks);
-  const rejectAllFileHunks = useReviewStore((s) => s.rejectAllFileHunks);
-  const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
-  const revealInBrowse = useReviewStore((s) => s.revealInBrowse);
-  const isViewOnly = useReviewStore(viewOnly);
+  const repoPath = useSpurStore((s) => s.repoPath);
+  const revealDirectoryInTree = useSpurStore((s) => s.revealDirectoryInTree);
+  const approveAllFileHunks = useSpurStore((s) => s.approveAllFileHunks);
+  const rejectAllFileHunks = useSpurStore((s) => s.rejectAllFileHunks);
+  const navigateToBrowse = useSpurStore((s) => s.navigateToBrowse);
+  const revealInBrowse = useSpurStore((s) => s.revealInBrowse);
+  const isViewOnly = useSpurStore(viewOnly);
 
   const revealLabel = REVEAL_LABEL;
 

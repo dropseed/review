@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
-import { useReviewStore } from "../../../stores";
+import { useSpurStore } from "../../../stores";
 import { useHasAnyHunks } from "../../../stores/selectors/hunks";
 import { headIsWorkingTree } from "../../../stores/selectors/checkout";
 import { refLabel } from "../refLabel";
@@ -51,10 +51,10 @@ export interface GitTab {
 }
 
 export function useGitTab(): GitTab {
-  const gitStatus = useReviewStore((s) => s.gitStatus);
-  const hasWorkingTree = useReviewStore(headIsWorkingTree);
-  const isStandalone = useReviewStore((s) => s.isStandaloneFile);
-  const comparison = useReviewStore((s) => s.comparison);
+  const gitStatus = useSpurStore((s) => s.gitStatus);
+  const hasWorkingTree = useSpurStore(headIsWorkingTree);
+  const isStandalone = useSpurStore((s) => s.isStandaloneFile);
+  const comparison = useSpurStore((s) => s.comparison);
   const gitEnabled = gitStatus !== null && hasWorkingTree;
 
   // The reason belongs here rather than with the tab table: this is where the
@@ -89,22 +89,20 @@ export function useGitTab(): GitTab {
 export function useFilePanelNavigation({
   sectionedFiles,
 }: UseFilePanelNavigationOptions) {
-  const selectedFile = useReviewStore((s) => s.selectedFile);
-  const setSelectedFile = useReviewStore((s) => s.setSelectedFile);
-  const fileToReveal = useReviewStore((s) => s.fileToReveal);
-  const clearFileToReveal = useReviewStore((s) => s.clearFileToReveal);
-  const directoryToReveal = useReviewStore((s) => s.directoryToReveal);
-  const clearDirectoryToReveal = useReviewStore(
-    (s) => s.clearDirectoryToReveal,
-  );
-  const guideContentMode = useReviewStore((s) => s.guideContentMode);
-  const navigateToBrowse = useReviewStore((s) => s.navigateToBrowse);
+  const selectedFile = useSpurStore((s) => s.selectedFile);
+  const setSelectedFile = useSpurStore((s) => s.setSelectedFile);
+  const fileToReveal = useSpurStore((s) => s.fileToReveal);
+  const clearFileToReveal = useSpurStore((s) => s.clearFileToReveal);
+  const directoryToReveal = useSpurStore((s) => s.directoryToReveal);
+  const clearDirectoryToReveal = useSpurStore((s) => s.clearDirectoryToReveal);
+  const guideContentMode = useSpurStore((s) => s.guideContentMode);
+  const navigateToBrowse = useSpurStore((s) => s.navigateToBrowse);
 
   const hasHunks = useHasAnyHunks();
-  const viewMode = useReviewStore((s) => s.filesPanelTab);
-  const tabChosen = useReviewStore((s) => s.filesPanelTabChosen);
-  const setFilesPanelTab = useReviewStore((s) => s.setFilesPanelTab);
-  const autoSelectFilesPanelTab = useReviewStore(
+  const viewMode = useSpurStore((s) => s.filesPanelTab);
+  const tabChosen = useSpurStore((s) => s.filesPanelTabChosen);
+  const setFilesPanelTab = useSpurStore((s) => s.setFilesPanelTab);
+  const autoSelectFilesPanelTab = useSpurStore(
     (s) => s.autoSelectFilesPanelTab,
   );
   const pendingScrollTarget = useRef<string | null>(null);
@@ -212,8 +210,8 @@ export function useFilePanelNavigation({
     setFilesPanelTab,
   ]);
 
-  const loadDirectoryContents = useReviewStore((s) => s.loadDirectoryContents);
-  const loadedGitIgnoredDirs = useReviewStore((s) => s.loadedGitIgnoredDirs);
+  const loadDirectoryContents = useSpurStore((s) => s.loadDirectoryContents);
+  const loadedGitIgnoredDirs = useSpurStore((s) => s.loadedGitIgnoredDirs);
 
   const togglePath = useCallback(
     (path: string, isGitignored?: boolean) => {

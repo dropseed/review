@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { flattenFilesWithStatus } from "../../stores/types";
 import { useHunkIdsByStatus } from "../../stores/selectors/hunks";
 import { useTrustCounts, useKnownPatternIds } from "../../hooks/useTrustCounts";
@@ -226,15 +226,15 @@ export function StatusGroupList({
     "approve" | "unapprove"
   >("approve");
 
-  const files = useReviewStore((s) => s.files);
-  const changesDisplayMode = useReviewStore((s) => s.changesDisplayMode);
-  const setChangesDisplayMode = useReviewStore((s) => s.setChangesDisplayMode);
+  const files = useSpurStore((s) => s.files);
+  const changesDisplayMode = useSpurStore((s) => s.changesDisplayMode);
+  const setChangesDisplayMode = useSpurStore((s) => s.setChangesDisplayMode);
 
   // Load symbols when switching to flat mode (flat view annotates rows with
   // changed-symbol counts pulled from the symbol diff cache).
-  const symbolsLoading = useReviewStore((s) => s.symbolsLoading);
-  const symbolsLoaded = useReviewStore((s) => s.symbolsLoaded);
-  const loadSymbols = useReviewStore((s) => s.loadSymbols);
+  const symbolsLoading = useSpurStore((s) => s.symbolsLoading);
+  const symbolsLoaded = useSpurStore((s) => s.symbolsLoaded);
+  const loadSymbols = useSpurStore((s) => s.loadSymbols);
   const anyFlatMode = changesDisplayMode === "flat";
   useEffect(() => {
     if (anyFlatMode && !symbolsLoaded && !symbolsLoading && files.length > 0) {
@@ -251,22 +251,22 @@ export function StatusGroupList({
 
   const handleApproveAllHunks = useCallback(() => {
     if (pendingHunkIds.length > 0)
-      useReviewStore.getState().approveHunkIds(pendingHunkIds);
+      useSpurStore.getState().approveHunkIds(pendingHunkIds);
   }, [pendingHunkIds]);
 
   const handleUnapproveAllHunks = useCallback(() => {
     if (reviewedHunkIds.length > 0)
-      useReviewStore.getState().unapproveHunkIds(reviewedHunkIds);
+      useSpurStore.getState().unapproveHunkIds(reviewedHunkIds);
   }, [reviewedHunkIds]);
 
   const handleUnsaveAll = useCallback(() => {
     if (savedForLaterHunkIds.length > 0)
-      useReviewStore.getState().unapproveHunkIds(savedForLaterHunkIds);
+      useSpurStore.getState().unapproveHunkIds(savedForLaterHunkIds);
   }, [savedForLaterHunkIds]);
 
   const openRollingDiff = useCallback((title: string, hunkIds: string[]) => {
     if (hunkIds.length === 0) return;
-    useReviewStore.getState().openAdhocGroup({ title, hunkIds });
+    useSpurStore.getState().openAdhocGroup({ title, hunkIds });
   }, []);
 
   // One rule for all four headers: the button stays visible with nothing to
@@ -344,7 +344,7 @@ export function StatusGroupList({
           label,
           count: data.pendingIds.length,
           onAction: () =>
-            useReviewStore.getState().approveHunkIds(data.pendingIds),
+            useSpurStore.getState().approveHunkIds(data.pendingIds),
         });
       }
     }
@@ -389,7 +389,7 @@ export function StatusGroupList({
             existing.push(h.contentHash);
             byFile.set(h.filePath, existing);
           }
-          const s = useReviewStore.getState();
+          const s = useSpurStore.getState();
           for (const [filePath, contentHashes] of byFile) {
             try {
               await s.stageHunks(filePath, contentHashes);
@@ -413,7 +413,7 @@ export function StatusGroupList({
           label,
           count: data.approvedIds.length,
           onAction: () =>
-            useReviewStore.getState().unapproveHunkIds(data.approvedIds),
+            useSpurStore.getState().unapproveHunkIds(data.approvedIds),
         });
       }
     }
@@ -432,7 +432,7 @@ export function StatusGroupList({
   // Trust section
   const knownPatternIds = useKnownPatternIds();
   const { trustableHunkCount } = useTrustCounts(knownPatternIds);
-  const isClassificationStale = useReviewStore((s) => s.isClassificationStale);
+  const isClassificationStale = useSpurStore((s) => s.isClassificationStale);
 
   const unlabeledCount = useMemo(
     () =>
@@ -471,7 +471,7 @@ export function StatusGroupList({
         actions.push({
           label: "Untrust all",
           count: matchedArray.length,
-          onAction: () => useReviewStore.getState().setTrustList([]),
+          onAction: () => useSpurStore.getState().setTrustList([]),
         });
       } else {
         actions.push({
@@ -479,7 +479,7 @@ export function StatusGroupList({
           count: matchedArray.length,
           onAction: () => {
             const merged = new Set([...currentTrustList, ...matchedArray]);
-            useReviewStore.getState().setTrustList([...merged]);
+            useSpurStore.getState().setTrustList([...merged]);
           },
         });
       }
@@ -490,19 +490,19 @@ export function StatusGroupList({
       actions.push({
         label: "Reclassify (stale)",
         count: hunks.length,
-        onAction: () => useReviewStore.getState().classifyStaticHunks(),
+        onAction: () => useSpurStore.getState().classifyStaticHunks(),
       });
     } else if (unlabeledCount > 0) {
       actions.push({
         label: "Classify unclassified",
         count: unlabeledCount,
-        onAction: () => useReviewStore.getState().classifyStaticHunks(),
+        onAction: () => useSpurStore.getState().classifyStaticHunks(),
       });
     } else if (hunks.length > 0) {
       actions.push({
         label: "Reclassify all",
         count: hunks.length,
-        onAction: () => useReviewStore.getState().reclassifyHunks(),
+        onAction: () => useSpurStore.getState().reclassifyHunks(),
       });
     }
     return actions;
@@ -821,13 +821,11 @@ export function StatusGroupList({
         hunks={hunks}
         hunkStates={reviewState?.hunks ?? {}}
         trustList={reviewState?.trustList ?? EMPTY_TRUST_LIST}
-        onApproveAll={(ids) => useReviewStore.getState().approveHunkIds(ids)}
-        onRejectAll={(ids) => useReviewStore.getState().rejectHunkIds(ids)}
-        onUnapproveAll={(ids) =>
-          useReviewStore.getState().unapproveHunkIds(ids)
-        }
+        onApproveAll={(ids) => useSpurStore.getState().approveHunkIds(ids)}
+        onRejectAll={(ids) => useSpurStore.getState().rejectHunkIds(ids)}
+        onUnapproveAll={(ids) => useSpurStore.getState().unapproveHunkIds(ids)}
         onNavigateToFile={(path) =>
-          useReviewStore.getState().navigateToBrowse(path)
+          useSpurStore.getState().navigateToBrowse(path)
         }
       />
     </FileSelectionProvider>

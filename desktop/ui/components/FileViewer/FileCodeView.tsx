@@ -24,7 +24,7 @@ import type {
   SelectionSide,
 } from "@pierre/diffs";
 import type { CodeViewOptions } from "@pierre/diffs";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { viewOnly } from "../../stores/selectors/viewpoint";
 import { stringHash } from "../../utils/string-hash";
 import type { DiffHunk, LineAnnotation } from "../../types";
@@ -152,11 +152,11 @@ export function FileCodeView({
   handleRef,
   shape,
 }: FileCodeViewProps): ReactNode {
-  const diffOverflow = useReviewStore((s) => s.diffOverflow);
+  const diffOverflow = useSpurStore((s) => s.diffOverflow);
   // No comment gutter and no comments rendered when the content on screen
   // isn't something a decision can be filed against. Degrade visibly: the
   // affordance is gone, not present-but-broken.
-  const readOnly = useReviewStore(viewOnly);
+  const readOnly = useSpurStore(viewOnly);
 
   const isDiff = content.kind === "diff";
   // Only ever set for a plain file — a diff has its own notion of elision.
@@ -531,7 +531,7 @@ type PlainAnnotationLine = { lineNumber: number; endLineNumber?: number };
  * PlainCodeView used to wire inline.
  */
 function usePlainAnnotationModel(filePath: string) {
-  const reviewState = useReviewStore((s) => s.reviewState);
+  const reviewState = useSpurStore((s) => s.reviewState);
   const [newAnnotationLine, setNewAnnotationLine] =
     useState<PlainAnnotationLine | null>(null);
   const [editingAnnotationId, setEditingAnnotationId] = useState<string | null>(
@@ -588,7 +588,7 @@ function usePlainAnnotationModel(filePath: string) {
             onSave={(content) => {
               const line = deps.newAnnotationLine;
               if (!line) return;
-              useReviewStore
+              useSpurStore
                 .getState()
                 .addAnnotation(
                   deps.filePath,
@@ -613,14 +613,14 @@ function usePlainAnnotationModel(filePath: string) {
           <AnnotationEditor
             initialContent={userAnnotation.content}
             onSave={(content) => {
-              useReviewStore
+              useSpurStore
                 .getState()
                 .updateAnnotation(userAnnotation.id, content);
               setEditingAnnotationId(null);
             }}
             onCancel={() => setEditingAnnotationId(null)}
             onDelete={() => {
-              useReviewStore.getState().deleteAnnotation(userAnnotation.id);
+              useSpurStore.getState().deleteAnnotation(userAnnotation.id);
               setEditingAnnotationId(null);
             }}
             autoFocus
@@ -633,13 +633,13 @@ function usePlainAnnotationModel(filePath: string) {
           annotation={userAnnotation}
           onEdit={() => setEditingAnnotationId(userAnnotation.id)}
           onDelete={() =>
-            useReviewStore.getState().deleteAnnotation(userAnnotation.id)
+            useSpurStore.getState().deleteAnnotation(userAnnotation.id)
           }
           onResolve={() =>
-            useReviewStore.getState().resolveAnnotation(userAnnotation.id)
+            useSpurStore.getState().resolveAnnotation(userAnnotation.id)
           }
           onUnresolve={() =>
-            useReviewStore.getState().unresolveAnnotation(userAnnotation.id)
+            useSpurStore.getState().unresolveAnnotation(userAnnotation.id)
           }
         />
       );

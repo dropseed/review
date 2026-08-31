@@ -18,7 +18,7 @@ import {
   terminalsInFlight,
   workspaceDragFrom,
   WORKSPACE_MIME,
-  type WorkTargetRects,
+  type WorkspaceTargetRects,
 } from "./workspace-drag";
 import { workspace } from "../../test/fixtures";
 import {
@@ -29,7 +29,7 @@ import {
   TERMINAL_SESSION_MIME,
   TERMINAL_TAB_MIME,
 } from "../Terminal/pane-drag";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { leaf, makeTab, splitLeaf } from "../Terminal/pane-tree";
 
 describe("gapPosition", () => {
@@ -157,7 +157,7 @@ describe("resolveWorkDropTarget", () => {
     right: 100,
   });
   /** Two 20px cards with a 10px gap, inside a 100px section. */
-  const rects: WorkTargetRects = {
+  const rects: WorkspaceTargetRects = {
     section: box(0, 100),
     cards: [
       { rect: box(10, 30), itemId: "a" },
@@ -246,7 +246,7 @@ describe("resolveWorkDropTarget", () => {
   it("catches a drop near an empty section", () => {
     // With no cards the container is near zero-height; the padded catch area
     // is what lets the first item be dropped into it at all.
-    const empty: WorkTargetRects = { section: box(50, 50), cards: [] };
+    const empty: WorkspaceTargetRects = { section: box(50, 50), cards: [] };
     expect(resolveWorkDropTarget(50, 60, false, empty)).toEqual({
       kind: "gap",
       index: 0,
@@ -260,7 +260,7 @@ describe("terminalsInFlight", () => {
     setDraggedTerminal(null);
     setDraggedPane(null);
     setDraggedTab(null);
-    useReviewStore.setState({ terminalTabs: [] });
+    useSpurStore.setState({ terminalTabs: [] });
   });
 
   it("is empty with nothing in flight", () => {
@@ -269,7 +269,7 @@ describe("terminalsInFlight", () => {
 
   /** One tab holding two panes — the thing all three grips resolve to. */
   function splitTab() {
-    useReviewStore.setState({
+    useSpurStore.setState({
       terminalTabs: [
         {
           ...makeTab("tabA", "a"),

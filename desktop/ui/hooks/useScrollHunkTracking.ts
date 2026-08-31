@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import type { DiffHunk } from "../types";
 import { isScrollTrackingSuppressed } from "./scrollState";
 
@@ -101,9 +101,9 @@ export function useScrollHunkTracking(
           // Phase 2: Debounced store update after scrolling settles
           if (storeTimer !== null) clearTimeout(storeTimer);
           storeTimer = setTimeout(() => {
-            const { focusedHunkId } = useReviewStore.getState();
+            const { focusedHunkId } = useSpurStore.getState();
             if (focusedHunkId !== hunkId) {
-              useReviewStore.setState({ focusedHunkId: hunkId });
+              useSpurStore.setState({ focusedHunkId: hunkId });
             }
           }, 200);
         });
@@ -115,7 +115,7 @@ export function useScrollHunkTracking(
     });
 
     // Sync DOM focus when store changes from non-scroll sources
-    const unsubStore = useReviewStore.subscribe((state, prev) => {
+    const unsubStore = useSpurStore.subscribe((state, prev) => {
       if (state.focusedHunkId !== prev.focusedHunkId && state.focusedHunkId) {
         syncDOMFocus(scrollContainer, state.focusedHunkId);
       }
@@ -123,7 +123,7 @@ export function useScrollHunkTracking(
 
     // Deferred initial sync so annotation panels have time to mount
     const initialRaf = requestAnimationFrame(() => {
-      const { focusedHunkId } = useReviewStore.getState();
+      const { focusedHunkId } = useSpurStore.getState();
       if (focusedHunkId) {
         syncDOMFocus(scrollContainer, focusedHunkId);
       }

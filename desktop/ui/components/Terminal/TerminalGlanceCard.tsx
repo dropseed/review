@@ -1,7 +1,7 @@
 import { memo, type ReactNode } from "react";
 import { agentKind } from "./agent-kind";
 import { clsx } from "clsx";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { PhaseDot } from "../Sidebar/PhaseDot";
 import {
   basename,
@@ -31,10 +31,10 @@ export const TerminalGlanceCard = memo(function TerminalGlanceCard({
   sessionId,
   className,
 }: TerminalGlanceCardProps): ReactNode {
-  const status = useReviewStore((s) => s.terminalStatuses[sessionId]);
-  const session = useReviewStore((s) => s.terminalSessions[sessionId]);
-  const dead = useReviewStore((s) => sessionId in s.terminalExited);
-  const exitCode = useReviewStore((s) => s.terminalExited[sessionId]);
+  const status = useSpurStore((s) => s.terminalStatuses[sessionId]);
+  const session = useSpurStore((s) => s.terminalSessions[sessionId]);
+  const dead = useSpurStore((s) => sessionId in s.terminalExited);
+  const exitCode = useSpurStore((s) => s.terminalExited[sessionId]);
 
   const now = useNow(!dead);
   const peek = useTerminalPeek(dead ? null : sessionId);

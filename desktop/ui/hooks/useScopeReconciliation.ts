@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { useAllHunks } from "../stores/selectors/hunks";
 
 /**
@@ -13,8 +13,8 @@ import { useAllHunks } from "../stores/selectors/hunks";
  */
 export function useScopeReconciliation(): void {
   const hunks = useAllHunks();
-  const scope = useReviewStore((s) => s.scope);
-  const setScope = useReviewStore((s) => s.setScope);
+  const scope = useSpurStore((s) => s.scope);
+  const setScope = useSpurStore((s) => s.setScope);
 
   useEffect(() => {
     if (!scope || scope.hunkIds.length === 0) return;

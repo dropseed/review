@@ -2,7 +2,7 @@ import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { clsx } from "clsx";
 import { getApiClient } from "../../api";
 import { useAutoGrow } from "../../hooks";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { sendChar } from "./registry";
 import { isCtrlArmed } from "./soft-keys";
 import { Key } from "./SoftKeys";
@@ -34,7 +34,7 @@ export function ComposeBar({ terminalId }: { terminalId: string }): ReactNode {
   // first one's Enter, so the box holds still until the first lands.
   const [sending, setSending] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
-  const dead = useReviewStore((s) => terminalId in s.terminalExited);
+  const dead = useSpurStore((s) => terminalId in s.terminalExited);
   const empty = text.trim() === "";
 
   // Five rows of *this* box's type. Measured rather than declared in CSS, and

@@ -1,14 +1,14 @@
-import { useReviewStore } from "../index";
+import { useSpurStore } from "../index";
 import type { OverlayId } from "../slices/overlaySlice";
 
 /** Whether `id` is the overlay currently on screen. */
 export function useOverlay(id: OverlayId): boolean {
-  return useReviewStore((s) => s.activeOverlay === id);
+  return useSpurStore((s) => s.activeOverlay === id);
 }
 
 /** Close `id`, if it is the overlay currently on screen. */
 export function useCloseOverlay(id: OverlayId): () => void {
-  const closeOverlay = useReviewStore((s) => s.closeOverlay);
+  const closeOverlay = useSpurStore((s) => s.closeOverlay);
   return () => closeOverlay(id);
 }
 
@@ -21,5 +21,5 @@ export function useCloseOverlay(id: OverlayId): () => void {
  * this from a component that is mounted while it is on screen.
  */
 export function useStoreRevision(): void {
-  useReviewStore((s) => s);
+  useSpurStore((s) => s);
 }

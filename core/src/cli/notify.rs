@@ -1,4 +1,4 @@
-//! `review notify` — send a web push notification to every device subscribed
+//! `spur notify` — send a web push notification to every device subscribed
 //! through the app (Settings → Push notifications).
 //!
 //! The app's own pushes are gated on the human being away from the machine
@@ -20,7 +20,7 @@ pub struct NotifyArgs {
     #[arg(short, long, default_value = "")]
     pub body: String,
 
-    /// URL to open when the notification is tapped (a `review://` link or a
+    /// URL to open when the notification is tapped (a `spur://` link or a
     /// path on the served app, e.g. `/`)
     #[arg(short, long)]
     pub url: Option<String>,

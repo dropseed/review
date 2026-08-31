@@ -1,4 +1,4 @@
-# `review stage` — stage reviewed hunks
+# `spur stage` — stage reviewed hunks
 
 ## Problem
 
@@ -6,11 +6,11 @@ After reviewing a diff in the GUI (approving hunks, trusting patterns), there's 
 
 ## Proposal
 
-A `review stage` CLI command that stages all approved/trusted hunks from the working tree.
+A `spur stage` CLI command that stages all approved/trusted hunks from the working tree.
 
 ```
-review stage           # stage reviewed hunks
-review stage --dry-run # preview what would be staged
+spur stage           # stage reviewed hunks
+spur stage --dry-run # preview what would be staged
 ```
 
 ## How it works

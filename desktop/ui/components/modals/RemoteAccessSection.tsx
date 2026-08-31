@@ -245,7 +245,7 @@ function blockedReason(
     return "Tailscale isn't connected. Sign in to Tailscale and reopen this panel.";
   }
   if (!tailnet.httpsEnabled) {
-    return "This tailnet doesn't have HTTPS certificates enabled, which is what lets a phone install Review as an app.";
+    return "This tailnet doesn't have HTTPS certificates enabled, which is what lets a phone install Spur as an app.";
   }
   return null;
 }

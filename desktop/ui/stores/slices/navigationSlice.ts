@@ -5,7 +5,7 @@ import {
   shouldSkipHunkForNavigation,
   type ReviewScope,
 } from "../../types/scope";
-import type { ReviewStore, SliceCreator } from "../types";
+import type { SpurStore, SliceCreator } from "../types";
 import { getHunkLocationMap } from "../selectors/hunkData";
 
 export type FocusedPane = "primary" | "secondary";
@@ -25,7 +25,7 @@ export interface NavigationSlice {
 
   /**
    * A deep-link target waiting for hunks to load. When the route navigates
-   * before `filesByPath` is populated (e.g. cold-start review:// deep links),
+   * before `filesByPath` is populated (e.g. cold-start spur:// deep links),
    * setting `selectedFile`/`scrollTarget` immediately is a no-op because the
    * hunk isn't in the store yet. A separate effect consumes this once hunks
    * arrive and forwards the focus to `selectedFile` + `scrollTarget`.
@@ -201,7 +201,7 @@ export interface NavigationSlice {
 /** Check whether a hunk is unreviewed for the given file's review context. */
 function isHunkUnreviewedFor(
   filePath: string,
-  state: ReviewStore,
+  state: SpurStore,
 ): (h: DiffHunk) => boolean {
   const { reviewState, stagedFilePaths } = state;
   const trustList = reviewState?.trustList ?? EMPTY_TRUST_LIST;
@@ -223,7 +223,7 @@ function isHunkUnreviewedFor(
  */
 export function findFirstUnreviewedHunkId(
   filePath: string,
-  state: ReviewStore,
+  state: SpurStore,
 ): string | null {
   const fileHunks = state.filesByPath[filePath]?.hunks ?? [];
   const unreviewed = fileHunks.find(isHunkUnreviewedFor(filePath, state));
@@ -233,20 +233,20 @@ export function findFirstUnreviewedHunkId(
 
 /** Locate the focused hunk via the cached hunkId → location map. O(1). */
 function focusedHunkLocation(
-  state: ReviewStore,
+  state: SpurStore,
 ): { filePath: string; indexInFile: number } | null {
   if (!state.focusedHunkId) return null;
   return getHunkLocationMap(state.filesByPath).get(state.focusedHunkId) ?? null;
 }
 
 /** Check whether a file has any unreviewed hunks. */
-function fileHasUnreviewedHunks(filePath: string, state: ReviewStore): boolean {
+function fileHasUnreviewedHunks(filePath: string, state: SpurStore): boolean {
   const fileHunks = state.filesByPath[filePath]?.hunks ?? [];
   return fileHunks.some(isHunkUnreviewedFor(filePath, state));
 }
 
 /** Bind {@link shouldSkipHunkForNavigation} to the current store state. */
-function shouldSkipHunkInState(hunkId: string, state: ReviewStore): boolean {
+function shouldSkipHunkInState(hunkId: string, state: SpurStore): boolean {
   const { reviewState, scope } = state;
   return shouldSkipHunkForNavigation({
     hunkId,
@@ -299,8 +299,8 @@ export function activeContentOverlay(
 
 /** Jump to the first or last hunk in the current file. */
 function jumpToFileEdge(
-  get: () => ReviewStore,
-  set: (partial: Partial<ReviewStore>) => void,
+  get: () => SpurStore,
+  set: (partial: Partial<SpurStore>) => void,
   edge: "first" | "last",
 ): void {
   const { filesByPath, selectedFile } = get();

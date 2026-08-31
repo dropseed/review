@@ -7,7 +7,7 @@
 //! points at, defaulting to the repo the command was run in.
 //!
 //! Positions are **1-based here** and 0-based in the core module, matching how
-//! the list prints. Ids accept unique prefixes, like `review terminal`.
+//! the list prints. Ids accept unique prefixes, like `spur terminal`.
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -16,8 +16,8 @@ use clap::{Args, Subcommand};
 use serde_json::json;
 
 use crate::daemon::{socket_path, DaemonClient};
-use crate::work::router::{self, RouteResult};
-use crate::work::{self, Attachment, Removal, WorkState, Workspace};
+use crate::workspace::router::{self, RouteResult};
+use crate::workspace::{self, Attachment, Removal, Workspace, WorkspacesState};
 
 use super::common::{print_json, resolve_cwd_arg};
 
@@ -138,7 +138,7 @@ pub struct ResolveArgs {
     pub cwd: Option<String>,
 }
 
-/// Dispatch a `review workspace ...` invocation. No subcommand lists the queue.
+/// Dispatch a `spur workspace ...` invocation. No subcommand lists the queue.
 pub fn run_workspace(args: WorkspaceArgs) -> Result<(), String> {
     let json = args.json;
     match args.action {
@@ -164,7 +164,7 @@ fn target_path(path: Option<String>) -> Result<PathBuf, String> {
     resolve_cwd_arg(path)
 }
 
-/// A runtime to run one daemon round trip on, mirroring `review terminal`'s
+/// A runtime to run one daemon round trip on, mirroring `spur terminal`'s
 /// bridge from the synchronous CLI.
 fn daemon_runtime() -> Option<tokio::runtime::Runtime> {
     tokio::runtime::Builder::new_current_thread()
@@ -177,7 +177,7 @@ fn daemon_runtime() -> Option<tokio::runtime::Runtime> {
 ///
 /// The distinction is the whole point: `None` means "unknown", and cleanup on
 /// unknown liveness would reap every workspace the app is using. The queue is
-/// a plain file, so `review workspace` keeps working either way.
+/// a plain file, so `spur workspace` keeps working either way.
 fn live_workspaces() -> Option<HashSet<String>> {
     let runtime = daemon_runtime()?;
     runtime.block_on(async {
@@ -188,23 +188,23 @@ fn live_workspaces() -> Option<HashSet<String>> {
 
 fn run_list(json: bool) -> Result<(), String> {
     // Cleanup is lazy, and this is one of the two reads that can do it — the
-    // other is the app's `work_list`. Both need the daemon's answer first.
+    // other is the app's `workspace_list`. Both need the daemon's answer first.
     //
     // Unlike the app's, this read cannot spare the workspace the human is
     // *looking at*: which one that is belongs to a window this process has no
-    // handle on. So a `review workspace list` from a shell can reap a workspace the
+    // handle on. So a `spur workspace list` from a shell can reap a workspace the
     // app has open on the stage — an accepted race. It costs a peek that could
     // be re-made in one keystroke, and closing it would mean the queue file
     // carrying per-window UI state.
     let live = live_workspaces();
-    let state = work::list_with_liveness(live.as_ref()).map_err(|e| e.to_string())?;
-    let views = work::views(state.workspaces);
+    let state = workspace::list_with_liveness(live.as_ref()).map_err(|e| e.to_string())?;
+    let views = workspace::views(state.workspaces);
     if json {
         print_json(&views);
         return Ok(());
     }
     if views.is_empty() {
-        println!("No workspaces. Add one with `review workspace add \"...\"`.");
+        println!("No workspaces. Add one with `spur workspace add \"...\"`.");
         return Ok(());
     }
     // Numbered straight down the list — the numbers are queue positions, which
@@ -225,9 +225,9 @@ fn run_list(json: bool) -> Result<(), String> {
 /// The whole queue comes along because a view carries where the workspace sits
 /// in it — `depth` and the named chain above it — which cannot be read off the
 /// workspace alone.
-fn report(json: bool, state: &WorkState, workspace: Workspace, message: &str) {
+fn report(json: bool, state: &WorkspacesState, workspace: Workspace, message: &str) {
     if json {
-        print_json(&work::view_of(&state.workspaces, workspace));
+        print_json(&workspace::view_of(&state.workspaces, workspace));
     } else {
         println!("{message}");
     }
@@ -235,8 +235,8 @@ fn report(json: bool, state: &WorkState, workspace: Workspace, message: &str) {
 
 /// "the api half" under "ship it", for a message that has to say where
 /// something landed. Just the title when it is at the top level.
-fn placement(state: &WorkState, workspace: &Workspace) -> String {
-    let view = work::view_of(&state.workspaces, workspace.clone());
+fn placement(state: &WorkspacesState, workspace: &Workspace) -> String {
+    let view = workspace::view_of(&state.workspaces, workspace.clone());
     match view.ancestors.last() {
         Some(parent) => format!(
             "\"{}\" under \"{}\"",
@@ -247,7 +247,7 @@ fn placement(state: &WorkState, workspace: &Workspace) -> String {
 }
 
 fn run_add(args: AddArgs, json: bool) -> Result<(), String> {
-    let (state, ws) = work::add(args.title.as_deref(), vec![]).map_err(|e| e.to_string())?;
+    let (state, ws) = workspace::add(args.title.as_deref(), vec![]).map_err(|e| e.to_string())?;
     let message = format!(
         "Added \"{}\" at position {} ({}).",
         ws.display_title(),
@@ -264,7 +264,7 @@ fn run_remove(args: RemoveArgs, json: bool) -> Result<(), String> {
     } else {
         Removal::PromoteChildren
     };
-    let (state, removed) = work::remove(&args.id, mode).map_err(|e| e.to_string())?;
+    let (state, removed) = workspace::remove(&args.id, mode).map_err(|e| e.to_string())?;
     let message = match removed.descendants.len() {
         0 => format!(
             "Removed \"{}\" ({}).",
@@ -283,21 +283,23 @@ fn run_remove(args: RemoveArgs, json: bool) -> Result<(), String> {
 }
 
 fn run_nest(args: NestArgs, json: bool) -> Result<(), String> {
-    let (state, ws) = work::set_parent(&args.id, Some(&args.under)).map_err(|e| e.to_string())?;
+    let (state, ws) =
+        workspace::set_parent(&args.id, Some(&args.under)).map_err(|e| e.to_string())?;
     let message = format!("Nested {}.", placement(&state, &ws));
     report(json, &state, ws, &message);
     Ok(())
 }
 
 fn run_unnest(args: IdArgs, json: bool) -> Result<(), String> {
-    let (state, ws) = work::set_parent(&args.id, None).map_err(|e| e.to_string())?;
+    let (state, ws) = workspace::set_parent(&args.id, None).map_err(|e| e.to_string())?;
     let message = format!("\"{}\" is at the top level.", ws.display_title());
     report(json, &state, ws, &message);
     Ok(())
 }
 
 fn run_rename(args: RenameArgs, json: bool) -> Result<(), String> {
-    let (state, ws) = work::rename(&args.id, args.title.as_deref()).map_err(|e| e.to_string())?;
+    let (state, ws) =
+        workspace::rename(&args.id, args.title.as_deref()).map_err(|e| e.to_string())?;
     let message = match ws.title {
         Some(_) => format!("Renamed {} to \"{}\".", ws.id, ws.display_title()),
         // Cleared: what it is called now is whatever it is showing.
@@ -315,8 +317,8 @@ fn run_reorder(args: ReorderArgs, json: bool) -> Result<(), String> {
     // 1-based on the way in, to match the printed list; 0 and 1 both mean "top"
     // rather than erroring on an off-by-one.
     let to_index = args.position.saturating_sub(1);
-    let (state, ws) =
-        work::move_workspace(&args.id, to_index, args.keep_parent).map_err(|e| e.to_string())?;
+    let (state, ws) = workspace::move_workspace(&args.id, to_index, args.keep_parent)
+        .map_err(|e| e.to_string())?;
     // Read the landing back out of the queue rather than repeating the clamp:
     // a position past the end clamps, and a workspace carrying a subtree with
     // it lands somewhere neither the request nor the clamp names.
@@ -334,7 +336,7 @@ fn run_reorder(args: ReorderArgs, json: bool) -> Result<(), String> {
 fn run_attach(args: AttachArgs, json: bool) -> Result<(), String> {
     let attachment = Attachment::new(target_path(args.path)?, args.ref_name);
     let label = attachment.label();
-    let (state, ws) = work::attach(&args.id, attachment).map_err(|e| e.to_string())?;
+    let (state, ws) = workspace::attach(&args.id, attachment).map_err(|e| e.to_string())?;
     let message = format!("Attached {label} to \"{}\".", ws.display_title());
     report(json, &state, ws, &message);
     Ok(())
@@ -343,7 +345,7 @@ fn run_attach(args: AttachArgs, json: bool) -> Result<(), String> {
 fn run_detach(args: DetachArgs, json: bool) -> Result<(), String> {
     let path = target_path(args.path)?;
     let label = Attachment::new(&path, None).repo_name().to_owned();
-    let (state, ws) = work::detach(&args.id, &path).map_err(|e| e.to_string())?;
+    let (state, ws) = workspace::detach(&args.id, &path).map_err(|e| e.to_string())?;
     let message = format!("Detached {label} from \"{}\".", ws.display_title());
     report(json, &state, ws, &message);
     Ok(())
@@ -357,7 +359,7 @@ fn run_resolve(args: ResolveArgs, json: bool) -> Result<(), String> {
             (
                 json!({
                     "action": "join",
-                    "workspace": work::view_of(&work::list().map_err(|e| e.to_string())?.workspaces, ws),
+                    "workspace": workspace::view_of(&workspace::list().map_err(|e| e.to_string())?.workspaces, ws),
                 }),
                 line,
             )
@@ -393,20 +395,18 @@ mod tests {
     }
 
     #[test]
-    fn work_still_names_the_workspace_command() {
-        // The rename is a rename of the word, not of the surface: every
-        // `review work ...` in a shell history, a script, or an older skill
-        // keeps landing on the same subcommand.
+    fn workspace_names_the_command_and_work_no_longer_does() {
         assert!(matches!(
-            action(&["review", "work", "add", "a title"]),
+            action(&["spur", "workspace", "add", "a title"]),
             Some(WorkspaceAction::Add(_))
         ));
-        assert!(matches!(
-            action(&["review", "workspace", "add", "a title"]),
-            Some(WorkspaceAction::Add(_))
-        ));
-        // Bare, under either name, is the listing.
-        assert!(action(&["review", "work"]).is_none());
-        assert!(action(&["review", "workspace"]).is_none());
+        // Bare is the listing.
+        assert!(action(&["spur", "workspace"]).is_none());
+
+        // `work` was the queue's name before the thing in it had one. The alias
+        // is gone with the rest of the word, so it must fail to parse rather
+        // than quietly resolve to something else.
+        use clap::Parser;
+        assert!(crate::cli::Cli::try_parse_from(["spur", "work", "add", "a title"]).is_err());
     }
 }

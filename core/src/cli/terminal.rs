@@ -1,6 +1,6 @@
-//! `review terminal` — inspect and drive the app's terminal sessions.
+//! `spur terminal` — inspect and drive the app's terminal sessions.
 //!
-//! These commands are thin clients of the `review-daemon` control socket — the
+//! These commands are thin clients of the `spur-daemon` control socket — the
 //! same protocol the desktop app speaks — so an agent can list, start, read,
 //! and write the very sessions the app shows. The daemon owns the PTYs;
 //! nothing here bypasses it, and a session started here appears in the app
@@ -35,14 +35,14 @@ use crate::daemon::{features, socket_path, DaemonClient, Op, StreamFrame, Versio
 use crate::terminal::{
     submit_message, Phase, SessionStatus, TerminalSummary, PASTE_BEGIN, PASTE_END, TERMINAL_ID_ENV,
 };
-use crate::work::{self, router};
+use crate::workspace::{self, router};
 
 use super::common::{new_id_suffix, print_json, read_path_or_stdin, resolve_cwd_arg};
 
 /// Message shown when the control socket can't be reached. The daemon is
 /// spawned by the desktop app (and outlives it); the CLI only ever attaches.
 const DAEMON_UNAVAILABLE: &str =
-    "The terminal daemon is not running. Open the Review app to start it.";
+    "The terminal daemon is not running. Open the Spur app to start it.";
 
 #[derive(Debug, Args)]
 pub struct TerminalArgs {
@@ -118,7 +118,7 @@ pub struct StartArgs {
 #[derive(Debug, Args)]
 pub struct WhoamiArgs {
     /// Terminal id (a unique prefix is accepted); defaults to
-    /// `$REVIEW_TERMINAL_ID`, the session this command is running in
+    /// `$SPUR_TERMINAL_ID`, the session this command is running in
     pub id: Option<String>,
     /// Output as JSON
     #[arg(long)]
@@ -350,8 +350,8 @@ fn outdated_daemon(version: &VersionInfo, needed: &[&str]) -> String {
     let missing = version.missing_features(needed).join("`, `");
     let speaks = version.describe_protocol();
     format!(
-        "The Review daemon speaks {speaks} and this command needs `{missing}` — \
-         relaunch the Review app to upgrade it."
+        "The Spur daemon speaks {speaks} and this command needs `{missing}` — \
+         relaunch the Spur app to upgrade it."
     )
 }
 
@@ -434,7 +434,7 @@ async fn run_list(client: &DaemonClient, args: ListArgs) -> Result<(), String> {
         println!("No terminal sessions.");
         return Ok(());
     }
-    let titles = work::title_index();
+    let titles = workspace::title_index();
     for s in &sessions {
         let activity = s
             .status
@@ -446,7 +446,7 @@ async fn run_list(client: &DaemonClient, args: ListArgs) -> Result<(), String> {
             "{}  {}  {}  {}  {}",
             s.id,
             s.status.phase,
-            work::label_for(&titles, s.workspace_id.as_deref()),
+            workspace::label_for(&titles, s.workspace_id.as_deref()),
             activity,
             s.cwd
         );
@@ -534,7 +534,7 @@ async fn run_whoami(client: &DaemonClient, args: WhoamiArgs) -> Result<(), Strin
             .filter(|id| !id.is_empty())
             .ok_or_else(|| {
                 format!(
-                    "Not inside a Review terminal (${TERMINAL_ID_ENV} is not set). \
+                    "Not inside a Spur terminal (${TERMINAL_ID_ENV} is not set). \
                      Pass an id to ask about another session."
                 )
             })?,
@@ -544,7 +544,7 @@ async fn run_whoami(client: &DaemonClient, args: WhoamiArgs) -> Result<(), Strin
     // The daemon never validates a workspace id, so one that is no longer in
     // the queue is an answerable state, not an error.
     let workspace = summary.workspace_id.as_deref().map(|id| {
-        let title = work::get(id).ok().map(|ws| ws.display_title());
+        let title = workspace::get(id).ok().map(|ws| ws.display_title());
         (id.to_owned(), title)
     });
 
@@ -574,7 +574,7 @@ async fn run_whoami(client: &DaemonClient, args: WhoamiArgs) -> Result<(), Strin
 /// terminal onto a queue card, and like the drag it writes nothing: the
 /// workspace is only resolved, never touched.
 async fn run_move(client: &DaemonClient, args: MoveArgs) -> Result<(), String> {
-    let workspace = work::get(&args.workspace).map_err(|e| e.to_string())?;
+    let workspace = workspace::get(&args.workspace).map_err(|e| e.to_string())?;
     // One list snapshot resolves every target, so a bad id in the batch is
     // caught before anything moves.
     let sessions = list_sessions(client, None).await?;
@@ -1161,8 +1161,8 @@ mod tests {
         };
         assert_eq!(
             outdated_daemon(&v2, &[features::PEEK_SCROLLBACK]),
-            "The Review daemon speaks protocol 2 and this command needs \
-             `peek-scrollback` — relaunch the Review app to upgrade it."
+            "The Spur daemon speaks protocol 2 and this command needs \
+             `peek-scrollback` — relaunch the Spur app to upgrade it."
         );
 
         // Only what is actually missing is named.

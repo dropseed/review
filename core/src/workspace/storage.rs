@@ -1,4 +1,4 @@
-//! Persistence for the work queue (`~/.review/work.json`).
+//! Persistence for the workspace queue (`~/.spur/workspaces.json`).
 //!
 //! The queue is **global**, not per-repo: a work item can bind refs from any
 //! number of repositories, so it can't live under `repos/<repo-id>/`. It sits
@@ -14,12 +14,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use super::{WorkError, WorkState, WORK_SCHEMA_VERSION};
-use crate::review::central;
+use super::{WorkspaceError, WorkspacesState, WORK_SCHEMA_VERSION};
+use crate::home;
 
-/// Path to the global work queue file.
-pub fn work_path() -> Result<PathBuf, WorkError> {
-    Ok(central::get_central_root()?.join("work.json"))
+/// Path to the global workspace queue file.
+pub fn workspaces_path() -> Result<PathBuf, WorkspaceError> {
+    Ok(home::get_central_root()?.join("workspaces.json"))
 }
 
 /// The two fields that decide whether the rest of the document can be read at
@@ -34,7 +34,7 @@ struct Envelope {
     version: u64,
 }
 
-/// Load the work queue. A missing file is an empty queue at version 0 — the
+/// Load the workspace queue. A missing file is an empty queue at version 0 — the
 /// same "nothing recorded yet" shape a first write expects.
 ///
 /// An **older** document is dropped, not migrated: workspaces are cheap to
@@ -46,30 +46,30 @@ struct Envelope {
 /// A document from a **newer** build is rejected loudly rather than emptied:
 /// downgrading is a temporary state, and blowing away the newer build's queue
 /// on the way through is not a thing to do quietly.
-pub fn load() -> Result<WorkState, WorkError> {
-    let path = work_path()?;
+pub fn load() -> Result<WorkspacesState, WorkspaceError> {
+    let path = workspaces_path()?;
     if !path.exists() {
-        return Ok(WorkState::default());
+        return Ok(WorkspacesState::default());
     }
     let raw = fs::read_to_string(&path)?;
     let envelope: Envelope = serde_json::from_str(&raw)?;
     if envelope.schema_version > WORK_SCHEMA_VERSION {
-        return Err(WorkError::SchemaTooNew {
+        return Err(WorkspaceError::SchemaTooNew {
             found: envelope.schema_version,
             supported: WORK_SCHEMA_VERSION,
         });
     }
     if envelope.schema_version < WORK_SCHEMA_VERSION {
         log::info!(
-            "[work] work.json is schema v{} and this build reads v{WORK_SCHEMA_VERSION}; starting from an empty queue",
+            "[work] workspaces.json is schema v{} and this build reads v{WORK_SCHEMA_VERSION}; starting from an empty queue",
             envelope.schema_version
         );
-        return Ok(WorkState {
+        return Ok(WorkspacesState {
             version: envelope.version,
-            ..WorkState::default()
+            ..WorkspacesState::default()
         });
     }
-    let mut state: WorkState = serde_json::from_str(&raw)?;
+    let mut state: WorkspacesState = serde_json::from_str(&raw)?;
     // In memory only: a read never writes. What this fixes is a document whose
     // tree order or parent links do not hold — hand-edited, or written by a
     // build that spelled the nesting differently — so every reader sees the
@@ -78,23 +78,23 @@ pub fn load() -> Result<WorkState, WorkError> {
     Ok(state)
 }
 
-/// Save the work queue with optimistic concurrency control.
+/// Save the workspace queue with optimistic concurrency control.
 ///
 /// `state.version` is the version being written, so the expected on-disk
 /// version is `state.version - 1`; anything else means another process wrote in
 /// between and the caller has to redo its mutation on the newer state. Version
 /// 0 is a fresh write with no file to conflict with.
-pub fn save(state: &WorkState) -> Result<(), WorkError> {
-    let path = work_path()?;
+pub fn save(state: &WorkspacesState) -> Result<(), WorkspaceError> {
+    let path = workspaces_path()?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
 
     if path.exists() && state.version > 0 {
-        let existing: WorkState = serde_json::from_str(&fs::read_to_string(&path)?)?;
+        let existing: WorkspacesState = serde_json::from_str(&fs::read_to_string(&path)?)?;
         let expected = state.version - 1;
         if existing.version != expected {
-            return Err(WorkError::VersionConflict {
+            return Err(WorkspaceError::VersionConflict {
                 expected,
                 found: existing.version,
             });
@@ -120,10 +120,10 @@ static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// A scratch path for one save, distinct from every other save's.
 ///
-/// A shared `work.json.tmp` is not merely untidy: two writers that both pass
+/// A shared `workspaces.json.tmp` is not merely untidy: two writers that both pass
 /// the version check (nothing holds a lock across it) write the same file, so
 /// the first rename publishes whichever bytes landed last and the second fails
-/// `ENOENT` — surfacing as [`WorkError::Io`], which [`super::mutate`] does not
+/// `ENOENT` — surfacing as [`WorkspaceError::Io`], which [`super::mutate`] does not
 /// retry, only `VersionConflict`. One writer's edit is lost and the other
 /// errors despite its content being on disk.
 ///
@@ -137,11 +137,11 @@ fn temp_path(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::review::central::tests::{setup_test, ENV_LOCK};
+    use crate::home::tests::{setup_test, ENV_LOCK};
 
     #[test]
     fn temp_paths_are_unique_and_beside_the_target() {
-        let target = Path::new("/central/work.json");
+        let target = Path::new("/central/workspaces.json");
         let a = temp_path(target);
         let b = temp_path(target);
 
@@ -153,7 +153,7 @@ mod tests {
         // Still recognizable as our scratch, so a stale one can be identified.
         for path in [&a, &b] {
             let name = path.file_name().unwrap().to_string_lossy().into_owned();
-            assert!(name.starts_with("work.json.tmp."), "{name}");
+            assert!(name.starts_with("workspaces.json.tmp."), "{name}");
         }
     }
 
@@ -162,7 +162,7 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap();
         let (_env, home, _repo) = setup_test();
 
-        let mut state = WorkState::default();
+        let mut state = WorkspacesState::default();
         for _ in 0..3 {
             state.version += 1;
             save(&state).unwrap();
@@ -175,7 +175,7 @@ mod tests {
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
         names.sort();
-        assert_eq!(names, ["work.json"]);
+        assert_eq!(names, ["workspaces.json"]);
         assert_eq!(load().unwrap().version, 3);
     }
 
@@ -185,14 +185,14 @@ mod tests {
         let (_env, _home, _repo) = setup_test();
 
         fs::write(
-            work_path().unwrap(),
+            workspaces_path().unwrap(),
             r#"{"schemaVersion":99,"version":1,"workspaces":[]}"#,
         )
         .unwrap();
 
         assert!(matches!(
             load(),
-            Err(WorkError::SchemaTooNew { found: 99, .. })
+            Err(WorkspaceError::SchemaTooNew { found: 99, .. })
         ));
     }
 
@@ -204,7 +204,7 @@ mod tests {
         // A v1 document: shapes this build cannot deserialize at all, which is
         // why the envelope is read on its own.
         fs::write(
-            work_path().unwrap(),
+            workspaces_path().unwrap(),
             r#"{"schemaVersion":1,"version":7,"workspaces":[
                 {"id":"0a1b2c3d","title":"old","notes":"","endorsed":true,
                  "claims":[{"repoPath":"/r","ref":"main"}],"createdAt":"x"}]}"#,

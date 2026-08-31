@@ -37,7 +37,7 @@ pub struct UndoArgs {
     #[command(flatten)]
     pub target: ReviewTarget,
     /// Version to restore (defaults to the newest snapshot — the state as it
-    /// was before the most recent change). `review history` lists them.
+    /// was before the most recent change). `spur history` lists them.
     #[arg(long, value_name = "N")]
     pub to: Option<u64>,
     /// Output as JSON
@@ -263,7 +263,7 @@ fn collect_history(repo: &Path, ref_name: &str, comparison: &str) -> Result<Hist
     })
 }
 
-/// `review history` — list the review's versions and what each one changed.
+/// `spur history` — list the review's versions and what each one changed.
 pub fn run_history(args: HistoryArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
     let review = resolve_review_arg(&repo, args.target.spec.as_deref())?;
@@ -294,12 +294,12 @@ pub fn run_history(args: HistoryArgs) -> Result<(), String> {
     if history.entries.len() == 1 {
         println!("\nNo earlier versions recorded yet — the next change will keep one.");
     } else {
-        println!("\n`review undo [--to N]` restores one as a new version.");
+        println!("\n`spur undo [--to N]` restores one as a new version.");
     }
     Ok(())
 }
 
-/// `review undo` — restore a snapshot as a new version. The decisions come from
+/// `spur undo` — restore a snapshot as a new version. The decisions come from
 /// the snapshot; the review's worktree and PR pointers stay as they are.
 pub fn run_undo(args: UndoArgs) -> Result<(), String> {
     let repo = PathBuf::from(get_repo_path(&args.target.repo)?);
@@ -314,7 +314,7 @@ pub fn run_undo(args: UndoArgs) -> Result<(), String> {
             .map_err(|e| format!("Failed to load v{version}: {e}"))?
             .ok_or_else(|| {
                 format!(
-                    "No v{version} recorded for {ref_name}. `review history` lists what's available."
+                    "No v{version} recorded for {ref_name}. `spur history` lists what's available."
                 )
             })?;
         (version, state)
@@ -376,7 +376,7 @@ pub fn run_undo(args: UndoArgs) -> Result<(), String> {
                         "Restored v{restored} of {} as v{} — {summary}",
                         review.comparison.key, state.version
                     );
-                    println!("`review undo` again to undo this.");
+                    println!("`spur undo` again to undo this.");
                 }
                 return Ok(());
             }
@@ -390,7 +390,7 @@ pub fn run_undo(args: UndoArgs) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::review::central::tests::{setup_test, EnvGuard, ENV_LOCK};
+    use crate::home::tests::{setup_test, EnvGuard, ENV_LOCK};
     use crate::review::state::{Attributed, HunkState, LineAnnotation, Source};
     use crate::test_git::{git, git_out};
     use tempfile::TempDir;
@@ -473,10 +473,10 @@ mod tests {
 
     // --- end-to-end against a real repo and review ---
 
-    /// A repo whose `feature` branch adds a line, plus an isolated REVIEW_HOME.
-    /// Returns (guard, review_home, repo, spec).
+    /// A repo whose `feature` branch adds a line, plus an isolated SPUR_HOME.
+    /// Returns (guard, spur_home, repo, spec).
     fn repo_with_feature() -> (EnvGuard, TempDir, TempDir, String) {
-        let (guard, review_home, repo) = setup_test();
+        let (guard, spur_home, repo) = setup_test();
         let p = repo.path();
         git(p, &["init", "-q"]);
         std::fs::write(p.join("a.txt"), "one\n").unwrap();
@@ -487,7 +487,7 @@ mod tests {
         std::fs::write(p.join("a.txt"), "one\ntwo\nthree\n").unwrap();
         git(p, &["commit", "-aqm", "second"]);
         let spec = format!("{base}..feature");
-        (guard, review_home, repo, spec)
+        (guard, spur_home, repo, spec)
     }
 
     fn target(repo: &Path, spec: &str) -> ReviewTarget {

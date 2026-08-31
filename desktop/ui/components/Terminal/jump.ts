@@ -1,4 +1,4 @@
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import {
   findTabForTerminal,
   tabWorkspaceId,
@@ -24,7 +24,7 @@ import { setTerminalFocus } from "./registry";
  * open the panel, activate its tab and focus the pane within it.
  */
 export function jumpToTerminal(id: string): void {
-  const store = useReviewStore.getState();
+  const store = useSpurStore.getState();
 
   const tab = findTabForTerminal(store.terminalTabs, id);
 
@@ -44,12 +44,12 @@ export function jumpToTerminal(id: string): void {
     if (workspace) focusWorkspace(workspace);
   }
 
-  if (useReviewStore.getState().contentFocus === "code") {
-    useReviewStore.getState().toggleTerminalPanel();
+  if (useSpurStore.getState().contentFocus === "code") {
+    useSpurStore.getState().toggleTerminalPanel();
   }
 
   if (tab) {
-    const latest = useReviewStore.getState();
+    const latest = useSpurStore.getState();
     latest.setActiveTab(tab.id);
     latest.setFocusedTerminalPane(tab.id, id);
   }
@@ -62,9 +62,7 @@ export function jumpToTerminal(id: string): void {
 
 /** The same, for a noun that names a tab: its focused pane is the terminal. */
 export function jumpToTab(tabId: string): void {
-  const tab = useReviewStore
-    .getState()
-    .terminalTabs.find((t) => t.id === tabId);
+  const tab = useSpurStore.getState().terminalTabs.find((t) => t.id === tabId);
   if (!tab) return;
   jumpToTerminal(tab.focused);
 }
@@ -74,7 +72,7 @@ export function jumpToTab(tabId: string): void {
  * focus so repeated presses walk the whole queue.
  */
 export function focusNextNeedsYou(): void {
-  const queue = needsYouQueue(useReviewStore.getState());
+  const queue = needsYouQueue(useSpurStore.getState());
   if (queue.length === 0) return;
   const current = focusedTerminalId();
   const index = current ? queue.indexOf(current) : -1;

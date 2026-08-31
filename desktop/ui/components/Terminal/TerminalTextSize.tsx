@@ -1,4 +1,4 @@
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import {
   TERMINAL_FONT_SIZE_MAX,
   TERMINAL_FONT_SIZE_MIN,
@@ -24,7 +24,7 @@ export function clampTerminalFontSize(size: number): number {
  */
 export function applyTerminalFontSize(paneId: string, next: number): void {
   const clamped = clampTerminalFontSize(next);
-  const store = useReviewStore.getState();
+  const store = useSpurStore.getState();
   if (clamped === store.terminalFontSize) return;
   store.setTerminalFontSize(clamped);
   requestAnimationFrame(() => requestFit(paneId));

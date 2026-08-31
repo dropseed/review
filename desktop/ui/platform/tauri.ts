@@ -148,7 +148,7 @@ class TauriShortcutService implements ShortcutService {
 // ----- Storage -----
 
 /**
- * Stores preferences in `~/.review/settings.json` via Rust commands.
+ * Stores preferences in `~/.spur/settings.json` via Rust commands.
  * Keeps an in-memory cache for fast reads and debounces writes.
  */
 class JsonFileStorageService implements StorageService {

@@ -7,7 +7,7 @@ import {
   useRef,
 } from "react";
 import type { DiffLineAnnotation, TokenEventBase } from "@pierre/diffs";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { viewOnly } from "../../stores/selectors/viewpoint";
 import { useAllHunks, useHunkById } from "../../stores/selectors/hunks";
 import { getPlatformServices } from "../../platform";
@@ -90,7 +90,7 @@ export function useAdaptiveLineDiffType(
   oldContent: string | undefined,
   newContent: string | undefined,
 ): "word" | "word-alt" | "char" | "none" {
-  const prefLineDiffType = useReviewStore((s) => s.diffLineDiffType);
+  const prefLineDiffType = useSpurStore((s) => s.diffLineDiffType);
   const isJsonFile = fileName.endsWith(".json");
   const isLockFile = LOCK_FILE_SUFFIXES.some((s) => fileName.endsWith(s));
   const totalLines = useMemo(
@@ -209,14 +209,14 @@ export function useDiffAnnotationModel({
   onViewInFile,
 }: DiffAnnotationModelOptions): DiffAnnotationModel {
   // Reactive subscriptions — values used in render output
-  const reviewState = useReviewStore((s) => s.reviewState);
+  const reviewState = useSpurStore((s) => s.reviewState);
   const allHunks = useAllHunks();
-  const pendingCommentHunkId = useReviewStore((s) => s.pendingCommentHunkId);
-  const workingTreeDiffMode = useReviewStore((s) => s.workingTreeDiffMode);
-  const workingTreeDiffFile = useReviewStore((s) => s.workingTreeDiffFile);
-  const isViewOnly = useReviewStore(viewOnly);
-  const attribution = useReviewStore((s) => s.attribution);
-  const scope = useReviewStore((s) => s.scope);
+  const pendingCommentHunkId = useSpurStore((s) => s.pendingCommentHunkId);
+  const workingTreeDiffMode = useSpurStore((s) => s.workingTreeDiffMode);
+  const workingTreeDiffFile = useSpurStore((s) => s.workingTreeDiffFile);
+  const isViewOnly = useSpurStore(viewOnly);
+  const attribution = useSpurStore((s) => s.attribution);
+  const scope = useSpurStore((s) => s.scope);
 
   const commitByHash = useMemo(() => {
     const map = new Map<string, CommitEntry>();
@@ -228,7 +228,7 @@ export function useDiffAnnotationModel({
   // Commits picker builds, so a provenance tag lands on exactly the diff that
   // commit's row would.
   const handleScopeToCommit = useCallback((sha: string) => {
-    const state = useReviewStore.getState();
+    const state = useSpurStore.getState();
     const base = state.reviewComparison?.base;
     if (!base) return;
     const range = commitRangeForSha(
@@ -267,7 +267,7 @@ export function useDiffAnnotationModel({
 
     const { lineNumber, side } = getLastChangedLine(targetHunk);
     setNewAnnotationLine({ lineNumber, side, hunkId: pendingCommentHunkId });
-    useReviewStore.getState().setPendingCommentHunkId(null);
+    useSpurStore.getState().setPendingCommentHunkId(null);
   }, [pendingCommentHunkId, hunks, newAnnotationLine]);
 
   const fileAnnotations = useMemo(() => {
@@ -449,7 +449,7 @@ export function useDiffAnnotationModel({
 
   function handleSaveNewAnnotation(content: string) {
     if (!newAnnotationLine) return;
-    const { addAnnotation, nextHunkInFile } = useReviewStore.getState();
+    const { addAnnotation, nextHunkInFile } = useSpurStore.getState();
     addAnnotation(
       filePath,
       newAnnotationLine.lineNumber,
@@ -547,21 +547,21 @@ export function useDiffAnnotationModel({
               isEditing={deps.editingAnnotationId === userAnnotation.id}
               onEdit={() => deps.setEditingAnnotationId(userAnnotation.id)}
               onSave={(content) => {
-                useReviewStore
+                useSpurStore
                   .getState()
                   .updateAnnotation(userAnnotation.id, content);
                 deps.setEditingAnnotationId(null);
               }}
               onCancel={() => deps.setEditingAnnotationId(null)}
               onDelete={() => {
-                useReviewStore.getState().deleteAnnotation(userAnnotation.id);
+                useSpurStore.getState().deleteAnnotation(userAnnotation.id);
                 deps.setEditingAnnotationId(null);
               }}
               onResolve={() =>
-                useReviewStore.getState().resolveAnnotation(userAnnotation.id)
+                useSpurStore.getState().resolveAnnotation(userAnnotation.id)
               }
               onUnresolve={() =>
-                useReviewStore.getState().unresolveAnnotation(userAnnotation.id)
+                useSpurStore.getState().unresolveAnnotation(userAnnotation.id)
               }
             />
           );
@@ -585,12 +585,12 @@ export function useDiffAnnotationModel({
                 totalHunksInFile={deps.hunks.length}
                 mode={deps.workingTreeDiffMode}
                 onStage={(contentHash) => {
-                  useReviewStore
+                  useSpurStore
                     .getState()
                     .stageHunks(hunk.filePath, [contentHash]);
                 }}
                 onUnstage={(contentHash) => {
-                  useReviewStore
+                  useSpurStore
                     .getState()
                     .unstageHunks(hunk.filePath, [contentHash]);
                 }}
@@ -638,12 +638,12 @@ export function useDiffAnnotationModel({
                 commitTags={commitTags}
                 onScopeToCommit={deps.handleScopeToCommit}
                 onApprove={(hunkId) => {
-                  const s = useReviewStore.getState();
+                  const s = useSpurStore.getState();
                   s.approveHunk(hunkId);
                   s.nextHunkInFile();
                 }}
                 onReject={(hunkId) => {
-                  const s = useReviewStore.getState();
+                  const s = useSpurStore.getState();
                   s.rejectHunk(hunkId);
                   const targetHunk = deps.hunks.find((h) => h.id === hunkId);
                   if (targetHunk && !deps.newAnnotationLine) {
@@ -652,7 +652,7 @@ export function useDiffAnnotationModel({
                   }
                 }}
                 onRemoveTrustPattern={(pattern) =>
-                  useReviewStore.getState().removeTrustPattern(pattern)
+                  useSpurStore.getState().removeTrustPattern(pattern)
                 }
                 onCopyHunk={deps.handleCopyHunk}
               />
@@ -675,15 +675,15 @@ export function useDiffAnnotationModel({
               commitTags={commitTags}
               onScopeToCommit={deps.handleScopeToCommit}
               onApprove={(hunkId) => {
-                const s = useReviewStore.getState();
+                const s = useSpurStore.getState();
                 s.approveHunk(hunkId);
                 s.nextHunkInFile();
               }}
               onUnapprove={(hunkId) =>
-                useReviewStore.getState().unapproveHunk(hunkId)
+                useSpurStore.getState().unapproveHunk(hunkId)
               }
               onReject={(hunkId) => {
-                const s = useReviewStore.getState();
+                const s = useSpurStore.getState();
                 s.rejectHunk(hunkId);
                 const targetHunk = deps.hunks.find((h) => h.id === hunkId);
                 if (targetHunk && !deps.newAnnotationLine) {
@@ -692,51 +692,49 @@ export function useDiffAnnotationModel({
                 }
               }}
               onUnreject={(hunkId) =>
-                useReviewStore.getState().unrejectHunk(hunkId)
+                useSpurStore.getState().unrejectHunk(hunkId)
               }
               onSaveForLater={(hunkId) =>
-                useReviewStore.getState().saveHunkForLater(hunkId)
+                useSpurStore.getState().saveHunkForLater(hunkId)
               }
               onUnsaveForLater={(hunkId) =>
-                useReviewStore.getState().unsaveHunkForLater(hunkId)
+                useSpurStore.getState().unsaveHunkForLater(hunkId)
               }
               onApprovePair={(hunkIds) => {
-                const s = useReviewStore.getState();
+                const s = useSpurStore.getState();
                 s.approveHunkIds(hunkIds);
                 s.nextHunkInFile();
               }}
               onRejectPair={(hunkIds) => {
-                const s = useReviewStore.getState();
+                const s = useSpurStore.getState();
                 s.rejectHunkIds(hunkIds);
                 s.nextHunkInFile();
               }}
               onAddTrustPattern={(pattern) =>
-                useReviewStore.getState().addTrustPattern(pattern)
+                useSpurStore.getState().addTrustPattern(pattern)
               }
               onRemoveTrustPattern={(pattern) =>
-                useReviewStore.getState().removeTrustPattern(pattern)
+                useSpurStore.getState().removeTrustPattern(pattern)
               }
               onReclassifyHunks={(hunkIds) =>
-                useReviewStore.getState().reclassifyHunks(hunkIds)
+                useSpurStore.getState().reclassifyHunks(hunkIds)
               }
               onCopyHunk={deps.handleCopyHunk}
               onViewInFile={deps.onViewInFile}
               onApproveAllSimilar={(hunkIds) => {
-                const s = useReviewStore.getState();
+                const s = useSpurStore.getState();
                 s.approveHunkIds(hunkIds);
                 s.nextHunkInFile();
               }}
               onRejectAllSimilar={(hunkIds) => {
-                const s = useReviewStore.getState();
+                const s = useSpurStore.getState();
                 s.rejectHunkIds(hunkIds);
                 s.nextHunkInFile();
               }}
               onNavigateToHunk={(hunkId) => {
                 const targetHunk = deps.hunkById.get(hunkId);
                 if (targetHunk) {
-                  useReviewStore
-                    .getState()
-                    .setSelectedFile(targetHunk.filePath);
+                  useSpurStore.getState().setSelectedFile(targetHunk.filePath);
                 }
               }}
             />

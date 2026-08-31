@@ -13,7 +13,7 @@ vi.mock("../api", () => ({
 }));
 
 import { AgentUsageIndicator } from "./AgentUsageIndicator";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 
 const NOW_SECONDS = 1_800_000_000;
 const HOUR = 3_600;
@@ -103,7 +103,7 @@ beforeEach(() => {
   vi.setSystemTime(NOW_SECONDS * 1000);
   getAgentUsage.mockReset();
   // The store is a singleton, so a pin set by one test would follow the rest.
-  useReviewStore.setState({ usagePinnedWindows: {} });
+  useSpurStore.setState({ usagePinnedWindows: {} });
 });
 
 afterEach(() => {

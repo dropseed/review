@@ -604,7 +604,7 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let socket = dir.path().join("daemon.sock");
         let mut child = tokio::process::Command::new(&binary)
-            .env("REVIEW_HOME", dir.path())
+            .env("SPUR_HOME", dir.path())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn()
@@ -657,7 +657,7 @@ mod tests {
     }
 
     /// Set this to require the release sidecar rather than skipping without it.
-    const REQUIRE_SIDECAR: &str = "REVIEW_REQUIRE_SIDECAR_TESTS";
+    const REQUIRE_SIDECAR: &str = "SPUR_REQUIRE_SIDECAR_TESTS";
 
     /// The sidecar artifact, if it has been built for this host.
     fn release_sidecar_path() -> Option<PathBuf> {
@@ -672,7 +672,7 @@ mod tests {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()?
             .join("desktop/tauri/binaries")
-            .join(format!("review-daemon-{triple}"));
+            .join(format!("spur-daemon-{triple}"));
         path.is_file().then_some(path)
     }
 

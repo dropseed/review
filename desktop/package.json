@@ -5,10 +5,10 @@
   "version": "0.0.165",
   "description": "A desktop app that helps humans review diffs more efficiently",
   "author": "Dave Gaeddert <dave.gaeddert@dropseed.dev> (https://www.dropseed.dev/)",
-  "homepage": "https://github.com/dropseed/review",
+  "homepage": "https://github.com/dropseed/spur",
   "repository": {
     "type": "git",
-    "url": "https://github.com/dropseed/review.git"
+    "url": "https://github.com/dropseed/spur.git"
   },
   "type": "module",
   "scripts": {

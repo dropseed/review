@@ -1,5 +1,5 @@
 #!/bin/bash
-# Profile the running Review.app for CPU / wakeups / hot stacks.
+# Profile the running Spur.app for CPU / wakeups / hot stacks.
 #
 # Usage: scripts/profile-battery [duration_seconds] [label]
 #   duration_seconds  How long to sample (default 60).
@@ -17,13 +17,13 @@ set -e
 DURATION="${1:-60}"
 LABEL="${2:-run}"
 TS=$(date +%Y%m%d-%H%M%S)
-OUT="${TMPDIR:-/tmp}/review-profile-${TS}-${LABEL}"
+OUT="${TMPDIR:-/tmp}/spur-profile-${TS}-${LABEL}"
 mkdir -p "$OUT"
 
 # --- Find the main Review process ---
-MAIN_PID=$(pgrep -f "Review.app/Contents/MacOS/Review" | head -1 || true)
+MAIN_PID=$(pgrep -f "Spur.app/Contents/MacOS/Spur" | head -1 || true)
 if [ -z "$MAIN_PID" ]; then
-    echo "Review.app is not running. Launch it and try again." >&2
+    echo "Spur.app is not running. Launch it and try again." >&2
     exit 1
 fi
 

@@ -1,6 +1,6 @@
 //! Tauri command handlers for embedded terminal sessions.
 //!
-//! These are thin proxies onto the `review-daemon` process, which owns the one
+//! These are thin proxies onto the `spur-daemon` process, which owns the one
 //! `SessionManager` and therefore the PTYs — that is what lets sessions
 //! survive quitting or crashing this app. Each command is one control request
 //! over the daemon's Unix socket ([`DaemonClient`]).
@@ -34,11 +34,11 @@ use std::time::{Duration, Instant};
 
 use base64::Engine as _;
 use log::{error, info, warn};
-use review::daemon::{
+use serde::Serialize;
+use spur::daemon::{
     DaemonClient, Event, EventsHandle, Op, ReplayPayload, StreamFrame, StreamHandle, B64,
 };
-use review::terminal::{SessionStatus, TerminalSummary};
-use serde::Serialize;
+use spur::terminal::{SessionStatus, TerminalSummary};
 use tauri::{AppHandle, Emitter};
 
 use super::daemon;
@@ -136,10 +136,10 @@ impl TerminalState {
     /// The control client if one has already been established — never spawning
     /// a daemon to produce one.
     ///
-    /// What `work_list` uses. Cleanup and derived titles both want the daemon's
+    /// What `workspace_list` uses. Cleanup and derived titles both want the daemon's
     /// answer, but neither is a reason to *start* a daemon, and a
     /// version-mismatch respawn (which kills every live session) is emphatically
-    /// not something listing the work queue should be able to trigger. Terminal
+    /// not something listing the workspace queue should be able to trigger. Terminal
     /// commands open the connection; this rides along once it exists, and treats
     /// "not yet" as "don't know".
     pub async fn connected(&self) -> Option<DaemonClient> {
@@ -563,7 +563,7 @@ pub async fn terminal_start(
         cwd
     };
 
-    // The app's front door routes, exactly as `review terminal start` does:
+    // The app's front door routes, exactly as `spur terminal start` does:
     // every session is born in a workspace, and the daemon is told which one at
     // birth rather than being asked to guess later. Off-thread because routing
     // walks the filesystem and shells out to git.
@@ -575,7 +575,7 @@ pub async fn terminal_start(
     let landing = {
         let cwd = cwd.clone();
         tokio::task::spawn_blocking(move || {
-            review::work::router::route_to(cwd.as_ref(), workspace_id.as_deref())
+            spur::workspace::router::route_to(cwd.as_ref(), workspace_id.as_deref())
         })
         .await
         .map_err(|e| format!("routing panicked: {e}"))?
@@ -758,11 +758,11 @@ fn needs_routing(summary: &TerminalSummary, known: &KnownWorkspaces) -> bool {
 /// whenever nothing is attached to the directory. Routing every listed session
 /// and filtering afterwards therefore invented a workspace for each correctly
 /// attributed shell — one per checked-out-elsewhere branch, one per `$HOME`
-/// shell — on every `terminal_list`, rewrote `work.json`, fired a work-changed
+/// shell — on every `terminal_list`, rewrote `workspaces.json`, fired a work-changed
 /// event, and left phantoms in the queue that were reaped and re-minted on the
 /// next list. Nothing downstream can undo that; only not asking can.
 ///
-/// [`land`]: review::work::router::land
+/// [`land`]: spur::workspace::router::land
 async fn reroute_strays(
     client: &DaemonClient,
     summaries: &mut [TerminalSummary],
@@ -805,13 +805,13 @@ async fn route_strays(
     cache: Option<&KnownWorkspaces>,
 ) -> HashMap<String, String> {
     let routed = tokio::task::spawn_blocking(move || {
-        let known: HashSet<String> = match review::work::list() {
+        let known: HashSet<String> = match spur::workspace::list() {
             Ok(state) => state.workspaces.into_iter().map(|ws| ws.id).collect(),
             Err(e) => {
                 // Unreadable queue: every session would look like a stray, so
                 // routing them all would be maximally wrong. Do nothing — and
                 // report an empty set, which the cache reads as "don't know".
-                warn!("[terminal] could not read the work queue: {e}");
+                warn!("[terminal] could not read the workspace queue: {e}");
                 return (HashSet::new(), HashMap::new());
             }
         };
@@ -830,8 +830,8 @@ async fn route_strays(
                 landed.insert(id, workspace_id.clone());
                 continue;
             }
-            let location = review::work::router::locate(cwd.as_ref());
-            match review::work::router::land(&location, None) {
+            let location = spur::workspace::router::locate(cwd.as_ref());
+            match spur::workspace::router::land(&location, None) {
                 Ok(landing) => {
                     by_cwd.insert(cwd, landing.workspace.id.clone());
                     landed.insert(id, landing.workspace.id);

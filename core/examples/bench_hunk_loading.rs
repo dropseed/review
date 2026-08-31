@@ -6,9 +6,9 @@
 //! Usage:
 //!   cargo run --example bench_hunk_loading [-- <old_ref> <new_ref>]
 
-use review::diff::parser::{parse_diff, parse_multi_file_diff};
-use review::sources::local_git::LocalGitSource;
-use review::sources::traits::{Comparison, DiffSource, FileEntry, FileStatus};
+use spur::diff::parser::{parse_diff, parse_multi_file_diff};
+use spur::sources::local_git::LocalGitSource;
+use spur::sources::traits::{Comparison, DiffSource, FileEntry, FileStatus};
 use std::time::Instant;
 
 fn main() {

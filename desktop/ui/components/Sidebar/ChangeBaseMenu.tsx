@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, type ReactNode } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { Spinner } from "../ui/spinner";
 import { CheckIcon } from "../ui/icons";
 import { getApiClient } from "../../api";
@@ -42,11 +42,11 @@ export function ChangeBaseMenu({
   const [changing, setChanging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const setBaseOverride = useReviewStore((s) => s.setBaseOverride);
-  const baseOverride = useReviewStore((s) => s.reviewBaseOverride);
+  const setBaseOverride = useSpurStore((s) => s.setBaseOverride);
+  const baseOverride = useSpurStore((s) => s.reviewBaseOverride);
   // Already resolved per repo by the sidebar — the menu remounts on every
   // open, so re-fetching it here would spawn a git process each time.
-  const defaultBranch = useReviewStore(
+  const defaultBranch = useSpurStore(
     (s) => s.repoMetadata[repoPath]?.defaultBranch,
   );
 

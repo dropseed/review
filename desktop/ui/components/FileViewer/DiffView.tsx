@@ -8,7 +8,7 @@ import {
   areOptionsEqual,
 } from "@pierre/diffs";
 import { useVirtualFileMetrics } from "../../hooks";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { stringHash } from "../../utils/string-hash";
 import type { DiffHunk } from "../../types";
 import type { SupportedLanguages } from "./languageMap";
@@ -97,7 +97,7 @@ export function DiffView({
   onTokenLeave,
   onTokenClick,
 }: DiffViewProps): ReactNode {
-  const diffOverflow = useReviewStore((s) => s.diffOverflow);
+  const diffOverflow = useSpurStore((s) => s.diffOverflow);
 
   const filePath = hunks[0]?.filePath ?? "";
   const {

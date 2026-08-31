@@ -26,7 +26,7 @@ import type { TerminalSlice } from "./slices/terminalSlice";
 import type { ViewerPrsSlice } from "./slices/viewerPrsSlice";
 import type { WorkspaceSlice } from "./slices/workspaceSlice";
 // Combined store type
-export type ReviewStore = PreferencesSlice &
+export type SpurStore = PreferencesSlice &
   NavigationSlice &
   OverlaySlice &
   GitSlice &
@@ -49,23 +49,23 @@ export type ReviewStore = PreferencesSlice &
   WorkspaceSlice;
 
 // Helper type for creating slices (no dependencies)
-export type SliceCreator<T> = StateCreator<ReviewStore, [], [], T>;
+export type SliceCreator<T> = StateCreator<SpurStore, [], [], T>;
 
 // Helper type for creating slices with API client
 export type SliceCreatorWithClient<T> = (
   client: ApiClient,
-) => StateCreator<ReviewStore, [], [], T>;
+) => StateCreator<SpurStore, [], [], T>;
 
 // Helper type for creating slices with storage service
 export type SliceCreatorWithStorage<T> = (
   storage: StorageService,
-) => StateCreator<ReviewStore, [], [], T>;
+) => StateCreator<SpurStore, [], [], T>;
 
 // Helper type for creating slices with both API client and storage service
 export type SliceCreatorWithClientAndStorage<T> = (
   client: ApiClient,
   storage: StorageService,
-) => StateCreator<ReviewStore, [], [], T>;
+) => StateCreator<SpurStore, [], [], T>;
 
 // Debounce helper with cancel support
 export interface DebouncedFn {

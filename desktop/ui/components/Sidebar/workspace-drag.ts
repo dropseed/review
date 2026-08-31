@@ -11,7 +11,7 @@
  */
 
 import { useCallback, useSyncExternalStore } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { subtreeLength } from "../../stores/slices/workspaceSlice";
 import type { Workspace } from "../../types";
 import {
@@ -55,11 +55,11 @@ export interface WorkspaceDrag {
  * Where a drop would land: on a card, or in the gap before card `index`
  * (`index === items.length` is the end of the list).
  */
-export type WorkDropTarget =
+export type WorkspaceDropTarget =
   { kind: "card"; itemId: string } | { kind: "gap"; index: number };
 
 let draggedItem: WorkspaceDrag | null = null;
-let dropTarget: WorkDropTarget | null = null;
+let dropTarget: WorkspaceDropTarget | null = null;
 const listeners = new Set<() => void>();
 
 function notify(): void {
@@ -84,8 +84,8 @@ export function draggedWorkspace(): WorkspaceDrag | null {
 }
 
 function sameTarget(
-  a: WorkDropTarget | null,
-  b: WorkDropTarget | null,
+  a: WorkspaceDropTarget | null,
+  b: WorkspaceDropTarget | null,
 ): boolean {
   if (a === null || b === null) return a === b;
   // Switched on both sides rather than one side plus a cast: the cast was what
@@ -94,7 +94,7 @@ function sameTarget(
   return b.kind === "gap" && a.index === b.index;
 }
 
-export function setWorkDropTarget(target: WorkDropTarget | null): void {
+export function setWorkDropTarget(target: WorkspaceDropTarget | null): void {
   if (sameTarget(dropTarget, target)) return;
   dropTarget = target;
   notify();
@@ -108,7 +108,7 @@ export function setWorkDropTarget(target: WorkDropTarget | null): void {
  * each pointer move across the queue. Asking the narrower question means a move
  * re-renders the one leaving and the one arriving.
  */
-export function useIsWorkDropTarget(target: WorkDropTarget): boolean {
+export function useIsWorkDropTarget(target: WorkspaceDropTarget): boolean {
   const matches = useCallback(() => sameTarget(dropTarget, target), [target]);
   return useSyncExternalStore(subscribe, matches, () => false);
 }
@@ -124,7 +124,7 @@ export function useIsWorkDropTarget(target: WorkDropTarget): boolean {
  * doesn't have to know which grip the terminal arrived by.
  */
 export function terminalsInFlight(): string[] {
-  const tabs = useReviewStore.getState().terminalTabs;
+  const tabs = useSpurStore.getState().terminalTabs;
   // A pane *is* a session — the leaf's id is the terminal's.
   const terminal = draggedTerminal() ?? draggedPane();
   if (terminal) return tabSessionIds(tabs, terminal);
@@ -137,7 +137,7 @@ export function terminalsInFlight(): string[] {
  * latches the tab id at `over` and resolves it after its own `dragend`.
  */
 export function sessionsOfTab(tabId: string): string[] {
-  const tab = findTab(useReviewStore.getState().terminalTabs, tabId);
+  const tab = findTab(useSpurStore.getState().terminalTabs, tabId);
   return tab ? collectLeafIds(tab.root) : [];
 }
 
@@ -196,14 +196,14 @@ function carriesTerminal(types: readonly string[]): boolean {
  */
 export function dragCarrying(
   types: readonly string[],
-): WorkDropPayload["kind"] | null {
+): WorkspaceDropPayload["kind"] | null {
   if (types.includes(WORKSPACE_MIME)) return "item";
   if (carriesTerminal(types)) return "terminal";
   return null;
 }
 
 /** What a drop carries, whichever latch was set when it landed. */
-export type WorkDropPayload =
+export type WorkspaceDropPayload =
   | { kind: "item"; drag: WorkspaceDrag }
   /** One tab's sessions — whichever grip picked the terminal up. */
   | { kind: "terminal"; sessionIds: string[] };
@@ -220,7 +220,7 @@ export type WorkDropPayload =
 export function workDragPayload(
   item: WorkspaceDrag | null,
   sessionIds: readonly string[],
-): WorkDropPayload | null {
+): WorkspaceDropPayload | null {
   if (item) return { kind: "item", drag: item };
   if (sessionIds.length > 0)
     return { kind: "terminal", sessionIds: [...sessionIds] };
@@ -228,7 +228,7 @@ export function workDragPayload(
 }
 
 /** [`workDragPayload`] over the live latches — the HTML5 drop path's read. */
-export function takeWorkDragPayload(): WorkDropPayload | null {
+export function takeWorkDragPayload(): WorkspaceDropPayload | null {
   return workDragPayload(draggedWorkspace(), terminalsInFlight());
 }
 
@@ -340,10 +340,10 @@ export function gapDepth(
  * nothing.
  */
 export async function applyWorkDrop(
-  target: WorkDropTarget,
-  payload: WorkDropPayload,
+  target: WorkspaceDropTarget,
+  payload: WorkspaceDropPayload,
 ): Promise<void> {
-  const store = useReviewStore.getState();
+  const store = useSpurStore.getState();
 
   if (payload.kind === "item") {
     // Onto a card: nest under it. A vertical position can say where a card
@@ -402,7 +402,7 @@ interface Box {
 }
 
 /** The measured section, in list order. */
-export interface WorkTargetRects {
+export interface WorkspaceTargetRects {
   /** The list container — outside it there is no target at all. */
   section: Box | null;
   cards: { rect: Box; itemId: string }[];
@@ -431,10 +431,10 @@ export function resolveWorkDropTarget(
   y: number,
   /** A reorder is competing with its own gaps for a card's pixels. */
   reordering: boolean,
-  rects: WorkTargetRects,
+  rects: WorkspaceTargetRects,
   /** Cards this drag must not land on — a card's own subtree. */
   offLimits: readonly string[] = [],
-): WorkDropTarget | null {
+): WorkspaceDropTarget | null {
   const { section, cards } = rects;
   if (!section) return null;
   // An empty section is a near-zero-height container; give it a catch area so
@@ -483,7 +483,7 @@ const NEST_BAND = [0.35, 0.65] as const;
  */
 const REMEASURE_MS = 150;
 
-let measured: WorkTargetRects = { section: null, cards: [] };
+let measured: WorkspaceTargetRects = { section: null, cards: [] };
 let measuredAt: number | null = null;
 
 function measure(): void {
@@ -510,7 +510,7 @@ export function workDropTargetAt(
   x: number,
   y: number,
   reordering: boolean,
-): WorkDropTarget | null {
+): WorkspaceDropTarget | null {
   if (measuredAt === null || performance.now() - measuredAt > REMEASURE_MS) {
     measure();
   }

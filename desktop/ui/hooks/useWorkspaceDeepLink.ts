@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { focusWorkspace } from "../commands/workspaceCommands";
 
 /** The query parameter a notification's URL carries — `/?workspace=<id>`. */
@@ -51,7 +51,7 @@ if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
  */
 export function useWorkspaceDeepLink(): void {
   const [pending, setPending] = useState<string | null>(() => take());
-  const workspaces = useReviewStore((s) => s.workspaces);
+  const workspaces = useSpurStore((s) => s.workspaces);
 
   useEffect(() => {
     if (buffered) {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FindBar } from "../ui/find-bar";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { getSearchAddon, setTerminalFocus } from "./registry";
 import { buildSearchDecorations } from "./xterm-theme";
 
@@ -27,7 +27,7 @@ const NO_RESULTS = { index: -1, count: 0 };
  * to the shell.
  */
 export function TerminalSearchBar({ id }: TerminalSearchBarProps) {
-  const setTerminalSearchId = useReviewStore((s) => s.setTerminalSearchId);
+  const setTerminalSearchId = useSpurStore((s) => s.setTerminalSearchId);
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [caseSensitive, setCaseSensitive] = useState(false);

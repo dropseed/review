@@ -64,7 +64,7 @@ describe("restoreDecision", () => {
   });
 
   it("takes only the focus when the launch already claimed the stage", () => {
-    // A URL, a `review` invocation or the launch directory put that there, and
+    // A URL, a `spur` invocation or the launch directory put that there, and
     // a person naming what to look at outranks where the app was last time.
     // The tabs coming back is the whole of what was missing. `stageClaimed`
     // covers browse and standalone mode too, which open a repo and no

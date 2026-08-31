@@ -1,8 +1,8 @@
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 
 declare global {
   interface Window {
-    __reviewStore?: typeof useReviewStore;
+    __spurStore?: typeof useSpurStore;
   }
 }
 
@@ -17,5 +17,5 @@ declare global {
  */
 export function installDevtools(): void {
   if (!import.meta.env.DEV || typeof window === "undefined") return;
-  window.__reviewStore = useReviewStore;
+  window.__spurStore = useSpurStore;
 }

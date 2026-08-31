@@ -43,7 +43,7 @@ vi.mock("../platform", () => ({
   }),
 }));
 
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { useTerminalEvents } from "./useTerminalEvents";
 import { terminalSession } from "../test/fixtures";
 
@@ -69,7 +69,7 @@ beforeEach(() => {
   ]) {
     mock.mockReset().mockReturnValue(() => undefined);
   }
-  useReviewStore.setState({
+  useSpurStore.setState({
     repoPath: null,
     reviewRef: null,
     terminalsSupported: true,
@@ -105,13 +105,11 @@ describe("useTerminalEvents", () => {
     handlerOf(onTerminalStarted)(terminalSession("phone-1"));
 
     await waitFor(() =>
-      expect(
-        useReviewStore.getState().terminalSessions["phone-1"],
-      ).toBeDefined(),
+      expect(useSpurStore.getState().terminalSessions["phone-1"]).toBeDefined(),
     );
     // A tab too — the session is on screen, not merely in a map.
     expect(
-      useReviewStore.getState().terminalTabs.some((t) => t.id === "phone-1"),
+      useSpurStore.getState().terminalTabs.some((t) => t.id === "phone-1"),
     ).toBe(true);
     expect(terminalList).not.toHaveBeenCalled();
   });
@@ -127,9 +125,7 @@ describe("useTerminalEvents", () => {
 
     await waitFor(() => expect(terminalList).toHaveBeenCalledTimes(2));
     await waitFor(() =>
-      expect(
-        useReviewStore.getState().terminalSessions["ws-born"],
-      ).toBeDefined(),
+      expect(useSpurStore.getState().terminalSessions["ws-born"]).toBeDefined(),
     );
   });
 
@@ -145,9 +141,7 @@ describe("useTerminalEvents", () => {
 
     await waitFor(() => expect(terminalList).toHaveBeenCalledTimes(2));
     await waitFor(() =>
-      expect(
-        useReviewStore.getState().terminalSessions["phone-1"],
-      ).toBeDefined(),
+      expect(useSpurStore.getState().terminalSessions["phone-1"]).toBeDefined(),
     );
   });
 
@@ -184,7 +178,7 @@ describe("useTerminalEvents", () => {
     renderHook(() => useTerminalEvents());
     await waitFor(() => expect(terminalList).toHaveBeenCalledTimes(1));
 
-    act(() => useReviewStore.setState({ repoPath: "/other" } as never));
+    act(() => useSpurStore.setState({ repoPath: "/other" } as never));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(onTerminalStarted).toHaveBeenCalledTimes(1);
@@ -203,9 +197,9 @@ describe("useTerminalEvents", () => {
     handlerOf(onTerminalWorkspaceAssigned)({ id: "t1", workspaceId: "ws-b" });
 
     await waitFor(() =>
-      expect(
-        useReviewStore.getState().terminalSessions["t1"]?.workspaceId,
-      ).toBe("ws-b"),
+      expect(useSpurStore.getState().terminalSessions["t1"]?.workspaceId).toBe(
+        "ws-b",
+      ),
     );
   });
 
@@ -215,12 +209,12 @@ describe("useTerminalEvents", () => {
     await waitFor(() => expect(onTerminalRemoved).toHaveBeenCalled());
     handlerOf(onTerminalStarted)(terminalSession("t1"));
     await waitFor(() =>
-      expect(useReviewStore.getState().terminalSessions["t1"]).toBeDefined(),
+      expect(useSpurStore.getState().terminalSessions["t1"]).toBeDefined(),
     );
 
     handlerOf(onTerminalRemoved)({ id: "t1" });
 
-    const state = useReviewStore.getState();
+    const state = useSpurStore.getState();
     expect("t1" in state.terminalExited).toBe(true);
     expect(state.terminalSessions["t1"]).toBeDefined();
     expect(state.terminalTabs.some((t) => t.id === "t1")).toBe(true);
@@ -232,18 +226,18 @@ describe("useTerminalEvents", () => {
     await waitFor(() => expect(onTerminalExited).toHaveBeenCalled());
     handlerOf(onTerminalStarted)(terminalSession("t1"));
     await waitFor(() =>
-      expect(useReviewStore.getState().terminalSessions["t1"]).toBeDefined(),
+      expect(useSpurStore.getState().terminalSessions["t1"]).toBeDefined(),
     );
 
     handlerOf(onTerminalExited)({ id: "t1", exitCode: 1 });
     handlerOf(onTerminalRemoved)({ id: "t1" });
 
-    expect(useReviewStore.getState().terminalExited["t1"]).toBe(1);
+    expect(useSpurStore.getState().terminalExited["t1"]).toBe(1);
   });
 
   it("does nothing when terminals are unsupported", async () => {
     terminalsAvailable.mockResolvedValue(false);
-    useReviewStore.setState({ terminalsSupported: false } as never);
+    useSpurStore.setState({ terminalsSupported: false } as never);
 
     renderHook(() => useTerminalEvents());
 

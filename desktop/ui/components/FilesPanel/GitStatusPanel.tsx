@@ -1,5 +1,5 @@
 import { type ReactNode, useState, useMemo, useCallback } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import type { StatusEntry } from "../../types";
 import {
   CollapsibleSection,
@@ -165,20 +165,20 @@ export function GitStatusPanel({
     },
     [onSelectFile, onSelectWorkingTreeFile],
   );
-  const gitStatus = useReviewStore((s) => s.gitStatus);
-  const stageFileAction = useReviewStore((s) => s.stageFile);
-  const unstageFileAction = useReviewStore((s) => s.unstageFile);
-  const unstageAll = useReviewStore((s) => s.unstageAll);
-  const indexLocked = useReviewStore((s) => s.indexLocked);
+  const gitStatus = useSpurStore((s) => s.gitStatus);
+  const stageFileAction = useSpurStore((s) => s.stageFile);
+  const unstageFileAction = useSpurStore((s) => s.unstageFile);
+  const unstageAll = useSpurStore((s) => s.unstageAll);
+  const indexLocked = useSpurStore((s) => s.indexLocked);
   // Staging writes the index, and git refuses while another process holds the
   // lock — the write would fail with nothing on screen to say why. The row
   // buttons are withheld rather than disabled, since they only appear on
   // hover; the menu verbs, which are always there, grey out instead.
   const stageFile = indexLocked ? undefined : stageFileAction;
   const unstageFile = indexLocked ? undefined : unstageFileAction;
-  const gitDisplayMode = useReviewStore((s) => s.gitDisplayMode);
-  const setGitDisplayMode = useReviewStore((s) => s.setGitDisplayMode);
-  const openWorkingTreeMultiView = useReviewStore(
+  const gitDisplayMode = useSpurStore((s) => s.gitDisplayMode);
+  const setGitDisplayMode = useSpurStore((s) => s.setGitDisplayMode);
+  const openWorkingTreeMultiView = useSpurStore(
     (s) => s.openWorkingTreeMultiView,
   );
 

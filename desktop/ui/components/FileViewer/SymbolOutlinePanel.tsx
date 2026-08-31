@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, memo } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import type { FileSymbol, SymbolDiff, SymbolChangeType } from "../../types";
 import { ChangeIndicator, SymbolKindBadge } from "../symbols";
 import { HighlightedText } from "../../lib/fuzzy";
@@ -61,8 +61,8 @@ export const SymbolOutlinePanel = memo(function SymbolOutlinePanel({
   symbols: allSymbols,
   shapeRows,
 }: SymbolOutlinePanelProps) {
-  const symbolDiffs = useReviewStore((s) => s.symbolDiffs);
-  const toggleOutline = useReviewStore((s) => s.toggleOutline);
+  const symbolDiffs = useSpurStore((s) => s.symbolDiffs);
+  const toggleOutline = useSpurStore((s) => s.toggleOutline);
   const { lineHeight } = useCodeFont();
 
   const [filter, setFilter] = useState("");
@@ -181,7 +181,7 @@ export const SymbolOutlinePanel = memo(function SymbolOutlinePanel({
 
   const handleSymbolClick = useCallback(
     (startLine: number) => {
-      useReviewStore.setState({
+      useSpurStore.setState({
         scrollTarget: {
           type: "line",
           filePath,

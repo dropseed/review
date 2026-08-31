@@ -18,7 +18,7 @@ import { TooltipProvider } from "./components/ui/tooltip";
 import { TerminalDock } from "./components/Terminal/TerminalDock";
 import { EmptyStage } from "./components/Stage/EmptyStage";
 import { closeFocusedTerminal } from "./components/Terminal/close";
-import { useReviewStore } from "./stores";
+import { useSpurStore } from "./stores";
 import { useFocusedWorkspace } from "./stores/selectors/workspaces";
 import { findSidebarRow } from "./stores/selectors/sidebar";
 import { activateSidebarRow } from "./utils/sidebar-tree";
@@ -71,10 +71,10 @@ const ACTIVITY_POLL_MS = 300_000;
  */
 function AppShell() {
   const navigate = useNavigate();
-  const activeOverlay = useReviewStore((s) => s.activeOverlay);
-  const closeOverlay = useReviewStore((s) => s.closeOverlay);
-  const loadGlobalReviews = useReviewStore((s) => s.loadGlobalReviews);
-  const loadLocalActivity = useReviewStore((s) => s.loadLocalActivity);
+  const activeOverlay = useSpurStore((s) => s.activeOverlay);
+  const closeOverlay = useSpurStore((s) => s.closeOverlay);
+  const loadGlobalReviews = useSpurStore((s) => s.loadGlobalReviews);
+  const loadLocalActivity = useSpurStore((s) => s.loadLocalActivity);
 
   // The workspace queue is deliberately not here: `useWorkspaceSync` owns its
   // load lifecycle, including the watcher and the focus refresh.
@@ -144,11 +144,11 @@ function AppShell() {
   // something that had already gone.
   const handleClose = useCallback(async () => {
     if (await closeFocusedTerminal()) return;
-    const state = useReviewStore.getState();
+    const state = useSpurStore.getState();
     if (state.secondaryFile !== null) {
       state.closeSplit();
     } else if (state.selectedFile !== null) {
-      useReviewStore.setState({ selectedFile: null });
+      useSpurStore.setState({ selectedFile: null });
     } else {
       await closeWindowWithConfirmation();
     }
@@ -187,7 +187,7 @@ function AppShell() {
         // opens as a local branch rather than doing nothing.
         activateReviewKey: (repoPath: string, ref: string) => {
           const row = findSidebarRow(
-            useReviewStore.getState(),
+            useSpurStore.getState(),
             makeReviewKey(repoPath, ref),
           );
           if (row) {
@@ -246,8 +246,8 @@ function AppShell() {
 
   useComparisonLoader(comparisonReady, setInitialLoading);
 
-  const repoPath = useReviewStore((s) => s.repoPath);
-  const comparison = useReviewStore((s) => s.comparison);
+  const repoPath = useSpurStore((s) => s.repoPath);
+  const comparison = useSpurStore((s) => s.comparison);
 
   useWindowTitle(repoPath, comparison, comparisonReady);
 
@@ -351,8 +351,8 @@ function AppShell() {
 function EmptyTabState() {
   const { repoStatus, repoError, handleOpenRepo, handleNewReview } =
     useAppContext();
-  const globalReviews = useReviewStore((s) => s.globalReviews);
-  const globalReviewsLoading = useReviewStore((s) => s.globalReviewsLoading);
+  const globalReviews = useSpurStore((s) => s.globalReviews);
+  const globalReviewsLoading = useSpurStore((s) => s.globalReviewsLoading);
   const focusedWorkspace = useFocusedWorkspace();
 
   if (focusedWorkspace) return <EmptyStage />;

@@ -70,7 +70,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      # No Node setup here: `cargo test -p review-desktop` compiles the Tauri
+      # No Node setup here: `cargo test -p spur-desktop` compiles the Tauri
       # crate but never runs its beforeBuildCommand, so nothing on this job
       # touches the frontend.
       #

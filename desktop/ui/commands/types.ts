@@ -1,4 +1,4 @@
-import type { ReviewStore } from "../stores/types";
+import type { SpurStore } from "../stores/types";
 import type { ContextKeys } from "./contextKeys";
 import type { OverlayId } from "../stores/slices/overlaySlice";
 import type { PaletteMode } from "../components/palette/modes";
@@ -13,7 +13,7 @@ import type { Shortcut } from "./shortcuts";
  */
 export interface CommandContext {
   /** Live store state, read at evaluation time. */
-  store: ReviewStore;
+  store: SpurStore;
   /** Facts contributed by whichever components own them. */
   keys: ContextKeys;
   /** Imperative UI affordances the store does not own. */

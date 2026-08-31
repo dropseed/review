@@ -25,7 +25,7 @@ use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 
-use crate::review::central;
+use crate::home;
 use crate::review::state::now_iso8601;
 use crate::sources::github::{GhCliProvider, PrOutcome, ViewerPr};
 
@@ -188,7 +188,7 @@ fn shipped_from(key: &str, entry: &Settled) -> Option<ShippedPr> {
 fn cache_key(repo_path: &str, number: u32) -> Option<String> {
     Some(format!(
         "{}#{number}",
-        central::compute_repo_id(std::path::Path::new(repo_path)).ok()?
+        home::compute_repo_id(std::path::Path::new(repo_path)).ok()?
     ))
 }
 
@@ -214,7 +214,7 @@ fn remember(key: String, entry: Settled) {
 }
 
 fn cache_path() -> Option<PathBuf> {
-    central::get_central_root()
+    home::get_central_root()
         .ok()
         .map(|root| root.join(CACHE_FILE))
 }
@@ -240,7 +240,7 @@ static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// two windows confirming different PRs at once must not leave half a file
 /// behind for the next reader.
 fn save(cache: &Cache) -> anyhow::Result<()> {
-    let root = central::get_central_root()?;
+    let root = home::get_central_root()?;
     fs::create_dir_all(&root)?;
     let tmp_path = root.join(format!(
         "{CACHE_FILE}.tmp.{}.{}",
@@ -258,7 +258,7 @@ fn save(cache: &Cache) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::review::central::tests::{setup_test, ENV_LOCK};
+    use crate::home::tests::{setup_test, ENV_LOCK};
 
     fn settled(state: &str, confirmed_at: &str) -> Settled {
         Settled {

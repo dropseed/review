@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { Rail, RailButton, RailSeparator, RailTab } from "../ui/rail";
 import { SidebarPanelIcon } from "../ui/icons";
 import { useGitTab } from "./hooks/useFilePanelNavigation";
@@ -16,12 +16,10 @@ import { visibleFilesPanelTabs } from "./tabs";
  * see — whether there is uncommitted work.
  */
 export function FilesRail(): ReactNode {
-  const setFilesPanelCollapsed = useReviewStore(
-    (s) => s.setFilesPanelCollapsed,
-  );
-  const setFilesPanelTab = useReviewStore((s) => s.setFilesPanelTab);
-  const activeTab = useReviewStore((s) => s.filesPanelTab);
-  const comparison = useReviewStore((s) => s.comparison);
+  const setFilesPanelCollapsed = useSpurStore((s) => s.setFilesPanelCollapsed);
+  const setFilesPanelTab = useSpurStore((s) => s.setFilesPanelTab);
+  const activeTab = useSpurStore((s) => s.filesPanelTab);
+  const comparison = useSpurStore((s) => s.comparison);
   const gitTab = useGitTab();
   const { gitChangeCount } = gitTab;
 

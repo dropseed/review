@@ -13,7 +13,7 @@ vi.mock("../../platform", () => ({
 
 import { TerminalPanel } from "./TerminalPanel";
 import { TooltipProvider } from "../ui/tooltip";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 
 function show() {
   render(
@@ -25,7 +25,7 @@ function show() {
 
 afterEach(() => {
   cleanup();
-  useReviewStore.setState({
+  useSpurStore.setState({
     terminalTabs: [],
     terminalSessions: {},
     activeTabId: null,
@@ -43,7 +43,7 @@ describe("the terminal strip's controls", () => {
    */
   it("starts a tab from the + itself, offering no options", () => {
     const startTerminal = vi.fn().mockResolvedValue("t1");
-    useReviewStore.setState({ startTerminal } as never);
+    useSpurStore.setState({ startTerminal } as never);
     show();
 
     expect(screen.queryByLabelText("New terminal options")).toBeNull();
@@ -56,7 +56,7 @@ describe("the terminal strip's controls", () => {
     show();
 
     fireEvent.click(screen.getByLabelText("Full view"));
-    expect(useReviewStore.getState().contentFocus).toBe("terminal");
+    expect(useSpurStore.getState().contentFocus).toBe("terminal");
     expect(screen.getByLabelText("Exit full view")).toBeDefined();
   });
 });
@@ -88,7 +88,7 @@ describe("the terminal strip at phone width", () => {
     show();
 
     fireEvent.click(screen.getByLabelText("Code"));
-    expect(useReviewStore.getState().contentFocus).toBe("code");
+    expect(useSpurStore.getState().contentFocus).toBe("code");
   });
 
   /**

@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { useAllHunks, useHunkById } from "../../stores/selectors/hunks";
 import {
   computeGroupFiles,
@@ -212,20 +212,20 @@ function GuideModeHeader({ onBack }: { onBack: () => void }): ReactNode {
  * brief delay so the reviewer doesn't have to click through manually.
  */
 export function GuideModePanel(): ReactNode {
-  const setGuideMode = useReviewStore((s) => s.setGuideMode);
-  const reviewState = useReviewStore((s) => s.reviewState);
-  const guideContentMode = useReviewStore((s) => s.guideContentMode);
-  const selectedFile = useReviewStore((s) => s.selectedFile);
-  const scopeKey = useReviewStore((s) =>
+  const setGuideMode = useSpurStore((s) => s.setGuideMode);
+  const reviewState = useSpurStore((s) => s.reviewState);
+  const guideContentMode = useSpurStore((s) => s.guideContentMode);
+  const selectedFile = useSpurStore((s) => s.selectedFile);
+  const scopeKey = useSpurStore((s) =>
     s.scope?.source === "guide" ? s.scope.key : null,
   );
-  const groupModeKey = useReviewStore((s) =>
+  const groupModeKey = useSpurStore((s) =>
     s.guideContentMode === "group"
       ? (s.getActiveGroupingEntry().reviewGroups[s.activeGroupIndex]?.title ??
         null)
       : null,
   );
-  const getGroupingStaleness = useReviewStore((s) => s.getGroupingStaleness);
+  const getGroupingStaleness = useSpurStore((s) => s.getGroupingStaleness);
   const hunks = useAllHunks();
   const hunkById = useHunkById();
   const groups = useGuideGroups();

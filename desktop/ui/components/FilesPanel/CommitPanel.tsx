@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 import { useAutoGrow, useListContinuation } from "../../hooks";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { CollapsibleSection } from "../ui/collapsible-section";
 import { MOD_SYMBOL as MOD_KEY_SYMBOL } from "../../commands";
 
@@ -84,19 +84,19 @@ function SpinnerIcon({ className }: { className?: string }): ReactNode {
 }
 
 export function CommitPanel(): ReactNode {
-  const commitMessage = useReviewStore((s) => s.commitMessage);
-  const setCommitMessage = useReviewStore((s) => s.setCommitMessage);
-  const commitInProgress = useReviewStore((s) => s.commitInProgress);
-  const commitOutput = useReviewStore((s) => s.commitOutput);
-  const commitResult = useReviewStore((s) => s.commitResult);
-  const commitStaged = useReviewStore((s) => s.commitStaged);
-  const clearCommitResult = useReviewStore((s) => s.clearCommitResult);
-  const staged = useReviewStore((s) => s.gitStatus?.staged);
-  const indexLocked = useReviewStore((s) => s.indexLocked);
-  const commitMessageGenerating = useReviewStore(
+  const commitMessage = useSpurStore((s) => s.commitMessage);
+  const setCommitMessage = useSpurStore((s) => s.setCommitMessage);
+  const commitInProgress = useSpurStore((s) => s.commitInProgress);
+  const commitOutput = useSpurStore((s) => s.commitOutput);
+  const commitResult = useSpurStore((s) => s.commitResult);
+  const commitStaged = useSpurStore((s) => s.commitStaged);
+  const clearCommitResult = useSpurStore((s) => s.clearCommitResult);
+  const staged = useSpurStore((s) => s.gitStatus?.staged);
+  const indexLocked = useSpurStore((s) => s.indexLocked);
+  const commitMessageGenerating = useSpurStore(
     (s) => s.commitMessageGenerating,
   );
-  const generateCommitMessage = useReviewStore((s) => s.generateCommitMessage);
+  const generateCommitMessage = useSpurStore((s) => s.generateCommitMessage);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const outputRef = useRef<HTMLDivElement>(null);

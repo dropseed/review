@@ -1,8 +1,8 @@
 //! Web Push — the VAPID identity this instance signs with, the browser
 //! subscriptions registered against it, and delivery to all of them.
 //!
-//! State lives at `<central root>/push.json`, written the way the work queue is
-//! written (see [`crate::work::storage`]): a version envelope checked on save,
+//! State lives at `<central root>/push.json`, written the way the workspace queue is
+//! written (see [`crate::workspace::storage`]): a version envelope checked on save,
 //! a per-writer temp file, and a rename, so the app and a CLI writing at once
 //! either both land or one is told to retry.
 //!
@@ -24,7 +24,7 @@ use web_push::{
     ContentEncoding, SubscriptionInfo, Urgency, VapidSignatureBuilder, WebPushMessageBuilder,
 };
 
-use crate::review::central;
+use crate::home;
 use crate::review::state::now_iso8601;
 
 /// The alphabet every value in `push.json` and on the wire uses — what a
@@ -40,7 +40,7 @@ const TTL_SECONDS: u32 = 3600;
 /// RFC 8292's `sub` claim — who to contact about this application server.
 /// Optional in the spec and required in practice; FCM rejects a VAPID
 /// signature without one.
-const VAPID_SUBJECT: &str = "https://github.com/dropseed/review";
+const VAPID_SUBJECT: &str = "https://github.com/dropseed/spur";
 
 /// How long one endpoint gets before it counts as a failure. Deliveries are
 /// serial, so this also bounds `send_to_all`.
@@ -58,7 +58,7 @@ pub enum PushError {
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
     #[error("Central storage error: {0}")]
-    Central(#[from] central::CentralError),
+    Central(#[from] home::CentralError),
     #[error("Version conflict: expected version {expected}, found {found}. Another process modified the push state.")]
     VersionConflict { expected: u64, found: u64 },
     #[error("Failed to save push state after repeated version conflicts.")]
@@ -144,7 +144,7 @@ pub struct SendReport {
 }
 
 fn push_path() -> Result<PathBuf, PushError> {
-    Ok(central::get_central_root()?.join("push.json"))
+    Ok(home::get_central_root()?.join("push.json"))
 }
 
 fn load() -> Result<PushState, PushError> {
@@ -188,7 +188,7 @@ static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// A scratch path for one save, distinct from every other save's, beside the
 /// target so the rename stays on one filesystem. See
-/// [`crate::work::storage`]'s `temp_path` for why a shared name is a bug.
+/// [`crate::workspace::storage`]'s `temp_path` for why a shared name is a bug.
 fn temp_path(path: &Path) -> PathBuf {
     let n = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
     path.with_extension(format!("json.tmp.{}.{n}", std::process::id()))
@@ -410,7 +410,7 @@ pub async fn send_to_all(payload: &NotificationPayload) -> anyhow::Result<SendRe
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::review::central::tests::{setup_test, ENV_LOCK};
+    use crate::home::tests::{setup_test, ENV_LOCK};
 
     fn sub(endpoint: &str, p256dh: &str) -> PushSubscription {
         PushSubscription {
@@ -561,14 +561,14 @@ mod tests {
     #[test]
     fn the_payload_the_service_worker_sees_is_camel_case() {
         let payload = NotificationPayload {
-            title: "Review".into(),
+            title: "Spur".into(),
             body: "Test notification".into(),
             url: Some("/".into()),
             tag: None,
         };
         assert_eq!(
             serde_json::to_string(&payload).unwrap(),
-            r#"{"title":"Review","body":"Test notification","url":"/"}"#
+            r#"{"title":"Spur","body":"Test notification","url":"/"}"#
         );
     }
 
@@ -587,7 +587,7 @@ mod tests {
     }
 
     /// Driven on a runtime built here rather than by `#[tokio::test]`, because
-    /// `$REVIEW_HOME` has to stay this test's for the whole send — which means
+    /// `$SPUR_HOME` has to stay this test's for the whole send — which means
     /// holding `ENV_LOCK` across the await.
     #[test]
     fn sending_with_nothing_registered_reports_nothing() {
@@ -599,7 +599,7 @@ mod tests {
             .build()
             .unwrap()
             .block_on(send_to_all(&NotificationPayload {
-                title: "Review".into(),
+                title: "Spur".into(),
                 body: "Test notification".into(),
                 url: None,
                 tag: None,

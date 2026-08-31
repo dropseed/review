@@ -1,6 +1,6 @@
-use super::central;
 use super::migrate;
 use super::state::{ReviewState, ReviewSummary};
+use crate::home;
 use crate::sources::github::GitHubPrRef;
 use serde::Serialize;
 use std::fs;
@@ -20,7 +20,7 @@ pub enum StorageError {
     #[error("Version conflict: expected version {expected}, found {found}. Another process modified the file.")]
     VersionConflict { expected: u64, found: u64 },
     #[error("Central storage error: {0}")]
-    Central(#[from] central::CentralError),
+    Central(#[from] home::CentralError),
 }
 
 /// Parse review JSON, migrating it forward to the current schema first.
@@ -36,15 +36,15 @@ fn deserialize_review(content: &str) -> Result<ReviewState, StorageError> {
 
 /// Get the storage directory for review state (centralized).
 fn get_storage_dir(repo_path: &Path) -> Result<PathBuf, StorageError> {
-    Ok(central::get_repo_storage_dir(repo_path)?.join("reviews"))
+    Ok(home::get_repo_storage_dir(repo_path)?.join("reviews"))
 }
 
-/// Path to the repo's stored default-comparison marker (`review use`).
+/// Path to the repo's stored default-comparison marker (`spur use`).
 fn default_spec_path(repo_path: &Path) -> Result<PathBuf, StorageError> {
-    Ok(central::get_repo_storage_dir(repo_path)?.join("default-spec"))
+    Ok(home::get_repo_storage_dir(repo_path)?.join("default-spec"))
 }
 
-/// The repo's stored default comparison spec, if `review use` set one. A blank
+/// The repo's stored default comparison spec, if `spur use` set one. A blank
 /// or missing file (or any read error) reads as "no default".
 pub fn read_default_spec(repo_path: &Path) -> Option<String> {
     let path = default_spec_path(repo_path).ok()?;
@@ -57,7 +57,7 @@ pub fn read_default_spec(repo_path: &Path) -> Option<String> {
     }
 }
 
-/// Persist the repo's default comparison spec (`review use <spec>`). The raw
+/// Persist the repo's default comparison spec (`spur use <spec>`). The raw
 /// spec string is stored and re-resolved on each use, so it stays valid as
 /// branches move.
 pub fn write_default_spec(repo_path: &Path, spec: &str) -> Result<(), StorageError> {
@@ -97,7 +97,7 @@ pub struct GlobalReviewSummary {
 
 /// List all reviews across all registered repos.
 pub fn list_all_reviews_global() -> Result<Vec<GlobalReviewSummary>, StorageError> {
-    let repos = central::list_registered_repos()?;
+    let repos = home::list_registered_repos()?;
     let mut all = Vec::new();
 
     for entry in repos {
@@ -171,7 +171,7 @@ fn review_filename(ref_name: &str) -> String {
 
 /// The stem a review's own file name and its history directory share.
 fn review_file_stem(ref_name: &str) -> String {
-    central::sanitize_path_component(ref_name)
+    home::sanitize_path_component(ref_name)
 }
 
 /// Subdirectory of `reviews/` holding superseded versions, one directory per
@@ -187,7 +187,7 @@ const HISTORY_LIMIT: usize = 50;
 /// One superseded version of a review, as recorded when it was overwritten.
 #[derive(Debug, Clone)]
 pub struct ReviewSnapshot {
-    /// The version the snapshot holds — its file name, and what `review undo
+    /// The version the snapshot holds — its file name, and what `spur undo
     /// --to` names.
     pub version: u64,
     pub state: ReviewState,
@@ -342,12 +342,12 @@ pub fn load_review_state(repo_path: &Path, ref_name: &str) -> Result<ReviewState
 /// the sidebar, and this runs on every debounced write — approving one hunk
 /// re-registered a repo the user had just removed, so "Remove from sidebar"
 /// could never stick. Adoption belongs to the explicit paths:
-/// [`ensure_review_exists`] and `central::register_repo_if_valid`.
+/// [`ensure_review_exists`] and `home::register_repo_if_valid`.
 ///
 /// Every writer funnels through here, which makes it the one place that can
 /// keep history: the version being superseded is snapshotted under
 /// `reviews/history/<review>/v<N>.json` before the overwrite, and that is what
-/// `review undo` restores.
+/// `spur undo` restores.
 pub fn save_review_state(repo_path: &Path, state: &ReviewState) -> Result<(), StorageError> {
     let storage_dir = get_storage_dir(repo_path)?;
     fs::create_dir_all(&storage_dir)?;
@@ -381,7 +381,7 @@ pub fn save_review_state(repo_path: &Path, state: &ReviewState) -> Result<(), St
 
     // Temp-then-rename in the same directory, so the live file goes from one
     // complete version to the next with nothing in between (see `temp_path`
-    // in `work::storage` for why the temp name is per-writer).
+    // in `workspace::storage` for why the temp name is per-writer).
     let content = serde_json::to_string_pretty(state)?;
     let tmp = temp_path(&path);
     let write = fs::write(&tmp, content).and_then(|()| fs::rename(&tmp, &path));
@@ -458,9 +458,9 @@ pub fn list_saved_reviews(repo_path: &Path) -> Result<Vec<ReviewSummary>, Storag
 /// Used to make new reviews immediately visible in the sidebar.
 ///
 /// This is one of the two adoption points that register the repo (the other
-/// being `central::register_repo_if_valid`, which the app calls when a repo is
+/// being `home::register_repo_if_valid`, which the app calls when a repo is
 /// opened). Every open path reaches here — the desktop's repo init and review
-/// switch, its first-meaningful-action save guard, `review start`, and
+/// switch, its first-meaningful-action save guard, `spur start`, and
 /// `review <path>` — while the debounced save path deliberately does not, so a
 /// repo the user removed stays removed until they open it again.
 pub fn ensure_review_exists(
@@ -469,7 +469,7 @@ pub fn ensure_review_exists(
     base_override: Option<String>,
     github_pr: Option<GitHubPrRef>,
 ) -> Result<(), StorageError> {
-    central::register_repo(repo_path)?;
+    home::register_repo(repo_path)?;
 
     let storage_dir = get_storage_dir(repo_path)?;
     let filename = review_filename(ref_name);
@@ -549,7 +549,7 @@ pub fn delete_review(repo_path: &Path, ref_name: &str) -> Result<(), StorageErro
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::review::central::tests::ENV_LOCK;
+    use crate::home::tests::ENV_LOCK;
     use crate::review::state::{
         AnnotationSide, Attributed, HunkState, LineAnnotation, Source, REVIEW_SCHEMA_VERSION,
     };
@@ -558,17 +558,17 @@ mod tests {
     /// The ref a test review is keyed by.
     const TEST_REF: &str = "feature";
 
-    /// Create a test repo and set REVIEW_HOME to a temp dir.
+    /// Create a test repo and set SPUR_HOME to a temp dir.
     /// Returns (repo_dir, review_home_dir) — both TempDirs kept alive.
     fn create_test_repo() -> (TempDir, TempDir) {
         let temp_dir = TempDir::new().unwrap();
         // Create .git directory to simulate a git repo
         fs::create_dir(temp_dir.path().join(".git")).unwrap();
 
-        let review_home = TempDir::new().unwrap();
-        std::env::set_var("REVIEW_HOME", review_home.path());
+        let spur_home = TempDir::new().unwrap();
+        std::env::set_var("SPUR_HOME", spur_home.path());
 
-        (temp_dir, review_home)
+        (temp_dir, spur_home)
     }
 
     #[test]
@@ -581,7 +581,7 @@ mod tests {
     #[test]
     fn test_load_review_state_creates_new_if_not_exists() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (temp_dir, _review_home) = create_test_repo();
+        let (temp_dir, _spur_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
 
         let state = load_review_state(&repo_path, TEST_REF).unwrap();
@@ -593,7 +593,7 @@ mod tests {
     #[test]
     fn test_save_and_load_review_state_roundtrip() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (temp_dir, _review_home) = create_test_repo();
+        let (temp_dir, _spur_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
 
         // Create a state with some data
@@ -631,7 +631,7 @@ mod tests {
     #[test]
     fn test_annotation_fields_roundtrip() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (temp_dir, _review_home) = create_test_repo();
+        let (temp_dir, _spur_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
 
         let mut state = ReviewState::new(TEST_REF, None);
@@ -693,32 +693,32 @@ mod tests {
     #[test]
     fn test_saving_does_not_register_the_repo_but_ensuring_does() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (temp_dir, _review_home) = create_test_repo();
+        let (temp_dir, _spur_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
 
         // A bare save must not put the repo in the sidebar. This is the path a
         // single hunk approval takes, and it used to resurrect a repo the user
         // had just removed, within the save debounce.
         save_review_state(&repo_path, &ReviewState::new(TEST_REF, None)).unwrap();
-        assert!(!central::is_registered(&repo_path).unwrap());
+        assert!(!home::is_registered(&repo_path).unwrap());
 
         // Opening a review is an adoption, so that does register.
         ensure_review_exists(&repo_path, TEST_REF, None, None).unwrap();
-        assert!(central::is_registered(&repo_path).unwrap());
+        assert!(home::is_registered(&repo_path).unwrap());
 
         // …and removal survives subsequent saves.
-        central::unregister_repo(&repo_path).unwrap();
+        home::unregister_repo(&repo_path).unwrap();
         let mut state = load_review_state(&repo_path, TEST_REF).unwrap();
         state.notes = "reviewed".to_owned();
         state.prepare_for_save();
         save_review_state(&repo_path, &state).unwrap();
-        assert!(!central::is_registered(&repo_path).unwrap());
+        assert!(!home::is_registered(&repo_path).unwrap());
     }
 
     #[test]
     fn test_list_saved_reviews_empty() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (temp_dir, _review_home) = create_test_repo();
+        let (temp_dir, _spur_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
 
         let reviews = list_saved_reviews(&repo_path).unwrap();
@@ -728,7 +728,7 @@ mod tests {
     #[test]
     fn test_list_saved_reviews_with_reviews() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (temp_dir, _review_home) = create_test_repo();
+        let (temp_dir, _spur_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
 
         // Create and save two reviews, each keyed by a distinct ref.
@@ -742,7 +742,7 @@ mod tests {
     #[test]
     fn test_delete_review() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (temp_dir, _review_home) = create_test_repo();
+        let (temp_dir, _spur_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
 
         // Save a review
@@ -763,7 +763,7 @@ mod tests {
     #[test]
     fn test_review_exists() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (temp_dir, _review_home) = create_test_repo();
+        let (temp_dir, _spur_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
 
         // Should not exist initially
@@ -785,7 +785,7 @@ mod tests {
     #[test]
     fn test_set_base_override_updates_in_place() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (temp_dir, _review_home) = create_test_repo();
+        let (temp_dir, _spur_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
 
         // Start with a review that derives its base (no override).
@@ -809,7 +809,7 @@ mod tests {
     #[test]
     fn test_schema_version_roundtrip() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (temp_dir, _review_home) = create_test_repo();
+        let (temp_dir, _spur_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
 
         save_review_state(&repo_path, &ReviewState::new(TEST_REF, None)).unwrap();
@@ -820,10 +820,10 @@ mod tests {
     #[test]
     fn test_load_rejects_newer_schema() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (temp_dir, _review_home) = create_test_repo();
+        let (temp_dir, _spur_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
 
-        central::register_repo(&repo_path).unwrap();
+        home::register_repo(&repo_path).unwrap();
         let dir = get_storage_dir(&repo_path).unwrap();
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join(review_filename(TEST_REF));
@@ -842,10 +842,10 @@ mod tests {
     #[test]
     fn test_save_refuses_to_overwrite_unreadable_file() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (temp_dir, _review_home) = create_test_repo();
+        let (temp_dir, _spur_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
 
-        central::register_repo(&repo_path).unwrap();
+        home::register_repo(&repo_path).unwrap();
         let dir = get_storage_dir(&repo_path).unwrap();
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join(review_filename(TEST_REF));
@@ -865,10 +865,10 @@ mod tests {
     #[test]
     fn test_list_skips_unreadable_review() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (temp_dir, _review_home) = create_test_repo();
+        let (temp_dir, _spur_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
 
-        central::register_repo(&repo_path).unwrap();
+        home::register_repo(&repo_path).unwrap();
         let dir = get_storage_dir(&repo_path).unwrap();
         fs::create_dir_all(&dir).unwrap();
         // Both a garbage file and a pre-ref (old-schema) review are silently
@@ -894,7 +894,7 @@ mod tests {
     #[test]
     fn overwriting_a_review_keeps_the_version_it_supersedes() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (temp_dir, _review_home) = create_test_repo();
+        let (temp_dir, _spur_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
 
         // A fresh save has nothing to keep.
@@ -935,7 +935,7 @@ mod tests {
     #[test]
     fn history_is_pruned_by_version_not_by_name() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (temp_dir, _review_home) = create_test_repo();
+        let (temp_dir, _spur_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
 
         let dir = history_dir(&get_storage_dir(&repo_path).unwrap(), TEST_REF);
@@ -971,7 +971,7 @@ mod tests {
     #[test]
     fn deleting_a_review_takes_its_history() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (temp_dir, _review_home) = create_test_repo();
+        let (temp_dir, _spur_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
 
         let mut state = ReviewState::new(TEST_REF, None);
@@ -990,7 +990,7 @@ mod tests {
     #[test]
     fn listings_ignore_the_history_directory() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (temp_dir, _review_home) = create_test_repo();
+        let (temp_dir, _spur_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
 
         let mut state = ReviewState::new(TEST_REF, None);
@@ -1007,7 +1007,7 @@ mod tests {
     #[test]
     fn test_delete_review_nonexistent() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let (temp_dir, _review_home) = create_test_repo();
+        let (temp_dir, _spur_home) = create_test_repo();
         let repo_path = temp_dir.path().to_path_buf();
 
         // Should not error when deleting non-existent review

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { CheckIcon } from "../ui/icons";
 import { DropdownMenuItem } from "../ui/dropdown-menu";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import type { FileSortOrder } from "../../stores/slices/preferencesSlice";
 
 export const SORT_LABELS: Record<FileSortOrder, string> = {
@@ -24,8 +24,8 @@ const SORT_ORDERS = ["name", "size", "modified"] as const;
  * fragment and both already held the same two store bindings to build them.
  */
 export function SortMenuItems(): ReactNode {
-  const fileSortOrder = useReviewStore((s) => s.fileSortOrder);
-  const setFileSortOrder = useReviewStore((s) => s.setFileSortOrder);
+  const fileSortOrder = useSpurStore((s) => s.fileSortOrder);
+  const setFileSortOrder = useSpurStore((s) => s.setFileSortOrder);
 
   return (
     <>

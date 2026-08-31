@@ -2,7 +2,7 @@ import { vi, describe, it, expect, afterEach } from "vitest";
 
 vi.mock("../../api", () => ({ getApiClient: () => ({}) }));
 
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import {
   terminalSession,
   workspace as makeWorkspace,
@@ -38,7 +38,7 @@ function seed(): void {
     cwd: "/other",
     workspaceId: "ws-z",
   });
-  useReviewStore.setState({
+  useSpurStore.setState({
     repoPath: REPO,
     reviewRef: "main",
     contentFocus: "split",
@@ -55,7 +55,7 @@ function seed(): void {
 }
 
 afterEach(() => {
-  useReviewStore.setState({
+  useSpurStore.setState({
     repoPath: null,
     reviewRef: null,
     contentFocus: "code",
@@ -72,11 +72,11 @@ afterEach(() => {
 describe("jumping to a terminal", () => {
   it("activates its tab and focuses the pane within it", () => {
     seed();
-    useReviewStore.setState({ activeTabId: "tabZ" });
+    useSpurStore.setState({ activeTabId: "tabZ" });
 
     jumpToTerminal("b");
 
-    const state = useReviewStore.getState();
+    const state = useSpurStore.getState();
     expect(state.activeTabId).toBe("tabA");
     expect(state.terminalTabs[0].focused).toBe("b");
   });
@@ -91,43 +91,43 @@ describe("jumping to a terminal", () => {
 
     jumpToTerminal("z");
 
-    const state = useReviewStore.getState();
+    const state = useSpurStore.getState();
     expect(state.focusedWorkspaceId).toBe("ws-z");
     expect(state.activeTabId).toBe("tabZ");
   });
 
   it("leaves the focus alone for a tab in the workspace already on screen", () => {
     seed();
-    useReviewStore.setState({
+    useSpurStore.setState({
       activeTabId: "tabZ",
       focusedWorkspaceId: "ws-a",
     });
 
     jumpToTerminal("b");
 
-    const state = useReviewStore.getState();
+    const state = useSpurStore.getState();
     expect(state.focusedWorkspaceId).toBe("ws-a");
     expect(state.activeTabId).toBe("tabA");
   });
 
   it("brings the panel into view when the code has focus", () => {
     seed();
-    useReviewStore.setState({ contentFocus: "code" });
+    useSpurStore.setState({ contentFocus: "code" });
 
     jumpToTerminal("a");
 
-    expect(useReviewStore.getState().contentFocus).toBe("split");
+    expect(useSpurStore.getState().contentFocus).toBe("split");
   });
 
   it("jumpToTab lands on the tab's own focused pane", () => {
     seed();
     // The pane the user was last in, which is what the sidebar row stands for.
     jumpToTerminal("b");
-    useReviewStore.setState({ activeTabId: "tabZ" });
+    useSpurStore.setState({ activeTabId: "tabZ" });
 
     jumpToTab("tabA");
 
-    const state = useReviewStore.getState();
+    const state = useSpurStore.getState();
     expect(state.activeTabId).toBe("tabA");
     expect(state.terminalTabs[0].focused).toBe("b");
   });
@@ -135,6 +135,6 @@ describe("jumping to a terminal", () => {
   it("does nothing for a tab that isn't there", () => {
     seed();
     jumpToTab("gone");
-    expect(useReviewStore.getState().activeTabId).toBe("tabA");
+    expect(useSpurStore.getState().activeTabId).toBe("tabA");
   });
 });

@@ -1,5 +1,5 @@
 import { type ReactNode } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 
 /**
  * Heads-up that reconciliation carried decisions forward after the diff drifted.
@@ -10,8 +10,8 @@ import { useReviewStore } from "../../stores";
  * reviewing.
  */
 export function CarryForwardRow(): ReactNode {
-  const carriedForward = useReviewStore((s) => s.carriedForward);
-  const dismiss = useReviewStore((s) => s.dismissCarriedForward);
+  const carriedForward = useSpurStore((s) => s.carriedForward);
+  const dismiss = useSpurStore((s) => s.dismissCarriedForward);
   if (carriedForward <= 0) return null;
 
   const noun = carriedForward === 1 ? "decision" : "decisions";

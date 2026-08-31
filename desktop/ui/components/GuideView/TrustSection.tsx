@@ -1,5 +1,5 @@
 import { type ReactNode, useState, useMemo, useEffect, useRef } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { useAllHunks } from "../../stores/selectors/hunks";
 import { useTrustCounts, useKnownPatternIds } from "../../hooks/useTrustCounts";
 import {
@@ -121,9 +121,9 @@ function PatternRow({
 
 export function TrustSection(): ReactNode {
   const hunks = useAllHunks();
-  const reviewState = useReviewStore((s) => s.reviewState);
-  const addTrustPattern = useReviewStore((s) => s.addTrustPattern);
-  const removeTrustPattern = useReviewStore((s) => s.removeTrustPattern);
+  const reviewState = useSpurStore((s) => s.reviewState);
+  const addTrustPattern = useSpurStore((s) => s.addTrustPattern);
+  const removeTrustPattern = useSpurStore((s) => s.removeTrustPattern);
 
   const [trustCategories, setTrustCategories] = useState<TrustCategory[]>([]);
   const [showZeroMatch, setShowZeroMatch] = useState(false);
@@ -190,7 +190,7 @@ export function TrustSection(): ReactNode {
 
     if (hunkIds.length === 0) return;
 
-    useReviewStore.getState().openAdhocGroup({
+    useSpurStore.getState().openAdhocGroup({
       title: patternName,
       hunkIds,
       badgeLabel: "Trust pattern",

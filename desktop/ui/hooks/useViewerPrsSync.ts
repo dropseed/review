@@ -1,5 +1,5 @@
 import { useCallback, useEffect } from "react";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { usePollWhileVisible } from "./usePollWhileVisible";
 
 /** How often to re-ask GitHub while the window is visible. */
@@ -17,8 +17,8 @@ const VIEWER_PR_POLL_MS = 300_000;
  * call, which is not something to spend on a window nobody is looking at.
  */
 export function useViewerPrsSync(): void {
-  const loadViewerPrs = useReviewStore((s) => s.loadViewerPrs);
-  const refreshViewerPrs = useReviewStore((s) => s.refreshViewerPrs);
+  const loadViewerPrs = useSpurStore((s) => s.loadViewerPrs);
+  const refreshViewerPrs = useSpurStore((s) => s.refreshViewerPrs);
 
   useEffect(() => {
     let cancelled = false;

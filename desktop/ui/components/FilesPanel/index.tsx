@@ -7,7 +7,7 @@ import {
   useFilePanelNavigation,
   useFilePanelApproval,
 } from "./hooks";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { CheckIcon, SidebarPanelIcon } from "../ui/icons";
 import { LoadingState } from "../ui/loading-state";
 import { Spinner } from "../ui/spinner";
@@ -66,8 +66,8 @@ function TabCount({ value }: { value: number }) {
 }
 
 export function FilesPanel() {
-  const comparison = useReviewStore((s) => s.comparison);
-  const guideMode = useReviewStore((s) => s.guideMode);
+  const comparison = useSpurStore((s) => s.comparison);
+  const guideMode = useSpurStore((s) => s.guideMode);
 
   // Browse-tab section collapse.
   const [browseFilesOpen, setBrowseFilesOpen] = useState(true);
@@ -118,12 +118,12 @@ export function FilesPanel() {
     useFilePanelApproval();
 
   // File sort order (shared across Review + Browse tabs)
-  const fileSortOrder = useReviewStore((s) => s.fileSortOrder);
+  const fileSortOrder = useSpurStore((s) => s.fileSortOrder);
 
   // Navigate to a specific hunk (used by FlatFileNode symbol rows)
   const handleNavigateToHunk = useCallback(
     (filePath: string, hunkId: string) => {
-      useReviewStore.setState({
+      useSpurStore.setState({
         guideContentMode: null,
         selectedFile: filePath,
         focusedHunkId: hunkId,
@@ -133,7 +133,7 @@ export function FilesPanel() {
     [],
   );
 
-  const toggleFilesPanel = useReviewStore((s) => s.toggleFilesPanel);
+  const toggleFilesPanel = useSpurStore((s) => s.toggleFilesPanel);
 
   // One table, rendered here and by the collapsed rail — so the rail can't
   // offer a tab this strip doesn't have.
@@ -148,9 +148,9 @@ export function FilesPanel() {
 
   // Browse rows follow the focused pane too — the Review tab's rows get this
   // from FileListSection, but Browse maps FileNode itself.
-  const secondaryFile = useReviewStore((s) => s.secondaryFile);
-  const focusedPane = useReviewStore((s) => s.focusedPane);
-  const panesOnScreen = useReviewStore(arePanesOnScreen);
+  const secondaryFile = useSpurStore((s) => s.secondaryFile);
+  const focusedPane = useSpurStore((s) => s.focusedPane);
+  const panesOnScreen = useSpurStore(arePanesOnScreen);
   const browsePanes = resolvePaneFiles(
     selectedFile,
     secondaryFile,
@@ -163,8 +163,8 @@ export function FilesPanel() {
   // describes the working tree. Sorting is shared with the working tree's tree;
   // hunk status is not, because a revision that isn't being compared to
   // anything has none.
-  const browseAtRef = useReviewStore(historicRef);
-  const peek = useReviewStore(ephemeralView);
+  const browseAtRef = useSpurStore(historicRef);
+  const peek = useSpurStore(ephemeralView);
   const refTree = useBrowseRefTree();
   const refFilesTree = useMemo(
     () => processTree(refTree.entries, NO_HUNK_STATUS, "browse", fileSortOrder),
@@ -175,7 +175,7 @@ export function FilesPanel() {
   // A first visit to a comparison, still loading. A refresh never sets this
   // (that is what `isRefreshing` suppresses), and a restore from the snapshot
   // cache never has it — its diff is already here.
-  const comparisonLoading = useReviewStore((s) => s.loadingProgress !== null);
+  const comparisonLoading = useSpurStore((s) => s.loadingProgress !== null);
 
   // Browse is the surface the whole-repo listing exists for, so it is the one
   // that pays for it. A historic revision reads the object database instead and
@@ -184,8 +184,8 @@ export function FilesPanel() {
   // The tab starts on Browse and is auto-switched to Review once hunks arrive,
   // so "showing Browse" is only true of a settled panel: one the user put here,
   // or one whose comparison has arrived with nothing to review.
-  const ensureAllFiles = useReviewStore((s) => s.ensureAllFiles);
-  const tabChosen = useReviewStore((s) => s.filesPanelTabChosen);
+  const ensureAllFiles = useSpurStore((s) => s.ensureAllFiles);
+  const tabChosen = useSpurStore((s) => s.filesPanelTabChosen);
   useEffect(() => {
     if (viewMode !== "browse" || browseAtRef) return;
     if (comparisonLoading) return;
@@ -212,8 +212,8 @@ export function FilesPanel() {
   const browseDirPaths = browseAtRef ? refDirPaths : allDirPaths;
 
   // Context menu support
-  const openInSplit = useReviewStore((s) => s.openInSplit);
-  const selectWorkingTreeFile = useReviewStore((s) => s.selectWorkingTreeFile);
+  const openInSplit = useSpurStore((s) => s.openInSplit);
+  const selectWorkingTreeFile = useSpurStore((s) => s.selectWorkingTreeFile);
 
   // Context value for FlatFileNode tree
   const reviewDataContextValue = useMemo(

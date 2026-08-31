@@ -6,7 +6,7 @@
 
 import { toast } from "sonner";
 import { getPlatformServices } from "../../platform";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import {
   findTab,
   findTabForTerminal,
@@ -37,7 +37,7 @@ export function focusedTerminalTab(): {
   const terminalId = focusedTerminalId();
   if (!terminalId) return null;
   const tab = findTabForTerminal(
-    useReviewStore.getState().terminalTabs,
+    useSpurStore.getState().terminalTabs,
     terminalId,
   );
   return tab ? { terminalId, tab } : null;
@@ -79,7 +79,7 @@ function focusWithinTerminalPanel(): boolean {
  * falls through.
  */
 function shownTerminalPane(): string | null {
-  const state = useReviewStore.getState();
+  const state = useSpurStore.getState();
   // The overview draws every workspace's tabs at once, with a × on each card.
   // "The one the panel is showing" has no answer there, and guessing at one
   // would kill a shell the user never pointed at.
@@ -119,7 +119,7 @@ function shownTerminalPane(): string | null {
  */
 function busyReasons(ids: string[]): string[] {
   const { terminalStatuses, terminalSessions, terminalExited } =
-    useReviewStore.getState();
+    useSpurStore.getState();
   const reasons: string[] = [];
   for (const id of ids) {
     if (id in terminalExited) continue;
@@ -167,7 +167,7 @@ async function confirmKill(ids: string[]): Promise<boolean> {
  * built something here, and none of them is ever reaped: removal stays theirs.
  *
  * This is the *event* half of cleanup, and deliberately not a rule
- * `work::cleanup` could carry — a passive sweep with this predicate would also
+ * `workspace::cleanup` could carry — a passive sweep with this predicate would also
  * reap the branch a person queued up to read later and never ran anything in.
  * Closing the terminal is what says the workspace is spent.
  *
@@ -180,7 +180,7 @@ async function reapSpentWorkspace(
   workspaceId: string,
   closing: readonly string[],
 ): Promise<void> {
-  const state = useReviewStore.getState();
+  const state = useSpurStore.getState();
   const workspace = state.workspaces.find((entry) => entry.id === workspaceId);
   if (!workspace) return;
   if (workspace.title !== null || workspace.attachments.length > 1) return;
@@ -198,7 +198,7 @@ async function reapSpentWorkspace(
 /** Tear down one pane locally, killing its PTY unless it is already dead. */
 function teardown(id: string): void {
   const { terminalExited, removeTerminal, killTerminal } =
-    useReviewStore.getState();
+    useSpurStore.getState();
   // Update store state first so the pane unmounts (and unsubscribes from
   // output), THEN dispose the xterm — deferred to the next macrotask so the
   // React unmount has committed. Disposing synchronously here would tear down
@@ -254,7 +254,7 @@ export function hasPendingClose(): boolean {
  * they were the last thing in.
  */
 function deferClose(ids: string[], after: () => Promise<void>): void {
-  const state = useReviewStore.getState();
+  const state = useSpurStore.getState();
   const live = ids.filter((id) => !(id in state.terminalExited));
   for (const id of ids) {
     if (!live.includes(id)) teardown(id);
@@ -316,7 +316,7 @@ function undoClose(pending: PendingClose): void {
   if (index === -1) return;
   pendingCloses.splice(index, 1);
   clearTimeout(pending.timer);
-  useReviewStore.getState().restoreTerminalTabs(pending.tabs);
+  useSpurStore.getState().restoreTerminalTabs(pending.tabs);
 }
 
 /**
@@ -354,7 +354,7 @@ export async function closeTerminals(ids: string[]): Promise<boolean> {
   if (!(await confirmKill(ids))) return false;
   // Read the attributions before the teardown drops the sessions that carry
   // them: after this, nothing left in the store can say where these ran.
-  const { terminalSessions } = useReviewStore.getState();
+  const { terminalSessions } = useSpurStore.getState();
   const workspaceIds = new Set(
     ids
       .map((id) => terminalSessions[id]?.workspaceId)
@@ -416,7 +416,7 @@ export async function closeFocusedTerminal(): Promise<boolean> {
 export async function removeWorkspaceAndTerminals(
   workspaceId: string,
 ): Promise<boolean> {
-  const asked = useReviewStore.getState();
+  const asked = useSpurStore.getState();
   const title =
     asked.workspaces.find((entry) => entry.id === workspaceId)?.displayTitle ??
     "this workspace";
@@ -432,11 +432,11 @@ export async function removeWorkspaceAndTerminals(
   if (scope === null) return false;
 
   // Read again, because a dialog is modal to the person and to nothing else:
-  // an agent's `review terminal start` — or another window — can land a
+  // an agent's `spur terminal start` — or another window — can land a
   // session in this subtree while one is open. A session missing from `ids`
   // is a shell that survives the only card it was reachable from, which is
   // the exact thing this function exists to prevent.
-  const state = useReviewStore.getState();
+  const state = useSpurStore.getState();
   const going =
     scope === "subtree"
       ? [workspaceId, ...descendantsOf(state.workspaces, workspaceId)]
@@ -521,7 +521,7 @@ async function confirmRemove(
   ids: readonly string[],
 ): Promise<boolean> {
   const { terminalStatuses, terminalSessions, terminalExited } =
-    useReviewStore.getState();
+    useSpurStore.getState();
   const live = ids.filter((id) => !(id in terminalExited));
   if (live.length === 0) return true;
   const lines = live.map((id) => {

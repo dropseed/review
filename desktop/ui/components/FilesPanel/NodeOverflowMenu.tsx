@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { getPlatformServices } from "../../platform";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { REVEAL_LABEL } from "../../hooks/useRevealLabel";
 import {
   DropdownMenu,
@@ -36,7 +36,7 @@ export function NodeOverflowMenu({
   onOpenInSplit,
   showRevealInBrowse,
 }: NodeOverflowMenuProps) {
-  const repoPath = useReviewStore((s) => s.repoPath);
+  const repoPath = useSpurStore((s) => s.repoPath);
   const [open, setOpen] = useState(false);
   const fullPath = repoPath ? `${repoPath}/${path}` : path;
 
@@ -127,7 +127,7 @@ export function NodeOverflowMenu({
             )}
             {showRevealInBrowse && (
               <DropdownMenuItem
-                onClick={() => useReviewStore.getState().revealInBrowse(path)}
+                onClick={() => useSpurStore.getState().revealInBrowse(path)}
               >
                 <svg
                   fill="none"

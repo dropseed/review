@@ -1,5 +1,5 @@
 import { type ReactNode, useMemo, useState } from "react";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { useAllHunks } from "../../stores/selectors/hunks";
 import {
   isHunkUnclassified,
@@ -208,7 +208,7 @@ export function ClassificationsModal({
   onSelectHunk,
 }: ClassificationsModalProps): ReactNode {
   const hunks = useAllHunks();
-  const reviewState = useReviewStore((s) => s.reviewState);
+  const reviewState = useSpurStore((s) => s.reviewState);
   const trustList = reviewState?.trustList ?? EMPTY_TRUST_LIST;
 
   const [selectedFilter, setSelectedFilter] = useState<string | null>(null);

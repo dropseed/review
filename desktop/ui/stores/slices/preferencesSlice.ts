@@ -225,7 +225,7 @@ const defaults = {
   // attention signal *unseen*: a card that started waiting after the last time
   // its owner looked at it wears an accent until they look again.
   //
-  // A preference rather than anything in `work.json` on purpose — this is a
+  // A preference rather than anything in `workspaces.json` on purpose — this is a
   // fact about one pair of eyes, not about the work. A second machine
   // reasonably has its own answer, and nothing here is worth a queue write.
   workspaceSeenAt: {} as Record<string, number>,
@@ -235,7 +235,7 @@ const defaults = {
   //
   // A preference for the same reason `workspaceSeenAt` is one: it says where
   // this window was, not what the work is, and the queue is shared with the
-  // CLI and with any other machine reading the same `work.json`.
+  // CLI and with any other machine reading the same `workspaces.json`.
   lastWorkspaceId: null as string | null,
   fileSortOrder: "name" as FileSortOrder,
   matchVscodeTheme: false,

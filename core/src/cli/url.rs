@@ -1,4 +1,4 @@
-//! `review url` — print a `review://` deep link that opens the desktop app
+//! `review url` — print a `spur://` deep link that opens the desktop app
 //! at a specific repo, comparison, file, and (optionally) hunk.
 //!
 //! Agents (and humans) call this to produce a clickable URL they can paste
@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 use clap::Args;
 
-use crate::review::central::compute_repo_id;
+use crate::home::compute_repo_id;
 
 use super::common::{parse_hunk_target, resolve_review_arg, HunkTarget};
 use super::get_repo_path;
@@ -65,7 +65,7 @@ pub fn run_url(args: UrlArgs) -> Result<(), String> {
 
     println!(
         "{}",
-        build_review_url(
+        build_spur_url(
             &repo_id,
             review_ref.as_deref(),
             file.as_deref(),
@@ -75,16 +75,16 @@ pub fn run_url(args: UrlArgs) -> Result<(), String> {
     Ok(())
 }
 
-/// Construct `review://open?repo=...&ref=...&file=...&hunk=...` with the
+/// Construct `spur://open?repo=...&ref=...&file=...&hunk=...` with the
 /// given parts. The `ref` value is the review ref (identity). All parameters
 /// are URL-encoded; missing parts are omitted.
-pub fn build_review_url(
+pub fn build_spur_url(
     repo_id: &str,
     review_ref: Option<&str>,
     file: Option<&str>,
     hunk: Option<&str>,
 ) -> String {
-    let mut url = format!("review://open?repo={}", urlencoding::encode(repo_id));
+    let mut url = format!("spur://open?repo={}", urlencoding::encode(repo_id));
     if let Some(review_ref) = review_ref {
         url.push_str(&format!("&ref={}", urlencoding::encode(review_ref)));
     }
@@ -103,7 +103,7 @@ mod tests {
 
     #[test]
     fn url_includes_all_present_params() {
-        let url = build_review_url(
+        let url = build_spur_url(
             "abc123",
             Some("main..feature"),
             Some("src/main.rs"),
@@ -111,19 +111,19 @@ mod tests {
         );
         assert_eq!(
             url,
-            "review://open?repo=abc123&ref=main..feature&file=src%2Fmain.rs&hunk=deadbeef"
+            "spur://open?repo=abc123&ref=main..feature&file=src%2Fmain.rs&hunk=deadbeef"
         );
     }
 
     #[test]
     fn url_omits_missing_params() {
-        let url = build_review_url("abc123", None, None, None);
-        assert_eq!(url, "review://open?repo=abc123");
+        let url = build_spur_url("abc123", None, None, None);
+        assert_eq!(url, "spur://open?repo=abc123");
     }
 
     #[test]
     fn url_encodes_branch_with_slash() {
-        let url = build_review_url("abc", Some("main..feature/x"), None, None);
+        let url = build_spur_url("abc", Some("main..feature/x"), None, None);
         assert!(url.contains("feature%2Fx"));
     }
 }

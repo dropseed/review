@@ -1,4 +1,4 @@
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import {
   getSidebarTree,
   sidebarRowsByKey,
@@ -91,5 +91,5 @@ export function getWorkspaceContext(state: {
 
 /** [`getWorkspaceContext`] as a hook. */
 export function useWorkspaceContext(): WorkspaceContext {
-  return useReviewStore(getWorkspaceContext);
+  return useSpurStore(getWorkspaceContext);
 }

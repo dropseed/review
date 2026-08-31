@@ -6,7 +6,7 @@
 //! - **The HTTP server** runs in this process, for as long as the app does. It
 //!   serves the same Axum API web mode serves, plus the frontend already
 //!   compiled into this binary (Tauri's asset resolver — see
-//!   [`review::server::AssetSource`]). It is ours to start and stop.
+//!   [`spur::server::AssetSource`]). It is ours to start and stop.
 //! - **The `tailscale serve` config** is not ours. It lives in tailscaled's
 //!   persistent state, survives reboots, and outlives this app. The toggle
 //!   writes it once and clears it once.
@@ -21,8 +21,8 @@
 
 use std::sync::Arc;
 
-use review::server::{AssetSource, StaticAsset, DEFAULT_PORT};
 use serde::Serialize;
+use spur::server::{AssetSource, StaticAsset, DEFAULT_PORT};
 use tauri::{AppHandle, Manager};
 use tokio::sync::oneshot;
 use tokio::sync::Mutex;
@@ -56,7 +56,7 @@ pub struct RemoteAccessState {
     /// The URL to open on a phone, once Tailscale agrees.
     pub url: Option<String>,
     /// Everything known about the local Tailscale node.
-    pub tailnet: review::tailnet::TailnetStatus,
+    pub tailnet: spur::tailnet::TailnetStatus,
     /// The admin page for the one setting the app cannot change itself.
     pub https_admin_url: &'static str,
 }
@@ -85,17 +85,17 @@ impl RemoteServer {
         }
 
         // Bind here, not inside the spawned task, so the common failure — the
-        // port is already held by a leftover `review-server` or a second copy
+        // port is already held by a leftover `spur-server` or a second copy
         // of the app — is this function's error rather than a log line arriving
         // after the toggle has drawn itself on.
-        let listener = review::server::bind(port)
+        let listener = spur::server::bind(port)
             .await
             .map_err(|err| format!("Couldn't start the server on port {port}: {err}"))?;
 
         let (tx, rx) = oneshot::channel();
         let assets = asset_source(app.clone());
         tauri::async_runtime::spawn(async move {
-            let served = review::server::serve_on(listener, assets, async {
+            let served = spur::server::serve_on(listener, assets, async {
                 let _ = rx.await;
             })
             .await;
@@ -155,13 +155,13 @@ fn asset_mime(path: &str, resolver_guess: &str) -> String {
         .unwrap_or_else(|| resolver_guess.to_owned())
 }
 
-/// The port to serve on: `$REVIEW_PORT`, else the shared default.
+/// The port to serve on: `$SPUR_PORT`, else the shared default.
 ///
 /// Honouring the environment variable matters more here than it looks: a dev
 /// build and an installed app on one machine would otherwise fight over the
 /// same port, and the loser is a toggle that won't switch on.
 pub fn port() -> u16 {
-    std::env::var("REVIEW_PORT")
+    std::env::var("SPUR_PORT")
         .ok()
         .and_then(|p| p.parse().ok())
         .unwrap_or(DEFAULT_PORT)
@@ -188,7 +188,7 @@ pub async fn remote_access_status(app: AppHandle) -> Result<RemoteAccessState, S
     // Two `tailscale` subprocesses, polled with `std::thread::sleep` and each
     // allowed 10 seconds — so up to 20 seconds of a tokio worker thread if
     // `tailscaled` is wedged. Off the runtime, like the enable/disable paths.
-    let tailnet = tauri::async_runtime::spawn_blocking(move || review::tailnet::status(port))
+    let tailnet = tauri::async_runtime::spawn_blocking(move || spur::tailnet::status(port))
         .await
         .map_err(|e| e.to_string())?;
     let server: tauri::State<'_, RemoteServer> = app.state();
@@ -197,9 +197,9 @@ pub async fn remote_access_status(app: AppHandle) -> Result<RemoteAccessState, S
         enabled: enabled_setting(),
         serving: server.is_serving().await,
         port,
-        url: tailnet.dns_name.as_deref().map(review::tailnet::public_url),
+        url: tailnet.dns_name.as_deref().map(spur::tailnet::public_url),
         tailnet,
-        https_admin_url: review::tailnet::HTTPS_ADMIN_URL,
+        https_admin_url: spur::tailnet::HTTPS_ADMIN_URL,
     })
 }
 
@@ -218,7 +218,7 @@ pub async fn remote_access_enable(app: AppHandle) -> Result<RemoteAccessState, S
 
     // The subprocess is blocking and this is an async command, so it runs off
     // the runtime's worker threads.
-    let configured = tauri::async_runtime::spawn_blocking(move || review::tailnet::enable(port))
+    let configured = tauri::async_runtime::spawn_blocking(move || spur::tailnet::enable(port))
         .await
         .map_err(|e| e.to_string())?;
 
@@ -239,7 +239,7 @@ pub async fn remote_access_enable(app: AppHandle) -> Result<RemoteAccessState, S
 /// failed would be the opposite of what they asked.
 #[tauri::command]
 pub async fn remote_access_disable(app: AppHandle) -> Result<RemoteAccessState, String> {
-    let cleared = tauri::async_runtime::spawn_blocking(review::tailnet::disable)
+    let cleared = tauri::async_runtime::spawn_blocking(spur::tailnet::disable)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -305,7 +305,7 @@ mod tests {
     #[test]
     fn an_extensionless_route_keeps_the_resolvers_answer() {
         assert_eq!(
-            asset_mime("/dropseed/review/master", "text/html"),
+            asset_mime("/dropseed/spur/master", "text/html"),
             "text/html"
         );
     }

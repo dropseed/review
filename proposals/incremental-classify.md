@@ -15,7 +15,7 @@ review classify --repo /path/to/repo --comparison "main..HEAD" --hunk-id "src/fo
 
 ## Why a CLI command
 
-Can't rely on `review` being in the user's PATH — but the app knows where its own binary lives inside the .app bundle. Tauri can resolve and spawn it directly. Each invocation is independent: easy to cancel, no shared state, no batch coordination.
+Can't rely on `spur` being in the user's PATH — but the app knows where its own binary lives inside the .app bundle. Tauri can resolve and spawn it directly. Each invocation is independent: easy to cancel, no shared state, no batch coordination.
 
 ## How the app drives it
 
@@ -32,9 +32,9 @@ No batch splitting, no concurrency semaphore, no generation counter. The app is 
 
 | Layer | Change |
 |---|---|
-| **`review` CLI** | Add `classify` subcommand that classifies a single hunk and prints JSON |
-| **`review` core** | Extract single-hunk classify function (already exists as the inner call in `classify_batch`) |
-| **Tauri backend** | Spawn the bundled `review` binary instead of calling `classify_hunks_batched` directly |
+| **`spur` CLI** | Add `classify` subcommand that classifies a single hunk and prints JSON |
+| **`spur` core** | Extract single-hunk classify function (already exists as the inner call in `classify_batch`) |
+| **Tauri backend** | Spawn the bundled `spur` binary instead of calling `classify_hunks_batched` directly |
 | **Frontend `classificationSlice`** | Replace batch orchestration with sequential event-driven loop |
 
 ## What stays the same

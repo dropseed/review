@@ -17,7 +17,7 @@ import {
   flattenVisibleFilePaths,
   resolvePaneFiles,
 } from "./fileSelection";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 
 interface FileListSectionProps {
   treeEntries: ProcessedFileEntry[];
@@ -86,9 +86,9 @@ export function FileListSection({
   // The sidebar points at whichever pane has focus, not at the primary — with
   // a split open, the primary's file is the one you're *not* working in. Both
   // marks go away entirely while a rolling diff is up: the panes aren't there.
-  const secondaryFile = useReviewStore((s) => s.secondaryFile);
-  const focusedPane = useReviewStore((s) => s.focusedPane);
-  const panesOnScreen = useReviewStore(arePanesOnScreen);
+  const secondaryFile = useSpurStore((s) => s.secondaryFile);
+  const focusedPane = useSpurStore((s) => s.focusedPane);
+  const panesOnScreen = useSpurStore(arePanesOnScreen);
   const { activePath, companionPath } = resolvePaneFiles(
     selectedFile,
     secondaryFile,

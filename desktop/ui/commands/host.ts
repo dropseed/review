@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { getApiClient } from "../api";
 import { nextFontSize } from "./appCommands";
 import type { CommandUi, ProvidedCommandUi } from "./types";
@@ -44,7 +44,7 @@ const noop = () => {};
  * that need nothing but the store, and whatever providers are mounted.
  */
 export function getCommandUi(): CommandUi {
-  const store = () => useReviewStore.getState();
+  const store = () => useSpurStore.getState();
 
   return {
     openOverlay: (id) => store().openOverlay(id),

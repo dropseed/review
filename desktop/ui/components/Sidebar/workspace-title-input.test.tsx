@@ -13,11 +13,11 @@ vi.mock("../../api", () => ({
 }));
 
 import { WorkspaceTitleInput } from "./WorkspaceTitleInput";
-import { useReviewStore } from "../../stores";
+import { useSpurStore } from "../../stores";
 import { attachment, workspace } from "../../test/fixtures";
 
 function show(title: string | null) {
-  useReviewStore.setState({
+  useSpurStore.setState({
     workspaces: [
       workspace("w", { title, attachments: [attachment("/repo", "main")] }),
     ],
@@ -30,7 +30,7 @@ function show(title: string | null) {
 
 afterEach(() => {
   cleanup();
-  useReviewStore.setState({ workspaces: [] });
+  useSpurStore.setState({ workspaces: [] });
   vi.clearAllMocks();
 });
 

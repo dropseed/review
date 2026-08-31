@@ -1,4 +1,4 @@
-//! Web-mode terminal bridge: `/api/terminal/*` onto the `review-daemon`.
+//! Web-mode terminal bridge: `/api/terminal/*` onto the `spur-daemon`.
 //!
 //! PTYs live in the daemon process (see [`crate::daemon`]), never here. This
 //! module is a **thin client** of the daemon's Unix control socket in exactly
@@ -402,7 +402,7 @@ async fn start(
         let cwd = cwd.clone();
         let workspace_id = request.workspace_id;
         tokio::task::spawn_blocking(move || {
-            crate::work::router::route_to(cwd.as_ref(), workspace_id.as_deref())
+            crate::workspace::router::route_to(cwd.as_ref(), workspace_id.as_deref())
         })
         .await
         .map_err(internal_err)?
@@ -471,7 +471,7 @@ async fn write_stdin(
 
 /// Type a composed message and submit it: the text, a settle, then Enter.
 ///
-/// The same two writes `review terminal send --submit` makes, held here rather
+/// The same two writes `spur terminal send --submit` makes, held here rather
 /// than in the browser because the browser in question is a phone. iOS freezes
 /// a backgrounded PWA's timers, so a compose bar that slept between its own two
 /// writes would leave the message typed and never submitted the moment the app
@@ -543,7 +543,7 @@ async fn kill(
 /// Live sessions, as the daemon reports them.
 ///
 /// Deliberately *not* the desktop's `terminal_list`: that one also re-routes
-/// strays, which is a write against the work queue. One reconciler is enough,
+/// strays, which is a write against the workspace queue. One reconciler is enough,
 /// and it belongs where the app that owns the window is.
 async fn list(
     State(bridge): State<TerminalBridge>,
@@ -1213,7 +1213,7 @@ mod daemon_tests {
 
     use super::*;
     use crate::daemon::test_support::{Harness, TIMEOUT};
-    use crate::review::central::tests::ENV_LOCK;
+    use crate::home::tests::ENV_LOCK;
 
     /// A router bridged to `harness`, plus the address it is served on.
     struct Served {
@@ -1294,7 +1294,7 @@ mod daemon_tests {
         event["event"] == json!(name) && event["terminalId"] == json!(terminal_id)
     }
 
-    /// A throwaway review home, so routing writes its `work.json` into a
+    /// A throwaway review home, so routing writes its `workspaces.json` into a
     /// tempdir rather than the machine's real queue.
     struct HomeGuard(
         #[allow(dead_code, reason = "held only so the tempdir outlives the test")]
@@ -1303,13 +1303,13 @@ mod daemon_tests {
 
     impl Drop for HomeGuard {
         fn drop(&mut self) {
-            std::env::remove_var("REVIEW_HOME");
+            std::env::remove_var("SPUR_HOME");
         }
     }
 
     fn isolated_home() -> HomeGuard {
         let home = tempfile::TempDir::new().unwrap();
-        std::env::set_var("REVIEW_HOME", home.path());
+        std::env::set_var("SPUR_HOME", home.path());
         HomeGuard(home)
     }
 
@@ -1322,7 +1322,7 @@ mod daemon_tests {
     // `#[tokio::test]` is single-threaded, so the non-Send future is fine.
     #[allow(
         clippy::await_holding_lock,
-        reason = "serialises $REVIEW_HOME for the test body; single-threaded runtime"
+        reason = "serialises $SPUR_HOME for the test body; single-threaded runtime"
     )]
     async fn a_session_round_trips_over_the_websocket() {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -1456,7 +1456,7 @@ mod daemon_tests {
     #[tokio::test]
     #[allow(
         clippy::await_holding_lock,
-        reason = "serialises $REVIEW_HOME for the test body; single-threaded runtime"
+        reason = "serialises $SPUR_HOME for the test body; single-threaded runtime"
     )]
     async fn the_events_socket_carries_a_sessions_whole_life() {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -1557,7 +1557,7 @@ mod daemon_tests {
     #[tokio::test]
     #[allow(
         clippy::await_holding_lock,
-        reason = "serialises $REVIEW_HOME for the test body; single-threaded runtime"
+        reason = "serialises $SPUR_HOME for the test body; single-threaded runtime"
     )]
     async fn peek_many_answers_every_session_in_one_round_trip() {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -1618,7 +1618,7 @@ mod daemon_tests {
     #[tokio::test]
     #[allow(
         clippy::await_holding_lock,
-        reason = "serialises $REVIEW_HOME for the test body; single-threaded runtime"
+        reason = "serialises $SPUR_HOME for the test body; single-threaded runtime"
     )]
     async fn submitting_types_the_text_then_enter_after_the_settle() {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -1729,7 +1729,7 @@ mod daemon_tests {
     #[tokio::test]
     #[allow(
         clippy::await_holding_lock,
-        reason = "serialises $REVIEW_HOME for the test body; single-threaded runtime"
+        reason = "serialises $SPUR_HOME for the test body; single-threaded runtime"
     )]
     async fn a_multi_line_submit_goes_out_as_one_bracketed_paste() {
         let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());

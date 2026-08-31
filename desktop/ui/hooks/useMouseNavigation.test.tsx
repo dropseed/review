@@ -11,7 +11,7 @@ vi.mock("../platform", () => ({
   }),
 }));
 
-import { useReviewStore } from "../stores";
+import { useSpurStore } from "../stores";
 import { useMouseNavigation } from "./useMouseNavigation";
 
 function fireButton(type: "mousedown" | "mouseup", button: number) {
@@ -26,7 +26,7 @@ function navigate(button: number) {
 }
 
 beforeEach(() => {
-  useReviewStore.setState({
+  useSpurStore.setState({
     fileNavHistory: [],
     fileNavIndex: -1,
     selectedFile: null,
@@ -51,8 +51,8 @@ function appendNode(attrs: Record<string, string>) {
 
 describe("useMouseNavigation", () => {
   it("does not navigate while an open modal dialog is present, but does once it closes", () => {
-    useReviewStore.getState().recordFileVisit("a.ts");
-    useReviewStore.getState().recordFileVisit("b.ts");
+    useSpurStore.getState().recordFileVisit("a.ts");
+    useSpurStore.getState().recordFileVisit("b.ts");
     renderHook(() => useMouseNavigation());
 
     const dialog = appendNode({
@@ -63,29 +63,29 @@ describe("useMouseNavigation", () => {
 
     navigate(3);
 
-    expect(useReviewStore.getState().fileNavIndex).toBe(1);
+    expect(useSpurStore.getState().fileNavIndex).toBe(1);
 
     dialog.remove();
     navigate(3);
 
-    expect(useReviewStore.getState().selectedFile).toBe("a.ts");
+    expect(useSpurStore.getState().selectedFile).toBe("a.ts");
   });
 
   it("still navigates while a non-modal popover is open (shares role=dialog but no aria-modal)", () => {
-    useReviewStore.getState().recordFileVisit("a.ts");
-    useReviewStore.getState().recordFileVisit("b.ts");
+    useSpurStore.getState().recordFileVisit("a.ts");
+    useSpurStore.getState().recordFileVisit("b.ts");
     renderHook(() => useMouseNavigation());
 
     appendNode({ role: "dialog", "data-state": "open" });
 
     navigate(3);
 
-    expect(useReviewStore.getState().selectedFile).toBe("a.ts");
+    expect(useSpurStore.getState().selectedFile).toBe("a.ts");
   });
 
   it("still navigates once a dialog's close animation finishes (data-state=closed)", () => {
-    useReviewStore.getState().recordFileVisit("a.ts");
-    useReviewStore.getState().recordFileVisit("b.ts");
+    useSpurStore.getState().recordFileVisit("a.ts");
+    useSpurStore.getState().recordFileVisit("b.ts");
     renderHook(() => useMouseNavigation());
 
     appendNode({
@@ -96,6 +96,6 @@ describe("useMouseNavigation", () => {
 
     navigate(3);
 
-    expect(useReviewStore.getState().selectedFile).toBe("a.ts");
+    expect(useSpurStore.getState().selectedFile).toBe("a.ts");
   });
 });

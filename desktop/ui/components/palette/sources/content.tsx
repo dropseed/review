@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useMemo } from "react";
-import { useReviewStore } from "../../../stores";
+import { useSpurStore } from "../../../stores";
 import type { SearchMatch } from "../../../types";
 import { useDebounce } from "../../../hooks/useDebounce";
 import { HighlightedLine } from "../../ui/HighlightedLine";
@@ -36,20 +36,16 @@ export function useContentSource(
   query: string,
   active: boolean,
 ): PaletteSource<SearchMatch> {
-  const searchResults = useReviewStore((s) => s.searchResults);
-  const searchLoading = useReviewStore((s) => s.searchLoading);
-  const searchError = useReviewStore((s) => s.searchError);
-  const performSearch = useReviewStore((s) => s.performSearch);
-  const clearSearchResults = useReviewStore((s) => s.clearSearchResults);
-  const setSearchQuery = useReviewStore((s) => s.setSearchQuery);
-  const navigateToSearchResult = useReviewStore(
-    (s) => s.navigateToSearchResult,
-  );
-  const searchCaseSensitive = useReviewStore((s) => s.searchCaseSensitive);
-  const setSearchCaseSensitive = useReviewStore(
-    (s) => s.setSearchCaseSensitive,
-  );
-  const closeOverlay = useReviewStore((s) => s.closeOverlay);
+  const searchResults = useSpurStore((s) => s.searchResults);
+  const searchLoading = useSpurStore((s) => s.searchLoading);
+  const searchError = useSpurStore((s) => s.searchError);
+  const performSearch = useSpurStore((s) => s.performSearch);
+  const clearSearchResults = useSpurStore((s) => s.clearSearchResults);
+  const setSearchQuery = useSpurStore((s) => s.setSearchQuery);
+  const navigateToSearchResult = useSpurStore((s) => s.navigateToSearchResult);
+  const searchCaseSensitive = useSpurStore((s) => s.searchCaseSensitive);
+  const setSearchCaseSensitive = useSpurStore((s) => s.setSearchCaseSensitive);
+  const closeOverlay = useSpurStore((s) => s.closeOverlay);
 
   const debouncedQuery = useDebounce(query, 300);
 
