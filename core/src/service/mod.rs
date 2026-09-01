@@ -9,6 +9,7 @@ pub mod activity_cache;
 pub mod commit;
 pub mod files;
 pub mod freshness;
+pub mod power;
 pub mod pr;
 pub mod review_io;
 pub mod shipped;

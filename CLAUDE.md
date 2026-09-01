@@ -112,6 +112,25 @@ Serving the app over HTTPS on a real name is what makes it **installable**: a se
 
 Web push rides on the tailnet PWA: the service worker (`desktop/public/sw.js`) subscribes against this instance's VAPID key, and `core/src/push.rs` keeps the key and every subscription in `~/.spur/push.json` (same version-envelope write as `workspaces.json`) and does the delivery. iOS only delivers to a PWA added to the Home Screen. Two senders: the desktop app's attention escalation (`desktop/tauri/src/desktop/notifications.rs`, which pushes only when you are away from the machine) and `spur notify` (always). Both go straight to the file, so the CLI needs no app or server running. The whole thing sits behind the `push` cargo feature — implied by `server`, opt-in for `cli` because it pulls a TLS stack and a vendored OpenSSL into an otherwise light binary; `scripts/cli` and `scripts/build-cli` enable it.
 
+### The Mac's batteries
+
+A phone on the tailnet is looking at a machine it is not sitting at, and the
+laptop serving it takes every terminal session with it when it sleeps.
+`core/src/service/power.rs` answers that from two macOS readers — `pmset -g batt`
+for the Mac's own cell (charge, state, and macOS's estimate, including the
+estimate's _absence_ for the first minutes after a cable moves) and
+`ioreg -r -k BatteryPercent` for accessories, which report a level and no state
+at all. Both are parsed as pure functions and the service is deliberately
+infallible: a desktop Mac, a host that is not a Mac, and a `pmset` that failed
+are the same answer — an empty list, rendered as nothing.
+
+It is drawn for **remote clients only** (`BatteryIndicator`, gated on
+`isTauriEnvironment`), a block of rows at the foot of the sidebar. On the Mac
+itself the same number is in the menu bar a few centimetres away, so the desktop
+shell would be restating it — and paying two subprocesses a minute to. The gate
+is remoteness rather than width because an iPad or a laptop browsing the tailnet
+is away from that menu bar exactly as a phone is.
+
 ## One PTY grid: owners and viewers
 
 A session's PTY has exactly one cols×rows, shared by every client — there is no

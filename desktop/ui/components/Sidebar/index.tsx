@@ -9,6 +9,7 @@ import { SidebarResizeHandle } from "../ui/sidebar-resize-handle";
 import { Spinner } from "../ui/spinner";
 import { LspStatusIndicator } from "../LspStatusIndicator";
 import { AgentUsageIndicator } from "../AgentUsageIndicator";
+import { BatteryIndicator } from "../BatteryIndicator";
 import { SidebarRail } from "./SidebarRail";
 import { PullRequestsDrawer } from "./PullRequestsDrawer";
 import { WorkspaceQueue } from "./WorkspaceQueue";
@@ -290,6 +291,8 @@ export const Sidebar = memo(function Sidebar({
           <PullRequestsDrawer />
 
           <AgentUsageIndicator />
+
+          <BatteryIndicator />
 
           <div className="shrink-0 px-3 py-3 border-t border-t-edge/40">
             <div className="flex items-center justify-between">

@@ -43,6 +43,7 @@ import type {
   RepoFileSymbols,
   GitHubPrRef,
   AgentUsage,
+  Battery,
   ReviewTierInfo,
   GitStatusSummary,
   PullRequest,
@@ -239,6 +240,10 @@ export class TauriClient implements ApiClient {
 
   async getAgentUsage(force = false): Promise<AgentUsage[]> {
     return invoke<AgentUsage[]>("get_agent_usage", { force });
+  }
+
+  async getBatteries(): Promise<Battery[]> {
+    return invoke<Battery[]>("get_batteries");
   }
 
   async fetchPullRequest(repoPath: string, pr: GitHubPrRef): Promise<string> {

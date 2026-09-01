@@ -128,6 +128,14 @@ It is split by what CSS can reach. Structure is JS, because the widths come from
 
   This one bullet is the exception to `useIsCompact` being the only question: the key row is gated on `useIsTouchPrimary` (`(pointer: coarse) and (hover: none)`) instead, because "there is no Escape key on this device" is a fact about what the person is holding, not about how wide the window is — an iPad in landscape is wide and still has none. The compose bar shares that exception for the same reason (there is no good place to type prose on a touchscreen), as does `ReviewView`'s checkout-for-LSP prompt, which offers to enable hover and go-to-definition on a device with no pointer to use them. The text-size steps stay a width question; the pane's touch listeners are unconditional, being inert without touches.
 
+One thing on a phone is **not** a width question, and must not be turned into
+one: the battery block at the foot of the sidebar (`BatteryIndicator`, fed by
+`hooks/useBatteries`) is gated on `isTauriEnvironment` instead. It reports the
+charge of the machine *serving* the app, which is only news to a client that is
+somewhere else — and an iPad or a laptop on the tailnet is away from that Mac's
+menu bar exactly as a phone is, while the desktop shell is sitting in front of
+it. See "The Mac's batteries" in the root CLAUDE.md.
+
 ## The phone's stage is a stack
 
 There is no bottom tab bar. A phone opens this app because something is running in a terminal, so the terminal **is** the screen, and the code half is one you *push* onto it — `Stage/CompactStage`, with the arithmetic in `Stage/push-nav`. Two tabs at the foot said the halves were peers and spent 60pt of an 844pt screen saying it about a switch nobody makes twice an hour.

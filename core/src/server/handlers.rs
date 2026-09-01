@@ -168,6 +168,7 @@ pub fn build_api_router() -> Router {
         .route("/api/push/test", post(push_test))
         // Agent usage
         .route("/api/usage/agents", post(usage_agents))
+        .route("/api/power/batteries", post(power_batteries))
         // Streaming
         .route("/api/streaming/git-commit", post(streaming_git_commit))
         .route(
@@ -1376,6 +1377,14 @@ async fn usage_agents(
     Json(req): Json<AgentUsageRequest>,
 ) -> ApiResult<Vec<crate::service::usage::AgentUsage>> {
     blocking(move || crate::service::usage::report(req.force)).await
+}
+
+/// Every battery this machine can see — its own and its accessories'.
+///
+/// The answer a phone on the tailnet cannot get any other way: the Mac serving
+/// this request is not the one the reader is holding.
+async fn power_batteries() -> ApiResult<Vec<crate::service::power::Battery>> {
+    blocking(|| Ok(crate::service::power::report())).await
 }
 
 // ============================================================

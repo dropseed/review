@@ -726,6 +726,7 @@ pub fn run() {
             commands::get_viewer_prs,
             commands::get_review_tier,
             commands::get_agent_usage,
+            commands::get_batteries,
             commands::fetch_pull_request,
             commands::materialize_review,
             commands::release_review_worktree,

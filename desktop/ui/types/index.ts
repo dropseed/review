@@ -362,6 +362,33 @@ export interface AgentUsage {
 }
 
 /**
+ * What one battery is doing right now.
+ *
+ * `pluggedNotCharging` is macOS's optimized charging holding a level on
+ * purpose, and `unknown` is what an accessory reports — the IORegistry gives a
+ * percentage and no state at all.
+ */
+export type BatteryState =
+  "charging" | "discharging" | "charged" | "pluggedNotCharging" | "unknown";
+
+/** One battery on the machine serving this app. */
+export interface Battery {
+  /** Stable across polls: `internal`, or an accessory's product name. */
+  id: string;
+  name: string;
+  percent: number;
+  state: BatteryState;
+  /**
+   * Minutes until empty or full, when macOS has an estimate. `null` is "still
+   * calculating" — what it says for the first minutes after a cable moves —
+   * and is a different thing from zero.
+   */
+  minutesRemaining: number | null;
+  /** The Mac's own cell, as opposed to something on its desk. */
+  internal: boolean;
+}
+
+/**
  * What a PR has to say for a review to be started from it — the part
  * `PullRequest` (repo-scoped) and `ViewerPr` (account-wide) have in common.
  *

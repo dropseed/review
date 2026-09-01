@@ -17,6 +17,7 @@ use spur::lsp::client::LspClient;
 use spur::lsp::registry;
 use spur::review::state::{ReviewState, ReviewSummary};
 use spur::review::storage::{self, GlobalReviewSummary};
+use spur::service::power::Battery;
 use spur::service::pr::ReviewTierInfo;
 use spur::service::usage::AgentUsage;
 use spur::service::viewer_prs::ViewerPrSnapshot;
@@ -831,6 +832,16 @@ pub fn get_review_tier(repo_path: String, r#ref: String) -> Result<ReviewTierInf
 #[tauri::command]
 pub async fn get_agent_usage(force: bool) -> Result<Vec<AgentUsage>, String> {
     blocking(move || spur::service::usage::report(force).map_err(|e| e.to_string())).await
+}
+
+/// Every battery this machine can see — its own and its accessories'.
+///
+/// Present here for parity with the HTTP surface rather than for the desktop's
+/// own use: the app renders this only for a client that is somewhere else (see
+/// `BatteryIndicator`), and on the Mac itself the menu bar already says it.
+#[tauri::command]
+pub async fn get_batteries() -> Result<Vec<Battery>, String> {
+    blocking_infallible(spur::service::power::report).await
 }
 
 /// Listed → Fetched: pull a PR's head (and base) so its diff can be read locally.

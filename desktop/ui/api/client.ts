@@ -12,6 +12,7 @@ import type {
   Comparison,
   GitHubPrRef,
   AgentUsage,
+  Battery,
   ReviewTierInfo,
   PullRequest,
   ViewerPrSnapshot,
@@ -256,6 +257,13 @@ export interface ApiClient {
    * `force` bypasses the service-side cache, for an explicit user refresh.
    */
   getAgentUsage(force?: boolean): Promise<AgentUsage[]>;
+
+  /**
+   * Every battery the machine serving this app can see — its own, and any
+   * accessory reporting one. Empty where there is nothing to show: a desktop
+   * Mac, or a host that is not a Mac at all.
+   */
+  getBatteries(): Promise<Battery[]>;
 
   /** Listed -> Fetched: pull a PR's head (and base) so its diff reads locally */
   fetchPullRequest(repoPath: string, pr: GitHubPrRef): Promise<string>;

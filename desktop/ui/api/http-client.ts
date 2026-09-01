@@ -39,6 +39,7 @@ import type {
   RepoFileSymbols,
   GitHubPrRef,
   AgentUsage,
+  Battery,
   ReviewTierInfo,
   GitStatusSummary,
   PullRequest,
@@ -357,6 +358,10 @@ export class HttpClient implements ApiClient {
 
   async getAgentUsage(force = false): Promise<AgentUsage[]> {
     return this.post("/api/usage/agents", { force });
+  }
+
+  async getBatteries(): Promise<Battery[]> {
+    return this.post("/api/power/batteries");
   }
 
   async fetchPullRequest(repoPath: string, pr: GitHubPrRef): Promise<string> {
