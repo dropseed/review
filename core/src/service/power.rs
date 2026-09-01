@@ -24,7 +24,6 @@
 //! reader could act on, so none is raised.
 
 use serde::{Deserialize, Serialize};
-use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -77,6 +76,7 @@ const CACHE_TTL: Duration = Duration::from_secs(20);
 /// Ceiling on either subprocess. Both normally return in tens of milliseconds;
 /// past this they are wedged, not slow, and a battery reading is never worth
 /// holding a request open for.
+#[cfg(target_os = "macos")]
 const TIMEOUT: Duration = Duration::from_secs(5);
 
 type Cache = Mutex<Option<(Instant, Vec<Battery>)>>;
@@ -133,9 +133,9 @@ fn read() -> Vec<Battery> {
 
 /// A command's stdout, or `None` for anything that went wrong — a missing
 /// binary, a non-zero exit, a hang. All of them mean the same thing here.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[cfg(target_os = "macos")]
 fn run(program: &str, args: &[&str]) -> Option<String> {
-    let mut cmd = Command::new(program);
+    let mut cmd = std::process::Command::new(program);
     cmd.args(args);
     let output = crate::process::output_with_timeout(&mut cmd, TIMEOUT).ok()??;
     if !output.status.success() {
@@ -149,13 +149,15 @@ fn run(program: &str, args: &[&str]) -> Option<String> {
 /// The line it reads looks like
 ///
 /// ```text
-///  -InternalBattery-0 (id=12582499)	62%; discharging; 3:24 remaining present: true
+///  -InternalBattery-0 (id=12582499)    62%; discharging; 3:24 remaining present: true
 /// ```
 ///
-/// and is semicolon-delimited after the percentage: charge, state, then an
-/// estimate that is variously `3:24 remaining`, `(no estimate)`, or absent. A
-/// desktop Mac prints the `Now drawing from 'AC Power'` header and no such line
-/// at all, which is why this returns an `Option` rather than a default.
+/// — where that gap is a tab in the real output, which is why the percentage is
+/// taken off the end of its field rather than at a column. Past the percentage
+/// the line is semicolon-delimited: state, then an estimate that is variously
+/// `3:24 remaining`, `(no estimate)`, or absent. A desktop Mac prints the
+/// `Now drawing from 'AC Power'` header and no such line at all, which is why
+/// this returns an `Option` rather than a default.
 pub fn parse_pmset(output: &str) -> Option<Battery> {
     let line = output
         .lines()
@@ -165,7 +167,7 @@ pub fn parse_pmset(output: &str) -> Option<Battery> {
     // The percentage is the tail of the first field, past the id in parens.
     let percent = fields
         .next()?
-        .rsplit(|c: char| c.is_whitespace())
+        .rsplit(char::is_whitespace)
         .find_map(|word| word.strip_suffix('%'))
         .and_then(|n| n.parse::<u8>().ok())?;
 
@@ -180,8 +182,8 @@ pub fn parse_pmset(output: &str) -> Option<Battery> {
     let minutes_remaining = fields.next().and_then(parse_minutes);
 
     Some(Battery {
-        id: "internal".to_string(),
-        name: "Mac".to_string(),
+        id: "internal".to_owned(),
+        name: "Mac".to_owned(),
         percent: percent.min(100),
         state,
         minutes_remaining,
@@ -191,21 +193,23 @@ pub fn parse_pmset(output: &str) -> Option<Battery> {
 
 /// `pmset`'s state wording, which is a phrase rather than a token.
 ///
-/// Order matters: "discharging" contains "charging", so the negative case has
-/// to be asked first — and the same trap sits under "not charging", which is
-/// macOS holding a plugged-in battery at a level on purpose.
+/// Order matters, because two of these phrases contain a third: both
+/// "discharging" and "not charging" contain "charging", so each has to be asked
+/// before the word it swallows. Getting that wrong reports a draining battery
+/// as a filling one, which is the one answer here that would send someone away
+/// from their desk.
 fn parse_state(field: &str) -> BatteryState {
     let field = field.to_ascii_lowercase();
     if field.contains("discharging") {
         BatteryState::Discharging
-    } else if field.contains("not charging") {
+    } else if field.contains("not charging") || field.contains("ac attached") {
+        // Plugged in and deliberately holding: optimized charging, or a charger
+        // that isn't delivering.
         BatteryState::PluggedNotCharging
     } else if field.contains("charged") {
         BatteryState::Charged
     } else if field.contains("charging") || field.contains("finishing charge") {
         BatteryState::Charging
-    } else if field.contains("ac attached") {
-        BatteryState::PluggedNotCharging
     } else {
         BatteryState::Unknown
     }
@@ -267,7 +271,7 @@ pub fn parse_ioreg(output: &str) -> Vec<Battery> {
         if let Some(value) = property(trimmed, "BatteryPercent") {
             percent = value.trim().parse::<u8>().ok();
         } else if let Some(value) = property(trimmed, "Product") {
-            name = Some(value.trim().trim_matches('"').to_string()).filter(|n| !n.is_empty());
+            name = Some(value.trim().trim_matches('"').to_owned()).filter(|n| !n.is_empty());
         }
     }
     flush(&mut name, &mut percent);
@@ -307,12 +311,18 @@ mod tests {
         assert_eq!(battery.minutes_remaining, Some(65));
     }
 
-    /// "discharging" contains "charging", so a naive substring test on the
-    /// state field reports a draining battery as a filling one — the one wrong
-    /// answer here that would send someone away from their desk.
+    /// Two of `pmset`'s phrases contain a third: "discharging" and "not
+    /// charging" both contain "charging". A naive substring test reports a
+    /// draining battery as a filling one — the one wrong answer here that would
+    /// send someone away from their desk — so the order these are asked in is
+    /// load-bearing and belongs in a test rather than only in a comment.
     #[test]
-    fn discharging_is_not_read_as_charging() {
+    fn the_phrases_that_contain_charging_are_asked_first() {
         assert_eq!(parse_state("discharging"), BatteryState::Discharging);
+        assert_eq!(
+            parse_state("not charging"),
+            BatteryState::PluggedNotCharging
+        );
         assert_eq!(parse_state("charging"), BatteryState::Charging);
     }
 
