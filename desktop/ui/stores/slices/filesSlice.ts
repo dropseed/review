@@ -120,7 +120,7 @@ function restoreSnapshot(
 }
 
 // IMPORTANT: These patterns MUST stay in sync with the Rust implementation
-// in compare/src/filters.rs. A synchronous version is used here (instead of
+// in core/src/filters.rs. A synchronous version is used here (instead of
 // the async ApiClient.shouldSkipFile) because it runs in a tight loop.
 const SKIP_PATTERNS = [
   /^target\//, // Rust build artifacts

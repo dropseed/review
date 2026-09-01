@@ -3,7 +3,7 @@
 // ========================================================================
 //
 // IMPORTANT: These functions MUST stay in sync with the Rust implementation
-// in compare/src/trust/matching.rs. Both implementations have parity tests.
+// in core/src/trust/matching.rs. Both implementations have parity tests.
 //
 // The Rust version uses manual string splitting, while this uses regex.
 // Both produce identical results for all supported patterns.
