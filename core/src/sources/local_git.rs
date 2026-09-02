@@ -192,7 +192,7 @@ pub struct WorktreeInfo {
     pub commit_hash: String,
     /// True when the worktree is in detached HEAD state (no branch).
     pub is_detached: bool,
-    /// True when the worktree path is under `~/.spur/worktrees/` (managed by Review).
+    /// True when the worktree path is under `~/.spur/worktrees/` (managed by Spur).
     pub is_review_managed: bool,
 }
 

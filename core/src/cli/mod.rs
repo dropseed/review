@@ -575,7 +575,7 @@ fn read_patch_input(src: &str) -> Result<String, String> {
     common::read_path_or_stdin_text(src, "patch")
 }
 
-/// Launch the Review desktop app for the given repo, optionally with a review ref and/or focused file.
+/// Launch the Spur desktop app for the given repo, optionally with a review ref and/or focused file.
 fn open_app(
     repo_path: &str,
     review_ref: Option<&str>,

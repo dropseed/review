@@ -326,7 +326,7 @@ fn run_reorder(args: ReorderArgs, json: bool) -> Result<(), String> {
         .workspaces
         .iter()
         .position(|other| other.id == ws.id)
-        .map_or(to_index, |index| index)
+        .unwrap_or(to_index)
         + 1;
     let message = format!("Moved {} to position {position}.", placement(&state, &ws));
     report(json, &state, ws, &message);

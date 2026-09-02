@@ -249,7 +249,7 @@ pub struct ViewerPr {
     pub checks_state: Option<String>,
     /// Local path of the registered repo this PR belongs to, filled in by the
     /// join in [`crate::service::viewer_prs`]. `None` means the PR lives in a
-    /// repo Review doesn't know about locally.
+    /// repo Spur doesn't know about locally.
     #[serde(default)]
     pub repo_path: Option<String>,
 }

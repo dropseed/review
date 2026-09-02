@@ -45,7 +45,7 @@ if [[ "$SPUR_TERMINAL_INTEGRATION" == "1" && -z "$__SPUR_HOOKS_INSTALLED" ]]; th
 
   # A dedicated write descriptor on the tty, close-on-exec so children never
   # inherit it. Marks go here rather than to stdout: `cmd > file` would
-  # otherwise capture them into the file and Review would see no marks at all.
+  # otherwise capture them into the file and Spur would see no marks at all.
   # If anything here fails we fall back to fd 1, which is merely the old
   # behaviour rather than a broken shell.
   zmodload -F zsh/system b:sysopen 2>/dev/null
@@ -148,9 +148,9 @@ const ZSHENV: &str = r#"# Spur terminal shell integration — auto-generated, do
 #
 # .zshenv runs for EVERY zsh process (including nested, non-interactive shells).
 # Do NOT change ZDOTDIR here: zsh resolves the top-level .zshrc from ZDOTDIR
-# after this file, so changing it now would skip Review's integration .zshrc.
+# after this file, so changing it now would skip Spur's integration .zshrc.
 # We only source the user's real .zshenv so their environment is set up normally.
-# Review's .zshrc restores ZDOTDIR to the user's directory at the end of startup.
+# Spur's .zshrc restores ZDOTDIR to the user's directory at the end of startup.
 SPUR_ZDOTDIR="${SPUR_ZDOTDIR:-$HOME}"
 if [[ -f "$SPUR_ZDOTDIR/.zshenv" ]]; then
   source "$SPUR_ZDOTDIR/.zshenv"
@@ -186,7 +186,7 @@ fn is_zsh(shell: &Path) -> bool {
 ///
 /// Returns `None` for non-zsh shells (they degrade to poller-only status).
 /// The returned pairs are layered onto the child's environment at spawn:
-/// - `ZDOTDIR` → Review's integration directory (so our `.zshrc` runs)
+/// - `ZDOTDIR` → Spur's integration directory (so our `.zshrc` runs)
 /// - `SPUR_ZDOTDIR` → the user's original `ZDOTDIR` (or `$HOME`), so our config
 ///   can source theirs and restore it for nested shells
 /// - `SPUR_TERMINAL_INTEGRATION=1` → the guard our `.zshrc` checks

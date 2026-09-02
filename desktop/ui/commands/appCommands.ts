@@ -364,7 +364,7 @@ export const APP_COMMANDS: readonly Command[] = [
       const repoPath = store.repoPath;
       if (!repoPath) return;
       const ok = await getPlatformServices().dialogs.confirm(
-        `Stop listing ${repoPath} in Review?\n\nIts reviews stay on disk, and opening it again brings it back.`,
+        `Stop listing ${repoPath} in Spur?\n\nIts reviews stay on disk, and opening it again brings it back.`,
         "Forget repository",
       );
       if (!ok) return;

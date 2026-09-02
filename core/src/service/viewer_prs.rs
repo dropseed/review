@@ -251,7 +251,7 @@ fn classify_failure(error: &github::GhError, auth: GhAuth) -> FetchFailure {
 ///
 /// The key is the **head** repo, never the base: the local clone that matters
 /// is the one holding the branch the PR is proposing. A PR opened from a fork
-/// Review doesn't have registered is not locally actionable even when the base
+/// Spur doesn't have registered is not locally actionable even when the base
 /// repo is registered — it gets no `repo_path` and shows up under "elsewhere"
 /// rather than badging a branch that isn't the PR's.
 fn join_registered_repos(prs: &mut [ViewerPr]) {
@@ -382,7 +382,7 @@ static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Write the snapshot atomically (tmp + rename), like the repo index.
 ///
-/// The tmp name is unique per writer: two Review windows refreshing at once
+/// The tmp name is unique per writer: two Spur windows refreshing at once
 /// would otherwise write the same tmp path and rename each other's half-written
 /// bytes into place.
 fn save_snapshot(snapshot: &ViewerPrSnapshot) -> anyhow::Result<()> {

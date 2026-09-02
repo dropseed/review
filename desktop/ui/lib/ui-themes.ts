@@ -1,5 +1,5 @@
 /**
- * Bundled UI themes for the Review app.
+ * Bundled UI themes for the Spur app.
  *
  * Each theme provides values for every semantic CSS variable defined in index.css.
  * Applying a theme sets these variables on `document.documentElement`, overriding

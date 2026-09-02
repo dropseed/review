@@ -232,7 +232,7 @@ export interface ViewerPr {
   headRepoNameWithOwner: string | null;
   reviewDecision: string | null; // APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED
   checksState: string | null; // SUCCESS | FAILURE | PENDING | ERROR | EXPECTED
-  /** Local path of the registered repo this PR belongs to, when Review knows it. */
+  /** Local path of the registered repo this PR belongs to, when Spur knows it. */
   repoPath: string | null;
 }
 

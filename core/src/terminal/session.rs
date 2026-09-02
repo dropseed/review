@@ -190,7 +190,7 @@ impl Session {
         cmd.env("COLORTERM", "truecolor");
         // Programs branch on these to decide what the terminal can do — and
         // agents in particular check them before enabling richer input or
-        // output. Without them Review is indistinguishable from a bare xterm.
+        // output. Without them Spur is indistinguishable from a bare xterm.
         cmd.env("TERM_PROGRAM", "Spur");
         cmd.env("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"));
         // Which session this is, so anything running inside it can name itself

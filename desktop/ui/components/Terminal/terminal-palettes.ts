@@ -100,7 +100,7 @@ const SOLARIZED: AnsiPalette = {
 const PALETTES: Record<string, AnsiPalette> = {
   "review-dark": TOMORROW_NIGHT,
 
-  // Review's light theme is its own invention with no published ramp. The
+  // Spur's light theme is its own invention with no published ramp. The
   // Tomorrow family's light sibling is flat (its brights are byte-identical to
   // its normals), which is the exact problem this file exists to fix.
   "review-light": GITHUB_LIGHT,
@@ -255,7 +255,7 @@ function nudgeUntilVisible(
 
 /**
  * The palette for a theme, or a shared ramp when the theme has no published
- * one (Review's own light theme, and anything derived from a VS Code theme).
+ * one (Spur's own light theme, and anything derived from a VS Code theme).
  *
  * Both schemes get one correction, for the same defect at opposite ends.
  *

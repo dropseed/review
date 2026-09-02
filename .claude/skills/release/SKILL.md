@@ -5,7 +5,7 @@ user_invocable: true
 
 # /release
 
-Cut a release of the Review desktop app. The build no longer happens locally:
+Cut a release of the Spur desktop app. The build no longer happens locally:
 `scripts/release` pushes a version-bump commit and dispatches the Release
 workflow, which builds/signs/notarizes both architectures and creates the tag
 and GitHub release only after everything succeeds (`gh release create
