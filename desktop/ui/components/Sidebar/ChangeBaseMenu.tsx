@@ -149,6 +149,7 @@ export function ChangeBaseMenu({
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder="Filter branches..."
+          spellCheck={false}
           className="w-full px-2 py-1 text-xs bg-surface border border-edge rounded
                      text-fg placeholder:text-fg-faint/50 outline-none
                      focus:border-fg/20"

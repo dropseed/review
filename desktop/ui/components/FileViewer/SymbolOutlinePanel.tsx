@@ -217,6 +217,7 @@ export const SymbolOutlinePanel = memo(function SymbolOutlinePanel({
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder="Filter…"
+          spellCheck={false}
           className="w-full bg-transparent text-xxs text-fg placeholder-fg-faint focus:outline-hidden px-1"
         />
       </div>
