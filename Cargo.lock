@@ -6236,7 +6236,7 @@ dependencies = [
 
 [[package]]
 name = "spur"
-version = "0.0.168"
+version = "0.0.169"
 dependencies = [
  "anyhow",
  "axum",
@@ -6293,7 +6293,7 @@ dependencies = [
 
 [[package]]
 name = "spur-desktop"
-version = "0.0.168"
+version = "0.0.169"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
