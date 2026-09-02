@@ -82,6 +82,7 @@ afterEach(() => {
     localActivity: [],
     focusedWorkspaceId: null,
     activeReviewKey: null,
+    workspaceCodeKeys: {},
   });
   vi.clearAllMocks();
   routeWorkspace.mockReset();
@@ -292,6 +293,98 @@ describe("⌘1–9 over the workspace queue", () => {
       .getState()
       .setActiveReviewKey({ repoPath: REPO, ref: "something-else" });
     expect(useSpurStore.getState().focusedWorkspaceId).toBe("a");
+  });
+
+  /**
+   * The app's most-repeated gesture: the card you are working in is the one
+   * nearest the pointer, and clicking it used to throw away the tab you had
+   * chosen, the file you were on and the scroll with it.
+   */
+  it("leaves the code half alone when the workspace is already on screen", () => {
+    seed([item("a")]);
+    focusWorkspace(item("a"));
+    expect(activateReviewKey).toHaveBeenCalledTimes(1);
+
+    // What the real activation would have written back.
+    useSpurStore
+      .getState()
+      .setActiveReviewKey({ repoPath: REPO, ref: "feature" });
+    activateReviewKey.mockClear();
+    navigate.mockClear();
+
+    focusWorkspace(item("a"));
+
+    expect(activateReviewKey).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+    // The rest of the gesture still happens.
+    expect(useSpurStore.getState().focusedWorkspaceId).toBe("a");
+  });
+
+  /** A caller naming a comparison always wins, on-screen or not. */
+  it("still opens an explicitly named target on the focused workspace", () => {
+    seed([item("a")]);
+    focusWorkspace(item("a"));
+    useSpurStore
+      .getState()
+      .setActiveReviewKey({ repoPath: REPO, ref: "feature" });
+    activateReviewKey.mockClear();
+
+    focusWorkspace(item("a"), { repoPath: REPO, ref: "feature" });
+
+    expect(activateReviewKey).toHaveBeenCalledWith(REPO, "feature");
+  });
+
+  describe("the tab a workspace was left on", () => {
+    const both = {
+      attachments: [attachment(REPO, "feature"), attachment(OTHER, "other")],
+    };
+
+    /**
+     * Every route into a workspace used to re-open `attachments[0]`, so walking
+     * away from a two-repo workspace and back silently moved you to its first
+     * tab. The terminal half already restored its own tab; this is the code
+     * half's half of that.
+     */
+    it("re-opens the second tab rather than the first", () => {
+      seed([
+        item("a", both),
+        item("b", { attachments: [attachment(OTHER, "other")] }),
+      ]);
+      focusWorkspace(item("a", both));
+      // Walk to the second tab, the way clicking it would.
+      useSpurStore
+        .getState()
+        .setActiveReviewKey({ repoPath: OTHER, ref: "other" });
+
+      focusWorkspace(item("b", { attachments: [attachment(OTHER, "other")] }));
+      activateReviewKey.mockClear();
+      focusWorkspace(item("a", both));
+
+      expect(activateReviewKey).toHaveBeenCalledWith(OTHER, "other");
+    });
+
+    /** A detached tab must not resurrect: the repo has to still be attached. */
+    it("falls back to the first tab when the remembered repo is gone", () => {
+      seed([item("a", both)]);
+      focusWorkspace(item("a", both));
+      useSpurStore
+        .getState()
+        .setActiveReviewKey({ repoPath: OTHER, ref: "other" });
+
+      const detached = { attachments: [attachment(REPO, "feature")] };
+      seed([item("a", detached)]);
+      activateReviewKey.mockClear();
+      focusWorkspace(item("a", detached));
+
+      expect(activateReviewKey).toHaveBeenCalledWith(REPO, "feature");
+    });
+
+    /** A workspace nobody has opened has nothing remembered. */
+    it("opens the first tab of a workspace with no history", () => {
+      seed([item("a", both)]);
+      focusWorkspace(item("a", both));
+      expect(activateReviewKey).toHaveBeenCalledWith(REPO, "feature");
+    });
   });
 
   it("stages the intent when the attached branch is gone", () => {

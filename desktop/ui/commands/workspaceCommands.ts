@@ -4,6 +4,7 @@ import {
   CHECKOUT_REF,
   hasRef,
   isCheckoutTarget,
+  repoOnScreen,
   type ReviewTarget,
 } from "../stores/selectors/workspaceData";
 import { ackAttention } from "../utils/attention";
@@ -160,19 +161,71 @@ export function focusWorkspace(
   target?: ReviewTarget,
   options: { acknowledge?: boolean } = {},
 ): void {
+  // Clicking the workspace you are already in must not disturb the code half.
+  // It is the app's most-repeated gesture — the card you are working in is the
+  // one nearest the pointer — and re-opening a comparison you are already
+  // reading throws away the tab you had chosen, the file you were on, and the
+  // scroll position with it.
+  //
+  // Judged by what is *on screen*, not by the focus id alone: the code half can
+  // be showing this workspace's repo while the pointer arrives from anywhere,
+  // and `repoOnScreen` is the same answer the repo tabs mark themselves active
+  // with, so the strip and this agree by construction. An explicit `target` is
+  // a caller naming a comparison and always wins.
+  const before = useSpurStore.getState();
+  const onScreen = repoOnScreen(before);
+  const undisturbed =
+    !target &&
+    before.focusedWorkspaceId === workspace.id &&
+    onScreen !== null &&
+    workspace.attachments.some((attachment) => attachment.path === onScreen);
+
+  // Still taken even then: the overview closes, the attention accent clears,
+  // and the terminal half re-selects this workspace's tab. Those are what the
+  // click asked for; the code half is what it did not.
   takeFocus(workspace, options);
+  if (undisturbed) return;
 
   // `target` is the caller naming which comparison to open — a ⌘K row names a
   // branch, not just a workspace, and on a multi-repo workspace that is
-  // precisely the one its own first tab is not. Without one, the first tab is
-  // what opens, resolved exactly as clicking that tab would resolve it.
+  // precisely the one its own first tab is not. Without one, the tab this
+  // workspace was last left on opens, and the first attachment is the fallback
+  // for a workspace that has never been opened — each resolved exactly as
+  // clicking that tab would resolve it.
   const first = workspace.attachments[0];
-  const opening = target ?? (first ? targetForAttachment(first) : null);
+  const candidates: (ReviewTarget | null)[] = target
+    ? [target]
+    : [rememberedTarget(workspace), first ? targetForAttachment(first) : null];
+
+  // The remembered tab can fail to open where the first one still would — its
+  // branch may have been deleted since — so the fallback is tried rather than
+  // assumed unnecessary.
+  for (const candidate of candidates) {
+    if (candidate && activateReviewTarget(candidate)) return;
+  }
 
   // The empty state is also where a workspace lands when its tab can't be
   // opened — a deleted branch — because the alternative is a header naming this
   // workspace over the last one's diff.
-  if (!opening || !activateReviewTarget(opening)) getCommandUi().navigate("/");
+  getCommandUi().navigate("/");
+}
+
+/**
+ * The comparison this workspace was last showing, if it still has that repo.
+ *
+ * The attachment check is the whole guard: detaching a tab must not leave a
+ * memory that re-opens it, and a workspace whose repos changed under it should
+ * fall back to its first rather than to something it no longer lists.
+ */
+function rememberedTarget(workspace: Workspace): ReviewTarget | null {
+  const remembered = useSpurStore.getState().workspaceCodeKeys[workspace.id];
+  if (!remembered) return null;
+  const stillAttached = workspace.attachments.some(
+    (attachment) => attachment.path === remembered.repoPath,
+  );
+  return stillAttached
+    ? { repoPath: remembered.repoPath, ref: remembered.ref }
+    : null;
 }
 
 /**

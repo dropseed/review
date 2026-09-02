@@ -47,6 +47,20 @@ export interface GlobalReviewsSlice {
   reviewMissingRefs: Record<string, string[]>;
   /** Per-review navigation snapshots for tab-like restore behavior. */
   navigationSnapshots: Record<string, NavigationSnapshot>;
+  /**
+   * The comparison each workspace was last showing, by workspace id.
+   *
+   * The code half's answer to what `terminalTabUsedAt` already does for the
+   * terminal half: coming back to a workspace lands on the tab it was left on,
+   * not on whichever attachment happens to be first. Without it, every route
+   * into a workspace re-opened `attachments[0]`, so walking away from a
+   * two-repo workspace and back silently moved you.
+   *
+   * Validated on read rather than pruned on write — `focusWorkspace` only
+   * honours an entry whose repo is still attached — so a detached tab can
+   * never resurrect and a stale id costs one lookup.
+   */
+  workspaceCodeKeys: Record<string, ActiveReviewKey>;
 
   loadGlobalReviews: () => Promise<void>;
   setActiveReviewKey: (key: ActiveReviewKey | null) => void;
@@ -100,6 +114,7 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
     reviewCachedShas: {},
     reviewMissingRefs: {},
     navigationSnapshots: {},
+    workspaceCodeKeys: {},
 
     loadGlobalReviews: async () => {
       set({ globalReviewsLoading: true });
@@ -178,9 +193,23 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
           .find((workspace) => workspace.id === focusedWorkspaceId)
           ?.attachments.some((attachment) => attachment.path === key.repoPath);
 
+      // Remember it for the workspace it belongs to. Here rather than in the
+      // callers because this is the one choke point every route goes through
+      // — a card, a repo tab, a sidebar row, ⌘K — and a memory that only some
+      // of them updated would be worse than none.
+      const remember = !stale && key !== null && focusedWorkspaceId !== null;
+
       set({
         activeReviewKey: key,
         ...(stale ? { focusedWorkspaceId: null } : {}),
+        ...(remember
+          ? {
+              workspaceCodeKeys: {
+                ...get().workspaceCodeKeys,
+                [focusedWorkspaceId]: key,
+              },
+            }
+          : {}),
       });
     },
 
