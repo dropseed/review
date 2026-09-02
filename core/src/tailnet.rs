@@ -224,7 +224,9 @@ struct NodeStatus {
 
 fn node_status(cli: &Path) -> Result<NodeStatus> {
     let out = run(cli, &["status", "--json"])?;
-    let doc: serde_json::Value = serde_json::from_str(&out)?;
+    let Ok(doc) = serde_json::from_str::<serde_json::Value>(&out) else {
+        bail!("{}", not_json(&out));
+    };
 
     // `BackendState` is the daemon's own word for it. "Running" is the only
     // state in which a name is issued and serve can be configured; "Stopped",
@@ -254,6 +256,24 @@ fn node_status(cli: &Path) -> Result<NodeStatus> {
     })
 }
 
+/// What to say when `tailscale` exits cleanly and hands back something that
+/// isn't JSON.
+///
+/// Worth naming rather than letting the parser speak, because the reply is
+/// prose meant for a human and serde's "expected value at line 1 column 1" is
+/// the one sentence that describes it without saying anything. The panel
+/// renders this verbatim, so it quotes what was actually said — the CLI's own
+/// words are the closest thing to a diagnosis this app has.
+fn not_json(out: &str) -> String {
+    let said = out.trim();
+    if said.is_empty() {
+        return "Tailscale answered nothing when asked for its status.".to_owned();
+    }
+    let first_line = said.lines().next().unwrap_or(said);
+    let said: String = first_line.chars().take(200).collect();
+    format!("Tailscale did not report its status. It said: {said}")
+}
+
 /// How long any one `tailscale` call gets. `status` answers off a local socket
 /// and `serve` contacts the control plane, so this is sized for the slow one —
 /// and exists at all because these run inside a Tauri command, where a wedged
@@ -268,9 +288,19 @@ fn run(cli: &Path, args: &[&str]) -> Result<String> {
     // reason that helper exists: this talks to a daemon and, for `serve`, to
     // Tailscale's control plane, and a plain `output()` would wait on either of
     // them forever.
-    let out = crate::process::output_with_timeout(Command::new(cli).args(args), CLI_TIMEOUT)
-        .map_err(|e| anyhow!("Could not run {}: {e}", cli.display()))?
-        .ok_or_else(|| anyhow!("tailscale {} timed out", args.join(" ")))?;
+    //
+    // `TERM` is not decoration. `CANDIDATE_PATHS` ends at the macOS app
+    // bundle's binary, which is the GUI app and the CLI in one: with no `TERM`
+    // in the environment it decides it was not run from a terminal, tries to
+    // open the GUI, prints "The Tailscale GUI failed to start" *to stdout* and
+    // exits **0**. A Finder-launched app inherits launchd's environment, which
+    // has no `TERM` — so without this every probe succeeds and returns prose.
+    let out = crate::process::output_with_timeout(
+        Command::new(cli).args(args).env("TERM", "dumb"),
+        CLI_TIMEOUT,
+    )
+    .map_err(|e| anyhow!("Could not run {}: {e}", cli.display()))?
+    .ok_or_else(|| anyhow!("tailscale {} timed out", args.join(" ")))?;
 
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
@@ -309,6 +339,26 @@ mod tests {
     #[test]
     fn a_target_with_no_port_matches_nothing() {
         assert!(!targets_port("http://127.0.0.1", 7787));
+    }
+
+    /// The failure this replaced: the app bundle's binary answers a
+    /// `TERM`-less probe with prose and exit 0, and serde's message for that
+    /// ("expected value at line 1 column 1") reached the settings panel.
+    #[test]
+    fn a_non_json_reply_is_reported_as_what_tailscale_said() {
+        let message =
+            not_json("The Tailscale GUI failed to start: The operation couldn't be completed.\n");
+        assert!(message.starts_with("Tailscale did not report its status."));
+        assert!(message.contains("The Tailscale GUI failed to start"));
+        assert!(!message.contains("expected value"));
+    }
+
+    #[test]
+    fn a_silent_reply_says_so_rather_than_quoting_nothing() {
+        assert_eq!(
+            not_json("   \n"),
+            "Tailscale answered nothing when asked for its status."
+        );
     }
 
     #[test]

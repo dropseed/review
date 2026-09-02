@@ -110,7 +110,7 @@ export function RemoteAccessSection(): ReactNode {
         <div className="min-w-0">
           <span className="text-xs text-fg-secondary">Serve on my tailnet</span>
           <p className="mt-1.5 text-xxs text-fg-faint leading-relaxed">
-            Runs Review's web server on this Mac and puts Tailscale in front of
+            Runs Spur's web server on this Mac and puts Tailscale in front of
             it, so you can open it — or install it as an app — on any device
             signed in to your tailnet. Nothing is exposed to the internet.
           </p>
@@ -209,8 +209,8 @@ export function RemoteAccessSection(): ReactNode {
               only turning this off does. Said here rather than left to be
               discovered when a phone hits a 502 after a reboot. */}
           <p className="mt-2 text-xxs text-fg-faint leading-relaxed">
-            The Tailscale setting persists across restarts. Review's server
-            starts again with the app; turn this off to remove both.
+            The Tailscale setting persists across restarts. Spur's server starts
+            again with the app; turn this off to remove both.
           </p>
         </div>
       )}
