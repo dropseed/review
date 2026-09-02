@@ -338,6 +338,31 @@ fn setup_app(
         }
     });
 
+    // Carry an installed agent skill across this release. Off the startup
+    // path like everything else here, and deliberately quiet: it only ever
+    // touches a copy whose recorded digest proves we wrote it, so there is
+    // nothing for a human to confirm and nothing to abort a launch over.
+    //
+    // Release builds only, like the CLI install item above. A skills directory
+    // belongs to the agent tool, not to `$SPUR_HOME`, so there is no isolated
+    // copy for a dev build to write to — and what it would write is unreleased
+    // content, into the skill the installed app's agents are reading.
+    #[cfg(not(debug_assertions))]
+    std::thread::spawn(|| {
+        for (tool, result) in spur::skill::refresh_all() {
+            match result {
+                Ok(outcome) if outcome.changed() => {
+                    log::info!("[skill] updated the {tool} skill to this release");
+                }
+                Ok(spur::skill::SkillWrite::LeftEdited) => {
+                    log::info!("[skill] {tool}'s skill has local edits — left as it is");
+                }
+                Ok(_) => {}
+                Err(e) => log::warn!("[skill] could not refresh the {tool} skill: {e}"),
+            }
+        }
+    });
+
     // The workspace queue is global, so its watcher is started once here
     // rather than alongside any repo's — off the startup path for the
     // same reason as the one above: `new_debouncer` blocks on the

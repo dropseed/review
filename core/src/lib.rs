@@ -31,6 +31,10 @@ pub mod workspace;
 // Service layer — shared business logic for Tauri and Axum
 pub mod service;
 
+// The bundled agent skill, and keeping an installed copy current across
+// releases. Ungated: the CLI installs it, and the app refreshes it on launch.
+pub mod skill;
+
 // The local Tailscale node, as the settings panel's "serve this on my tailnet"
 // switch needs to see it. Shells out to the `tailscale` CLI and nothing else,
 // so it costs no dependencies and is compiled unconditionally.

@@ -1,21 +1,13 @@
 //! `spur skill` — install the bundled skill for Claude Code and/or Codex.
+//!
+//! The writing itself lives in [`crate::skill`], which the desktop app also
+//! calls on launch to carry an installed copy across releases. This is the
+//! explicit half: it adopts a copy an older CLI left unmarked, and `--force`
+//! is the one thing that overwrites a skill the human edited.
 
 use clap::{Args, Subcommand};
 
-/// The bundled skill, embedded into the binary at build time so the shipped
-/// CLI can install it without the source repo present.
-const SKILL_NAME: &str = "spur-app";
-const SKILL_CONTENTS: &str = include_str!("../../resources/skills/spur-app/SKILL.md");
-
-/// Skills earlier versions installed, now folded into [`SKILL_NAME`]. Removed on
-/// install so an upgraded CLI doesn't leave overlapping skills behind.
-///
-/// `review-app` is this same skill under the app's old name, and leaving it in
-/// place is worse than leaving a merely redundant one: every command in it
-/// spells the CLI `review`, which after the rename is either absent or a stale
-/// binary resolving a home Spur no longer writes to. An agent reading it would
-/// drive the wrong instance.
-const SUPERSEDED: &[&str] = &["review-app", "review-guide", "review-terminals"];
+use crate::skill::{self, Mode, SkillWrite};
 
 #[derive(Debug, Args)]
 pub struct SkillArgs {
@@ -26,130 +18,133 @@ pub struct SkillArgs {
 #[derive(Debug, Subcommand)]
 pub enum SkillAction {
     /// Install the bundled skill for Claude Code and Codex
-    Install,
+    Install {
+        /// Overwrite a skill that has been edited since it was installed
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 pub fn run_skill(args: SkillArgs) -> Result<(), String> {
     match args.action {
-        SkillAction::Install => install_skill(),
+        SkillAction::Install { force } => install_skill(force),
     }
 }
 
-/// Install the bundled skill into both `~/.claude/skills/` and
-/// `$CODEX_HOME/skills/` (defaulting to `~/.codex/skills/`).
-fn install_skill() -> Result<(), String> {
-    let home = dirs::home_dir().ok_or("Could not determine the home directory.")?;
+/// Install into every tool's skills directory, reporting each independently.
+fn install_skill(force: bool) -> Result<(), String> {
+    let roots = skill::install_roots();
+    if roots.is_empty() {
+        return Err("Could not determine the home directory.".to_owned());
+    }
 
-    let claude_dir = home.join(".claude").join("skills");
-    let claude_result = write_skill("Claude Code", &claude_dir);
+    let results: Vec<(&str, Result<SkillWrite, String>)> = roots
+        .into_iter()
+        .map(|(tool, root)| {
+            let outcome = skill::write_skill(&root, Mode::Explicit { force })
+                .map_err(|e| format!("Failed to write {}: {e}", root.display()));
+            if let Ok(outcome) = &outcome {
+                report(tool, *outcome, &root);
+            }
+            (tool, outcome)
+        })
+        .collect();
 
-    let codex_result = crate::service::util::codex_home()
-        .ok_or_else(|| "Could not determine the Codex home directory.".to_owned())
-        .and_then(|dir| write_skill("Codex", &dir.join("skills")));
-
-    finish_install(claude_result, codex_result)
+    finish_install(&results)
 }
 
-/// Combine the two independent installs into one outcome. Each tool's skills
+fn report(tool: &str, outcome: SkillWrite, root: &std::path::Path) {
+    let file = root.join(skill::SKILL_NAME).join("SKILL.md");
+    match outcome {
+        SkillWrite::Installed => println!("Installed the {} skill for {tool} at {}", skill::SKILL_NAME, file.display()),
+        SkillWrite::Updated | SkillWrite::Adopted => {
+            println!("Updated the {} skill for {tool} at {}", skill::SKILL_NAME, file.display())
+        }
+        SkillWrite::Unchanged => println!("The {} skill for {tool} is already current.", skill::SKILL_NAME),
+        SkillWrite::LeftEdited => eprintln!(
+            "{} has been edited since it was installed — left as it is. Re-run with --force to overwrite it.",
+            file.display()
+        ),
+        // Only a refresh can produce this; an explicit install always writes.
+        SkillWrite::NotInstalled => {}
+    }
+}
+
+/// Combine the per-tool installs into one outcome. Each tool's skills
 /// directory is unrelated to the other's, so one failing (a read-only
 /// `$CODEX_HOME`, say) is not a reason to hide that the other succeeded —
-/// only fail the command outright when neither install landed.
-fn finish_install(claude: Result<(), String>, codex: Result<(), String>) -> Result<(), String> {
-    match (claude, codex) {
-        (Ok(()), Ok(())) => {
-            println!("Restart Claude Code or Codex to pick up the skill.");
-            Ok(())
+/// only fail the command outright when none of them landed.
+fn finish_install(results: &[(&str, Result<SkillWrite, String>)]) -> Result<(), String> {
+    for (tool, result) in results {
+        if let Err(e) = result {
+            eprintln!("Warning: skipped {tool} ({e})");
         }
-        (Ok(()), Err(e)) => {
-            eprintln!("Warning: skipped Codex ({e})");
-            println!("Restart Claude Code to pick up the skill.");
-            Ok(())
-        }
-        (Err(e), Ok(())) => {
-            eprintln!("Warning: skipped Claude Code ({e})");
-            println!("Restart Codex to pick up the skill.");
-            Ok(())
-        }
-        (Err(e1), Err(e2)) => Err(format!("{e1}\n{e2}")),
     }
-}
 
-fn write_skill(tool: &str, skills_root: &std::path::Path) -> Result<(), String> {
-    let skill_dir = skills_root.join(SKILL_NAME);
-    let skill_file = skill_dir.join("SKILL.md");
+    let errors: Vec<&str> = results
+        .iter()
+        .filter_map(|(_, r)| r.as_ref().err().map(String::as_str))
+        .collect();
+    if errors.len() == results.len() {
+        return Err(errors.join("\n"));
+    }
 
-    let updating = skill_file.exists();
-    std::fs::create_dir_all(&skill_dir)
-        .map_err(|e| format!("Failed to create {}: {e}", skill_dir.display()))?;
-    std::fs::write(&skill_file, SKILL_CONTENTS)
-        .map_err(|e| format!("Failed to write {}: {e}", skill_file.display()))?;
-
-    let verb = if updating { "Updated" } else { "Installed" };
-    println!(
-        "{verb} the {SKILL_NAME} skill for {tool} at {}",
-        skill_file.display()
-    );
-
-    remove_superseded(skills_root);
+    // Only worth saying when something actually changed on disk.
+    let landed: Vec<&str> = results
+        .iter()
+        .filter(|(_, r)| r.as_ref().is_ok_and(|o| o.changed()))
+        .map(|(tool, _)| *tool)
+        .collect();
+    match landed.as_slice() {
+        [] => {}
+        [one] => println!("Restart {one} to pick up the skill."),
+        many => println!("Restart {} to pick up the skill.", many.join(" or ")),
+    }
     Ok(())
-}
-
-/// Delete the skills this one replaced. Best-effort: a skill the user edited or
-/// never had is not worth failing the install over, so failures are silent.
-fn remove_superseded(skills_root: &std::path::Path) {
-    for name in SUPERSEDED {
-        let dir = skills_root.join(name);
-        if dir.is_dir() && std::fs::remove_dir_all(&dir).is_ok() {
-            println!("Removed the superseded {name} skill at {}", dir.display());
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn finish_install_succeeds_if_either_tool_landed() {
-        assert!(finish_install(Ok(()), Ok(())).is_ok());
-        assert!(finish_install(Ok(()), Err("codex boom".into())).is_ok());
-        assert!(finish_install(Err("claude boom".into()), Ok(())).is_ok());
+    fn ok(o: SkillWrite) -> Result<SkillWrite, String> {
+        Ok(o)
     }
 
     #[test]
-    fn finish_install_fails_only_when_both_tools_failed() {
-        let err = finish_install(Err("claude boom".into()), Err("codex boom".into()))
-            .expect_err("both installs failing should be reported as failure");
+    fn install_succeeds_if_either_tool_landed() {
+        assert!(finish_install(&[
+            ("Claude Code", ok(SkillWrite::Installed)),
+            ("Codex", ok(SkillWrite::Installed)),
+        ])
+        .is_ok());
+        assert!(finish_install(&[
+            ("Claude Code", ok(SkillWrite::Installed)),
+            ("Codex", Err("codex boom".into())),
+        ])
+        .is_ok());
+        assert!(finish_install(&[
+            ("Claude Code", Err("claude boom".into())),
+            ("Codex", ok(SkillWrite::Updated)),
+        ])
+        .is_ok());
+    }
+
+    #[test]
+    fn install_fails_only_when_every_tool_failed() {
+        let err = finish_install(&[
+            ("Claude Code", Err("claude boom".into())),
+            ("Codex", Err("codex boom".into())),
+        ])
+        .expect_err("every install failing should be reported as failure");
         assert!(err.contains("claude boom"));
         assert!(err.contains("codex boom"));
     }
 
+    /// An edited skill is not an error — the command reports it and exits 0,
+    /// since nothing went wrong and the fix is a flag the human chooses.
     #[test]
-    fn write_skill_creates_then_updates() {
-        let dir = tempfile::tempdir().unwrap();
-        let skill_file = dir.path().join(SKILL_NAME).join("SKILL.md");
-
-        write_skill("Claude Code", dir.path()).unwrap();
-        assert_eq!(
-            std::fs::read_to_string(&skill_file).unwrap(),
-            SKILL_CONTENTS
-        );
-
-        // Writing again over an existing install is still Ok, not a fresh-install error.
-        write_skill("Claude Code", dir.path()).unwrap();
-    }
-
-    #[test]
-    fn write_skill_removes_superseded_skills() {
-        let dir = tempfile::tempdir().unwrap();
-        for name in SUPERSEDED {
-            std::fs::create_dir_all(dir.path().join(name)).unwrap();
-        }
-
-        write_skill("Claude Code", dir.path()).unwrap();
-
-        for name in SUPERSEDED {
-            assert!(!dir.path().join(name).exists());
-        }
+    fn a_skill_left_edited_is_not_a_failure() {
+        assert!(finish_install(&[("Claude Code", ok(SkillWrite::LeftEdited))]).is_ok());
     }
 }
