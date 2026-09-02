@@ -21,6 +21,7 @@ export { useKeyboardNavigation } from "./useKeyboardNavigation";
 export { useMouseNavigation } from "./useMouseNavigation";
 export { useReviewProgress } from "./useReviewProgress";
 export { useHighlighter, getLanguageFromFilename } from "./useHighlighter";
+export { useEvictSupersededAst, diffCacheKey } from "./useEvictSupersededAst";
 export { usePrefersReducedMotion } from "./usePrefersReducedMotion";
 export { useCelebration } from "./useCelebration";
 export { useScrollHunkTracking } from "./useScrollHunkTracking";

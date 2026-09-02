@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   createHighlighter,
   type Highlighter,
@@ -95,8 +95,6 @@ const FILENAME_TO_LANGUAGE: Record<string, BundledLanguage> = {
   ".profile": "bash",
 };
 
-let highlighterPromise: Promise<Highlighter> | null = null;
-
 export function getLanguageFromFilename(
   filename: string,
 ): BundledLanguage | null {
@@ -115,37 +113,117 @@ export function getLanguageFromFilename(
   return null;
 }
 
-export function useHighlighter(): {
+/**
+ * The one main-thread highlighter, created with no grammars.
+ *
+ * The diff surfaces do their highlighting in pierre's worker pool; this
+ * highlighter exists only for the hunk previews inside the move-pair and
+ * similar-hunks modals. Handing `createHighlighter` the whole extension map up
+ * front — every grammar in `EXTENSION_TO_LANGUAGE`, some sixty of them — meant
+ * a session that never opened either modal still paid to fetch, parse and
+ * compile sixty TextMate grammars on the main thread at startup, and kept them
+ * resident for as long as the app ran. Grammars are loaded per language
+ * instead, on the first preview that asks for one.
+ */
+let highlighterPromise: Promise<Highlighter> | null = null;
+
+function getHighlighter(): Promise<Highlighter> {
+  if (!highlighterPromise) {
+    highlighterPromise = createHighlighter({
+      themes: ["github-dark", "github-light"],
+      langs: [],
+    });
+    // A rejected creation must not be remembered as settled — a single failure
+    // (offline first paint, a chunk 404 after a deploy) would otherwise leave
+    // every language unhighlightable for the rest of the session, with each
+    // retry re-deriving from the same rejection.
+    highlighterPromise.catch(() => {
+      highlighterPromise = null;
+    });
+  }
+  return highlighterPromise;
+}
+
+/**
+ * In-flight and settled grammar loads, so N previews of the same language
+ * share one `loadLanguage` rather than racing sixty of them.
+ */
+const grammarLoads = new Map<BundledLanguage, Promise<Highlighter>>();
+
+function loadGrammar(lang: BundledLanguage): Promise<Highlighter> {
+  let load = grammarLoads.get(lang);
+  if (!load) {
+    load = getHighlighter().then(async (highlighter) => {
+      // Idempotent, but the map already makes it so — this is the guard for a
+      // grammar the highlighter picked up as another language's dependency.
+      if (!highlighter.getLoadedLanguages().includes(lang)) {
+        await highlighter.loadLanguage(lang);
+      }
+      return highlighter;
+    });
+    grammarLoads.set(lang, load);
+    // A failed load must not be remembered as settled, or the language is
+    // permanently unhighlightable for the rest of the session.
+    load.catch(() => grammarLoads.delete(lang));
+  }
+  return load;
+}
+
+/**
+ * What a grammar load settled to, and for which language.
+ *
+ * The language is carried alongside because the highlighter is a process-wide
+ * singleton: the same object is returned before and after a grammar is added to
+ * it, so its identity cannot say whether `lang` is loaded yet. Without that,
+ * `setHighlighter` after the first resolve is a no-op under `Object.is`, React
+ * bails out of the re-render, and a consumer whose language changes is stranded
+ * calling `codeToTokens` with a grammar that was never loaded.
+ */
+type LoadResult =
+  | { status: "loaded"; lang: BundledLanguage; highlighter: Highlighter }
+  | { status: "failed"; lang: BundledLanguage; error: Error };
+
+/**
+ * The highlighter, once it can tokenize `lang`.
+ *
+ * Returns `null` for a null language (nothing to highlight) and while the
+ * grammar is still loading — including the renders after `lang` changes to one
+ * that hasn't been fetched yet. Callers render plain text until it arrives.
+ */
+export function useHighlighter(lang: BundledLanguage | null): {
   highlighter: Highlighter | null;
   loading: boolean;
   error: Error | null;
 } {
-  const [highlighter, setHighlighter] = useState<Highlighter | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
+  const [result, setResult] = useState<LoadResult | null>(null);
 
   useEffect(() => {
-    // Reuse existing promise to avoid creating multiple highlighters
-    if (!highlighterPromise) {
-      highlighterPromise = createHighlighter({
-        themes: ["github-dark", "github-light"],
-        langs: Object.values(EXTENSION_TO_LANGUAGE).filter(
-          (value, index, self) => self.indexOf(value) === index,
-        ),
-      });
-    }
+    if (lang === null) return;
 
-    highlighterPromise
-      .then((hl) => {
-        setHighlighter(hl);
-        setLoading(false);
+    // A language change mid-flight must not paint the previous one's result.
+    let current = true;
+    loadGrammar(lang)
+      .then((highlighter) => {
+        if (current) setResult({ status: "loaded", lang, highlighter });
       })
-      .catch((err) => {
-        console.error("[useHighlighter] Failed to create highlighter:", err);
-        setError(err);
-        setLoading(false);
+      .catch((err: unknown) => {
+        console.error("[useHighlighter] Failed to load grammar:", lang, err);
+        const error = err instanceof Error ? err : new Error(String(err));
+        if (current) setResult({ status: "failed", lang, error });
       });
-  }, []);
 
-  return { highlighter, loading, error };
+    return () => {
+      current = false;
+    };
+  }, [lang]);
+
+  // Every field is derived from the settled language rather than stored, so
+  // there is no render where a stale `loading` or a previous language's
+  // highlighter is visible.
+  const settled = result?.lang === lang ? result : null;
+  return {
+    highlighter: settled?.status === "loaded" ? settled.highlighter : null,
+    loading: lang !== null && settled === null,
+    error: settled?.status === "failed" ? settled.error : null,
+  };
 }

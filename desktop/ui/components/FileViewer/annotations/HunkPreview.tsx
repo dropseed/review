@@ -58,13 +58,16 @@ function StatusBadge({ status }: { status: "approved" | "rejected" }) {
 
 /** Tokenize all changed lines in a hunk using Shiki */
 function useTokenizedLines(hunk: DiffHunk): Map<number, ThemedToken[]> | null {
-  const { highlighter } = useHighlighter();
+  // Resolved before the highlighter is asked for, because the grammar this
+  // preview needs is the only one it loads.
+  const lang = useMemo(
+    () => getLanguageFromFilename(hunk.filePath),
+    [hunk.filePath],
+  );
+  const { highlighter } = useHighlighter(lang);
 
   return useMemo(() => {
-    if (!highlighter) return null;
-
-    const lang = getLanguageFromFilename(hunk.filePath);
-    if (!lang) return null;
+    if (!highlighter || !lang) return null;
 
     const changedLines = hunk.lines.filter(
       (l) => l.type === "added" || l.type === "removed",
@@ -85,7 +88,7 @@ function useTokenizedLines(hunk: DiffHunk): Map<number, ThemedToken[]> | null {
     } catch {
       return null;
     }
-  }, [highlighter, hunk]);
+  }, [highlighter, lang, hunk]);
 }
 
 function HighlightedLine({ tokens }: { tokens: ThemedToken[] }) {

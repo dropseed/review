@@ -7,7 +7,11 @@ import {
   areFilesEqual,
   areOptionsEqual,
 } from "@pierre/diffs";
-import { useVirtualFileMetrics } from "../../hooks";
+import {
+  useVirtualFileMetrics,
+  useEvictSupersededAst,
+  diffCacheKey,
+} from "../../hooks";
 import { useSpurStore } from "../../stores";
 import { stringHash } from "../../utils/string-hash";
 import type { DiffHunk } from "../../types";
@@ -171,8 +175,31 @@ export function DiffView({
   const parsedFileDiff = useMemo(() => {
     if (hasFileContents) return null;
     const fileDiff = getSingularPatch(diffPatch);
-    return language ? setLanguageOverride(fileDiff, language) : fileDiff;
-  }, [hasFileContents, diffPatch, language]);
+    // `getSingularPatch` parses without a cache key prefix, so pierre leaves
+    // `cacheKey` undefined — and an unkeyed diff is never cached and never
+    // primed (the pool warns and returns immediately). This is the path the
+    // grouped and unified views take, at one instance per *hunk*, so leaving it
+    // unkeyed meant every hunk re-tokenized in a worker on every pass with no
+    // cache to fall back on. The patch text is the whole input, so hashing it
+    // identifies the result exactly.
+    const keyed = {
+      ...fileDiff,
+      cacheKey: `patch:${fileName}:${stringHash(diffPatch)}`,
+    };
+    return language ? setLanguageOverride(keyed, language) : keyed;
+  }, [hasFileContents, diffPatch, fileName, language]);
+
+  // Editing a file mints new cache keys for it; the key each slot replaced
+  // names an AST the pool will never be asked for again. Only diff slots: the
+  // `old:`/`new:` file keys never reach the pool's file cache, since rendering
+  // a diff never submits a "file" request for either side.
+  useEvictSupersededAst(
+    {},
+    {
+      pair: diffCacheKey(oldFile?.cacheKey, newFile?.cacheKey),
+      patch: parsedFileDiff?.cacheKey,
+    },
+  );
 
   const lineDiffType = useAdaptiveLineDiffType(
     fileName,

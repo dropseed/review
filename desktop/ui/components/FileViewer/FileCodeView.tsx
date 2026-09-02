@@ -27,6 +27,7 @@ import type { CodeViewOptions } from "@pierre/diffs";
 import { useSpurStore } from "../../stores";
 import { viewOnly } from "../../stores/selectors/viewpoint";
 import { stringHash } from "../../utils/string-hash";
+import { useEvictSupersededAst } from "../../hooks";
 import type { DiffHunk, LineAnnotation } from "../../types";
 import type { SupportedLanguages } from "./languageMap";
 import { DiffErrorBoundary } from "./DiffView";
@@ -188,6 +189,11 @@ export function FileCodeView({
     [newContent],
   );
 
+  // Hoisted out of the memo so the eviction pass below can name the ASTs these
+  // keys stand for without rebuilding the key format a second time.
+  const oldFileKey = isDiff ? `old:${filePath}:${oldContentHash}` : undefined;
+  const newFileKey = isDiff ? `new:${filePath}:${newContentHash}` : undefined;
+
   const fileDiff = useMemo<FileDiffMetadata | null>(() => {
     if (!isDiff) return null;
     // Use full contents when available (enables hunk expansion); fall back
@@ -199,20 +205,20 @@ export function FileCodeView({
             name: filePath,
             contents: oldContent ?? "",
             lang: language,
-            cacheKey: `old:${filePath}:${oldContentHash}`,
+            cacheKey: oldFileKey,
           },
           {
             name: filePath,
             contents: newContent ?? "",
             lang: language,
-            cacheKey: `new:${filePath}:${newContentHash}`,
+            cacheKey: newFileKey,
           },
         )
       : getSingularPatch(diffPatch);
     return language ? setLanguageOverride(parsed, language) : parsed;
     // Hashes stand in for the content strings themselves.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDiff, filePath, oldContentHash, newContentHash, diffPatch, language]);
+  }, [isDiff, filePath, oldFileKey, newFileKey, diffPatch, language]);
 
   const plainContent = !isDiff ? content.content : "";
   // In shape mode the document is re-synthesized on every fold toggle, and its
@@ -233,6 +239,17 @@ export function FileCodeView({
             cacheKey: `file:${filePath}:${plainCacheKey}`,
           },
     [isDiff, filePath, plainContent, language, plainCacheKey],
+  );
+
+  // Editing the file mints new cache keys for it; the key each slot replaced
+  // names an AST the pool will never be asked for again. Toggling between the
+  // diff and the plain document empties the other slot without superseding it,
+  // which is why the slots are named — the toggle back wants the same AST.
+  // `oldFileKey`/`newFileKey` are not slots here: only a "file" request
+  // populates the pool's file cache, and rendering a diff never makes one.
+  useEvictSupersededAst(
+    { plain: plainFile?.cacheKey },
+    { diff: fileDiff?.cacheKey },
   );
 
   // Controlled items: CodeView only re-reads an item (and re-invokes its
