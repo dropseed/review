@@ -448,7 +448,7 @@ function CommandLineSection({ isOpen }: { isOpen: boolean }): ReactNode {
               <span className="text-xs text-fg-secondary">
                 Installed at{" "}
                 <code className="text-xxs text-fg-muted">
-                  /usr/local/bin/review
+                  /usr/local/bin/spur
                 </code>
               </span>
             </div>
@@ -470,7 +470,7 @@ function CommandLineSection({ isOpen }: { isOpen: boolean }): ReactNode {
         <>
           <div className="flex items-center justify-between rounded-lg bg-surface-raised/30 px-3 py-2.5">
             <span className="text-xs text-fg-muted">
-              <code className="text-xxs">review</code> command not installed
+              <code className="text-xxs">spur</code> command not installed
             </span>
             <button
               onClick={() => handleCliAction("install_cli")}
@@ -482,8 +482,8 @@ function CommandLineSection({ isOpen }: { isOpen: boolean }): ReactNode {
           </div>
           <p className="mt-2 text-xxs text-fg-faint leading-relaxed">
             Creates a symlink at{" "}
-            <code className="text-fg-muted">/usr/local/bin/review</code> so you
-            can run <code className="text-fg-muted">review</code> from any
+            <code className="text-fg-muted">/usr/local/bin/spur</code> so you
+            can run <code className="text-fg-muted">spur</code> from any
             terminal.
           </p>
         </>
@@ -1025,7 +1025,7 @@ export function SettingsModal({
               />
               <p className="mt-1.5 text-xxs text-fg-faint leading-relaxed">
                 Send a system notification when a terminal needs your attention
-                and Review is in the background.
+                and Spur is in the background.
               </p>
             </div>
 

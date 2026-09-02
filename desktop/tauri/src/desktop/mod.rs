@@ -50,7 +50,7 @@ pub use spur::home::{read_open_request, OpenRequest};
 
 /// The app's one window, as declared in `tauri.conf.json`.
 ///
-/// Review is single-window on purpose — a second thing to work on is a second
+/// Spur is single-window on purpose — a second thing to work on is a second
 /// *workspace*, not a second copy of the app — so anything that used to pick a
 /// window out of an unordered map names this instead.
 #[cfg(desktop)]
@@ -160,7 +160,7 @@ fn setup_app(
         .accelerator("CmdOrCtrl+,")
         .build(app)?;
 
-    let review_help = MenuItemBuilder::new("Review Help")
+    let review_help = MenuItemBuilder::new("Spur Help")
         .id("review_help")
         .build(app)?;
 
@@ -279,7 +279,7 @@ fn setup_app(
 
     #[cfg(not(debug_assertions))]
     {
-        let install_cli = MenuItemBuilder::new("Install 'review' Command in PATH...")
+        let install_cli = MenuItemBuilder::new("Install 'spur' Command in PATH...")
             .id("install_cli")
             .build(app)?;
         help_menu_builder = help_menu_builder.item(&install_cli).separator();

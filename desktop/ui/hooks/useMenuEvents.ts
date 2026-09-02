@@ -78,7 +78,7 @@ export function useMenuEvents() {
     unlisten.push(
       on("cli:installed", () => {
         platform.dialogs.message(
-          "The 'review' command has been installed to /usr/local/bin/review",
+          "The 'spur' command has been installed to /usr/local/bin/spur",
           { title: "CLI Installed", kind: "info" },
         );
       }),
@@ -86,7 +86,7 @@ export function useMenuEvents() {
         const errorMsg =
           typeof payload === "string"
             ? payload
-            : "Failed to install the CLI. Try running:\n  sudo ln -sf /Applications/Spur.app/Contents/MacOS/spur-cli /usr/local/bin/review";
+            : "Failed to install the CLI. Try running:\n  sudo ln -sf /Applications/Spur.app/Contents/MacOS/spur-cli /usr/local/bin/spur";
         platform.dialogs.message(errorMsg, {
           title: "CLI Install Failed",
           kind: "error",

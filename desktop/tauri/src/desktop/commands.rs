@@ -1370,7 +1370,7 @@ pub async fn get_file_content_at_ref(
 // --- CLI sidecar install ---
 
 /// Well-known install location for the `spur` CLI symlink.
-const CLI_SYMLINK_PATH: &str = "/usr/local/bin/review";
+const CLI_SYMLINK_PATH: &str = "/usr/local/bin/spur";
 
 #[derive(Debug, Serialize)]
 pub struct CliInstallStatus {
@@ -1442,7 +1442,21 @@ pub fn install_cli(app: tauri::AppHandle) -> Result<String, String> {
         ));
     }
 
-    let shell_command = format!("ln -sf '{}' '{}'", sidecar_path.display(), CLI_SYMLINK_PATH);
+    // `mkdir -p` first: /usr/local/bin does not exist on a Mac that has never
+    // had anything install into it — an Apple Silicon machine with Homebrew at
+    // /opt/homebrew has no reason to. Without it `ln` fails with "No such file
+    // or directory" naming the *link* it was asked to create, which reads like
+    // the sidecar is missing rather than its parent directory. One admin
+    // prompt covers both, since they are one act.
+    let shell_command = format!(
+        "mkdir -p '{}' && ln -sf '{}' '{}'",
+        std::path::Path::new(CLI_SYMLINK_PATH)
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("/usr/local/bin"))
+            .display(),
+        sidecar_path.display(),
+        CLI_SYMLINK_PATH
+    );
     run_admin_shell_command(&shell_command, "Installation cancelled")
         .map_err(|e| format!("Failed to create symlink: {e}"))?;
 
