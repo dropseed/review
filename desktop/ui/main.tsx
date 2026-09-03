@@ -1,9 +1,5 @@
-import { scan, setOptions } from "react-scan";
-import { onScanRender, initReactScanLog } from "./utils/reactScanLog";
-scan({});
-// setOptions after scan() — scan's start() overwrites options from localStorage,
-// which drops non-persisted keys like onRender.
-if (import.meta.env.DEV) setOptions({ onRender: onScanRender });
+import { startReactScan, initReactScanLog } from "./utils/reactScanLog";
+startReactScan();
 
 import React, { useEffect } from "react";
 import ReactDOM from "react-dom/client";
@@ -92,7 +88,8 @@ initSentry();
 initializeLogger();
 initLogPath();
 
-// Initialize React Scan perf log (writes to ~/.spur/react-scan.jsonl)
+// Initialize React Scan perf log (writes to ~/.spur/react-scan.jsonl).
+// React Scan itself is started at the top of this file, dev builds only.
 initReactScanLog({ clear: true });
 
 // Expose the store on window in dev builds only.
