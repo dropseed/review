@@ -392,6 +392,7 @@ export function ComparisonPicker({
                     value={branchSearch}
                     onChange={(e) => setBranchSearch(e.target.value)}
                     placeholder="Search branches..."
+                    spellCheck={false}
                     className="py-1 text-sm"
                     aria-label="Search branches"
                   />

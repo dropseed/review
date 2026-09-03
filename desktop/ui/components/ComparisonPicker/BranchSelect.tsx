@@ -367,6 +367,7 @@ export const BranchSelect = memo(function BranchSelect({
             }}
             onKeyDown={handleKeyDown}
             placeholder="Search branches…"
+            spellCheck={false}
             className="py-1.5 text-sm"
             aria-label="Search branches"
           />
