@@ -212,11 +212,25 @@ export function useWorkspaceTabs(workspaceId: string | null): TerminalTab[] {
   const tabs = useSpurStore((s) => s.terminalTabs);
   const byWorkspace = useTabsByWorkspaceId();
 
-  return useMemo(() => {
-    if (!workspaceId) return tabs;
-    const own = new Set(byWorkspace[workspaceId] ?? []);
-    return tabs.filter((tab) => own.has(tab.id));
-  }, [tabs, byWorkspace, workspaceId]);
+  return useMemo(
+    () => filterWorkspaceTabs(tabs, byWorkspace, workspaceId),
+    [tabs, byWorkspace, workspaceId],
+  );
+}
+
+/**
+ * The same filter without the hook — what a keystroke asks, which has no
+ * hooks. Shared with [`useWorkspaceTabs`] so the strip and the chord that
+ * steps along it cannot disagree about what is in it.
+ */
+export function filterWorkspaceTabs(
+  tabs: TerminalTab[],
+  byWorkspace: Record<string, string[]>,
+  workspaceId: string | null,
+): TerminalTab[] {
+  if (!workspaceId) return tabs;
+  const own = new Set(byWorkspace[workspaceId] ?? []);
+  return tabs.filter((tab) => own.has(tab.id));
 }
 
 /** [`getTerminalsByWorkspaceId`] for one workspace, with the empty answer. */

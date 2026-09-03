@@ -1,8 +1,15 @@
 import { useSpurStore } from "../../stores";
+import type { SpurStore } from "../../stores/types";
 import {
   findTabForTerminal,
   tabWorkspaceId,
+  type TerminalTab,
 } from "../../stores/slices/terminalSlice";
+import {
+  filterWorkspaceTabs,
+  getTabsByWorkspaceId,
+} from "../../stores/selectors/terminals";
+import { focusedWorkspaceIn } from "../../stores/selectors/workspaceData";
 import { focusWorkspace } from "../../commands/workspaceCommands";
 import { focusedTerminalId } from "./close";
 import { needsYouQueue } from "./glance";
@@ -77,4 +84,46 @@ export function focusNextNeedsYou(): void {
   const current = focusedTerminalId();
   const index = current ? queue.indexOf(current) : -1;
   jumpToTerminal(queue[(index + 1) % queue.length]);
+}
+
+/**
+ * The tabs the panel's strip is showing — this workspace's, in strip order.
+ *
+ * The keystroke half of `useWorkspaceTabs`: stepping along the strip has to
+ * step along the tabs that are *on* it, not the whole flat list, or ⌥⌘→ would
+ * walk into another workspace's shells and drag the stage after it.
+ */
+export function stripTabs(state: SpurStore): TerminalTab[] {
+  const workspace = focusedWorkspaceIn(state);
+  return filterWorkspaceTabs(
+    state.terminalTabs,
+    getTabsByWorkspaceId(state),
+    workspace?.id ?? null,
+  );
+}
+
+/**
+ * The tab one step from `activeId`, wrapping at either end — Chrome's rule for
+ * the same chord, where the last tab's "next" is the first.
+ *
+ * `null` when there is nowhere to go: fewer than two tabs. An active tab that
+ * isn't in the strip (the moment between focusing a workspace and its own tab
+ * being selected) enters from the end the step comes from.
+ */
+export function adjacentTabId(
+  tabs: readonly TerminalTab[],
+  activeId: string | null,
+  delta: 1 | -1,
+): string | null {
+  if (tabs.length < 2) return null;
+  const at = tabs.findIndex((tab) => tab.id === activeId);
+  if (at < 0) return (delta === 1 ? tabs[0] : tabs[tabs.length - 1]).id;
+  return tabs[(at + delta + tabs.length) % tabs.length].id;
+}
+
+/** Move one tab along the strip, and take the keyboard with you. */
+export function stepTerminalTab(delta: 1 | -1): void {
+  const state = useSpurStore.getState();
+  const next = adjacentTabId(stripTabs(state), state.activeTabId, delta);
+  if (next) jumpToTab(next);
 }

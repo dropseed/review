@@ -6,7 +6,7 @@ import {
   hasPendingClose,
   undoCloseTerminal,
 } from "./close";
-import { focusNextNeedsYou } from "./jump";
+import { focusNextNeedsYou, stepTerminalTab, stripTabs } from "./jump";
 import { hasNeedsYou } from "./glance";
 import { collectLeafIds, expandedLeafIds, type TerminalTab } from "./pane-tree";
 import { openTerminalTab } from "./newTab";
@@ -236,6 +236,32 @@ export const TERMINAL_COMMANDS: readonly Command[] = [
     isVisible: supported,
     isEnabled: (ctx) => docked(ctx) && hasNeedsYou(ctx.store),
     run: () => focusNextNeedsYou(),
+  },
+  {
+    id: "go.prevTerminalTab",
+    title: "Previous Terminal Tab",
+    category: "Go",
+    keywords: ["tab", "shell", "switch", "cycle", "back", "left"],
+    // Chrome's own chord for the same act, wrapping the same way — the strip
+    // is a row of tabs and this is the gesture a person already has for one.
+    shortcut: { code: "ArrowLeft", mod: true, alt: true },
+    allowInTerminal: true,
+    allowInInput: true,
+    isVisible: supported,
+    isEnabled: (ctx) => docked(ctx) && stripTabs(ctx.store).length > 1,
+    run: () => stepTerminalTab(-1),
+  },
+  {
+    id: "go.nextTerminalTab",
+    title: "Next Terminal Tab",
+    category: "Go",
+    keywords: ["tab", "shell", "switch", "cycle", "forward", "right"],
+    shortcut: { code: "ArrowRight", mod: true, alt: true },
+    allowInTerminal: true,
+    allowInInput: true,
+    isVisible: supported,
+    isEnabled: (ctx) => docked(ctx) && stripTabs(ctx.store).length > 1,
+    run: () => stepTerminalTab(1),
   },
   {
     id: "view.collapseTerminalPane",

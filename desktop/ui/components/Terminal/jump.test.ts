@@ -8,7 +8,12 @@ import {
   workspace as makeWorkspace,
 } from "../../test/fixtures";
 import type { Workspace } from "../../types";
-import { jumpToTab, jumpToTerminal } from "./jump";
+import {
+  adjacentTabId,
+  jumpToTab,
+  jumpToTerminal,
+  stepTerminalTab,
+} from "./jump";
 import { leaf, makeTab, splitLeaf } from "./pane-tree";
 
 const REPO = "/r";
@@ -135,6 +140,77 @@ describe("jumping to a terminal", () => {
   it("does nothing for a tab that isn't there", () => {
     seed();
     jumpToTab("gone");
+    expect(useSpurStore.getState().activeTabId).toBe("tabA");
+  });
+});
+
+/** A second tab in the *focused* workspace, which is what the strip shows. */
+function seedSiblingTab(): void {
+  seed();
+  const c = terminalSession("c", {
+    repoPath: REPO,
+    cwd: REPO,
+    workspaceId: "ws-a",
+  });
+  const state = useSpurStore.getState();
+  useSpurStore.setState({
+    terminalSessions: { ...state.terminalSessions, c },
+    terminalStatuses: { ...state.terminalStatuses, c: c.status },
+    terminalTabs: [...state.terminalTabs, makeTab("tabC", "c")],
+  });
+}
+
+describe("stepping along the strip", () => {
+  const tabs = [
+    makeTab("one", "1"),
+    makeTab("two", "2"),
+    makeTab("three", "3"),
+  ];
+
+  it("wraps at either end, the way Chrome's chord does", () => {
+    expect(adjacentTabId(tabs, "one", 1)).toBe("two");
+    expect(adjacentTabId(tabs, "three", 1)).toBe("one");
+    expect(adjacentTabId(tabs, "one", -1)).toBe("three");
+  });
+
+  it("has nowhere to go with fewer than two tabs", () => {
+    expect(adjacentTabId(tabs.slice(0, 1), "one", 1)).toBeNull();
+    expect(adjacentTabId([], null, 1)).toBeNull();
+  });
+
+  it("enters from the end the step comes from when the active tab isn't here", () => {
+    expect(adjacentTabId(tabs, "elsewhere", 1)).toBe("one");
+    expect(adjacentTabId(tabs, "elsewhere", -1)).toBe("three");
+  });
+
+  it("moves to the next tab in the focused workspace", () => {
+    seedSiblingTab();
+
+    stepTerminalTab(1);
+
+    expect(useSpurStore.getState().activeTabId).toBe("tabC");
+  });
+
+  /**
+   * The whole reason this reads the strip rather than `terminalTabs`: tabZ
+   * sits between them in the flat list and belongs to another workspace.
+   */
+  it("never steps into another workspace's tabs", () => {
+    seedSiblingTab();
+    useSpurStore.setState({ activeTabId: "tabC" });
+
+    stepTerminalTab(1);
+
+    const state = useSpurStore.getState();
+    expect(state.activeTabId).toBe("tabA");
+    expect(state.focusedWorkspaceId).toBe("ws-a");
+  });
+
+  it("does nothing when the workspace has one tab", () => {
+    seed();
+
+    stepTerminalTab(1);
+
     expect(useSpurStore.getState().activeTabId).toBe("tabA");
   });
 });
