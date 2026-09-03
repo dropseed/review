@@ -12,7 +12,11 @@ set -e
 set -m  # job control: each background job gets its own process group
 cd "$(dirname "$0")/.."
 
-SERVER_PORT=7787
+# $SPUR_PORT is the backend port everywhere (server::DEFAULT_PORT, and the
+# Vite proxy target) — honored here so a run can be moved off a port the
+# desktop app is already serving on. Exported so both halves agree.
+SERVER_PORT="${SPUR_PORT:-7787}"
+export SPUR_PORT="$SERVER_PORT"
 VITE_PORT=1420
 
 SERVER_PID=""
@@ -29,13 +33,40 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# A port still held here is a leftover from a previous run, not a second
-# developer — reclaim it rather than attach to it. Silently reusing a stale
-# server is the failure this guards against, so say what happened.
+# A port held by a previous *dev* run is a leftover, not a second developer —
+# reclaim it rather than attach to it, since silently reusing a stale server is
+# the failure this guards against.
+#
+# Anything else holding it is not ours to kill. The desktop app serves this
+# same port for "Serve on my tailnet" (see remote.rs), so the unconditional
+# kill this used to do took down a running Spur — the user's live terminals
+# with it — to start a dev server. A port held by something that isn't a dev
+# process stops the run instead, and names the way around it.
+is_dev_leftover() {
+    local pid=$1 cmd
+    cmd=$(ps -o command= -p "$pid" 2>/dev/null)
+    case "$cmd" in
+        *spur-server*|*vite*|*node\ *) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 reclaim_port() {
-    local port=$1 label=$2 pids
+    local port=$1 label=$2 pids pid
     pids=$(lsof -ti "tcp:$port" -sTCP:LISTEN 2>/dev/null || true)
     [ -z "$pids" ] && return 0
+
+    for pid in $pids; do
+        if ! is_dev_leftover "$pid"; then
+            echo "Port $port ($label) is held by something that isn't a dev server:" >&2
+            ps -o pid,lstart,command -p "$pid" | tail -n +2 | cut -c1-100 >&2
+            echo >&2
+            echo "Not stopping it — the desktop app serves this port for Settings →" >&2
+            echo "Remote access, and killing it would take your terminals with it." >&2
+            echo "Run on another port instead:  SPUR_PORT=7788 scripts/dev-web" >&2
+            exit 1
+        fi
+    done
 
     echo "Port $port ($label) is held by a leftover process:"
     ps -o pid,lstart,command -p $pids | tail -n +2 | cut -c1-100
