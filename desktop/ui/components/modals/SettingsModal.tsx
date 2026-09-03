@@ -872,6 +872,7 @@ export function SettingsModal({
               onKeyDown={(e) => {
                 if (e.key === "Enter") commitFontFamily();
               }}
+              spellCheck={false}
               className="mt-1.5 w-full text-xs font-mono"
               placeholder={CODE_FONT_FAMILY_DEFAULT}
             />
@@ -913,6 +914,7 @@ export function SettingsModal({
                 onKeyDown={(e) => {
                   if (e.key === "Enter") commitTerminalFontFamily();
                 }}
+                spellCheck={false}
                 className="mt-1.5 w-full text-xs font-mono"
                 placeholder={TERMINAL_FONT_FAMILY_DEFAULT}
               />
@@ -992,6 +994,7 @@ export function SettingsModal({
                 onKeyDown={(e) => {
                   if (e.key === "Enter") commitLaunchCommand();
                 }}
+                spellCheck={false}
                 className="mt-1.5 w-full text-xs font-mono"
                 placeholder="claude"
               />

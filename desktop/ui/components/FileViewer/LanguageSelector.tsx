@@ -165,6 +165,7 @@ export function LanguageSelector({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search languages…"
+            spellCheck={false}
             className="rounded bg-surface-panel/50 py-1 text-xs focus:ring-1 focus:ring-focus-ring/50"
           />
         </div>
