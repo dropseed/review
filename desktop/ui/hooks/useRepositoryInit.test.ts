@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { refFromReviewPath, refFromUrlSegment } from "./useRepositoryInit";
+import {
+  insideReview,
+  insideRoute,
+  refFromReviewPath,
+  refFromUrlSegment,
+  showingComparison,
+} from "./useRepositoryInit";
+import { REVIEW_VIEWPOINT } from "../types/viewpoint";
+import type { Viewpoint } from "../types/viewpoint";
+import type { ActiveReviewKey } from "../stores/slices/tabRailSlice";
+import type { Comparison } from "../types";
 
 describe("refFromReviewPath", () => {
   it("reads the ref off a bare review URL", () => {
@@ -64,5 +74,132 @@ describe("refFromUrlSegment", () => {
   /** A stray `%` is a bad escape, not a reason to lose the ref. */
   it("keeps a segment that cannot be decoded", () => {
     expect(refFromUrlSegment("100%branch")).toBe("100%branch");
+  });
+});
+
+const REPO = "/repos/spur";
+const COMPARISON: Comparison = {
+  base: "main",
+  head: "feature",
+  key: "main..feature",
+};
+
+function state(
+  overrides: {
+    repoPath?: string | null;
+    activeReviewKey?: ActiveReviewKey | null;
+    comparison?: Comparison | null;
+    viewpoint?: Viewpoint;
+  } = {},
+) {
+  return {
+    repoPath: REPO,
+    activeReviewKey: { repoPath: REPO, ref: "feature" },
+    comparison: COMPARISON,
+    viewpoint: REVIEW_VIEWPOINT,
+    ...overrides,
+  };
+}
+
+/**
+ * The predicate that decides whether a click has anything left to do. Its
+ * whole point is what it *refuses* to call a match: every false here is a
+ * screen that would otherwise be left showing the wrong thing, and every true
+ * is a comparison rebuilt for nothing.
+ */
+describe("showingComparison", () => {
+  it("recognizes the comparison already on screen", () => {
+    expect(showingComparison(state(), REPO, "feature")).toBe(true);
+  });
+
+  it("is another branch, and another repo, when either differs", () => {
+    expect(showingComparison(state(), REPO, "other")).toBe(false);
+    expect(showingComparison(state(), "/repos/other", "feature")).toBe(false);
+  });
+
+  /** The key can name a review the store has already begun to swap away from. */
+  it("needs the loaded repo to be that repo too", () => {
+    expect(
+      showingComparison(state({ repoPath: "/repos/other" }), REPO, "feature"),
+    ).toBe(false);
+  });
+
+  it("is nothing at all with no comparison loaded", () => {
+    expect(
+      showingComparison(state({ comparison: null }), REPO, "feature"),
+    ).toBe(false);
+    expect(
+      showingComparison(state({ activeReviewKey: null }), REPO, "feature"),
+    ).toBe(false);
+  });
+
+  /**
+   * A peek renders a comparison the review isn't of while the key still names
+   * the branch — clicking the branch is how you come back from one, so it must
+   * not be mistaken for already being there.
+   */
+  it("does not count a commit peek as showing the review", () => {
+    const peek: Viewpoint = {
+      kind: "commit",
+      view: {
+        hash: "abc123",
+        shortHash: "abc123",
+        subject: "a commit",
+        comparison: { base: "abc122", head: "abc123", key: "abc122..abc123" },
+        isMerge: false,
+      },
+    };
+    expect(showingComparison(state({ viewpoint: peek }), REPO, "feature")).toBe(
+      false,
+    );
+  });
+
+  /** A narrowing stays attached to the review, so it is still that review. */
+  it("counts a narrowed range as showing the review", () => {
+    const range: Viewpoint = {
+      kind: "range",
+      range: {
+        kind: "commits",
+        loOrdinal: 1,
+        hiOrdinal: 2,
+        title: "2 commits",
+        comparison: { base: "abc", head: "def", key: "abc..def" },
+      },
+    };
+    expect(
+      showingComparison(state({ viewpoint: range }), REPO, "feature"),
+    ).toBe(true);
+  });
+});
+
+describe("insideReview", () => {
+  it("holds anywhere inside the review's own route", () => {
+    expect(insideReview("/dropseed/spur/review/feature", "feature")).toBe(true);
+    expect(
+      insideReview("/dropseed/spur/review/feature/file/src/main.rs", "feature"),
+    ).toBe(true);
+  });
+
+  it("does not hold on another ref, or off the review routes entirely", () => {
+    expect(insideReview("/dropseed/spur/review/main", "feature")).toBe(false);
+    expect(insideReview("/dropseed/spur/browse", "feature")).toBe(false);
+    expect(insideReview("/", "feature")).toBe(false);
+  });
+});
+
+describe("insideRoute", () => {
+  it("holds on the route and on what it contains", () => {
+    expect(insideRoute("/standalone/browse", "/standalone/browse")).toBe(true);
+    expect(
+      insideRoute("/standalone/browse/file/notes.md", "/standalone/browse"),
+    ).toBe(true);
+  });
+
+  /** A sibling that merely starts with the same characters is not inside it. */
+  it("does not hold on a neighbouring route", () => {
+    expect(insideRoute("/standalone/browsers", "/standalone/browse")).toBe(
+      false,
+    );
+    expect(insideRoute("/", "/standalone/browse")).toBe(false);
   });
 });

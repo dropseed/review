@@ -250,7 +250,14 @@ export const createWorkspaceSlice: SliceCreatorWithClient<WorkspaceSlice> =
       focusedWorkspaceId: null,
       lastWorkspaceError: null,
 
-      setFocusedWorkspace: (id) => set({ focusedWorkspaceId: id }),
+      setFocusedWorkspace: (id) => {
+        // Guarded for the same reason `rememberLastWorkspace` is: focusing a
+        // workspace is the app's most-used gesture, most of those are a click
+        // on the card already focused, and an unconditional `set` notifies
+        // every subscriber in the app for a value nothing has changed.
+        if (get().focusedWorkspaceId === id) return;
+        set({ focusedWorkspaceId: id });
+      },
 
       routeWorkspace: async (repoPath, ref, workspaceId) => {
         set({ lastWorkspaceError: null });
