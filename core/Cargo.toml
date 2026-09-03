@@ -1,6 +1,6 @@
 [package]
 name = "spur"
-version = "0.0.170"
+version = "0.0.171"
 description = "A diff review library and CLI"
 license = "FSL-1.1-MIT"
 edition = "2021"
