@@ -10,6 +10,7 @@ import { getApiClient } from "../api";
 import { isTauriEnvironment } from "../api/client";
 import { getPlatformServices } from "../platform";
 import { useSpurStore } from "../stores";
+import type { SpurStore } from "../stores/types";
 import { makeReviewKey } from "../stores/slices/groupingSlice";
 import { openFolderInFocusedWorkspace } from "../components/Stage/repo-choices";
 import { landWorkspace } from "../commands/workspaceCommands";
@@ -90,6 +91,62 @@ export function refFromUrlSegment(segment: string | null): string | null {
   } catch {
     return segment || null;
   }
+}
+
+/**
+ * Is the code half already showing exactly this comparison?
+ *
+ * `focusWorkspace` keeps a click on the card you are already in from reaching
+ * here at all, but the routes that name a comparison outright still do: the
+ * repo tab that is already active, a ⌘K row for the branch already open, a
+ * card whose repo another card had on screen. Answered there, each of those
+ * re-resolved the target, cleared the loaded diff through `setComparison`,
+ * and sent `useComparisonLoader` through a whole pass — git status, the
+ * review file, reconcile, classify, and a full `refresh()` on any drift — to
+ * arrive at the bytes already on screen.
+ *
+ * A commit peek is deliberately *not* "already showing this": the key still
+ * names the branch while the screen renders a comparison the review isn't of,
+ * and clicking the branch is how you come back from one.
+ */
+export function showingComparison(
+  state: Pick<
+    SpurStore,
+    "repoPath" | "activeReviewKey" | "comparison" | "viewpoint"
+  >,
+  repoPath: string,
+  ref: string,
+): boolean {
+  const key = state.activeReviewKey;
+  return (
+    state.repoPath === repoPath &&
+    key?.repoPath === repoPath &&
+    key.ref === ref &&
+    state.comparison !== null &&
+    state.viewpoint.kind !== "commit"
+  );
+}
+
+/**
+ * Is the location already inside this review's own route?
+ *
+ * What a re-entry navigates on, because the store's comparison and the URL can
+ * be apart: focusing a workspace whose branch is gone lands on `/` and leaves
+ * the last comparison loaded, so a click that resolves to it still has to put
+ * the URL back. Inside it — a file, the guide — nothing is navigated at all:
+ * that is where the person was, and the review root would close the file they
+ * were reading to show them the list they opened it from.
+ */
+export function insideReview(pathname: string, ref: string): boolean {
+  return refFromReviewPath(pathname) === ref;
+}
+
+/**
+ * The same question where the route is known outright rather than by its ref:
+ * is `here` that route, or a location inside it?
+ */
+export function insideRoute(here: string, base: string): boolean {
+  return here === base || here.startsWith(`${base}/`);
 }
 
 /** The default review ref for a repo: its current branch (HEAD as a fallback). */
@@ -637,11 +694,37 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
    * which is what `repoOnScreen` derives the focus from.
    */
   async function openPath(path: string): Promise<void> {
+    // The same "already open" question the two review handlers ask, in the
+    // terms this side has: a path, with no comparison over it, drawn by the
+    // half — repo or reader — that the click is asking for. A folder that has
+    // just become a repo is deliberately not a match: it is on screen as the
+    // standalone reader, and the flag is what says so.
+    const showing = (root: string, standalone: boolean): boolean => {
+      const state = useSpurStore.getState();
+      return (
+        repoStatus === "found" &&
+        state.repoPath === root &&
+        state.isStandaloneFile === standalone &&
+        state.comparison === null
+      );
+    };
+
     if (await getApiClient().isGitRepo(path)) {
+      // Re-entering would re-resolve the repo's identity, re-list every
+      // review, and navigate to the browse root — closing whatever file was
+      // open — to arrive at the screen already drawn.
+      if (showing(path, false) && window.location.pathname.includes("/browse"))
+        return;
       await openBrowseModeRef.current(path);
       return;
     }
-    enterStandaloneMode(await standaloneTarget(path));
+    const target = await standaloneTarget(path);
+    if (
+      showing(target.displayRoot, true) &&
+      insideRoute(window.location.pathname, target.route)
+    )
+      return;
+    enterStandaloneMode(target);
   }
 
   // ⌘O: pick a folder and open it in the focused workspace.
@@ -671,12 +754,18 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       const routePrefix = meta?.routePrefix ?? `local/${review.repoName}`;
       const url = reviewUrl(routePrefix, review.ref);
 
-      // If clicking the already-active review, just navigate without resetting state
-      if (
-        state.activeReviewKey?.repoPath === review.repoPath &&
-        state.activeReviewKey?.ref === review.ref
-      ) {
-        nav(url);
+      // Clicking the review that is already open: nothing below would produce
+      // a different screen, and all of it is paid for. See
+      // [`showingComparison`] — and [`insideReview`] for why the file stays
+      // open rather than being dropped for the review root.
+      if (showingComparison(state, review.repoPath, review.ref)) {
+        // Re-affirmed rather than skipped: `setActiveReviewKey` is the one
+        // choke point that records which tab a workspace was left on, and two
+        // cards may attach the same repo — so the workspace this click lands
+        // in can be a different one from the workspace that opened it. It
+        // keeps the key by identity when nothing moved.
+        setActiveReviewKey({ repoPath: review.repoPath, ref: review.ref });
+        if (!insideReview(window.location.pathname, review.ref)) nav(url);
         return;
       }
 
@@ -786,9 +875,6 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       const nav = navigateRef.current;
       const state = useSpurStore.getState();
 
-      // Save navigation snapshot before switching
-      state.saveNavigationSnapshot();
-
       // Mark diff as seen so the unseen indicator clears
       const branchInfo = state.localActivity
         .find((r) => r.repoPath === repoPath)
@@ -806,6 +892,39 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
       const existingReview = state.globalReviewsByKey[reviewKey];
       const hasReviewWorktree = !!existingReview?.worktreePath;
       const isReadOnly = !isCurrent && !hasWorktree && !hasReviewWorktree;
+      const worktreePath =
+        branchInfo?.worktreePath ?? existingReview?.worktreePath ?? null;
+
+      // Clicking the branch that is already open. Looking at it is still
+      // looking at it, so the mark above stands, and so does the pair below —
+      // a worktree checked out since this branch was opened is a fact about
+      // the same comparison, not a reason to rebuild it. Everything past this
+      // point is: a resolve, a teardown of the loaded diff, and a whole pass
+      // of the loader to redraw what is on screen. The review handler above
+      // has always stopped here; a branch with no review record of its own —
+      // the sidebar's ordinary row — did not. See [`showingComparison`].
+      if (showingComparison(state, repoPath, branch)) {
+        // See the same call in `handleActivateReview`: the tab memory is
+        // recorded here, and the workspace this lands in may not be the one
+        // that opened the comparison.
+        setActiveReviewKey({ repoPath, ref: branch });
+        if (state.readOnlyPreview !== isReadOnly)
+          state.setReadOnlyPreview(isReadOnly);
+        if (state.worktreePath !== worktreePath)
+          state.setWorktreePath(worktreePath);
+        // Only a URL that has wandered off this review is worth resolving the
+        // repo's identity to rebuild.
+        if (!insideReview(window.location.pathname, branch)) {
+          void (async () => {
+            const { routePrefix } = await resolveRepoIdentity(repoPath);
+            nav(reviewUrl(routePrefix, branch));
+          })();
+        }
+        return;
+      }
+
+      // Save navigation snapshot before switching
+      state.saveNavigationSnapshot();
 
       void (async () => {
         const resolved = await resolveTarget(repoPath, branch);
@@ -821,9 +940,7 @@ export function useRepositoryInit(): UseRepositoryInitReturn {
         // Set read-only preview and worktree path in store
         const storeActions = useSpurStore.getState();
         storeActions.setReadOnlyPreview(isReadOnly);
-        storeActions.setWorktreePath(
-          branchInfo?.worktreePath ?? existingReview?.worktreePath ?? null,
-        );
+        storeActions.setWorktreePath(worktreePath);
 
         setComparisonReady((c) => c + 1);
         setInitialLoading(true);

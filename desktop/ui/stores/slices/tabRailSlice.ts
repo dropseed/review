@@ -185,6 +185,19 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
       //
       // Matched by repo, not by ref: the tab stays the tab while you walk that
       // repo's branches, and the ref an attachment carries is only a hint.
+      // Kept by identity when it names what is already active, so re-affirming
+      // it — which is what a click on the comparison already on screen does,
+      // to refresh the memory below — costs no re-render in anything selecting
+      // this key.
+      const current = get().activeReviewKey;
+      const next =
+        current &&
+        key &&
+        current.repoPath === key.repoPath &&
+        current.ref === key.ref
+          ? current
+          : key;
+
       const { focusedWorkspaceId, workspaces } = get();
       const stale =
         focusedWorkspaceId !== null &&
@@ -200,7 +213,7 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
       const remember = !stale && key !== null && focusedWorkspaceId !== null;
 
       set({
-        activeReviewKey: key,
+        activeReviewKey: next,
         ...(stale ? { focusedWorkspaceId: null } : {}),
         ...(remember
           ? {
