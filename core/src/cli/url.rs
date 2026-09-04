@@ -1,4 +1,4 @@
-//! `review url` — print a `spur://` deep link that opens the desktop app
+//! `spur url` — print a `spur://` deep link that opens the desktop app
 //! at a specific repo, comparison, file, and (optionally) hunk.
 //!
 //! Agents (and humans) call this to produce a clickable URL they can paste

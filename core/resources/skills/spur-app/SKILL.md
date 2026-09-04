@@ -101,7 +101,7 @@ at a time). For each batch:
   paste them at the human — *you* read them.
 - Bring the human a compact list. For each hunk:
   - One-line description of what it does.
-  - A clickable deep link from `review url <hunk-id>` (so they can jump straight
+  - A clickable deep link from `spur url <hunk-id>` (so they can jump straight
     to it in the desktop app if they want to look).
   - Your recommendation: approve / reject / save / "your call".
 - Ask for confirmations or overrides as a batch, not one at a time.
@@ -188,7 +188,7 @@ to persist belongs in agent-attributed surfaces: comments or `save --reason`.
   `unstage`. The same change can have a different ID in each because the diff
   context differs. Always list from the family you're about to act on.
 - **Always link, never just name.** When you mention a specific hunk to the
-  human, attach a `review url` to it. They should never have to copy a
+  human, attach a `spur url` to it. They should never have to copy a
   `file:hash` ID and paste it somewhere.
 
 ## Staging hunks to git (separate flow)
@@ -589,8 +589,8 @@ spur stage|unstage <hunk-id|file>...
 Deep links:
 
 ```
-review url <hunk-id>                      # link to a specific hunk
-review url path/to/file                   # link to a file in the current comparison
-review url -s main..feature <hunk-id>     # explicit comparison
-review url --no-comparison path/to/file   # browse-mode link, no diff context
+spur url <hunk-id>                      # link to a specific hunk
+spur url path/to/file                   # link to a file in the current comparison
+spur url -s main..feature <hunk-id>     # explicit comparison
+spur url --no-comparison path/to/file   # browse-mode link, no diff context
 ```
