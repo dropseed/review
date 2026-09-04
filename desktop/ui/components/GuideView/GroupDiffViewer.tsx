@@ -11,7 +11,11 @@ import { useSpurStore } from "../../stores";
 import { useHunkById } from "../../stores/selectors/hunks";
 import { computeGroupFiles } from "../../stores/selectors/groups";
 import { getApiClient } from "../../api";
-import { isHunkReviewed, EMPTY_TRUST_LIST } from "../../types";
+import {
+  isHunkReviewed,
+  hunkIdBelongsToFile,
+  EMPTY_TRUST_LIST,
+} from "../../types";
 import { countLines } from "../../utils/count-lines";
 import type {
   Comparison,
@@ -36,6 +40,44 @@ import {
 } from "../../hooks";
 
 import { XIcon } from "../ui/icons";
+
+/**
+ * How tall a file's section will be once its diff mounts, in px.
+ *
+ * A deferred section has to stand in for its own height or the observer that
+ * mounts it is meaningless: 637 zero-height placeholders all sit within one
+ * rootMargin of the viewport, and every one of them mounts at once — which is
+ * the behaviour this is here to stop. The estimate is deliberately arithmetic
+ * on what the store already holds (a hunk knows its lines) rather than a
+ * measurement, so the first paint needs no layout pass.
+ *
+ * It does not have to be right. Sections mount an entire viewport-and-a-bit
+ * ahead of being read, so a wrong guess is corrected below the fold, and being
+ * monotonic means scrolling back up never re-settles a section a second time.
+ */
+/**
+ * File sections that mount without waiting to be asked for.
+ *
+ * The observer answers a frame late, which on a small group — the common one —
+ * would be a visible flash of placeholder where the diff belongs. Enough
+ * sections to cover an opening viewport are therefore never deferred at all,
+ * which also means a group this size behaves exactly as it did before any of
+ * this existed.
+ */
+const EAGER_SECTIONS = 3;
+
+export function estimateSectionHeight(
+  hunks: readonly DiffHunk[],
+  lineHeight: number,
+): number {
+  // Per hunk: its lines, plus the block's own border and padding.
+  const HUNK_CHROME_PX = 24;
+  let height = 0;
+  for (const hunk of hunks) {
+    height += hunk.lines.length * lineHeight + HUNK_CHROME_PX;
+  }
+  return height;
+}
 function CheckIcon(): ReactNode {
   return (
     <svg
@@ -515,6 +557,20 @@ export function GroupDiffViewer({
     [groupFiles],
   );
 
+  // A file section is *mounted* on the same signal, and this is the larger
+  // half of that economy: every hunk draws a `<diffs-container>`, a custom
+  // element with its own shadow root doing its own syntax highlighting.
+  // Rendering all of them up front meant 1,767 of those alive at once on a
+  // 637-file comparison — a measured 1.3GB of JS heap after a forced GC, and
+  // a 3.1GB spike while it opened. A section that has not come near the
+  // viewport draws `estimateSectionHeight` worth of nothing instead.
+  //
+  // The set only ever grows: a section that has been mounted stays mounted,
+  // so scrolling back up finds it whole, with its expansions and its
+  // highlighting, and nothing reflows behind you. What that costs is a long
+  // read of a huge comparison ending where it used to start; what it buys is
+  // that opening one is cheap, which is the part everybody pays.
+  //
   // The diff bodies render straight from the store's hunks — per-file content
   // only supplies what those can't: image data URLs and the full-file line
   // counts behind the context expanders. So it is fetched lazily, per file,
@@ -570,6 +626,25 @@ export function GroupDiffViewer({
       observerRef.current = null;
     };
   }, [rootNode]);
+
+  // A jump to a hunk (⌘K, the guide's file rows, next/previous hunk) can name
+  // a file no scroll has reached, whose section is therefore a placeholder
+  // with nothing to scroll to. `useHunkBlockScrollTarget` leaves such a target
+  // pending rather than dropping it, so mounting the file is all this has to
+  // do — the retry keyed on `loadedContentKey` then finds the block.
+  const scrollTargetHunkId = useSpurStore((s) =>
+    s.scrollTarget?.type === "hunk" ? s.scrollTarget.hunkId : null,
+  );
+  useEffect(() => {
+    if (!scrollTargetHunkId) return;
+    const target = filePaths.find((fp) =>
+      hunkIdBelongsToFile(scrollTargetHunkId, fp),
+    );
+    if (!target) return;
+    setWantedFiles((prev) =>
+      prev.has(target) ? prev : new Set(prev).add(target),
+    );
+  }, [scrollTargetHunkId, filePaths]);
 
   // Everything ever requested, so a section growing into view fetches once.
   // A failed fetch stays requested (and visible as its error row) rather
@@ -739,9 +814,12 @@ export function GroupDiffViewer({
   // Scroll-to-hunk for this surface: hunk blocks are light-DOM wrappers
   // tagged with their source hunk IDs, so targets resolve to a direct
   // scrollIntoView on the wrapper. Re-attempt once file contents load.
+  // Mounting counts as much as loading here: a target in a deferred section
+  // waits for that section to exist at all, which is a change in
+  // `wantedFiles`, not in `fileStates`.
   const loadedContentKey = useMemo(
-    () => [...fileStates.keys()].join(","),
-    [fileStates],
+    () => `${[...fileStates.keys()].join(",")}|${wantedFiles.size}`,
+    [fileStates, wantedFiles],
   );
   useHunkBlockScrollTarget(rootNode, group.hunkIds, loadedContentKey);
 
@@ -1019,7 +1097,7 @@ export function GroupDiffViewer({
       {/* File sections. The wrapper div is each section's viewport sentinel —
           entering (or nearing) the viewport is what triggers its content
           fetch. The diff itself renders immediately from the store's hunks. */}
-      {groupFiles.map(({ filePath, hunks: fileHunks }) => {
+      {groupFiles.map(({ filePath, hunks: fileHunks }, sectionIndex) => {
         const loadState = fileStates.get(filePath);
         const fc = loadState?.kind === "ok" ? loadState.content : undefined;
         // An image file's diff *is* its data URL, so its section has nothing
@@ -1028,6 +1106,8 @@ export function GroupDiffViewer({
         // store either way — a failed fetch only costs it the expanders.
         const isImage = isImagePath(filePath);
         const awaitingImage = isImage && loadState === undefined;
+        const mounted =
+          sectionIndex < EAGER_SECTIONS || wantedFiles.has(filePath);
         const fileUnreviewed = unreviewedByFile.get(filePath) ?? [];
         return (
           <div key={filePath} ref={sectionRef} data-section-file={filePath}>
@@ -1044,8 +1124,15 @@ export function GroupDiffViewer({
                 <div className="px-4 py-3 text-xs text-status-rejected">
                   Failed to load {filePath}: {loadState.message}
                 </div>
-              ) : awaitingImage ? null : (
+              ) : awaitingImage ? null : mounted ? (
                 renderFileContent(fc, filePath, fileHunks)
+              ) : (
+                <div
+                  aria-hidden
+                  style={{
+                    height: estimateSectionHeight(fileHunks, lineHeight),
+                  }}
+                />
               )}
             </FileDiffSection>
           </div>
