@@ -16,100 +16,74 @@ cd "$(dirname "$0")/.."
 #
 # Portrait only. A Home-Screen app launches portrait; a landscape launch falls
 # back to the manifest's `background_color`, which is the same dark surface.
+#
+# The icon is drawn from the textured master alone, with no reference to
+# `scripts/icons`'s crossover: every size below is a quarter of a phone's
+# narrow edge, so the smallest of them is still comfortably above the size at
+# which the grain stops reading and the vector master takes over.
 
 BG="#0c0a09"
 OUT=desktop/public/icons/startup
+MASTER=desktop/app-icon-textured.png
 
 rm -rf "$OUT"
 mkdir -p "$OUT"
 
-node -e "
-const fs = require('fs');
-const path = require('path');
-
-const bg = process.argv[1];
-const out = process.argv[2];
-
-// The icon's own markup, unwrapped so it can be placed inside a larger canvas.
-const icon = fs
-  .readFileSync('desktop/app-icon.svg', 'utf8')
-  .replace(/^[\s\S]*?<svg[^>]*>/, '')
-  .replace(/<\/svg>\s*\$/, '');
-
-// device CSS width x height, then DPR. The pixel size iOS matches on is the
-// product; the media query it matches with is the CSS size plus the DPR.
-const devices = [
-  [440, 956, 3], // iPhone 17 Pro Max, 16 Pro Max
-  [430, 932, 3], // iPhone 16 Plus, 15 Pro Max, 15 Plus, 14 Pro Max
-  [428, 926, 3], // iPhone 14 Plus, 13 Pro Max, 12 Pro Max
-  [420, 912, 3], // iPhone Air
-  [402, 874, 3], // iPhone 17 Pro, 17, 16 Pro
-  [393, 852, 3], // iPhone 16, 16e, 15 Pro, 15, 14 Pro
-  [390, 844, 3], // iPhone 14, 13, 13 Pro, 12, 12 Pro
-  [375, 667, 2], // iPhone SE (3rd gen)
-];
-
-const links = [];
-for (const [cw, ch, dpr] of devices) {
-  const w = cw * dpr;
-  const h = ch * dpr;
-  // A quarter of the narrow edge — the proportion iOS's own generated launch
-  // screen uses, so the handoff to it (landscape, or an unmatched device) is
-  // not a jump in size.
-  const size = Math.round(Math.min(w, h) * 0.25);
-  const x = Math.round((w - size) / 2);
-  const y = Math.round((h - size) / 2);
-  const scale = size / 512;
-
-  const svg = \`<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"\${w}\" height=\"\${h}\" viewBox=\"0 0 \${w} \${h}\">
-  <rect width=\"\${w}\" height=\"\${h}\" fill=\"\${bg}\"/>
-  <g transform=\"translate(\${x}, \${y}) scale(\${scale})\">\${icon}</g>
-</svg>\`;
-
-  const stem = \`\${w}x\${h}\`;
-  fs.writeFileSync(path.join(out, stem + '.svg'), svg);
-  links.push(
-    '    <link rel=\"apple-touch-startup-image\" href=\"/icons/startup/' +
-      stem +
-      '.png\" media=\"(device-width: ' +
-      cw +
-      'px) and (device-height: ' +
-      ch +
-      'px) and (-webkit-device-pixel-ratio: ' +
-      dpr +
-      ') and (orientation: portrait)\" />',
-  );
-}
-fs.writeFileSync(path.join(out, 'links.html'), links.join('\n') + '\n');
-" "$BG" "$OUT"
-
-for svg in "$OUT"/*.svg; do
-  stem=$(basename "$svg" .svg)
-  w=${stem%x*}
-  h=${stem#*x}
-  # sips wants height then width, and rasterizes the SVG at that size.
-  sips -s format png -z "$h" "$w" "$svg" --out "$OUT/$stem.png" >/dev/null
-  rm "$svg"
-done
-
-# sips writes 8-bit RGBA, ~100 KB apiece for what is a flat colour and a small
-# icon. These ship inside the binary, so quantize to a palette: same pixels to
-# the eye, about a fifth of the bytes.
-uv run --quiet --with pillow python - "$OUT"/*.png <<'PY'
+uv run --quiet --with pillow python - "$BG" "$OUT" "$MASTER" <<'PY'
+import os
 import sys
+
 from PIL import Image
 
-for path in sys.argv[1:]:
-    image = Image.open(path).convert("RGBA")
-    image.quantize(colors=256, method=Image.Quantize.FASTOCTREE).save(
-        path, optimize=True
+bg, out, master_path = sys.argv[1], sys.argv[2], sys.argv[3]
+master = Image.open(master_path).convert("RGBA")
+
+# device CSS width x height, then DPR. The pixel size iOS matches on is the
+# product; the media query it matches with is the CSS size plus the DPR.
+devices = [
+    (440, 956, 3),  # iPhone 17 Pro Max, 16 Pro Max
+    (430, 932, 3),  # iPhone 16 Plus, 15 Pro Max, 15 Plus, 14 Pro Max
+    (428, 926, 3),  # iPhone 14 Plus, 13 Pro Max, 12 Pro Max
+    (420, 912, 3),  # iPhone Air
+    (402, 874, 3),  # iPhone 17 Pro, 17, 16 Pro
+    (393, 852, 3),  # iPhone 16, 16e, 15 Pro, 15, 14 Pro
+    (390, 844, 3),  # iPhone 14, 13, 13 Pro, 12, 12 Pro
+    (375, 667, 2),  # iPhone SE (3rd gen)
+]
+
+links = []
+for cw, ch, dpr in devices:
+    w, h = cw * dpr, ch * dpr
+    # A quarter of the narrow edge — the proportion iOS's own generated launch
+    # screen uses, so the handoff to it (landscape, or an unmatched device) is
+    # not a jump in size.
+    size = round(min(w, h) * 0.25)
+
+    canvas = Image.new("RGBA", (w, h), bg)
+    canvas.alpha_composite(
+        master.resize((size, size), Image.LANCZOS),
+        (round((w - size) / 2), round((h - size) / 2)),
     )
+
+    # `sips` used to write these as 8-bit RGBA, ~100 KB apiece for what is a
+    # flat colour and a small icon. They ship inside the binary, so quantize to
+    # a palette: same pixels to the eye, about a fifth of the bytes.
+    stem = f"{w}x{h}"
+    canvas.quantize(colors=256, method=Image.Quantize.FASTOCTREE).save(
+        os.path.join(out, f"{stem}.png"), optimize=True
+    )
+
+    links.append(
+        f'    <link rel="apple-touch-startup-image" href="/icons/startup/{stem}.png"'
+        f' media="(device-width: {cw}px) and (device-height: {ch}px) and'
+        f' (-webkit-device-pixel-ratio: {dpr}) and (orientation: portrait)" />'
+    )
+
+print("\n".join(links))
 PY
 
+echo ""
 echo "Wrote $(ls "$OUT"/*.png | wc -l | tr -d ' ') startup images to $OUT"
 echo ""
-echo "Paste into desktop/index.html <head> (already there unless the device"
-echo "list above changed):"
-echo ""
-cat "$OUT/links.html"
-rm "$OUT/links.html"
+echo "Paste the block above into desktop/index.html <head> (already there"
+echo "unless the device list changed)."

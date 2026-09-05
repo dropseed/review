@@ -2,56 +2,212 @@
 set -e
 cd "$(dirname "$0")/.."
 
-# Create a dark-background variant for app icons
-# (app-icon.svg stays transparent for tray icons etc.)
-node -e "
-const fs = require('fs');
-const svg = fs.readFileSync('desktop/app-icon.svg', 'utf8');
+# Every app icon the repo ships, generated from two masters.
+#
+# The artwork is a spur on a dark tile, and it exists twice: `app-icon.svg` is
+# a true vector — flat cream on charcoal, hand-traced — and
+# `app-icon-textured.png` is the photographed original, cream distressing and
+# surface grain intact, fitted to the same tile. They are the same drawing at
+# the same size and position, so an export can come from either one and still
+# line up with the others.
+#
+# Which one an export comes from is decided by `CROSSOVER`, and the reason is
+# that the grain is detail: at 128px and up it reads as a worn metal spur, and
+# below that it has nowhere to resolve and just lowers the contrast of a mark
+# that is already only a few pixels of cream. The vector's flatter, slightly
+# heavier shapes are what survive at 32px. So large exports are textured, small
+# ones are vector, and nothing in between needs a judgement call.
+#
+# Both masters are already composed for a desktop icon — the tile occupies ~80%
+# of a transparent canvas, which is the margin macOS expects — so unlike the
+# generator this replaces, nothing here adds padding or a background. Resizing
+# is the whole job.
 
-// Dark background variant for app icons (with padding so pills are inset)
-const pad = 100;
-const size = 512 + pad * 2;
-const dark = svg
-  .replace('viewBox=\"0 0 512 512\"', 'viewBox=\"' + -pad + ' ' + -pad + ' ' + size + ' ' + size + '\"')
-  .replace(
-    '</defs>',
-    '</defs>\n\n  <!-- Dark background -->\n  <rect x=\"' + -pad + '\" y=\"' + -pad + '\" width=\"' + size + '\" height=\"' + size + '\" fill=\"#1C1C1E\"/>'
-  );
-fs.writeFileSync('.app-icon-dark.svg', dark);
+CROSSOVER=128
+SIMPLE_SVG=desktop/app-icon.svg
+TEXTURED_PNG=desktop/app-icon-textured.png
 
-// Tray template icon: outlined pills (stroke inside) with solid +/- symbols
-const leftPill = 'M 122,16 L 152,16 A 90,90 0 0,1 242,106 L 242,406 A 90,90 0 0,1 152,496 L 122,496 A 90,90 0 0,1 32,406 L 32,106 A 90,90 0 0,1 122,16 Z';
-const rightPill = 'M 360,16 L 390,16 A 90,90 0 0,1 480,106 L 480,406 A 90,90 0 0,1 390,496 L 360,496 A 90,90 0 0,1 270,406 L 270,106 A 90,90 0 0,1 360,16 Z';
-const tray = \`<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 512 512\">
-  <defs>
-    <clipPath id=\"leftClip\"><path d=\"\${leftPill}\"/></clipPath>
-    <clipPath id=\"rightClip\"><path d=\"\${rightPill}\"/></clipPath>
-  </defs>
-  <!-- Left pill outline (clipped to inside) -->
-  <path d=\"\${leftPill}\" fill=\"none\" stroke=\"black\" stroke-width=\"48\" clip-path=\"url(#leftClip)\"/>
-  <!-- Right pill outline (clipped to inside) -->
-  <path d=\"\${rightPill}\" fill=\"none\" stroke=\"black\" stroke-width=\"48\" clip-path=\"url(#rightClip)\"/>
-  <!-- Minus sign -->
-  <rect x=\"89\" y=\"244\" width=\"96\" height=\"24\" rx=\"12\" fill=\"black\"/>
-  <!-- Plus sign -->
-  <rect x=\"327\" y=\"244\" width=\"96\" height=\"24\" rx=\"12\" fill=\"black\"/>
-  <rect x=\"363\" y=\"208\" width=\"24\" height=\"96\" rx=\"12\" fill=\"black\"/>
-</svg>\`;
-fs.writeFileSync('.app-icon-tray.svg', tray);
-"
+WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
 
-# Desktop icons (Mac .icns, Windows .ico, PNGs) — dark background
-npx @tauri-apps/cli icon .app-icon-dark.svg -o desktop/tauri/icons
-rm -rf desktop/tauri/icons/android desktop/tauri/icons/ios
+# Rasterize the vector master once, at the size of the other master. Every
+# small export then downsamples from this, rather than re-rasterizing the SVG
+# per size: one code path for both masters, and `sips` is only asked for the
+# render it does well.
+sips -s format png -z 1024 1024 "$SIMPLE_SVG" --out "$WORK/simplified.png" >/dev/null
 
-# iOS app icon (1024x1024) — dark background
-sips -s format png -z 1024 1024 .app-icon-dark.svg --out ios/Spur/Assets.xcassets/AppIcon.appiconset/AppIcon.png
+# The maskable PWA icon, whose frame is not ours to draw — Android masks it to
+# a circle or a squircle of its own choosing, and anything in the outer 20% may
+# be cut. The tile's rounded corners would be cut by that mask, so this variant
+# bleeds the tile's own fill to the edges and keeps the artwork inside the safe
+# zone. Both changes are made to the vector master rather than to pixels: drop
+# the tile's outline stroke (on a full-bleed fill it would read as a stray
+# hairline rectangle) and lay a rect of the fill colour behind everything. The
+# clip path is untouched, so the shank still runs off the tile edge exactly as
+# it does everywhere else.
+python3 - "$SIMPLE_SVG" "$WORK/maskable.svg" <<'PY'
+import sys
 
-# Tray icons (template: black on transparent, macOS handles light/dark)
-sips -s format png -z 22 22 .app-icon-tray.svg --out desktop/tauri/icons/tray-icon.png
-sips -s format png -z 44 44 .app-icon-tray.svg --out desktop/tauri/icons/tray-icon@2x.png
+source, dest = sys.argv[1], sys.argv[2]
+svg = open(source, encoding="utf-8").read()
 
-rm .app-icon-dark.svg .app-icon-tray.svg
+stroke = ' stroke="#343434" stroke-width="1.5"'
+if stroke not in svg:
+    sys.exit("app-icon.svg: tile stroke not found — maskable variant needs updating")
+svg = svg.replace(stroke, "")
+
+marker = "</defs>"
+if marker not in svg:
+    sys.exit("app-icon.svg: no <defs> to anchor the full-bleed fill after")
+svg = svg.replace(marker, marker + '<rect width="1254" height="1254" fill="#181818"/>', 1)
+
+open(dest, "w", encoding="utf-8").write(svg)
+PY
+sips -s format png -z 1024 1024 "$WORK/maskable.svg" --out "$WORK/maskable.png" >/dev/null
+
+uv run --quiet --with pillow python - "$WORK" "$CROSSOVER" "$TEXTURED_PNG" <<'PY'
+import os
+import struct
+import sys
+
+from PIL import Image
+
+work, crossover, textured_path = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+
+simplified = Image.open(os.path.join(work, "simplified.png")).convert("RGBA")
+textured = Image.open(textured_path).convert("RGBA")
+maskable = Image.open(os.path.join(work, "maskable.png")).convert("RGBA")
+
+TAURI = "desktop/tauri/icons"
+PUBLIC = "desktop/public/icons"
+
+
+def render(size, source=None):
+    """The export at `size`, from whichever master that size should come from."""
+    master = source or (textured if size >= crossover else simplified)
+    return master.resize((size, size), Image.LANCZOS)
+
+
+def write(path, size, source=None):
+    """Write an export, through a palette.
+
+    The textured master is photographic grain, which is exactly what PNG's
+    filters cannot predict: stored as truecolour the 1024px slot alone is
+    800 KB, and these ship inside the app bundle and the binary. The drawing is
+    two tones and their grain, so 256 palette entries hold it to a mean error
+    under 2/255 at a quarter of the bytes.
+
+    Only the colour channels go through the quantizer. Letting it see alpha as
+    well — the obvious `quantize()` on RGBA — costs it nothing to spend palette
+    entries on near-opaque alphas, and it does: the tile interior comes back
+    dappled with pixels at alpha 224-254, invisible against the dark surfaces
+    this is usually drawn on and mottled against a light one. Alpha is
+    reattached untouched instead, leaving the tile's antialiased edge
+    bit-identical to the master's.
+    """
+    image = render(size, source)
+    alpha = image.split()[3]
+    flat = image.convert("RGB").quantize(colors=256, method=Image.Quantize.FASTOCTREE)
+    flat = flat.convert("RGB")
+    flat.putalpha(alpha)
+    flat.save(path, optimize=True)
+
+
+# --- Tauri desktop icons -------------------------------------------------
+#
+# `tauri.conf.json` names icon.icns / icon.ico / icon.png; the loose PNGs and
+# the Square*Logo set are the Windows/Store slots Tauri's own generator emits,
+# kept so the two stay interchangeable.
+for name, size in [
+    ("32x32.png", 32),
+    ("64x64.png", 64),
+    ("128x128.png", 128),
+    ("128x128@2x.png", 256),
+    ("icon.png", 512),
+    ("Square30x30Logo.png", 30),
+    ("Square44x44Logo.png", 44),
+    ("StoreLogo.png", 50),
+    ("Square71x71Logo.png", 71),
+    ("Square89x89Logo.png", 89),
+    ("Square107x107Logo.png", 107),
+    ("Square142x142Logo.png", 142),
+    ("Square150x150Logo.png", 150),
+    ("Square284x284Logo.png", 284),
+    ("Square310x310Logo.png", 310),
+]:
+    write(f"{TAURI}/{name}", size)
+
+# --- icon.icns -----------------------------------------------------------
+#
+# Written as an .iconset for `iconutil`, which is the only encoder whose output
+# every macOS surface is guaranteed to read. The @2x slots are why the
+# crossover has to be applied per representation rather than per file: one
+# .icns holds both a 16px and a 1024px drawing of the same icon.
+iconset = os.path.join(work, "Spur.iconset")
+os.makedirs(iconset, exist_ok=True)
+for name, size in [
+    ("icon_16x16.png", 16),
+    ("icon_16x16@2x.png", 32),
+    ("icon_32x32.png", 32),
+    ("icon_32x32@2x.png", 64),
+    ("icon_128x128.png", 128),
+    ("icon_128x128@2x.png", 256),
+    ("icon_256x256.png", 256),
+    ("icon_256x256@2x.png", 512),
+    ("icon_512x512.png", 512),
+    ("icon_512x512@2x.png", 1024),
+]:
+    write(f"{iconset}/{name}", size)
+
+# --- icon.ico ------------------------------------------------------------
+#
+# Hand-assembled rather than left to Pillow's resizer, for the same reason as
+# the .icns: the entries span the crossover, so each one is rendered from its
+# own master and then packed. Entries are PNG-encoded, which every Windows
+# since Vista reads.
+ico_sizes = [16, 24, 32, 48, 64, 256]
+frames = []
+for size in ico_sizes:
+    frame = os.path.join(work, f"ico-{size}.png")
+    write(frame, size)
+    frames.append(open(frame, "rb").read())
+
+offset = 6 + 16 * len(frames)
+directory, payload = b"", b""
+for size, data in zip(ico_sizes, frames):
+    directory += struct.pack(
+        "<BBBBHHII",
+        size if size < 256 else 0,  # 0 means 256 in an ICONDIRENTRY
+        size if size < 256 else 0,
+        0,  # palette size: none, this is truecolour
+        0,  # reserved
+        1,  # colour planes
+        32,  # bits per pixel
+        len(data),
+        offset,
+    )
+    payload += data
+    offset += len(data)
+with open(f"{TAURI}/icon.ico", "wb") as fp:
+    fp.write(struct.pack("<HHH", 0, 1, len(frames)) + directory + payload)
+
+# --- PWA / web icons -----------------------------------------------------
+write(f"{PUBLIC}/apple-touch-icon-180.png", 180)
+write(f"{PUBLIC}/icon-192.png", 192)
+write(f"{PUBLIC}/icon-512.png", 512)
+write(f"{PUBLIC}/icon-maskable-512.png", 512, source=maskable)
+
+print(f"Crossover at {crossover}px: textured at and above it, vector below.")
+PY
+
+iconutil -c icns "$WORK/Spur.iconset" -o desktop/tauri/icons/icon.icns
+
+# The favicon is the vector master itself, and it has to live under `public/`
+# to survive a build: `index.html` asks for `/app-icon.svg`, which the dev
+# server happily serves from the Vite root, but only `public/` is copied into
+# `dist/` — and `dist/` is what the desktop binary and the tailnet PWA serve.
+cp "$SIMPLE_SVG" desktop/public/app-icon.svg
 
 echo ""
-echo "Icons generated in desktop/tauri/icons/ and ios/"
+echo "Icons generated in desktop/tauri/icons/ and desktop/public/"
+echo "Launch screens are separate: scripts/startup-images"
