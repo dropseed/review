@@ -149,6 +149,34 @@ describe("describeWorkspace", () => {
   });
 
   /**
+   * Two checkouts of one repository. The join is the repository's — one review,
+   * one PR, one row per branch however many working trees exist — while the
+   * chip is named by the directory, which is the only thing that tells the two
+   * tabs apart.
+   */
+  it("joins a worktree tab on its repository and labels it by its directory", () => {
+    const status = describeWorkspace(
+      item({
+        attachments: [
+          attachment(REPO, "main"),
+          attachment("/worktrees/repo-wt", "feature", true, REPO),
+        ],
+      }),
+      context([branch("main", { isCurrent: true }), branch("feature")], [pr()]),
+    );
+    expect(status.repos.map((c) => c.chipLabel)).toEqual([
+      "repo · main",
+      "repo-wt · feature",
+    ]);
+    expect(status.repos.map((c) => c.reviewKey)).toEqual([
+      makeReviewKey(REPO, "main"),
+      makeReviewKey(REPO, "feature"),
+    ]);
+    expect(status.repos[1].gone).toBe(false);
+    expect(status.repos[1].openPr?.number).toBe(12);
+  });
+
+  /**
    * An attachment with no ref is what the router hands a terminal started
    * outside any repository. It names no branch, so nothing can have deleted it
    * — treating it as gone would resolve a workspace that is still in use.

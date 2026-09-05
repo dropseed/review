@@ -5,11 +5,12 @@ import {
   hasRef,
   isCheckoutTarget,
   repoOnScreen,
+  targetOf,
   type ReviewTarget,
 } from "../stores/selectors/workspaceData";
 import { ackAttention } from "../utils/attention";
 import { makeReviewKey, refFromReviewKey } from "../utils/review-key";
-import type { SidebarRow } from "../utils/sidebar-tree";
+import { rowWorktree, type SidebarRow } from "../utils/sidebar-tree";
 import { openTerminalTab } from "../components/Terminal/newTab";
 import { getCommandUi } from "./host";
 import type { Attachment, Workspace } from "../types";
@@ -68,6 +69,13 @@ export function activateReviewTarget(target: ReviewTarget): boolean {
  *
  * Still nullable, and null still means the one thing it always meant: a branch
  * this tab names and nothing on this machine has.
+ *
+ * The two coordinates pull apart here, and that is the whole of what a worktree
+ * tab costs: the *review* is filed under the repository (`repoRoot` — one
+ * review per branch however many checkouts of it exist), while the *tab* is the
+ * checkout the attachment names. So every join below — the sidebar row, the
+ * repo's head — goes by `repoRoot`, and the resolved target carries `path` so
+ * whatever opens it knows which of the workspace's checkouts it is in.
  */
 export function targetForAttachment(
   attachment: Attachment,
@@ -80,15 +88,14 @@ export function targetForAttachment(
   if (!attachment.isGitRepo) return checkout;
 
   if (hasRef(attachment)) {
-    const key = makeReviewKey(attachment.path, attachment.refName);
-    return findSidebarRow(state, key)
-      ? { repoPath: attachment.path, ref: attachment.refName }
-      : null;
+    const target = targetOf(attachment);
+    const key = makeReviewKey(target.repoPath, target.ref);
+    return findSidebarRow(state, key) ? target : null;
   }
   const head = getSidebarTree(state).find(
-    (node) => node.repoPath === attachment.path,
+    (node) => node.repoPath === attachment.repoRoot,
   )?.head;
-  return head ? { repoPath: head.repoPath, ref: head.ref } : checkout;
+  return head ? { ...targetOf(attachment), ref: head.ref } : checkout;
 }
 
 /** Open an attachment's tab on the code side. See [`targetForAttachment`]. */
@@ -216,16 +223,18 @@ export function focusWorkspace(
  * The attachment check is the whole guard: detaching a tab must not leave a
  * memory that re-opens it, and a workspace whose repos changed under it should
  * fall back to its first rather than to something it no longer lists.
+ *
+ * Checked against the remembered *tab* — `path`, which `setActiveReviewKey`
+ * resolves before storing the key — rather than the repository, which two
+ * checkouts of one repo share.
  */
 function rememberedTarget(workspace: Workspace): ReviewTarget | null {
   const remembered = useSpurStore.getState().workspaceCodeKeys[workspace.id];
   if (!remembered) return null;
   const stillAttached = workspace.attachments.some(
-    (attachment) => attachment.path === remembered.repoPath,
+    (attachment) => attachment.path === remembered.path,
   );
-  return stillAttached
-    ? { repoPath: remembered.repoPath, ref: remembered.ref }
-    : null;
+  return stillAttached ? remembered : null;
 }
 
 /**
@@ -242,19 +251,28 @@ function rememberedTarget(workspace: Workspace): ReviewTarget | null {
  * anyone making twice.
  *
  * Resolves once the routing has committed, so a caller can await the landing.
+ *
+ * A row living in a linked worktree routes by *that* directory rather than by
+ * the repository, so the shell and the tab both land in the checkout the row
+ * names — and so a workspace already holding that worktree wins over one
+ * holding only the main tree, which is the router's first rung. The tab is
+ * named only when it is one: a row at the repo's own tree leaves `path` unset
+ * and lets `setActiveReviewKey` pick whichever checkout the workspace has.
  */
 export async function openRowInWorkspace(
   row: SidebarRow,
   options: { withTerminal?: boolean } = {},
 ): Promise<Workspace | null> {
+  const worktree = rowWorktree(row);
   const workspace = await useSpurStore
     .getState()
-    .routeWorkspace(row.repoPath, row.ref);
+    .routeWorkspace(worktree ?? row.repoPath, row.ref);
   if (!workspace) return null;
 
   const target: ReviewTarget = {
     repoPath: row.repoPath,
     ref: refFromReviewKey(row.reviewKey, row.repoPath) ?? row.ref,
+    ...(worktree ? { path: worktree } : {}),
   };
   focusWorkspace(workspace, target);
   // On the branch that was named, not on whichever repo the workspace happens

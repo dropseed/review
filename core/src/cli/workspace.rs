@@ -159,7 +159,9 @@ pub fn run_workspace(args: WorkspaceArgs) -> Result<(), String> {
 ///
 /// Deliberately not `get_repo_path`, which refuses a directory outside any
 /// repository — an attachment is happy with one, and [`Attachment::new`]
-/// normalizes either kind to the same identity the router uses.
+/// canonicalizes either kind to the same identity the router uses. A linked
+/// worktree stays itself: attaching one opens it as its own tab beside the
+/// main tree rather than folding into it.
 fn target_path(path: Option<String>) -> Result<PathBuf, String> {
     resolve_cwd_arg(path)
 }

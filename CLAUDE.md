@@ -194,15 +194,26 @@ Only the `terminal` feature needs this, so only `spur-daemon` (and `cargo test`)
 - **Trust List**: Patterns the user has chosen to auto-approve
 - **Comparison**: The base..compare refs being reviewed
 - **Workspace**: One thing the user is working on — an optional title and an ordered list of **attachments**. It is a container that becomes whatever is put in it. Everything live (terminals, PRs, review state) is derived and joined against its attachments, or against the workspace id the daemon stamps on a session.
-- **Attachment**: `{path, refName?}` — a repository (or a plain directory) the workspace shows, plus an optional view hint. **Not exclusive**: any number of workspaces may attach the same path, and a workspace shows a path at most once. Nothing here conflicts.
+- **Attachment**: `{path, refName?}` — a **checkout** the workspace shows, plus an optional view hint. The path is the identity and is never collapsed onto anything: a linked worktree, the repository's main tree and a plain directory are each their own attachment, so one workspace can read two branches of one repository side by side. The _repository_ is derived (`repoRoot`), and everything filed per-repo — the registry row, the sidebar tree, reviews, `repoMetadata`, PRs — is reached through it. **Not exclusive**: any number of workspaces may attach the same path, and a workspace shows a path at most once. Nothing here conflicts.
 
 ## An attachment is a path, not a promise of a repo
 
 A workspace attaches whatever it is pointed at. A repository with no commits is
 one (the git layer already names an unborn branch and diffs it against the empty
 tree), and so is a directory that is not a repository at all — browsable, and
-nothing more. Two derived facts carry the difference, neither of them stored:
+nothing more. So is a linked worktree, which is why `canonical_attachment_path`
+canonicalizes and stops there: it resolves `/tmp` vs `/private/tmp` and `.`
+segments so one directory has one spelling, and it never resolves a worktree to
+the repository it belongs to. Three derived facts carry the differences, none of
+them stored:
 
+- **`repoRoot`** is the repository an attachment belongs to (`home::repo_root`,
+  the git common dir's owner), equal to `path` for a main tree and for a plain
+  directory. Identity is the checkout and the join is the repository: the tab,
+  its terminal's cwd and its file listing are the path, while the review, the
+  activity row, the PR badge and the merge are `(repoRoot, ref)` — one review
+  per branch however many working trees of it are open. Existing
+  `workspaces.json` entries are all main-tree paths and read back unchanged.
 - **`isGitRepo`** rides on each attachment in `WorkspaceView` (the wire shape
   every surface reads the queue through) and is read at serialization time, so
   `git init` in an attached directory flips it with no write to `workspaces.json`. It
@@ -307,7 +318,7 @@ The **guide** is an agent-authored grouping of a comparison's hunks into a theme
 - `spur workspace resolve [DIR]` — preview a route without writing
 - `<id>` accepts unique prefixes
 
-`core/src/workspace/router.rs` resolves any cwd to a workspace: the first one in queue order attached to that repo root (or plain directory when outside a repo), else a fresh one it mints (`autoCreated: true`) attached to it — so nothing the app shows is ever unattached. Because attachments are not exclusive, that tie-break is a heuristic: a wrong guess costs one drag of a terminal onto the right card. Naming a workspace explicitly (⌘T, `spur terminal start --workspace`, ⌘K) lands there and **writes nothing** — what a workspace is about is answered by `attach`, not by where a shell happened to open.
+`core/src/workspace/router.rs` resolves any cwd to a workspace in two rungs: the first one in queue order attached to that exact checkout (the enclosing working tree, or the plain directory when outside a repo), else the first attached to _any_ checkout of the same repository — so a shell opened in a worktree still lands on the card already showing the main tree instead of minting a second one — else a fresh one it mints (`autoCreated: true`) attached to the checkout itself, so nothing the app shows is ever unattached. Because attachments are not exclusive, that tie-break is a heuristic: a wrong guess costs one drag of a terminal onto the right card. Naming a workspace explicitly (⌘T, `spur terminal start --workspace`, ⌘K) lands there and **writes nothing** — what a workspace is about is answered by `attach`, not by where a shell happened to open.
 
 A workspace's terminals are the daemon's record, not the queue's: each session carries a `workspaceId`, set by whoever started it (`spur terminal start`, the app's `terminal_start` — both route first). That is what every surface groups by, what `DaemonClient::reassign_sessions` moves when a terminal is dragged to another card, and what keeps a router-made workspace alive. `workspace::cleanup` is lazy — it runs on the two reads that hold both the queue and the daemon's liveness answer, `spur workspace list` and the app's `workspace_list` — so the daemon never writes `workspaces.json`. **With no daemon reachable, neither read cleans anything up**: an empty liveness set means "nothing is running", never "I don't know".
 

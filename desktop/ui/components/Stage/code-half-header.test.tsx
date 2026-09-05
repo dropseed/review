@@ -49,13 +49,20 @@ import type { LocalBranchInfo } from "../../types";
 
 const A = "/repo-a";
 const B = "/repo-b";
+/** A linked worktree of A — its own tab, filed under A. */
+const A_WT = "/worktrees/repo-a-wt";
 
-function choice(path: string, name: string, refName: string): RepoChoice {
+function choice(
+  path: string,
+  name: string,
+  refName: string,
+  repoRoot: string = path,
+): RepoChoice {
   return {
     path,
+    repoRoot,
     name,
     refName,
-    worktreePath: null,
   };
 }
 
@@ -82,7 +89,7 @@ function seed(attachments = [attachment(A, "main"), attachment(B, "dev")]) {
   useSpurStore.setState({
     workspaces: [focused],
     focusedWorkspaceId: "w",
-    activeReviewKey: { repoPath: A, ref: "main" },
+    activeReviewKey: { repoPath: A, ref: "main", path: A },
     localActivity: [
       {
         repoPath: A,
@@ -167,11 +174,47 @@ describe("the repo tab bar", () => {
   it("stays the active tab across branches of its own repo", () => {
     seed();
     useSpurStore.setState({
-      activeReviewKey: { repoPath: A, ref: "some-other-branch" },
+      activeReviewKey: { repoPath: A, ref: "some-other-branch", path: A },
     });
     render(<CodeHalfHeader />);
 
     expect(tabs()[0].getAttribute("aria-current")).toBe("true");
+  });
+
+  /**
+   * Two checkouts of one repository. The repo cannot tell the tabs apart, so
+   * the path is what marks the active one — and each is named by its own
+   * directory, since the repo's name is what they share.
+   */
+  it("draws a worktree as its own tab beside the main tree", () => {
+    seed([attachment(A, "main"), attachment(A_WT, "feature", true, A)]);
+    useSpurStore.setState({
+      localActivity: [
+        {
+          repoPath: A,
+          repoName: "repo-a",
+          defaultBranch: "main",
+          branches: [
+            branch("main"),
+            { ...branch("feature"), isCurrent: false, worktreePath: A_WT },
+          ],
+          recentRemoteBranches: [],
+        },
+      ],
+      activeReviewKey: { repoPath: A, ref: "feature", path: A_WT },
+    });
+    render(<CodeHalfHeader />);
+
+    expect(tabs().map((tab) => tab.textContent)).toEqual([
+      "repo-a · main",
+      "repo-a-wt · feature",
+    ]);
+    expect(tabs()[0].getAttribute("aria-current")).toBeNull();
+    expect(tabs()[1].getAttribute("aria-current")).toBe("true");
+
+    // ...and it opens the repository's comparison for the branch it has out.
+    fireEvent.click(tabs()[1]);
+    expect(activateReviewKey).toHaveBeenCalledWith(A, "feature");
   });
 
   it("detaches on close, and hands the screen to the neighbour", async () => {
@@ -256,6 +299,19 @@ describe("picking a repo", () => {
 
     expect(attachWorkspace).not.toHaveBeenCalled();
     expect(activateReviewKey).toHaveBeenCalledWith(B, "dev");
+  });
+
+  /**
+   * A worktree row is the repository at a ref, and what it opens is the
+   * worktree itself — a second tab beside the main tree rather than a move of
+   * that tab's ref.
+   */
+  it("attaches a worktree row by its own path", async () => {
+    const focused = seed([attachment(A, "main")]);
+
+    await openRepoIn(focused, choice(A_WT, "repo-a", "feature", A));
+
+    expect(attachWorkspace).toHaveBeenCalledWith("w", A_WT, "feature");
   });
 
   /**

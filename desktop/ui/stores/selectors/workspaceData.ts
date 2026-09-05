@@ -11,8 +11,11 @@ import type { Attachment, Workspace } from "../../types";
 
 /** A comparison to open — the pair `makeReviewKey` builds a key from. */
 export interface ReviewTarget {
+  /** The repository (an attachment's `repoRoot`), or the path itself for a checkout target. */
   repoPath: string;
   ref: string;
+  /** The tab — the attachment's own path — when the caller has it in hand. */
+  path?: string;
 }
 
 /**
@@ -33,19 +36,20 @@ export function isCheckoutTarget(target: ReviewTarget): boolean {
 }
 
 /**
- * The repo the code half is showing, whichever way it is showing it.
+ * The checkout the code half is showing, whichever way it is showing it — the
+ * path an attachment is keyed by.
  *
- * A comparison names its repo in `activeReviewKey`; browse and standalone mode
- * have no comparison at all and name it in `repoPath` alone. Both are "the repo
- * on screen", and everything joining a workspace to what is being shown has to
- * accept either — otherwise opening a folder makes the stage forget which
- * workspace it is in.
+ * A comparison names its tab in `activeReviewKey.path`, resolved once when the
+ * key was set; browse and standalone mode have no comparison at all and name
+ * the path in `repoPath` alone. Both are "the checkout on screen", and
+ * everything joining a workspace to what is being shown has to accept either —
+ * otherwise opening a folder makes the stage forget which workspace it is in.
  */
 export function repoOnScreen(state: {
-  activeReviewKey: { repoPath: string } | null;
+  activeReviewKey: { path: string } | null;
   repoPath: string | null;
 }): string | null {
-  return state.activeReviewKey?.repoPath ?? state.repoPath;
+  return state.activeReviewKey?.path ?? state.repoPath;
 }
 
 /**
@@ -61,22 +65,71 @@ export function hasRef(
 }
 
 /**
+ * Whether an attachment is a checkout of its own — a linked worktree — rather
+ * than the repository's main tree (or a plain directory, where the two are the
+ * same string). The one predicate every "is this a second tab of one repo?"
+ * question asks.
+ */
+export function isWorktreeTab(attachment: Attachment): boolean {
+  return attachment.path !== attachment.repoRoot;
+}
+
+/**
  * How an attachment reads on a tab and in a chip: the repo's own name, and the
  * ref it is pointed at when it has one. The same shape the backend's derived
  * title uses, so a workspace titled after its first attachment and the tab for
  * that attachment say the same thing.
+ *
+ * A linked worktree is named by its own directory rather than the repo's
+ * resolved name: the repo name is what it shares with the main tree's tab, and
+ * the directory is what tells the two apart.
  */
 export function attachmentLabel(
   attachment: Attachment,
   repoName?: string,
 ): string {
-  const name = repoName ?? basenameOf(attachment.path);
+  const name =
+    (isWorktreeTab(attachment) ? undefined : repoName) ??
+    basenameOf(attachment.path);
   return attachment.refName ? `${name} · ${attachment.refName}` : name;
 }
 
 function basenameOf(path: string): string {
   const trimmed = path.replace(/\/+$/, "");
   return trimmed.slice(trimmed.lastIndexOf("/") + 1) || trimmed;
+}
+
+/**
+ * An attachment as a target: the review is the repository's, the tab is the
+ * checkout. The two coordinates pull apart for a worktree tab, and this is the
+ * one place they are spelled out.
+ */
+export function targetOf(attachment: Attachment): ReviewTarget {
+  return {
+    repoPath: attachment.repoRoot,
+    ref: attachment.refName ?? CHECKOUT_REF,
+    path: attachment.path,
+  };
+}
+
+/**
+ * The key with its tab named: the attachment of `attachments` the comparison
+ * belongs in — the one already pointed at that ref, else the repository's own
+ * tree, else the first of them. Falls back to the repository when the
+ * attachments hold no checkout of it, which is exactly when the focus is stale.
+ */
+export function withTabPath<K extends { repoPath: string; ref: string }>(
+  key: K,
+  attachments: readonly Attachment[],
+): K & { path: string } {
+  const ofRepo = attachments.filter(
+    (attachment) => attachment.repoRoot === key.repoPath,
+  );
+  const tab =
+    ofRepo.find((attachment) => attachment.refName === key.ref) ??
+    ofRepo.find((attachment) => attachment.path === key.repoPath) ??
+    ofRepo[0];
+  return { ...key, path: tab?.path ?? key.repoPath };
 }
 
 /**
@@ -90,9 +143,7 @@ export function comparisonTarget(
   workspace: Workspace | null,
 ): ReviewTarget | null {
   const attachment = workspace?.attachments.find(hasRef);
-  return attachment
-    ? { repoPath: attachment.path, ref: attachment.refName }
-    : null;
+  return attachment ? targetOf(attachment) : null;
 }
 
 /** Where `path` sits among a workspace's tabs, or -1. Identity is the path. */
@@ -140,7 +191,7 @@ export function focusedWorkspace(
 export function focusedWorkspaceIn(state: {
   workspaces: readonly Workspace[];
   focusedWorkspaceId: string | null;
-  activeReviewKey: { repoPath: string } | null;
+  activeReviewKey: { path: string } | null;
   repoPath: string | null;
 }): Workspace | null {
   return focusedWorkspace(
@@ -156,34 +207,59 @@ export type RoutePreview =
   /** No workspace shows it; going there starts one of its own. */
   | { kind: "new" };
 
+/** The router's two rungs, indexed: by the checkout, and by its repository. */
+export interface RepoHosts {
+  byPath: Map<string, Workspace>;
+  byRoot: Map<string, Workspace>;
+}
+
 /**
- * Every attached repo in the queue, by path — the O(1) form of "who is showing
+ * Every attached checkout in the queue — the O(1) form of "who is showing
  * this?".
  *
  * Queue order decides ties, and the *first* entry wins: attachments are
  * non-exclusive, so several workspaces may show one repo and the queue's order
- * is the priority proxy the router uses to pick between them. Built once per
- * list change and handed to [`previewRouteIn`], because ⌘K asks the question
- * for every row of every repo on every keystroke.
+ * is the priority proxy the router uses to pick between them. Two maps because
+ * the rungs are ordered — a workspace showing the exact checkout beats an
+ * earlier one showing only the repository — and built once per list change,
+ * because ⌘K asks the question for every row of every repo on every keystroke.
  */
-export function repoHosts(
-  workspaces: readonly Workspace[],
-): Map<string, Workspace> {
-  const hosts = new Map<string, Workspace>();
+export function repoHosts(workspaces: readonly Workspace[]): RepoHosts {
+  const byPath = new Map<string, Workspace>();
+  const byRoot = new Map<string, Workspace>();
   for (const workspace of workspaces) {
     for (const attachment of workspace.attachments) {
-      if (!hosts.has(attachment.path)) hosts.set(attachment.path, workspace);
+      if (!byPath.has(attachment.path)) byPath.set(attachment.path, workspace);
+      if (!byRoot.has(attachment.repoRoot))
+        byRoot.set(attachment.repoRoot, workspace);
     }
   }
-  return hosts;
+  return { byPath, byRoot };
 }
 
-/** The first workspace in queue order showing `repoPath`, if any. */
+/**
+ * The first workspace in queue order showing the checkout at `path`, else the
+ * first showing any checkout of the repository at it.
+ *
+ * Two scans rather than [`repoHosts`]'s maps: this answers about one path, and
+ * the first scan short-circuits on nearly every call. The second rung is keyed
+ * on the path too, because its caller ([`focusedWorkspace`]) holds a resolved
+ * `activeReviewKey.path` — which is the repository's own tree exactly when no
+ * tab was found for it.
+ */
 export function showingRepo(
   workspaces: readonly Workspace[],
-  repoPath: string,
+  path: string,
 ): Workspace | null {
-  return repoHosts(workspaces).get(repoPath) ?? null;
+  return (
+    workspaces.find((workspace) =>
+      workspace.attachments.some((attachment) => attachment.path === path),
+    ) ??
+    workspaces.find((workspace) =>
+      workspace.attachments.some((attachment) => attachment.repoRoot === path),
+    ) ??
+    null
+  );
 }
 
 /**
@@ -194,19 +270,15 @@ export function showingRepo(
  * and then does something else is worse than no preview at all. A wrong guess
  * is harmless here in a way it wasn't under exclusive claims: the terminal can
  * be dragged, and nothing was taken from anyone.
+ *
+ * Both coordinates, always: a caller holding a repository's own tree passes it
+ * twice, which is what it is.
  */
 export function previewRouteIn(
-  hosts: Map<string, Workspace>,
-  repoPath: string,
+  hosts: RepoHosts,
+  path: string,
+  repoRoot: string,
 ): RoutePreview {
-  const host = hosts.get(repoPath);
+  const host = hosts.byPath.get(path) ?? hosts.byRoot.get(repoRoot);
   return host ? { kind: "join", workspace: host } : { kind: "new" };
-}
-
-/** [`previewRouteIn`] for a caller with one repo and no index to reuse. */
-export function previewRoute(
-  workspaces: readonly Workspace[],
-  repoPath: string,
-): RoutePreview {
-  return previewRouteIn(repoHosts(workspaces), repoPath);
 }

@@ -28,12 +28,13 @@ export async function createWorktreeIn(
   }
   await useSpurStore.getState().loadLocalActivity();
   return {
-    // The repo at a ref, exactly as a worktree row from the sidebar tree: a
-    // workspace shows a path once, and the tab is the repository.
-    path: repo.path,
+    // The checkout that now exists, exactly as a worktree row from the sidebar
+    // tree — so a worktree made here opens as its own tab, beside whatever the
+    // workspace was already showing.
+    path: checkout.path,
+    repoRoot: repo.path,
     name: repo.name,
     refName: checkout.branch,
-    worktreePath: checkout.path,
   };
 }
 
@@ -47,15 +48,16 @@ export async function createWorktreeIn(
  * force anywhere in the path; a dirty worktree comes back as a sentence saying
  * so, and resolving it is the user's.
  *
- * Nothing is detached afterwards, and nothing can be left dangling: every
- * attachment names a *repository root* (`workspace::normalize_repo_path` resolves a
- * worktree to the repo it belongs to), so no workspace can be pointed at the
- * directory this removes. A tab showing the repo at this branch stays valid —
- * the branch outlives its checkout, and `refName` was only ever a view hint.
+ * Nothing is detached afterwards. A tab showing the *repository* at this branch
+ * stays valid — the branch outlives its checkout, and `refName` was only ever a
+ * view hint — but a workspace that attached the worktree itself is left with a
+ * tab naming a directory that is gone, which is the same closable tab a moved
+ * folder leaves. That is what `useWorktreeInUse` marks the row with beforehand:
+ * a checkout the queue is pointed at says so before the delete, not after.
  *
- * What a delete can strand is a shell, so terminals started in it are counted
- * into the prompt: a clean worktree with someone working in it passes every
- * check git makes and is still the wrong thing to delete.
+ * What a delete can otherwise strand is a shell, so terminals started in it are
+ * counted into the prompt: a clean worktree with someone working in it passes
+ * every check git makes and is still the wrong thing to delete.
  *
  * Returns whether the worktree is gone.
  */

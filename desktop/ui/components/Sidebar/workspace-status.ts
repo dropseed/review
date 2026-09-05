@@ -59,13 +59,19 @@ export interface WorkspaceContext {
 /**
  * The review key an attachment joins on — its ref, or the repo's checkout when
  * it names none.
+ *
+ * Keyed by the *repository*, never by the checkout: a review is one per
+ * `(repo, ref)` however many working trees of it a workspace holds, so a
+ * worktree tab and the main tree's tab pointed at the same branch join the same
+ * row, the same PR and the same merge. What tells the two apart is the label,
+ * which is the one thing here that reads the checkout's own path.
  */
 function attachmentReviewKey(
   attachment: Attachment,
   ctx: WorkspaceContext,
 ): string {
-  const { path, refName } = attachment;
-  return makeReviewKey(path, refName ?? ctx.heads.get(path) ?? "");
+  const { repoRoot, refName } = attachment;
+  return makeReviewKey(repoRoot, refName ?? ctx.heads.get(repoRoot) ?? "");
 }
 
 /**
@@ -116,7 +122,11 @@ export interface AttachmentStatus {
    * kept being wrong, where "git status says something changed" cannot be.
    */
   hasChanges: boolean;
-  /** `repo · branch` — the chip a card, a tab and the breadcrumb all draw. */
+  /**
+   * `repo · branch` — the chip a card, a tab and the breadcrumb all draw. A
+   * checkout that is not the repository's own tree is named by its directory
+   * instead, since the repo's name is exactly what it shares with the other tab.
+   */
   chipLabel: string;
 }
 
@@ -150,11 +160,11 @@ function describeAttachment(
   attachment: Attachment,
   ctx: WorkspaceContext,
 ): AttachmentStatus {
-  const { path } = attachment;
+  const { repoRoot } = attachment;
   const reviewKey = attachmentReviewKey(attachment, ctx);
   const row = attachmentRow(attachment, ctx);
   const openPr = row?.openPr;
-  const repoName = repoLabel(ctx, path);
+  const repoName = repoLabel(ctx, repoRoot);
   const branch =
     row?.entry.kind === "working-tree" ||
     row?.entry.kind === "worktree" ||
@@ -170,7 +180,7 @@ function describeAttachment(
     // it. And an open PR's head is a row here (`rowsByRepoRef`) whether or not
     // it has been fetched, so a PR just picked up out of the drawer is never
     // mistaken for a branch someone deleted.
-    gone: hasRef(attachment) && row === null && ctx.knownRepos.has(path),
+    gone: hasRef(attachment) && row === null && ctx.knownRepos.has(repoRoot),
     openPr,
     // A branch with a PR open again after an earlier one merged is being
     // worked on, not shipped — the open PR is the newer fact either way.

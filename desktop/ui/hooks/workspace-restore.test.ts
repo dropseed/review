@@ -9,6 +9,7 @@ function workspace(id: string, paths: string[] = []): Workspace {
     displayTitle: id,
     attachments: paths.map((path) => ({
       path,
+      repoRoot: path,
       refName: "main",
       isGitRepo: true,
     })),

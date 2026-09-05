@@ -86,13 +86,16 @@ pub enum WorkspaceError {
     Contended,
 }
 
-/// Something a workspace is looking at: a repository, optionally at a ref.
+/// Something a workspace is looking at: a checkout, optionally at a ref.
 ///
-/// `path` is normalized to the repo's main working tree (see
-/// [`normalize_repo_path`]) so one repository has one identity no matter which
-/// worktree — or which surface, CLI or app — attached it. A path outside any
-/// repository normalizes to itself, which is the degenerate case: a plain
-/// directory attaches exactly like a repo.
+/// `path` is the checkout itself — the main working tree, a linked worktree, or
+/// a directory that is no repository at all — canonicalized (see
+/// [`canonical_attachment_path`]) so one directory has one spelling no matter which
+/// surface, CLI or app, attached it. It is deliberately *not* collapsed onto the
+/// repository: two worktrees of one repo are two things to look at, and each is
+/// its own tab. What they share — the registry row, the reviews, the sidebar
+/// tree — is reached through [`AttachmentView::repo_root`], derived on every
+/// read.
 ///
 /// `ref_name` is a **view hint**, not identity: it is the branch or comparison
 /// the workspace was looking at, and two attachments of the same path are the
@@ -108,7 +111,7 @@ pub struct Attachment {
 impl Attachment {
     pub fn new(path: impl AsRef<std::path::Path>, ref_name: Option<String>) -> Self {
         Self {
-            path: normalize_repo_path(path.as_ref()),
+            path: canonical_attachment_path(path.as_ref()),
             // An empty ref is no ref; the router hands one over for a directory
             // outside any repository, and the wire may spell it either way.
             ref_name: ref_name.filter(|name| !name.trim().is_empty()),
@@ -127,6 +130,13 @@ impl Attachment {
     /// The directory name, for display ("review", not the full path).
     pub fn repo_name(&self) -> &str {
         home::display_name(std::path::Path::new(&self.path))
+    }
+
+    /// The repository this checkout belongs to — the path itself for a main
+    /// tree and for a plain directory. Reads `.git`, so callers that can settle
+    /// the question by string comparison should do that first.
+    pub fn repo_root(&self) -> std::path::PathBuf {
+        home::repo_root(std::path::Path::new(&self.path))
     }
 
     /// This attachment on one line: "review · feature/x", or just the directory
@@ -225,6 +235,13 @@ pub struct AttachmentView {
     /// [`home::is_working_tree`]), so an attachment that reads `true` here is
     /// exactly one the sidebar has an activity row for.
     pub is_git_repo: bool,
+    /// The repository's main working tree — [`home::repo_root`] of the path —
+    /// and so the path every repository-keyed thing is filed under: the
+    /// registry row, the activity snapshot, reviews, remote metadata. A linked
+    /// worktree's tab joins against all of those through this rather than its
+    /// own path. Equal to `path` for the main tree and for a plain directory.
+    /// Not stored, for the same reason `is_git_repo` isn't.
+    pub repo_root: String,
 }
 
 /// A workspace as a surface renders it: everything stored, plus everything that
@@ -281,6 +298,7 @@ pub fn view_of(queue: &[Workspace], workspace: Workspace) -> WorkspaceView {
         .into_iter()
         .map(|attachment| AttachmentView {
             is_git_repo: home::is_working_tree(std::path::Path::new(&attachment.path)),
+            repo_root: attachment.repo_root().to_string_lossy().to_string(),
             attachment,
         })
         .collect();
@@ -399,16 +417,33 @@ impl WorkspacesState {
             .iter()
             .find(|ws| ws.attachment_index(path).is_some())
     }
+
+    /// The first workspace in priority order attached to *any* checkout of the
+    /// repository whose main working tree is `root` — the router's second rung,
+    /// for a directory no workspace shows as itself, and so asked only after
+    /// [`first_attached`] has missed.
+    ///
+    /// A main-tree attachment — nearly all of them — answers by string
+    /// comparison; only a path that is not `root` itself pays a read of `.git`.
+    ///
+    /// [`first_attached`]: WorkspacesState::first_attached
+    pub(crate) fn first_attached_to_repo(&self, root: &std::path::Path) -> Option<&Workspace> {
+        self.workspaces.iter().find(|ws| {
+            ws.attachments.iter().any(|attached| {
+                std::path::Path::new(&attached.path) == root || attached.repo_root() == root
+            })
+        })
+    }
 }
 
-/// Normalize a repo path to the repository's main working tree, canonicalized.
+/// An attachment path's one spelling: canonicalized, and nothing more, so the
+/// app, a relative CLI path and `/tmp` vs `/private/tmp` all key the same.
 ///
-/// Attachments are keyed by this, so a repo attached from a linked worktree,
-/// from the app, and from a relative CLI path all collapse to the same identity
-/// — the same normalization [`home::list_registered_repos`] entries carry,
-/// which is what the frontend joins these against.
-pub fn normalize_repo_path(path: &std::path::Path) -> String {
-    home::repo_root(path).to_string_lossy().to_string()
+/// It stops short of the repository root on purpose — a linked worktree is its
+/// own checkout and its own tab, and the repository it belongs to is
+/// [`AttachmentView::repo_root`], derived on read.
+fn canonical_attachment_path(path: &std::path::Path) -> String {
+    home::canonical_path(path).to_string_lossy().to_string()
 }
 
 /// Mint an 8-hex-character workspace id from [`unique_id_seed`]. The caller
@@ -974,7 +1009,7 @@ pub fn detach(
     id: &str,
     path: &std::path::Path,
 ) -> Result<(WorkspacesState, Workspace), WorkspaceError> {
-    let path = normalize_repo_path(path);
+    let path = canonical_attachment_path(path);
     mutate(move |state| {
         let index = resolve_index(state, id)?;
         let before = state.workspaces[index].attachments.len();
@@ -1334,8 +1369,8 @@ mod tests {
                 "attachments": [
                     // Neither temp path exists, so neither is a repository —
                     // the fact is the filesystem's, read at serialization time.
-                    { "path": "/repos/review", "refName": "feature/x", "isGitRepo": false },
-                    { "path": "/repos/django", "refName": null, "isGitRepo": false },
+                    { "path": "/repos/review", "refName": "feature/x", "isGitRepo": false, "repoRoot": "/repos/review" },
+                    { "path": "/repos/django", "refName": null, "isGitRepo": false, "repoRoot": "/repos/django" },
                 ],
                 "parentId": null,
                 "autoCreated": false,
@@ -1355,7 +1390,7 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap();
         let (_env, _home, repo) = setup_test();
         std::fs::create_dir_all(repo.path().join(".git")).unwrap();
-        let canonical = normalize_repo_path(repo.path());
+        let canonical = canonical_attachment_path(repo.path());
 
         assert!(
             !home::is_registered(repo.path()).unwrap(),
@@ -1394,7 +1429,7 @@ mod tests {
     fn a_plain_directory_attaches_but_is_not_registered() {
         let _lock = ENV_LOCK.lock().unwrap();
         let (_env, _home, plain) = setup_test();
-        let canonical = normalize_repo_path(plain.path());
+        let canonical = canonical_attachment_path(plain.path());
 
         let (state, ws) = add(Some("scratch"), vec![Attachment::new(plain.path(), None)]).unwrap();
         assert_eq!(ws.attachments[0].path, canonical);
@@ -1881,7 +1916,7 @@ mod tests {
     }
 
     #[test]
-    fn repo_paths_normalize_to_the_repo_root() {
+    fn repo_paths_are_canonicalized() {
         let _lock = ENV_LOCK.lock().unwrap();
         let (_env, _home, repo) = setup_test();
         std::fs::create_dir_all(repo.path().join(".git")).unwrap();
@@ -1894,7 +1929,57 @@ mod tests {
 
         let ws = add_ws("normalized", vec![direct]);
         let (_, same) = attach(&ws.id, indirect).unwrap();
-        assert_eq!(same.attachments.len(), 1, "one repo, one tab");
+        assert_eq!(same.attachments.len(), 1, "one directory, one tab");
+    }
+
+    /// A linked worktree is its own checkout and its own tab: attaching it
+    /// beside the main tree opens a second tab rather than moving the first
+    /// one's ref, and the view says which repository both belong to.
+    #[test]
+    fn a_worktree_attaches_as_its_own_tab() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _home, _tmp) = setup_test();
+        let repo = tempfile::TempDir::new().unwrap();
+        let p = repo.path();
+        crate::test_git::git(p, &["init", "-q", "-b", "trunk"]);
+        crate::test_git::git(p, &["config", "user.email", "t@example.com"]);
+        crate::test_git::git(p, &["config", "user.name", "T"]);
+        std::fs::write(p.join("a.txt"), "one\n").unwrap();
+        crate::test_git::git(p, &["add", "."]);
+        crate::test_git::git(p, &["commit", "-qm", "first"]);
+        let wt_parent = tempfile::TempDir::new().unwrap();
+        let worktree = wt_parent.path().join("wt");
+        crate::test_git::git(
+            p,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "feature",
+                worktree.to_str().unwrap(),
+            ],
+        );
+
+        let ws = add_ws("both", vec![Attachment::new(p, Some("trunk".to_owned()))]);
+        let (_, both) = attach(
+            &ws.id,
+            Attachment::new(&worktree, Some("feature".to_owned())),
+        )
+        .unwrap();
+        assert_eq!(both.attachments.len(), 2, "two checkouts, two tabs");
+        assert_eq!(
+            both.attachments[1].path,
+            worktree.canonicalize().unwrap().to_string_lossy()
+        );
+
+        let view = view_of(std::slice::from_ref(&both), both.clone());
+        let root = p.canonicalize().unwrap().to_string_lossy().to_string();
+        assert_eq!(view.attachments[0].repo_root, root);
+        assert_eq!(
+            view.attachments[1].repo_root, root,
+            "a worktree files under its repository"
+        );
+        assert!(view.attachments[1].is_git_repo);
     }
 
     #[test]
@@ -1902,7 +1987,7 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap();
         let (_env, _home, repo) = setup_test();
         std::fs::create_dir_all(repo.path().join(".git")).unwrap();
-        let canonical = normalize_repo_path(repo.path());
+        let canonical = canonical_attachment_path(repo.path());
 
         // A struct built by serde (the app posts `{path, refName}`) never went
         // through `Attachment::new`, so the operations have to normalize it.

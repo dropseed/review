@@ -7,7 +7,11 @@ import {
   workspaceTerminals,
   type WorkspaceTerminals,
 } from "../../../stores/selectors/terminals";
-import { allSidebarRows, type SidebarRow } from "../../../utils/sidebar-tree";
+import {
+  allSidebarRows,
+  rowWorktree,
+  type SidebarRow,
+} from "../../../utils/sidebar-tree";
 import { tabGlance } from "../../Terminal/glance";
 import { jumpToTab } from "../../Terminal/jump";
 import { openTerminalTab } from "../../Terminal/newTab";
@@ -170,7 +174,16 @@ export function useGoSource(
           title: row.ref,
           detail: repoName,
           row,
-          preview: routePreviewLabel(previewRouteIn(hosts, row.repoPath)),
+          // Asked with both coordinates, because that is what Enter routes
+          // by: a worktree row joins the workspace holding *that* checkout
+          // first, and falls back to one holding any checkout of the repo.
+          preview: routePreviewLabel(
+            previewRouteIn(
+              hosts,
+              rowWorktree(row) ?? row.repoPath,
+              row.repoPath,
+            ),
+          ),
         });
       }
     }

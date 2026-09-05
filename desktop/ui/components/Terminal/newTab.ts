@@ -1,6 +1,7 @@
 import { useSpurStore } from "../../stores";
 import {
-  CHECKOUT_REF,
+  targetOf,
+  withTabPath,
   type ReviewTarget,
 } from "../../stores/selectors/workspaceData";
 import type { Attachment, Workspace } from "../../types";
@@ -60,7 +61,15 @@ export async function openTerminalTab(
     return show ? reveal(id) : id;
   }
 
-  const cwd = await checkoutFor(target.repoPath, target.ref);
+  // A tab that is its own checkout — a linked worktree — *is* the directory,
+  // and asking `checkoutFor` would answer with the branch's checkout, which for
+  // a worktree in detached HEAD or on a branch listed elsewhere is another
+  // directory entirely. The repository is still what the session is filed
+  // under, so only the cwd moves.
+  const cwd =
+    target.path && target.path !== target.repoPath
+      ? target.path
+      : await checkoutFor(target.repoPath, target.ref);
   if (!cwd) return null;
   const id = await store.startTerminal(
     target.repoPath,
@@ -116,14 +125,15 @@ export function activeTabTarget(
   workspace: Workspace | null,
 ): ReviewTarget | null {
   if (!workspace) return null;
-  const store = useSpurStore.getState();
-  const activePath = store.activeReviewKey?.repoPath;
+  const key = useSpurStore.getState().activeReviewKey;
+  // Ranked against *this* workspace's tabs rather than trusted as it stands:
+  // the key's path was resolved against whichever workspace was focused when
+  // the comparison opened, which need not be this one.
+  const path = key ? withTabPath(key, workspace.attachments).path : undefined;
   const active: Attachment | undefined =
-    workspace.attachments.find(
-      (attachment) => attachment.path === activePath,
-    ) ?? workspace.attachments[0];
-  if (!active) return null;
-  return { repoPath: active.path, ref: active.refName ?? CHECKOUT_REF };
+    workspace.attachments.find((attachment) => attachment.path === path) ??
+    workspace.attachments[0];
+  return active ? targetOf(active) : null;
 }
 
 /**

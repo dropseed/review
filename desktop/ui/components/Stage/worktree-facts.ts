@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { getApiClient } from "../../api";
 import { useSpurStore } from "../../stores";
 import type { WorktreeStatus } from "../../types";
+import { repoHosts } from "../../stores/selectors/workspaceData";
 import { repoChoiceKey } from "./repo-choices";
 
 /**
@@ -61,12 +62,13 @@ export function useWorktreeStatus(repoPaths: readonly string[]): {
 /**
  * Whether anything in the app is pointed at a checkout.
  *
- * Two ways to be in use, because a worktree is reached by two different names.
- * A workspace shows it as *the repo at that branch* — never as its own path,
- * since `workspace::normalize_repo_path` resolves every attachment to the repository
- * root — so the queue is joined on repo and ref. A terminal names the directory
- * itself, and is the loudest form of "someone is working here": a worktree the
- * queue has forgotten but a shell is sitting in is not unused.
+ * Three ways to be in use, because a worktree is reached by more than one name.
+ * A workspace may attach it as its own path — a checkout is a tab — or as *the
+ * repo at that branch*, which is what an attachment made before there were two
+ * tabs of one repository says and what the main tree says when that branch is
+ * what it has checked out. So the queue is joined on both. A terminal names the
+ * directory itself, and is the loudest form of "someone is working here": a
+ * worktree the queue has forgotten but a shell is sitting in is not unused.
  *
  * Only ever a hint on a row. What stops a delete is the backend's dirty check,
  * which is a fact about the files rather than about the app.
@@ -79,16 +81,20 @@ export function useWorktreeInUse(): (
   const sessions = useSpurStore((s) => s.terminalSessions);
 
   return useMemo(() => {
+    const { byPath } = repoHosts(workspaces);
     const attachedRefs = new Set<string>();
     for (const workspace of workspaces) {
       for (const attachment of workspace.attachments) {
         if (attachment.refName) {
-          attachedRefs.add(repoChoiceKey(attachment.path, attachment.refName));
+          attachedRefs.add(
+            repoChoiceKey(attachment.repoRoot, attachment.refName),
+          );
         }
       }
     }
 
     return (repoPath, worktree) => {
+      if (byPath.has(worktree.path)) return true;
       if (
         worktree.branch &&
         attachedRefs.has(repoChoiceKey(repoPath, worktree.branch))

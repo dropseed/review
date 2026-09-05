@@ -737,7 +737,11 @@ export interface ReviewSummary {
 // Nothing about it is exclusive: any number of workspaces may attach the same
 // path, so there is no holder to name and no conflict to report.
 export interface Attachment {
-  /** Repo root (or a plain directory), normalized backend-side. The identity. */
+  /**
+   * The checkout — a repo's main tree, a linked worktree, or a plain directory
+   * — canonicalized backend-side. The identity: two worktrees of one repo are
+   * two attachments, and two tabs.
+   */
   path: string;
   /** A view hint — the branch being looked at. Never part of the identity. */
   refName: string | null;
@@ -747,6 +751,14 @@ export interface Attachment {
    * `workspaces.json`.
    */
   isGitRepo: boolean;
+  /**
+   * The repository's main working tree, derived backend-side on every read.
+   * Everything keyed by repository — activity rows, reviews, sidebar rows,
+   * `repoMetadata`, PRs — is joined through this, never through `path`, so a
+   * worktree tab finds its repo. Equal to `path` for the main tree and for a
+   * plain directory.
+   */
+  repoRoot: string;
 }
 
 // One workspace: a unit of intent in the workspace queue. Stored in

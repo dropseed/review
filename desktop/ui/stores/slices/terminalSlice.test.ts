@@ -1280,6 +1280,25 @@ describe("checkout attribution", () => {
     );
   });
 
+  /**
+   * A worktree in detached HEAD is on neither list — no repo's current branch,
+   * no review's checkout — so a shell in the tab for it used to read as sitting
+   * in a checkout that had been removed.
+   */
+  it("buildCheckoutIndex counts a checkout the queue has attached", () => {
+    const detached = "/worktrees/r-detached";
+    const index = buildCheckoutIndex(
+      activity,
+      [],
+      [{ repoRoot: "/r", path: detached }],
+    );
+    expect(index["/r"].roots).toContain(detached);
+    // Attribution only: no review owns it, so a terminal there still belongs
+    // to the repo's own row.
+    expect(index["/r"].owners[detached]).toBeUndefined();
+    expect(isOrphanedSession(index, "/r", detached)).toBe(false);
+  });
+
   it("isOrphanedSession is true only for a cwd outside every checkout", () => {
     const index = buildCheckoutIndex(activity);
     expect(isOrphanedSession(index, "/r", FEATURE_WT)).toBe(false);

@@ -8,7 +8,7 @@ use log::info;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Instant;
 use thiserror::Error;
@@ -1440,12 +1440,13 @@ impl LocalGitSource {
 
     /// Resolve a path against this repo's own worktrees — the check that a
     /// destructive call is aimed at a checkout of *this* repository and not at
-    /// an arbitrary directory.
+    /// an arbitrary directory. Both sides are canonicalized because on macOS
+    /// `/tmp` is a symlink and git reports the resolved side.
     fn find_worktree(&self, worktree_path: &str) -> Result<WorktreeInfo, LocalGitError> {
-        let canonical = canonical_or_self(worktree_path);
+        let canonical = home::canonical_path(Path::new(worktree_path));
         self.list_worktrees()?
             .into_iter()
-            .find(|wt| canonical_or_self(&wt.path) == canonical)
+            .find(|wt| home::canonical_path(Path::new(&wt.path)) == canonical)
             .ok_or_else(|| {
                 LocalGitError::Git(format!(
                     "Not a worktree of this repository: {worktree_path}"
@@ -1496,7 +1497,9 @@ impl LocalGitSource {
         }
 
         Ok(WorktreeCheckout {
-            path: canonical_or_self(&path_str).to_string_lossy().to_string(),
+            path: home::canonical_path(Path::new(&path_str))
+                .to_string_lossy()
+                .to_string(),
             branch: branch.to_owned(),
             created: true,
         })
@@ -1554,7 +1557,7 @@ impl LocalGitSource {
             })?;
 
         // Canonicalize the path after creation so it matches what git reports
-        let canonical_path = canonical_or_self(worktree_path)
+        let canonical_path = home::canonical_path(&worktree_path)
             .to_string_lossy()
             .to_string();
 
@@ -1576,8 +1579,8 @@ impl LocalGitSource {
     fn validate_review_worktree_path(&self, worktree_path: &str) -> Result<(), LocalGitError> {
         let base_dir = home::get_worktree_base_dir(&self.repo_path)
             .map_err(|e| LocalGitError::Git(format!("Failed to compute worktree base dir: {e}")))?;
-        let canonical_base = canonical_or_self(base_dir);
-        let canonical_wt = canonical_or_self(worktree_path);
+        let canonical_base = home::canonical_path(&base_dir);
+        let canonical_wt = home::canonical_path(Path::new(worktree_path));
         if !canonical_wt.starts_with(&canonical_base) {
             return Err(LocalGitError::Git(format!(
                 "Path is not a review-managed worktree: {worktree_path}"
@@ -3442,14 +3445,6 @@ fn diff_has_changes(dir: &std::path::Path, range: &str) -> Result<bool, LocalGit
     }
 }
 
-/// A path as the filesystem reports it, falling back to the path itself when it
-/// doesn't resolve. Comparing worktree paths needs this on macOS, where
-/// `/tmp` is a symlink and git reports the resolved side.
-fn canonical_or_self(path: impl Into<PathBuf>) -> PathBuf {
-    let path = path.into();
-    path.canonicalize().unwrap_or(path)
-}
-
 /// A directory under `base_dir` that nothing occupies yet: `<name>`, else
 /// `<name>-2`, `<name>-3`…
 ///
@@ -4300,7 +4295,10 @@ mod tests {
         let listed = source.list_worktrees().unwrap();
         let made = listed
             .iter()
-            .find(|wt| canonical_or_self(&wt.path) == canonical_or_self(&checkout.path))
+            .find(|wt| {
+                home::canonical_path(Path::new(&wt.path))
+                    == home::canonical_path(Path::new(&checkout.path))
+            })
             .expect("the new worktree should be listed");
         assert_eq!(made.branch.as_deref(), Some("feature/new-thing"));
         assert!(!made.is_detached);
@@ -4342,16 +4340,16 @@ mod tests {
         let again = source.worktree_for_branch("shared").unwrap();
         assert!(!again.created);
         assert_eq!(
-            canonical_or_self(&again.path),
-            canonical_or_self(&first.path)
+            home::canonical_path(Path::new(&again.path)),
+            home::canonical_path(Path::new(&first.path))
         );
 
         let current = source.get_current_branch().unwrap();
         let main = source.worktree_for_branch(&current).unwrap();
         assert!(!main.created);
         assert_eq!(
-            canonical_or_self(&main.path),
-            canonical_or_self(repo_dir.path())
+            home::canonical_path(Path::new(&main.path)),
+            home::canonical_path(repo_dir.path())
         );
     }
 
@@ -4369,9 +4367,11 @@ mod tests {
         // Untracked counts: it is exactly what `git worktree remove` would
         // refuse to discard without --force, which the UI never offers.
         let status = source.list_worktree_status().unwrap();
-        assert!(status.iter().any(|s| canonical_or_self(&s.worktree.path)
-            == canonical_or_self(&checkout.path)
-            && s.has_changes));
+        assert!(status
+            .iter()
+            .any(|s| home::canonical_path(Path::new(&s.worktree.path))
+                == home::canonical_path(Path::new(&checkout.path))
+                && s.has_changes));
 
         let err = source.remove_worktree(&checkout.path).unwrap_err();
         assert!(

@@ -78,8 +78,9 @@ export function attachment(
   path: string,
   refName: string | null = null,
   isGitRepo = true,
+  repoRoot = path,
 ): Attachment {
-  return { path, refName, isGitRepo };
+  return { path, refName, isGitRepo, repoRoot };
 }
 
 /** A local branch, quiet unless overridden. */

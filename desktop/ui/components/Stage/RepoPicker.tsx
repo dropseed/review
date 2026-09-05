@@ -68,7 +68,7 @@ export function RepoPicker({
   // Distinct repos, in list order: a repo contributes a row per worktree, and
   // the status call takes each repository once.
   const repoPaths = useMemo(
-    () => [...new Set(choices.map((choice) => choice.path))],
+    () => [...new Set(choices.map((choice) => choice.repoRoot))],
     [choices],
   );
   const { byPath, refresh } = useWorktreeStatus(repoPaths);
@@ -93,16 +93,16 @@ export function RepoPicker({
   );
 
   // Two repos called the same thing are told apart by where they are. Counted
-  // over distinct *paths* rather than over rows: a repo and its worktrees are
-  // all one repo under one name, and counting rows would make every repo that
-  // has a worktree look ambiguous with itself.
+  // over distinct *repositories* rather than over rows: a repo and its
+  // worktrees are all one repo under one name, and counting rows would make
+  // every repo that has a worktree look ambiguous with itself.
   const ambiguous = useMemo(() => {
     const firstPath = new Map<string, string>();
     const names = new Set<string>();
     for (const choice of shown) {
       const seen = firstPath.get(choice.name);
-      if (seen === undefined) firstPath.set(choice.name, choice.path);
-      else if (seen !== choice.path) names.add(choice.name);
+      if (seen === undefined) firstPath.set(choice.name, choice.repoRoot);
+      else if (seen !== choice.repoRoot) names.add(choice.name);
     }
     return names;
   }, [shown]);
@@ -197,11 +197,12 @@ export function RepoPicker({
           shown.map((choice, index) => {
             const key = repoChoiceKey(choice.path, choice.refName);
             const isOpen = attached.has(key);
+            const isWorktreeChoice = choice.path !== choice.repoRoot;
             // Only rows standing for a directory on disk have a worktree to
             // report on, and only when the status read for that repo landed —
             // with no answer, a row is what it always was: somewhere to go.
-            const worktree = choice.worktreePath
-              ? (byPath.get(choice.worktreePath) ?? null)
+            const worktree = isWorktreeChoice
+              ? (byPath.get(choice.path) ?? null)
               : null;
             return (
               <div
@@ -216,7 +217,7 @@ export function RepoPicker({
                 <button
                   type="button"
                   onClick={() => onPick(choice)}
-                  title={choice.worktreePath ?? choice.path}
+                  title={choice.path}
                   className={`flex min-w-0 flex-1 items-baseline gap-2 rounded-md
                             px-2.5 py-1.5 text-left text-sm outline-none
                             focus-visible:ring-1 focus-visible:ring-focus-ring/70`}
@@ -257,7 +258,7 @@ export function RepoPicker({
                   {worktree && (
                     <WorktreeFacts
                       worktree={worktree}
-                      unused={!isOpen && !inUse(choice.path, worktree)}
+                      unused={!isOpen && !inUse(choice.repoRoot, worktree)}
                     />
                   )}
                   {isOpen && (
@@ -270,7 +271,7 @@ export function RepoPicker({
                     removes itself. A worktree row with no status read is
                     neither — offering to delete a checkout we could not look
                     at is how a UI flag becomes a lost afternoon. */}
-                {choice.worktreePath === null ? (
+                {!isWorktreeChoice ? (
                   <RowAction
                     label={`New worktree in ${choice.name}`}
                     glyph="+"
@@ -282,7 +283,7 @@ export function RepoPicker({
                       label={`Remove worktree ${worktree.branch ?? worktree.path}`}
                       glyph="×"
                       onClick={() => {
-                        void removeWorktreeAt(choice.path, worktree).then(
+                        void removeWorktreeAt(choice.repoRoot, worktree).then(
                           (removed) => {
                             if (removed) void refresh();
                           },

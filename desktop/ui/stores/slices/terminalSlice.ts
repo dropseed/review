@@ -200,6 +200,7 @@ export interface TerminalSlice {
   setTerminalCheckouts: (
     activity: RepoLocalActivity[],
     reviews: GlobalReviewSummary[],
+    attached: readonly AttachedCheckout[],
   ) => void;
   /** Drag-to-reorder within the strip. */
   moveTab: (fromIndex: number, toIndex: number) => void;
@@ -344,6 +345,16 @@ export interface RepoCheckouts {
 export type CheckoutIndex = Record<string, RepoCheckouts>;
 
 /**
+ * A worktree tab the queue holds — the repository it belongs to, and its own
+ * directory. What `useTerminalCheckoutSync` distils the queue down to, so that
+ * renaming or reordering a workspace doesn't rebuild the index.
+ */
+export interface AttachedCheckout {
+  repoRoot: string;
+  path: string;
+}
+
+/**
  * Build the checkout index from the same listings the sidebar rows are built
  * from, so a terminal's repo attribution and its sidebar row can never disagree
  * about which checkout it is sitting in.
@@ -355,6 +366,7 @@ export type CheckoutIndex = Record<string, RepoCheckouts>;
 export function buildCheckoutIndex(
   activity: RepoLocalActivity[],
   reviews: GlobalReviewSummary[] = [],
+  attached: readonly AttachedCheckout[] = [],
 ): CheckoutIndex {
   const index: CheckoutIndex = {};
 
@@ -368,14 +380,16 @@ export function buildCheckoutIndex(
     return repo;
   };
 
+  // A null key is a checkout with no review behind it — a place, but not one
+  // any row owns.
   const add = (
     repo: RepoCheckouts,
     path: string | null | undefined,
-    key: string,
+    key: string | null,
   ) => {
     if (!path) return;
     if (!repo.roots.includes(path)) repo.roots.push(path);
-    repo.owners[path] = key;
+    if (key !== null) repo.owners[path] = key;
   };
 
   for (const activityRepo of activity) {
@@ -395,6 +409,16 @@ export function buildCheckoutIndex(
   for (const review of reviews) {
     const repo = repoFor(review.repoPath);
     add(repo, review.worktreePath, makeReviewKey(review.repoPath, review.ref));
+  }
+
+  // And a checkout somebody attached is one, whatever the branch listing says
+  // about it. A worktree in detached HEAD is on neither list above — it is no
+  // repo's current branch and owns no review — so a shell started in the tab
+  // for it was sitting in a directory the index had never heard of, which reads
+  // as "your checkout was removed". Attribution only: no review owns these, so
+  // the row a terminal is rescued to is still the repo's.
+  for (const checkout of attached) {
+    add(repoFor(checkout.repoRoot), checkout.path, null);
   }
 
   return index;
@@ -1608,8 +1632,10 @@ export const createTerminalSlice: SliceCreatorWithClientAndStorage<
       if (tabId) set(activateTab(tabId));
     },
 
-    setTerminalCheckouts: (activity, reviews) =>
-      set({ terminalCheckouts: buildCheckoutIndex(activity, reviews) }),
+    setTerminalCheckouts: (activity, reviews, attached) =>
+      set({
+        terminalCheckouts: buildCheckoutIndex(activity, reviews, attached),
+      }),
 
     attachTerminalToWorkspace: (terminalId, workspaceId) =>
       assignTab(terminalId, workspaceId),

@@ -94,7 +94,7 @@ function state(
 ) {
   return {
     repoPath: REPO,
-    activeReviewKey: { repoPath: REPO, ref: "feature" },
+    activeReviewKey: { repoPath: REPO, ref: "feature", path: REPO },
     comparison: COMPARISON,
     viewpoint: REVIEW_VIEWPOINT,
     ...overrides,

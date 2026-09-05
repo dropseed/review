@@ -22,8 +22,11 @@ vi.mock("./host", () => ({
 import {
   focusWorkspace,
   landWorkspace,
+  openRowInWorkspace,
   workspaceCommands,
 } from "./workspaceCommands";
+import { getSidebarTree } from "../stores/selectors/sidebar";
+import { allSidebarRows } from "../utils/sidebar-tree";
 import { useSpurStore } from "../stores";
 import { toAccelerator } from "./shortcuts";
 import { attachment, workspace } from "../test/fixtures";
@@ -31,6 +34,8 @@ import type { LocalBranchInfo, Workspace } from "../types";
 
 const REPO = "/repo";
 const OTHER = "/other";
+/** A linked worktree of REPO: its own tab, filed under REPO's reviews. */
+const WORKTREE = "/worktrees/repo-wt";
 
 function item(id: string, overrides: Partial<Workspace> = {}): Workspace {
   return workspace(id, {
@@ -385,6 +390,79 @@ describe("⌘1–9 over the workspace queue", () => {
       focusWorkspace(item("a", both));
       expect(activateReviewKey).toHaveBeenCalledWith(REPO, "feature");
     });
+
+    /**
+     * Two checkouts of *one* repository: the memory has to be the tab rather
+     * than the repo, or coming back would land on whichever of them the
+     * workspace lists first.
+     */
+    it("re-opens the worktree tab of a repo it shows twice", () => {
+      const twice = {
+        attachments: [
+          attachment(REPO, "feature"),
+          attachment(WORKTREE, "wt-branch", true, REPO),
+        ],
+      };
+      seed(
+        [item("a", twice), item("b")],
+        [branch("feature"), branch("wt-branch")],
+      );
+      focusWorkspace(item("a", twice));
+      // Walk to the worktree tab, the way clicking it would.
+      useSpurStore
+        .getState()
+        .setActiveReviewKey({ repoPath: REPO, ref: "wt-branch" });
+      expect(useSpurStore.getState().activeReviewKey?.path).toBe(WORKTREE);
+
+      focusWorkspace(item("b"));
+      activateReviewKey.mockClear();
+      focusWorkspace(item("a", twice));
+
+      expect(activateReviewKey).toHaveBeenCalledWith(REPO, "wt-branch");
+    });
+  });
+
+  /**
+   * ⌘K's Enter on a row living in a linked worktree. It routes by the
+   * *checkout* — so a workspace already holding that worktree wins over one
+   * holding only the main tree — while the comparison it opens is still the
+   * repository's.
+   */
+  it("routes a worktree row by the checkout it lives in", async () => {
+    const inWorktree = { ...branch("feature"), worktreePath: WORKTREE };
+    seed([], [inWorktree]);
+    const landed = item("a", {
+      attachments: [attachment(WORKTREE, "feature", true, REPO)],
+    });
+    routeWorkspace.mockResolvedValue({
+      workspace: landed,
+      created: false,
+      workspaces: [landed],
+    });
+
+    const row = allSidebarRows(getSidebarTree(useSpurStore.getState())).find(
+      (candidate) => candidate.repoPath === REPO && candidate.ref === "feature",
+    );
+    expect(row?.checkoutPath).toBe(WORKTREE);
+    await openRowInWorkspace(row!);
+
+    expect(routeWorkspace).toHaveBeenCalledWith(WORKTREE, "feature", undefined);
+    expect(activateReviewKey).toHaveBeenCalledWith(REPO, "feature");
+  });
+
+  /**
+   * A checkout is a tab, and the review is still the repository's — so a
+   * workspace holding nothing but a worktree opens the repo's row for the
+   * branch that worktree has out. Keyed by the worktree's own path it would
+   * find no row at all and open nothing.
+   */
+  it("opens a worktree tab against its repository's row", () => {
+    const only = {
+      attachments: [attachment(WORKTREE, "feature", true, REPO)],
+    };
+    seed([item("a", only)]);
+    focusWorkspace(item("a", only));
+    expect(activateReviewKey).toHaveBeenCalledWith(REPO, "feature");
   });
 
   it("stages the intent when the attached branch is gone", () => {

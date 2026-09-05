@@ -622,7 +622,7 @@ export interface ApiClient {
    * Route a repo+branch to its workspace and commit that — what ⌘K's Enter
    * does.
    *
-   * The palette previews this decision client-side (`previewRoute`) so it costs
+   * The palette previews this decision client-side (`previewRouteIn`) so it costs
    * nothing per keystroke; this is the call that makes the preview true. It
    * never writes attachments — that is `attachWorkspace`'s job alone.
    */

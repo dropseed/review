@@ -380,7 +380,7 @@ fn open_request_name() -> String {
 }
 
 /// Resolve the canonical path, falling back to the original if canonicalization fails.
-fn canonical_path(repo_path: &Path) -> PathBuf {
+pub fn canonical_path(repo_path: &Path) -> PathBuf {
     repo_path
         .canonicalize()
         .unwrap_or_else(|_| repo_path.to_path_buf())

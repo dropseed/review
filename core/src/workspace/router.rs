@@ -17,12 +17,17 @@
 //! place the decision is made — [`route_to`] commits whatever it returns, so a
 //! preview can never disagree with what actually happens.
 //!
-//! Two path facts do the work. An attachment is keyed by the repository's main
-//! working tree, so a linked worktree routes to a workspace attached to the
-//! repository rather than inventing a second one. And a cwd outside any
-//! repository still routes: it attaches the *directory*, which dedupes exactly
-//! like a repo does, so peeking at the same scratch directory twice lands in one
-//! workspace instead of littering the queue.
+//! Two rungs do the work. An attachment is keyed by the checkout itself, so a
+//! directory routes first to a workspace showing that exact checkout — a linked
+//! worktree attached as its own tab wins over the main tree's card. Failing
+//! that, it routes to the first workspace showing *any* checkout of the same
+//! repository, so a shell opened in a worktree nobody has opened as a tab still
+//! lands on the repository's card rather than inventing a second one. Only when
+//! both miss does routing mint a workspace, attached to the checkout it was
+//! asked about. A cwd outside any repository routes the same way: it attaches
+//! the *directory*, which dedupes exactly like a repo does, so peeking at the
+//! same scratch directory twice lands in one workspace instead of littering the
+//! queue.
 
 use std::path::{Path, PathBuf};
 
@@ -35,30 +40,34 @@ use crate::sources::local_git::current_branch_or_head;
 /// What a directory resolves to, resolved once.
 ///
 /// Holding the answer rather than the question is what keeps the git and
-/// filesystem work out of the retry loop in [`route_to`]: [`attachment`] is pure
-/// string work over what [`locate`] already established.
+/// filesystem work out of the retry loop in [`route_to`]: [`attachment`] is
+/// pure string work over what [`locate`] already established. (The second rung
+/// of [`preview_in`] does read each attachment's `.git`, but only once the
+/// first has missed, and over a handful of paths.)
 ///
 /// [`attachment`]: Location::attachment
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Location {
     /// The working tree the directory sits in — a linked worktree stays itself
-    /// — or the directory itself when it isn't in a repository. This is what a
-    /// terminal started here belongs to.
+    /// — or the directory itself when it isn't in a repository, canonicalized.
+    /// This is what a terminal started here belongs to, and what the attachment
+    /// is keyed by.
     pub working_tree: PathBuf,
-    /// The repository's main working tree, already `home::repo_root`
-    /// normalized. Attachments are keyed by it, so [`Location::attachment`]
-    /// builds one directly instead of re-resolving what is already canonical.
+    /// The repository's main working tree, `home::repo_root` of the working
+    /// tree. Equal to it for the main tree and outside any repository. This is
+    /// the second rung: the repository every checkout of it shares.
     pub root: PathBuf,
     /// The branch checked out here; empty outside a repository.
     pub ref_name: String,
 }
 
 impl Location {
-    /// The attachment this location implies: the repository, at whatever is
-    /// checked out in it.
+    /// The attachment this location implies: the checkout, at whatever is
+    /// checked out in it. Built directly rather than through [`Attachment::new`]
+    /// — [`locate`] already canonicalized the working tree.
     pub fn attachment(&self) -> Attachment {
         Attachment {
-            path: self.root.to_string_lossy().into_owned(),
+            path: self.working_tree.to_string_lossy().into_owned(),
             ref_name: Some(self.ref_name.clone()).filter(|name| !name.is_empty()),
         }
     }
@@ -92,16 +101,14 @@ pub fn locate(cwd: &Path) -> Location {
         .as_deref()
         .and_then(current_branch_or_head)
         .unwrap_or_default();
-    // Canonicalized for the same reason `enclosing_working_tree` canonicalizes
-    // what it finds: a directory attachment is keyed by this path, and on macOS
-    // the same directory is reachable as `/tmp/x` and `/private/tmp/x`. Without
-    // this, peeking at one spelling and then the other litters the queue with
-    // two workspaces for one directory.
-    let working_tree =
-        working_tree.unwrap_or_else(|| cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf()));
+    // Canonicalized either way: an attachment is keyed by this path, and on
+    // macOS the same directory is reachable as `/tmp/x` and `/private/tmp/x`.
+    // Without this, peeking at one spelling and then the other litters the
+    // queue with two workspaces for one directory. (`enclosing_working_tree`
+    // returns the spelling it was given.)
+    let working_tree = home::canonical_path(&working_tree.unwrap_or_else(|| cwd.to_path_buf()));
     Location {
-        // Total for non-repo paths too, where it just canonicalizes — which is
-        // exactly the identity a directory attachment needs.
+        // Total for non-repo paths too, where it just canonicalizes.
         root: home::repo_root(&working_tree),
         working_tree,
         ref_name,
@@ -114,7 +121,10 @@ pub fn locate(cwd: &Path) -> Location {
 /// own mutation rather than reading the queue a second time.
 pub fn preview_in(state: &WorkspacesState, location: &Location) -> RouteResult {
     let attachment = location.attachment();
-    match state.first_attached(&attachment.path) {
+    let existing = state
+        .first_attached(&attachment.path)
+        .or_else(|| state.first_attached_to_repo(&location.root));
+    match existing {
         Some(workspace) => RouteResult::Existing(workspace.clone()),
         None => RouteResult::WouldCreate(attachment),
     }
@@ -123,14 +133,13 @@ pub fn preview_in(state: &WorkspacesState, location: &Location) -> RouteResult {
 /// The location a repository and a branch name imply, for a caller holding
 /// both already — a ⌘K row, a repo tab.
 ///
-/// No filesystem walk and no `git`: routing keys on the repository root, and it
-/// is in hand. The working tree is the repository's own, because a caller naming
-/// a branch is naming the repository rather than some checkout of it.
+/// No `git`: the caller has the checkout in hand — the repository's main tree
+/// for a branch row, or a worktree's own path for a tab that is one — and it is
+/// what the attachment is keyed by.
 pub fn location_of_ref(repo_path: &Path, ref_name: &str) -> Location {
-    let root = home::repo_root(repo_path);
     Location {
-        working_tree: root.clone(),
-        root,
+        working_tree: home::canonical_path(repo_path),
+        root: home::repo_root(repo_path),
         ref_name: ref_name.to_owned(),
     }
 }
@@ -330,8 +339,9 @@ mod tests {
         let mine = add(Some("the feature"), vec![attachment_of(repo.path(), None)])
             .unwrap()
             .1;
-        // ...and routing from inside the worktree finds it, because the
-        // attachment's path collapses onto the main working tree.
+        // ...and routing from inside the worktree finds it — the second rung:
+        // nothing shows the worktree itself, so the repository's card takes it
+        // rather than a new card being minted.
         let landing = route(&worktree);
         assert!(!landing.created);
         assert_eq!(landing.workspace.id, mine.id);
@@ -340,8 +350,41 @@ mod tests {
         // The workspace is the main tree's, but the session that lands here
         // still belongs to the worktree it is actually in.
         let location = locate(&worktree);
-        assert_eq!(location.working_tree, worktree);
+        assert_eq!(location.working_tree, worktree.canonicalize().unwrap());
         assert_eq!(location.root, repo.path().canonicalize().unwrap());
+    }
+
+    /// A worktree opened as its own tab is its own place: routing from inside
+    /// it lands there even when the main tree's card is ahead in the queue, and
+    /// the main tree keeps routing to its own card.
+    #[test]
+    fn a_worktree_attached_as_its_own_tab_wins_over_the_main_tree() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let (_env, _home, _tmp) = setup_test();
+        let repo = repo();
+
+        let wt_parent = TempDir::new().unwrap();
+        let worktree = wt_parent.path().join("wt");
+        git(
+            repo.path(),
+            &["worktree", "add", worktree.to_str().unwrap(), "feature"],
+        );
+
+        let main = add(Some("main tree"), vec![attachment_of(repo.path(), None)])
+            .unwrap()
+            .1;
+        let own = add(Some("the worktree"), vec![attachment_of(&worktree, None)])
+            .unwrap()
+            .1;
+        assert_eq!(
+            own.attachments[0].path,
+            worktree.canonicalize().unwrap().to_string_lossy(),
+            "the attachment is the worktree, not its repository"
+        );
+
+        assert_eq!(route(&worktree).workspace.id, own.id);
+        assert_eq!(route(repo.path()).workspace.id, main.id);
+        assert_eq!(list().unwrap().workspaces.len(), 2);
     }
 
     /// The ⌘T case: the human named the workspace, so routing has nothing left

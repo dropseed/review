@@ -3,6 +3,7 @@ import {
   allSidebarRows,
   buildSidebarTree,
   rowHasFacts,
+  rowWorktree,
   type RepoNode,
   type SidebarRow,
 } from "./sidebar-tree";
@@ -191,6 +192,25 @@ describe("the repo row is the repo-root checkout", () => {
     const [node] = build([repo("/r", [])], { reviews });
     expect(node.rows[0].checkoutPath).toBe("/wt/abc");
     expect(node.rows[0].facts).toEqual(["materialized"]);
+  });
+
+  /**
+   * The question routing asks: only a *linked* worktree is a checkout a
+   * workspace can hold beside the main tree, so the repo's own head and a
+   * branch nothing has on disk both answer null.
+   */
+  it("rowWorktree names only a linked worktree", () => {
+    const [node] = build([
+      repo("/r", [
+        branch({ name: "master", isCurrent: true }),
+        branch({ name: "feat", worktreePath: "/wt/feat" }),
+        branch({ name: "old" }),
+      ]),
+    ]);
+    const byRef = new Map(node.rows.map((row) => [row.ref, row]));
+    expect(rowWorktree(byRef.get("feat")!)).toBe("/wt/feat");
+    expect(rowWorktree(byRef.get("old")!)).toBeNull();
+    expect(rowWorktree(node.head!)).toBeNull();
   });
 });
 

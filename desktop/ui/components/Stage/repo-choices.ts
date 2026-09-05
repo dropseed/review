@@ -5,16 +5,25 @@ import { getTabsByWorkspaceId } from "../../stores/selectors/terminals";
 import {
   CHECKOUT_REF,
   focusedWorkspaceIn,
+  type ReviewTarget,
 } from "../../stores/selectors/workspaceData";
 import { getPlatformServices } from "../../platform";
 import { openTerminalTab } from "../Terminal/newTab";
 import { repoDirname, repoDisplayName } from "../../utils/repo-identity";
+import { rowWorktree } from "../../utils/sidebar-tree";
 import { focusWorkspace, newWorkspace } from "../../commands/workspaceCommands";
 import type { Workspace } from "../../types";
 
-/** A repo the picker can open, with the branch it would open it at. */
+/** A checkout the picker can open, with the branch it would open it at. */
 export interface RepoChoice {
+  /**
+   * The checkout this row opens: a linked worktree's own directory, else the
+   * repository's tree. Attached as-is, which is what makes a worktree a tab of
+   * its own beside the main tree rather than a move of that tab's ref.
+   */
   path: string;
+  /** The repository `path` belongs to — what the review is filed under. */
+  repoRoot: string;
   name: string;
   /**
    * The ref the tab is pointed at — whatever the repo has checked out, or the
@@ -23,12 +32,6 @@ export interface RepoChoice {
    * again at click time.
    */
   refName: string | null;
-  /**
-   * Where this ref lives on disk when it has a checkout of its own, else null.
-   * Only shown — the attachment is still the repo at a ref, because the tab is
-   * the *repo* and walking its branches must not open a second one.
-   */
-  worktreePath: string | null;
 }
 
 /**
@@ -87,10 +90,9 @@ export function shortPath(path: string): string {
  *
  * A worktree earns a row because it is a checkout someone deliberately made and
  * is a place work is already happening; picking one should not mean opening the
- * repo and then hunting for the branch. It is still offered as the repo *at a
- * ref* rather than as its own path: the tab is the repo, and a workspace shows
- * a path at most once, so a worktree row moves the existing tab's ref rather
- * than opening a second tab onto the same repository.
+ * repo and then hunting for the branch. It opens as *itself* — a tab is a
+ * checkout, so a worktree sits beside the main tree rather than moving that
+ * tab's ref, and a workspace can read two of one repository's branches at once.
  */
 export function useRepoChoices(): RepoChoice[] {
   const tree = useSidebarTree();
@@ -105,24 +107,26 @@ export function useRepoChoices(): RepoChoice[] {
         );
         const repo: RepoChoice = {
           path: node.repoPath,
+          repoRoot: node.repoPath,
           name,
           refName: node.head?.ref ?? null,
-          worktreePath: null,
         };
-        // A checkout that isn't the repo root is a worktree. Rows without one
-        // (a bare branch, a remote ref, a PR nobody has fetched) are branches
-        // you could open, not places that exist — ⌘K is where those live.
-        const worktrees = node.rows
-          .filter(
-            (row) =>
-              row.checkoutPath !== null && row.checkoutPath !== node.repoPath,
-          )
-          .map((row): RepoChoice => ({
-            path: node.repoPath,
-            name,
-            refName: row.ref,
-            worktreePath: row.checkoutPath,
-          }));
+        // Rows with no worktree of their own (a bare branch, a remote ref, a PR
+        // nobody has fetched) are branches you could open, not places that
+        // exist — ⌘K is where those live.
+        const worktrees = node.rows.flatMap((row): RepoChoice[] => {
+          const worktree = rowWorktree(row);
+          return worktree
+            ? [
+                {
+                  path: worktree,
+                  repoRoot: node.repoPath,
+                  name,
+                  refName: row.ref,
+                },
+              ]
+            : [];
+        });
         return [repo, ...worktrees];
       }),
     [tree, repoMetadata],
@@ -156,16 +160,18 @@ export async function openRepoIn(
     choice.refName,
   );
   if (!ok) return;
+  const target: ReviewTarget = {
+    repoPath: choice.repoRoot,
+    ref: choice.refName ?? CHECKOUT_REF,
+    path: choice.path,
+  };
   // Named rather than left to the workspace's first tab, the way
   // `openRowInWorkspace` names its row's: the workspace may not be the one on
   // screen (the empty state's picker is), and on a multi-repo workspace the
   // first tab is precisely the one this pick is not. Passing it here is also
   // what stops this opening two comparisons — it used to focus, let that open
   // tab one, and then activate the pick over the top of it.
-  focusWorkspace(workspace, {
-    repoPath: choice.path,
-    ref: choice.refName ?? CHECKOUT_REF,
-  });
+  focusWorkspace(workspace, target);
 
   const running = getTabsByWorkspaceId(useSpurStore.getState())[workspace.id];
   if (running && running.length > 0) return;
@@ -174,7 +180,7 @@ export async function openRepoIn(
   // just made.
   await openTerminalTab(
     workspace,
-    { repoPath: choice.path, ref: choice.refName ?? CHECKOUT_REF },
+    target,
     // The gesture was "open this repo", so the stage stays on the repo. The
     // shell is a courtesy; taking the screen for it would answer a different
     // question than the one asked — and at phone width it would replace the
@@ -201,13 +207,15 @@ export async function chooseFolder(): Promise<RepoChoice | null> {
   if (!path) return null;
   return {
     path,
+    // Whether it is a worktree of something is git's answer, and the backend's
+    // to give: the folder is the checkout and the repository both until then.
+    repoRoot: path,
     // No sidebar row to take a display name from — this folder may be one the
     // app has never seen. Its own basename is what the tab would say anyway.
     name: repoDirname(path),
     // The folder is the whole of what was picked. Whether it has branches is
     // git's answer, asked at open time.
     refName: null,
-    worktreePath: null,
   };
 }
 

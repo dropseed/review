@@ -20,9 +20,7 @@ pub fn repo_relative_path(path: &Path, repo_root: &Path) -> String {
 ///
 /// Returns `(repo_or_path, Option<relative_file_path>)`.
 pub fn resolve_open_target(target: &Path) -> (String, Option<String>) {
-    let target = target
-        .canonicalize()
-        .unwrap_or_else(|_| target.to_path_buf());
+    let target = crate::home::canonical_path(target);
 
     // If it's a file, start searching from the parent directory
     let search_start = if target.is_file() {

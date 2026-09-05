@@ -36,6 +36,7 @@ function workspace(id: string, paths: string[] = []): Workspace {
     displayTitle: id,
     attachments: paths.map((path) => ({
       path,
+      repoRoot: path,
       refName: "main",
       isGitRepo: true,
     })),
@@ -87,7 +88,13 @@ describe("useWorkspaceRestore", () => {
   it("leaves an open comparison alone and only takes the focus", () => {
     // The state a relaunch lands in when the launch directory named a repo:
     // a diff on screen, and no workspace focused because nothing shows it.
-    seed({ activeReviewKey: { repoPath: "/elsewhere", ref: "main" } });
+    seed({
+      activeReviewKey: {
+        repoPath: "/elsewhere",
+        ref: "main",
+        path: "/elsewhere",
+      },
+    });
 
     renderHook(() => useWorkspaceRestore("found"));
 
@@ -194,7 +201,7 @@ describe("useWorkspaceRestore", () => {
     seed({
       lastWorkspaceId: null,
       focusedWorkspaceId: null,
-      activeReviewKey: { repoPath: "/repo/a", ref: "main" },
+      activeReviewKey: { repoPath: "/repo/a", ref: "main", path: "/repo/a" },
     });
 
     renderHook(() => useWorkspaceRestore("found"));

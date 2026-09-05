@@ -175,9 +175,12 @@ function RepoTabs({
     () => describeWorkspace(workspace, ctx).repos,
     [workspace, ctx],
   );
-  // By repo, not by review key: the tab stays the tab while you walk that
-  // repo's branches, because the ref an attachment carries is a hint about
-  // where it was pointed, not the identity of the tab.
+  // By checkout path, not by review key: the tab stays the tab while you walk
+  // that repo's branches, because the ref an attachment carries is a hint about
+  // where it was pointed, not the identity of the tab. The path is also what
+  // tells two tabs of *one* repository apart — a linked worktree beside the
+  // main tree — which is why `repoOnScreen` prefers the comparison's resolved
+  // `path` over the repository it is filed under.
   //
   // Falling back to `repoPath` for the same reason `repoOnScreen` exists: a
   // folder opened as a folder has no comparison to name it, and a tab that

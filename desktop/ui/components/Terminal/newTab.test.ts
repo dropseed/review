@@ -11,6 +11,8 @@ import { attachment, workspace as makeWorkspace } from "../../test/fixtures";
 
 const REPO = "/repo";
 const OTHER = "/other-repo";
+/** A linked worktree of REPO — a tab of its own, filed under REPO. */
+const WORKTREE = "/worktrees/repo-wt";
 
 /** Records what `openTerminalTab` asked the backend to start. */
 const started: {
@@ -171,7 +173,7 @@ describe("where a workspace's terminal starts", () => {
     stubStartTerminal();
     seedActivity([branch("feature", { isCurrent: true })]);
     useSpurStore.setState({
-      activeReviewKey: { repoPath: REPO, ref: "feature" },
+      activeReviewKey: { repoPath: REPO, ref: "feature", path: REPO },
     });
 
     await openTerminalTab(
@@ -179,6 +181,51 @@ describe("where a workspace's terminal starts", () => {
     );
 
     expect(started[0]).toMatchObject({ repoPath: REPO, cwd: REPO });
+  });
+
+  /**
+   * A worktree tab *is* a directory, so the cwd is the tab itself rather than
+   * the branch's checkout — which for a worktree in detached HEAD, or one whose
+   * branch is checked out somewhere else, is another directory entirely. The
+   * session is still filed under the repository.
+   */
+  it("starts in a worktree tab's own directory", async () => {
+    stubStartTerminal();
+    seedActivity([branch("main", { isCurrent: true })]);
+    useSpurStore.setState({
+      activeReviewKey: { repoPath: REPO, ref: "feature", path: WORKTREE },
+    });
+
+    await openTerminalTab(
+      workspace([
+        attachment(REPO, "main"),
+        attachment(WORKTREE, "feature", true, REPO),
+      ]),
+    );
+
+    expect(started[0]).toMatchObject({ repoPath: REPO, cwd: WORKTREE });
+  });
+
+  /**
+   * The key's tab was resolved against whichever workspace was focused when the
+   * comparison opened, which need not be this one — so the ranking runs again
+   * here, and the checkout pointed at that branch beats the repo's own tree.
+   */
+  it("follows the ref to the checkout that has it out", async () => {
+    stubStartTerminal();
+    seedActivity([branch("main", { isCurrent: true })]);
+    useSpurStore.setState({
+      activeReviewKey: { repoPath: REPO, ref: "feature", path: REPO },
+    });
+
+    await openTerminalTab(
+      workspace([
+        attachment(REPO, "main"),
+        attachment(WORKTREE, "feature", true, REPO),
+      ]),
+    );
+
+    expect(started[0]).toMatchObject({ repoPath: REPO, cwd: WORKTREE });
   });
 
   /** Nothing on screen from this workspace: its first tab is the fallback. */

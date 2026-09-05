@@ -9,6 +9,11 @@ import type { SliceCreatorWithClient } from "../types";
 import { resolveNewRepoMetadata } from "../../utils/resolve-repo-metadata";
 import { jsonEqual } from "../../utils/equality";
 import { getSidebarTree } from "../selectors/sidebar";
+import {
+  attachmentIndex,
+  withTabPath,
+  type ReviewTarget,
+} from "../selectors/workspaceData";
 import { rowHasFacts } from "../../utils/sidebar-tree";
 import { makeReviewKey } from "./groupingSlice";
 import { findFirstUnreviewedHunkId } from "./navigationSlice";
@@ -20,8 +25,16 @@ export interface NavigationSnapshot {
 }
 
 export interface ActiveReviewKey {
+  /** The repository — an attachment's `repoRoot` — the review is filed under. */
   repoPath: string;
   ref: string;
+  /**
+   * The checkout the comparison is shown in — which of the focused workspace's
+   * tabs, when it holds more than one of this repository. Always set: routes
+   * name a repo and a ref, and `setActiveReviewKey` resolves the tab once
+   * (`withTabPath`) so every reader downstream has one coordinate to join on.
+   */
+  path: string;
 }
 
 export interface RepoMetadata {
@@ -63,7 +76,7 @@ export interface GlobalReviewsSlice {
   workspaceCodeKeys: Record<string, ActiveReviewKey>;
 
   loadGlobalReviews: () => Promise<void>;
-  setActiveReviewKey: (key: ActiveReviewKey | null) => void;
+  setActiveReviewKey: (key: ReviewTarget | null) => void;
   ensureReviewExists: (
     repoPath: string,
     ref: string,
@@ -183,34 +196,50 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
       // two disagree: ⌘K to another workspace's branch left the first
       // workspace's header and terminals over the second one's diff.
       //
-      // Matched by repo, not by ref: the tab stays the tab while you walk that
-      // repo's branches, and the ref an attachment carries is only a hint.
-      // Kept by identity when it names what is already active, so re-affirming
+      // Matched by the tab, not by the ref: the tab stays the tab while you
+      // walk that repo's branches, and the ref an attachment carries is only a
+      // hint. Kept by identity when it names what is already active, so re-affirming
       // it — which is what a click on the comparison already on screen does,
       // to refresh the memory below — costs no re-render in anything selecting
       // this key.
+      const { focusedWorkspaceId, workspaces } = get();
+      const focused =
+        workspaces.find((workspace) => workspace.id === focusedWorkspaceId) ??
+        null;
+      // Which tab, when the workspace holds several checkouts of this repo.
+      // Most routes — a sidebar row, ⌘K, a PR — name a repo and a ref and no
+      // tab, so the tab is chosen here, once, and everything downstream reads
+      // one resolved path instead of re-deciding: the checkout already pointed
+      // at that ref, else the repo's own tree, else the first of them. With no
+      // checkout of the repo in hand it lands on the repo's own tree, which the
+      // staleness rule below then rejects. A caller holding the attachment says
+      // so and is believed.
+      const resolved: ActiveReviewKey | null = !key
+        ? null
+        : key.path !== undefined
+          ? { repoPath: key.repoPath, ref: key.ref, path: key.path }
+          : withTabPath(key, focused?.attachments ?? []);
       const current = get().activeReviewKey;
       const next =
         current &&
-        key &&
-        current.repoPath === key.repoPath &&
-        current.ref === key.ref
+        resolved &&
+        current.repoPath === resolved.repoPath &&
+        current.ref === resolved.ref &&
+        current.path === resolved.path
           ? current
-          : key;
+          : resolved;
 
-      const { focusedWorkspaceId, workspaces } = get();
       const stale =
         focusedWorkspaceId !== null &&
-        key !== null &&
-        !workspaces
-          .find((workspace) => workspace.id === focusedWorkspaceId)
-          ?.attachments.some((attachment) => attachment.path === key.repoPath);
+        resolved !== null &&
+        (focused === null || attachmentIndex(focused, resolved.path) === -1);
 
       // Remember it for the workspace it belongs to. Here rather than in the
       // callers because this is the one choke point every route goes through
       // — a card, a repo tab, a sidebar row, ⌘K — and a memory that only some
       // of them updated would be worse than none.
-      const remember = !stale && key !== null && focusedWorkspaceId !== null;
+      const remember =
+        !stale && resolved !== null && focusedWorkspaceId !== null;
 
       set({
         activeReviewKey: next,
@@ -219,7 +248,7 @@ export const createGlobalReviewsSlice: SliceCreatorWithClient<
           ? {
               workspaceCodeKeys: {
                 ...get().workspaceCodeKeys,
-                [focusedWorkspaceId]: key,
+                [focusedWorkspaceId]: resolved,
               },
             }
           : {}),

@@ -55,24 +55,24 @@ function seed(next: RepoChoice[]): void {
 function repo(path: string, name: string, refName: string | null): RepoChoice {
   return {
     path,
+    repoRoot: path,
     name,
     refName,
-    worktreePath: null,
   };
 }
 
 /** The same repo, as the row one of its checked-out branches contributes. */
 function worktree(
-  path: string,
+  repoRoot: string,
   name: string,
   refName: string,
-  worktreePath: string,
+  path: string,
 ): RepoChoice {
   return {
     path,
+    repoRoot,
     name,
     refName,
-    worktreePath,
   };
 }
 
@@ -282,9 +282,9 @@ describe("picking one by keyboard", () => {
 describe("opening a folder the app has never seen", () => {
   const picked: RepoChoice = {
     path: "/tmp/brand-new",
+    repoRoot: "/tmp/brand-new",
     name: "brand-new",
     refName: null,
-    worktreePath: null,
   };
 
   /** A folder arrives as an ordinary choice, so both front doors open it the

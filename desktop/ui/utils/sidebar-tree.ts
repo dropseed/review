@@ -154,6 +154,21 @@ export interface SidebarRow {
   facts: RowFact[];
 }
 
+/**
+ * The linked worktree a row lives in, or null when it lives in the repository's
+ * own tree — which is what `checkoutPath` says by being null (nothing has this
+ * branch on disk) or by equalling `repoPath`.
+ *
+ * Only a *linked* worktree is a checkout in its own right — the thing a
+ * workspace can hold beside the main tree — so this is what routing and the
+ * route preview both ask, and why they cannot disagree.
+ */
+export function rowWorktree(row: SidebarRow): string | null {
+  return row.checkoutPath && row.checkoutPath !== row.repoPath
+    ? row.checkoutPath
+    : null;
+}
+
 /** Whether anything about this row is worth a line. See [`RowFact`]. */
 export function rowHasFacts(row: SidebarRow): boolean {
   return row.facts.length > 0;

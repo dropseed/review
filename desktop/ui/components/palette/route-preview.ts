@@ -1,7 +1,7 @@
 /**
  * How a route preview reads on a ⌘K row.
  *
- * Only the wording lives here — the decision itself is `previewRoute` in
+ * Only the wording lives here — the decision itself is `previewRouteIn` in
  * `stores/selectors/workspaceData`, beside the rest of the workspace rules, so
  * the preview and the landing cannot answer differently.
  */
